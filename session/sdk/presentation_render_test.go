@@ -33,8 +33,12 @@ func stripANSI(s string) string {
 // intPtr returns a pointer to the given int (helper for ToolDiffLine line numbers).
 func intPtr(n int) *int { return &n }
 
+func localRenderTime(hour, minute int) time.Time {
+	return time.Date(2026, time.April, 22, hour, minute, 0, 0, time.Local)
+}
+
 func TestRenderPresentation_UserPrefix(t *testing.T) {
-	now := time.Now()
+	now := localRenderTime(9, 41)
 	turn := &PresentationTurn{
 		ID:          "t1",
 		Number:      1,
@@ -45,11 +49,34 @@ func TestRenderPresentation_UserPrefix(t *testing.T) {
 		},
 	}
 
-	result := RenderPresentation([]*PresentationTurn{turn}, 80)
+	result := RenderPresentation([]*PresentationTurn{turn}, 24)
 	plain := stripANSI(result)
+	expectedLine := "> show logs" + strings.Repeat(" ", 24-len("> show logs")-len("09:41")) + "09:41"
 
-	require.Contains(t, plain, "> show logs")
+	require.Contains(t, plain, expectedLine)
 	require.NotContains(t, plain, "you: show logs")
+	require.Contains(t, result, lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorSubtle)).Render("09:41"))
+}
+
+func TestRenderPresentation_ProseRowsShowRightAlignedTimestamp(t *testing.T) {
+	now := localRenderTime(9, 42)
+	turn := &PresentationTurn{
+		ID:          "t1",
+		Number:      1,
+		StartedAt:   now,
+		CompletedAt: now,
+		Rows: []PresentationRow{
+			{Kind: RowResponse, Timestamp: now},
+			{Kind: RowProse, Text: "assistant text", Timestamp: now},
+		},
+	}
+
+	result := RenderPresentation([]*PresentationTurn{turn}, 24)
+	plain := stripANSI(result)
+	expectedLine := "assistant text" + strings.Repeat(" ", 24-len("assistant text")-len("09:42")) + "09:42"
+
+	require.Contains(t, plain, expectedLine)
+	require.Contains(t, result, lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorSubtle)).Render("09:42"))
 }
 
 func TestRenderPresentation_ToolLineHighlightAndIndent(t *testing.T) {

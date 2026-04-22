@@ -2,6 +2,7 @@ package sdk
 
 import (
 	"strings"
+	"time"
 
 	"charm.land/lipgloss/v2"
 )
@@ -62,6 +63,18 @@ func RenderPromptLine(prefix, text string, prefixStyle, textStyle lipgloss.Style
 	return prefixStyle.Render(prefix) + " " + textStyle.Render(text)
 }
 
+// RenderPromptLineWithTimestamp renders a prompt-style transcript row with an
+// optional subtle timestamp aligned to the right edge when width allows.
+func RenderPromptLineWithTimestamp(prefix, text string, ts time.Time, width int, prefixStyle, textStyle, timestampStyle lipgloss.Style) string {
+	return renderLineWithTimestamp(RenderPromptLine(prefix, text, prefixStyle, textStyle), ts, width, timestampStyle)
+}
+
+// RenderTextLineWithTimestamp renders a plain transcript row with an optional
+// subtle timestamp aligned to the right edge when width allows.
+func RenderTextLineWithTimestamp(text string, ts time.Time, width int, textStyle, timestampStyle lipgloss.Style) string {
+	return renderLineWithTimestamp(textStyle.Render(text), ts, width, timestampStyle)
+}
+
 // RenderStructuredChildLine renders rows that begin with the standard "│ "
 // gutter used by preview and diff blocks, allowing callers to accent the
 // gutter separately from the row content.
@@ -70,4 +83,33 @@ func RenderStructuredChildLine(row string, gutterStyle, contentStyle lipgloss.St
 		return gutterStyle.Render("│ ") + contentStyle.Render(strings.TrimPrefix(row, "│ "))
 	}
 	return contentStyle.Render(row)
+}
+
+func renderLineWithTimestamp(base string, ts time.Time, width int, timestampStyle lipgloss.Style) string {
+	label := formatTranscriptTimestamp(ts)
+	if label == "" {
+		return base
+	}
+
+	styledLabel := timestampStyle.Render(label)
+	if width <= 0 {
+		return base + " " + styledLabel
+	}
+
+	baseWidth := lipgloss.Width(base)
+	labelWidth := lipgloss.Width(label)
+	if baseWidth+1+labelWidth <= width {
+		return base + strings.Repeat(" ", width-baseWidth-labelWidth) + styledLabel
+	}
+	if labelWidth < width {
+		return base + "\n" + strings.Repeat(" ", width-labelWidth) + styledLabel
+	}
+	return base + " " + styledLabel
+}
+
+func formatTranscriptTimestamp(ts time.Time) string {
+	if ts.IsZero() {
+		return ""
+	}
+	return ts.Local().Format("15:04")
 }

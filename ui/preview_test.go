@@ -27,6 +27,10 @@ type testSetup struct {
 	cleanupFn   func()
 }
 
+func localPreviewTime(hour, minute int) time.Time {
+	return time.Date(2026, time.April, 22, hour, minute, 0, 0, time.Local)
+}
+
 // setupTestEnvironment creates a common test environment with git repo and instance
 func setupTestEnvironment(t *testing.T, cmdExec cmd_test.MockCmdExec) *testSetup {
 	t.Helper()
@@ -908,9 +912,9 @@ func TestPreviewPane_SDKPresentation_PlaceholderReplacementPreservesComposerDraf
 
 func TestPreviewPane_SDKPresentation_UserHistoryUsesFoam(t *testing.T) {
 	pane := NewPreviewPane()
-	pane.SetSize(80, 24)
+	pane.SetSize(24, 24)
 
-	now := time.Now()
+	now := localPreviewTime(9, 41)
 	inst := newSDKInstanceWithTurns(t, []*sdk.PresentationTurn{{
 		ID:        "t1",
 		Number:    1,
@@ -924,9 +928,32 @@ func TestPreviewPane_SDKPresentation_UserHistoryUsesFoam(t *testing.T) {
 	require.NoError(t, pane.UpdateContent(inst))
 
 	require.Contains(t, pane.previewState.text,
-		sdk.RenderPromptLine(">", "show logs",
+		sdk.RenderPromptLineWithTimestamp(">", "show logs", now, 24,
 			lipgloss.NewStyle().Foreground(ColorRose),
-			lipgloss.NewStyle().Foreground(ColorFoam)))
+			lipgloss.NewStyle().Foreground(ColorFoam),
+			lipgloss.NewStyle().Foreground(ColorSubtle)))
+}
+
+func TestPreviewPane_SDKPresentation_ProseRowsShowRightAlignedTimestamp(t *testing.T) {
+	pane := NewPreviewPane()
+	pane.SetSize(24, 24)
+
+	now := localPreviewTime(9, 42)
+	inst := newSDKInstanceWithTurns(t, []*sdk.PresentationTurn{{
+		ID:        "t1",
+		Number:    1,
+		StartedAt: now,
+		Rows: []sdk.PresentationRow{
+			{Kind: sdk.RowResponse, Timestamp: now},
+			{Kind: sdk.RowProse, Text: "assistant text", Timestamp: now},
+		},
+	}})
+	require.NoError(t, pane.UpdateContent(inst))
+
+	require.Contains(t, pane.previewState.text,
+		sdk.RenderTextLineWithTimestamp("assistant text", now, 24,
+			lipgloss.NewStyle().Foreground(ColorText),
+			lipgloss.NewStyle().Foreground(ColorSubtle)))
 }
 
 func TestPreviewPane_SDKPresentation_ShowsFooterMetadataBeforeHints(t *testing.T) {

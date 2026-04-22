@@ -638,6 +638,7 @@ func renderSDKTurn(turn *sdk.PresentationTurn, width int) []string {
 	warningStyle := lipgloss.NewStyle().Foreground(ColorGold)
 	permStyle := lipgloss.NewStyle().Foreground(ColorRose)
 	proseStyle := lipgloss.NewStyle().Foreground(ColorText)
+	timestampStyle := lipgloss.NewStyle().Foreground(ColorSubtle)
 	statusStyle := lipgloss.NewStyle().Foreground(ColorGold)
 	thinkingStyle := lipgloss.NewStyle().Foreground(ColorMuted)
 	narrowRuleStyle := lipgloss.NewStyle().Foreground(ColorMuted)
@@ -650,7 +651,7 @@ func renderSDKTurn(turn *sdk.PresentationTurn, width int) []string {
 	for _, row := range turn.Rows {
 		switch row.Kind {
 		case sdk.RowUser:
-			rows = append(rows, sdk.RenderPromptLine(">", row.Text, userPrefixStyle, userTextStyle))
+			rows = append(rows, sdk.RenderPromptLineWithTimestamp(">", row.Text, row.Timestamp, width, userPrefixStyle, userTextStyle, timestampStyle))
 		case sdk.RowTool:
 			head, args := sdk.SplitToolCallText(row.Text, row.ToolName)
 			line := sdk.RenderToolCallLine(head, args, toolStyle, toolArgStyle)
@@ -704,7 +705,7 @@ func renderSDKTurn(turn *sdk.PresentationTurn, width int) []string {
 				rows = append(rows, renderResponseDivider(width))
 			}
 		case sdk.RowProse:
-			rows = append(rows, proseStyle.Render(row.Text))
+			rows = append(rows, sdk.RenderTextLineWithTimestamp(row.Text, row.Timestamp, width, proseStyle, timestampStyle))
 		case sdk.RowStatus:
 			rows = append(rows, statusStyle.Render(row.Text))
 		case sdk.RowThinking:

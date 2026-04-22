@@ -105,6 +105,7 @@ func renderPresentationTurn(turn *PresentationTurn, width int) []string {
 	warningStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorGold))
 	permStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorRose))
 	proseStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorText))
+	timestampStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorSubtle))
 	statusStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorGold))
 	thinkingStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorMuted))
 	narrowRuleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorMuted))
@@ -117,7 +118,7 @@ func renderPresentationTurn(turn *PresentationTurn, width int) []string {
 	for _, row := range turn.Rows {
 		switch row.Kind {
 		case RowUser:
-			rows = append(rows, RenderPromptLine(">", row.Text, userPrefixStyle, userTextStyle))
+			rows = append(rows, RenderPromptLineWithTimestamp(">", row.Text, row.Timestamp, width, userPrefixStyle, userTextStyle, timestampStyle))
 		case RowTool:
 			head, args := SplitToolCallText(row.Text, row.ToolName)
 			line := RenderToolCallLine(head, args, toolStyle, toolArgStyle)
@@ -170,7 +171,7 @@ func renderPresentationTurn(turn *PresentationTurn, width int) []string {
 				rows = append(rows, renderPresentationResponseDivider(width))
 			}
 		case RowProse:
-			rows = append(rows, proseStyle.Render(row.Text))
+			rows = append(rows, RenderTextLineWithTimestamp(row.Text, row.Timestamp, width, proseStyle, timestampStyle))
 		case RowStatus:
 			rows = append(rows, statusStyle.Render(row.Text))
 		case RowThinking:
