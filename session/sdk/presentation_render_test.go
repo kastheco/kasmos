@@ -175,9 +175,34 @@ func TestRenderPresentation_PreviewRows(t *testing.T) {
 	require.Contains(t, result,
 		ToolChildIndent+
 			lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorSubtle)).Render("│ ")+
-			lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorGold)).Render("package main"),
-		"preview rows must be indented with a subtle gutter and gold content")
+			lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorSubtle)).Render("package main"),
+		"preview rows must be indented with a subtle gutter and subtle content")
 	require.Contains(t, plain, ToolChildIndent+"│ func main() {}", "preview line must be indented beneath the tool row")
+}
+
+func TestRenderPresentation_PreviewRows_CappedAtFiveLines(t *testing.T) {
+	now := time.Now()
+	turn := &PresentationTurn{
+		ID:          "t1",
+		Number:      1,
+		StartedAt:   now,
+		CompletedAt: now,
+		Rows: []PresentationRow{
+			{
+				Kind: RowToolPreview,
+				ToolPreview: &ToolPreviewPayload{
+					Lines: []string{"line 1", "line 2", "line 3", "line 4", "line 5", "line 6"},
+				},
+			},
+		},
+	}
+
+	result := RenderPresentation([]*PresentationTurn{turn}, 80)
+	plain := stripANSI(result)
+
+	require.Contains(t, plain, "│ line 5", "the fifth preview line must remain visible")
+	require.NotContains(t, plain, "│ line 6", "preview rendering must cap visible lines at five")
+	require.Contains(t, plain, "│ … +1 more lines", "render-time truncation must account for hidden preview lines")
 }
 
 // TestRenderPresentation_PreviewRows_Truncation verifies that the preview
@@ -361,6 +386,23 @@ func TestRenderPresentation_WarningRowsUseGold(t *testing.T) {
 	result := RenderPresentation([]*PresentationTurn{turn}, 80)
 	require.Contains(t, result,
 		lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorGold)).Render("[warning: mcp server startup is slow]"))
+}
+
+func TestRenderPresentation_SystemRowsUseGold(t *testing.T) {
+	now := time.Now()
+	turn := &PresentationTurn{
+		ID:          "t1",
+		Number:      1,
+		StartedAt:   now,
+		CompletedAt: now,
+		Rows: []PresentationRow{
+			{Kind: RowSystem, Text: "[system: unknown message received]", Timestamp: now},
+		},
+	}
+
+	result := RenderPresentation([]*PresentationTurn{turn}, 80)
+	require.Contains(t, result,
+		lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorGold)).Render("[system: unknown message received]"))
 }
 
 // TestRenderPresentation_NilDiffPayload verifies that a RowToolDiff row with a

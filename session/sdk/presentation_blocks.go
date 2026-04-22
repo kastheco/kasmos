@@ -78,19 +78,28 @@ func blankNum(n *int, w int) string {
 }
 
 // BuildToolPreviewBlock renders a ToolPreviewPayload into display rows ready
-// for caller-specific colour styling. Each line is prefixed with "│ ". When
-// payload.Truncated && payload.HiddenLineCount > 0 a trailing "│ … +N more
-// lines" row is appended. The returned rows contain no ANSI codes.
+// for caller-specific colour styling. Each line is prefixed with "│ ".
+// Display rows are capped to toolPreviewMaxLines so older cached payloads do
+// not exceed the current preview limit. When hidden lines remain, a trailing
+// "│ … +N more lines" row is appended. The returned rows contain no ANSI
+// codes.
 func BuildToolPreviewBlock(payload *ToolPreviewPayload, width int) []string {
 	if payload == nil {
 		return nil
 	}
-	rows := make([]string, 0, len(payload.Lines)+1)
-	for _, line := range payload.Lines {
+	lines := payload.Lines
+	hiddenLineCount := payload.HiddenLineCount
+	if len(lines) > toolPreviewMaxLines {
+		hiddenLineCount += len(lines) - toolPreviewMaxLines
+		lines = lines[:toolPreviewMaxLines]
+	}
+
+	rows := make([]string, 0, len(lines)+1)
+	for _, line := range lines {
 		rows = append(rows, "│ "+line)
 	}
-	if payload.Truncated && payload.HiddenLineCount > 0 {
-		rows = append(rows, fmt.Sprintf("│ … +%d more lines", payload.HiddenLineCount))
+	if hiddenLineCount > 0 {
+		rows = append(rows, fmt.Sprintf("│ … +%d more lines", hiddenLineCount))
 	}
 	return rows
 }

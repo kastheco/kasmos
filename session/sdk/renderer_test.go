@@ -1078,7 +1078,7 @@ func TestRenderer_ToolResult_GrepMatches_InjectsToolPreviewRow(t *testing.T) {
 	assert.Equal(t, []string{"app/main.go:12: first match", "app/input.go:27: second match"}, previewRow.ToolPreview.Lines)
 }
 
-func TestRenderer_ToolResult_PreviewRowsCappedToTenLines(t *testing.T) {
+func TestRenderer_ToolResult_PreviewRowsCappedToFiveLines(t *testing.T) {
 	r := NewRenderer()
 	ts := time.Now()
 	lines := make([]string, 12)
@@ -1110,9 +1110,9 @@ func TestRenderer_ToolResult_PreviewRowsCappedToTenLines(t *testing.T) {
 	require.NotNil(t, previewRow.ToolPreview)
 	assert.Len(t, previewRow.ToolPreview.Lines, toolPreviewMaxLines)
 	assert.Equal(t, "line 1", previewRow.ToolPreview.Lines[0])
-	assert.Equal(t, "line 10", previewRow.ToolPreview.Lines[toolPreviewMaxLines-1])
+	assert.Equal(t, fmt.Sprintf("line %d", toolPreviewMaxLines), previewRow.ToolPreview.Lines[toolPreviewMaxLines-1])
 	assert.True(t, previewRow.ToolPreview.Truncated)
-	assert.Equal(t, 2, previewRow.ToolPreview.HiddenLineCount)
+	assert.Equal(t, len(lines)-toolPreviewMaxLines, previewRow.ToolPreview.HiddenLineCount)
 }
 
 func TestRenderer_ToolResult_SingleLineSummary_DoesNotInjectDuplicateToolPreviewRow(t *testing.T) {

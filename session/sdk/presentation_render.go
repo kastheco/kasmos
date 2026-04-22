@@ -101,7 +101,7 @@ func renderPresentationTurn(turn *PresentationTurn, width int) []string {
 	userTextStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorFoam))
 	resultOKStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorFoam))
 	resultErrStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorLove))
-	systemStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorSubtle))
+	systemStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorGold))
 	warningStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorGold))
 	permStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorRose))
 	proseStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorText))
@@ -112,7 +112,7 @@ func renderPresentationTurn(turn *PresentationTurn, width int) []string {
 	addedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorFoam))
 	removedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorLove))
 	diffContextStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorSubtle))
-	previewStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorGold))
+	previewStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorSubtle))
 
 	for _, row := range turn.Rows {
 		switch row.Kind {

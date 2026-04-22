@@ -601,12 +601,14 @@ func (p *PreviewPane) renderSDKStructuredView() string {
 // renderSDKTurn renders one turn block as a slice of styled lines following
 // variant-c colour assignments (see docs/agent-sdk-pane-mockups.md):
 //   - header and tool rows: ColorSubtle (secondary)
-//   - ok-result, system, and thinking rows: ColorMuted (quieter than tools)
+//   - ok-result rows: ColorFoam
 //   - error-result rows: ColorLove
 //   - permission rows: ColorRose (salmon)
-//   - warning and RowStatus rows: ColorGold (warning amber)
+//   - warning, system, and RowStatus rows: ColorGold (warning amber)
+//   - preview rows: ColorSubtle
 //   - prose rows: ColorText (primary)
 //   - user rows: ColorFoam
+//   - thinking rows: ColorMuted
 //   - RowResponse sentinel: emits a muted divider rule
 //
 // In narrow mode (width < narrowPaneThreshold):
@@ -632,7 +634,7 @@ func renderSDKTurn(turn *sdk.PresentationTurn, width int) []string {
 	userTextStyle := lipgloss.NewStyle().Foreground(ColorFoam)
 	resultOKStyle := lipgloss.NewStyle().Foreground(ColorFoam)
 	resultErrStyle := lipgloss.NewStyle().Foreground(ColorLove)
-	systemStyle := lipgloss.NewStyle().Foreground(ColorSubtle)
+	systemStyle := lipgloss.NewStyle().Foreground(ColorGold)
 	warningStyle := lipgloss.NewStyle().Foreground(ColorGold)
 	permStyle := lipgloss.NewStyle().Foreground(ColorRose)
 	proseStyle := lipgloss.NewStyle().Foreground(ColorText)
@@ -643,7 +645,7 @@ func renderSDKTurn(turn *sdk.PresentationTurn, width int) []string {
 	diffAddedStyle := lipgloss.NewStyle().Foreground(ColorFoam)
 	diffRemovedStyle := lipgloss.NewStyle().Foreground(ColorLove)
 	diffContextStyle := lipgloss.NewStyle().Foreground(ColorSubtle)
-	previewStyle := lipgloss.NewStyle().Foreground(ColorGold)
+	previewStyle := lipgloss.NewStyle().Foreground(ColorSubtle)
 
 	for _, row := range turn.Rows {
 		switch row.Kind {

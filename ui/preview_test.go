@@ -1333,10 +1333,39 @@ func TestPreviewPane_SDKPresentation_PreviewRowsRendered(t *testing.T) {
 	require.Contains(t, rendered,
 		sdk.ToolChildIndent+
 			lipgloss.NewStyle().Foreground(ColorSubtle).Render("│ ")+
-			lipgloss.NewStyle().Foreground(ColorGold).Render("match one"),
-		"preview line must be indented with a subtle gutter and gold content")
+			lipgloss.NewStyle().Foreground(ColorSubtle).Render("match one"),
+		"preview line must be indented with a subtle gutter and subtle content")
 	require.Contains(t, plain, sdk.ToolChildIndent+"│ match two", "preview line must stay indented beneath the tool row")
 	require.Contains(t, plain, sdk.ToolChildIndent+"│ match three", "preview line must stay indented beneath the tool row")
+}
+
+func TestPreviewPane_SDKPresentation_PreviewRowsCappedAtFive(t *testing.T) {
+	pane := NewPreviewPane()
+	pane.SetSize(80, 40)
+
+	now := time.Now()
+	turn := &sdk.PresentationTurn{
+		ID:          "t1",
+		Number:      1,
+		StartedAt:   now,
+		CompletedAt: now,
+		Rows: []sdk.PresentationRow{
+			{
+				Kind: sdk.RowToolPreview,
+				ToolPreview: &sdk.ToolPreviewPayload{
+					Lines: []string{"line 1", "line 2", "line 3", "line 4", "line 5", "line 6"},
+				},
+			},
+		},
+	}
+
+	inst := newSDKInstanceWithTurns(t, []*sdk.PresentationTurn{turn})
+	require.NoError(t, pane.UpdateContent(inst))
+
+	plain := stripPreviewANSI(pane.previewState.text)
+	require.Contains(t, plain, "│ line 5", "the fifth preview line must remain visible")
+	require.NotContains(t, plain, "│ line 6", "preview pane must cap visible tool-preview rows at five")
+	require.Contains(t, plain, "│ … +1 more lines", "preview pane must show a truncation indicator for hidden lines")
 }
 
 // TestPreviewPane_SDKPresentation_PreviewRowsTruncation verifies the truncation
@@ -1368,6 +1397,28 @@ func TestPreviewPane_SDKPresentation_PreviewRowsTruncation(t *testing.T) {
 
 	plain := stripPreviewANSI(pane.previewState.text)
 	require.Contains(t, plain, "│ … +5 more lines", "preview truncation indicator must appear")
+}
+
+func TestPreviewPane_SDKPresentation_SystemRowsUseGold(t *testing.T) {
+	pane := NewPreviewPane()
+	pane.SetSize(80, 40)
+
+	now := time.Now()
+	turn := &sdk.PresentationTurn{
+		ID:          "t1",
+		Number:      1,
+		StartedAt:   now,
+		CompletedAt: now,
+		Rows: []sdk.PresentationRow{
+			{Kind: sdk.RowSystem, Text: "[system: unknown message received]", Timestamp: now},
+		},
+	}
+
+	inst := newSDKInstanceWithTurns(t, []*sdk.PresentationTurn{turn})
+	require.NoError(t, pane.UpdateContent(inst))
+
+	require.Contains(t, pane.previewState.text,
+		lipgloss.NewStyle().Foreground(ColorGold).Render("[system: unknown message received]"))
 }
 
 // TestPreviewPane_SDKPresentation_RunningStickyStrip verifies that a running

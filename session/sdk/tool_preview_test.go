@@ -146,9 +146,9 @@ func TestExtractToolPreview_Truncation_RespectsMaxLines(t *testing.T) {
 
 	result := extractToolPreview("bash", raw, 10)
 	require.NotNil(t, result)
-	assert.LessOrEqual(t, len(result.Lines), 10)
+	assert.Len(t, result.Lines, toolPreviewMaxLines)
 	assert.True(t, result.Truncated)
-	assert.Equal(t, 90, result.HiddenLineCount)
+	assert.Equal(t, len(lines)-toolPreviewMaxLines, result.HiddenLineCount)
 }
 
 func TestExtractToolPreview_TrailingBlankLines_Stripped(t *testing.T) {

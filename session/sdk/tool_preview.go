@@ -6,8 +6,8 @@ import (
 	"strings"
 )
 
-// toolPreviewMaxLines is the default cap on visible tool-preview lines per payload.
-const toolPreviewMaxLines = 10
+// toolPreviewMaxLines is the maximum number of visible tool-preview lines.
+const toolPreviewMaxLines = 5
 
 // isDiffTool reports whether toolName produces ToolDiff rows (and therefore
 // must not also produce ToolPreview rows).
@@ -54,6 +54,9 @@ func extractToolPreview(toolName, rawResult string, maxLines int) *ToolPreviewPa
 		return nil
 	}
 	if maxLines <= 0 {
+		maxLines = toolPreviewMaxLines
+	}
+	if maxLines > toolPreviewMaxLines {
 		maxLines = toolPreviewMaxLines
 	}
 
