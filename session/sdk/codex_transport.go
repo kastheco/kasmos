@@ -943,7 +943,9 @@ func codexCommandExecutionResult(item codexThreadItem) string {
 	if item.AggregatedOutput != nil && strings.TrimSpace(*item.AggregatedOutput) != "" {
 		trimmed := strings.TrimSpace(*item.AggregatedOutput)
 		p.Output = trimmed
-		p.AggregatedOutput = trimmed
+		if p.ExitCode != nil {
+			p.AggregatedOutput = trimmed
+		}
 	}
 	if p.ExitCode == nil && p.Output == "" {
 		return codexCommandExecutionDescription(item)

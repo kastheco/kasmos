@@ -531,6 +531,42 @@ func TestCodexTransport_CommandExecution_ItemEvents(t *testing.T) {
 	assert.Equal(t, "ok", ecResult.AggregatedOutput, "aggregatedOutput must mirror output for codex compatibility")
 }
 
+func TestCodexCommandExecutionResult_JSONShapes(t *testing.T) {
+	output := "  ok  "
+	exitZero := 0
+	exitTwo := 2
+
+	testCases := []struct {
+		name string
+		item codexThreadItem
+		want map[string]any
+	}{
+		{
+			name: "exit code and output retain aggregated output",
+			item: codexThreadItem{Type: "commandExecution", AggregatedOutput: &output, ExitCode: &exitZero},
+			want: map[string]any{"exit_code": float64(0), "output": "ok", "aggregatedOutput": "ok"},
+		},
+		{
+			name: "output without exit code omits aggregated output",
+			item: codexThreadItem{Type: "commandExecution", AggregatedOutput: &output},
+			want: map[string]any{"output": "ok"},
+		},
+		{
+			name: "exit code without output omits output fields",
+			item: codexThreadItem{Type: "commandExecution", ExitCode: &exitTwo},
+			want: map[string]any{"exit_code": float64(2)},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			var got map[string]any
+			require.NoError(t, json.Unmarshal([]byte(codexCommandExecutionResult(tc.item)), &got))
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
 func TestCodexTransport_TurnCompleted_HasPrompt(t *testing.T) {
 	ct, srv := newStartedCodexTransport(t)
 
