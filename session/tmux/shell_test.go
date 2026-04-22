@@ -7,6 +7,7 @@ import (
 )
 
 func TestShellEscapeSingleQuote(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		input    string
@@ -22,7 +23,9 @@ func TestShellEscapeSingleQuote(t *testing.T) {
 		{"markdown prompt", "## Task 1: Auth\n\nImplement JWT auth.\n\n```go\nfunc main() {}\n```", "'## Task 1: Auth\n\nImplement JWT auth.\n\n```go\nfunc main() {}\n```'"},
 	}
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			assert.Equal(t, tt.expected, shellEscapeSingleQuote(tt.input))
 		})
 	}

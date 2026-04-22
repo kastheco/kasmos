@@ -11,6 +11,7 @@ import (
 )
 
 func TestCapturePaneContent(t *testing.T) {
+	t.Parallel()
 	cmdExec := cmd_test.MockCmdExec{
 		RunFunc: func(cmd *exec.Cmd) error { return nil },
 		OutputFunc: func(cmd *exec.Cmd) ([]byte, error) {
@@ -28,6 +29,7 @@ func TestCapturePaneContent(t *testing.T) {
 }
 
 func TestCapturePaneContent_UsesCorrectTmuxArgs(t *testing.T) {
+	t.Parallel()
 	var capturedCmds []string
 	cmdExec := cmd_test.MockCmdExec{
 		RunFunc: func(cmd *exec.Cmd) error { return nil },
@@ -49,6 +51,7 @@ func TestCapturePaneContent_UsesCorrectTmuxArgs(t *testing.T) {
 }
 
 func TestCapturePaneContentWithOptions(t *testing.T) {
+	t.Parallel()
 	var capturedCmds []string
 	cmdExec := cmd_test.MockCmdExec{
 		RunFunc: func(cmd *exec.Cmd) error { return nil },
@@ -70,6 +73,7 @@ func TestCapturePaneContentWithOptions(t *testing.T) {
 }
 
 func TestGetPanePID(t *testing.T) {
+	t.Parallel()
 	cmdExec := cmd_test.MockCmdExec{
 		RunFunc: func(cmd *exec.Cmd) error { return nil },
 		OutputFunc: func(cmd *exec.Cmd) ([]byte, error) {
@@ -87,6 +91,7 @@ func TestGetPanePID(t *testing.T) {
 }
 
 func TestGetPanePID_UsesCorrectFormat(t *testing.T) {
+	t.Parallel()
 	var capturedCmds []string
 	cmdExec := cmd_test.MockCmdExec{
 		RunFunc: func(cmd *exec.Cmd) error { return nil },
@@ -106,6 +111,7 @@ func TestGetPanePID_UsesCorrectFormat(t *testing.T) {
 }
 
 func TestGetSanitizedName(t *testing.T) {
+	t.Parallel()
 	s := NewTmuxSessionWithDeps("my-session", "opencode", false, &MockPtyFactory{}, cmd_test.MockCmdExec{
 		RunFunc:    func(cmd *exec.Cmd) error { return nil },
 		OutputFunc: func(cmd *exec.Cmd) ([]byte, error) { return nil, nil },
@@ -114,6 +120,7 @@ func TestGetSanitizedName(t *testing.T) {
 }
 
 func TestSendPermissionResponse_DelegatesToClaudeAdapter(t *testing.T) {
+	t.Parallel()
 	var ranCmds []string
 	cmdExec := cmd_test.MockCmdExec{
 		RunFunc: func(cmd *exec.Cmd) error {
@@ -135,6 +142,7 @@ func TestSendPermissionResponse_DelegatesToClaudeAdapter(t *testing.T) {
 }
 
 func TestSendPermissionResponse_UnsupportedProgram(t *testing.T) {
+	t.Parallel()
 	s := NewTmuxSessionWithDeps("unsupported-perm", "vim", false, &MockPtyFactory{}, cmd_test.MockCmdExec{
 		RunFunc:    func(cmd *exec.Cmd) error { return nil },
 		OutputFunc: func(cmd *exec.Cmd) ([]byte, error) { return nil, nil },
@@ -145,6 +153,7 @@ func TestSendPermissionResponse_UnsupportedProgram(t *testing.T) {
 }
 
 func TestHasUpdated_ContentChange(t *testing.T) {
+	t.Parallel()
 	callCount := 0
 	cmdExec := cmd_test.MockCmdExec{
 		RunFunc: func(cmd *exec.Cmd) error { return nil },
@@ -171,6 +180,7 @@ func TestHasUpdated_ContentChange(t *testing.T) {
 }
 
 func TestHasUpdated_StableContentDebounces(t *testing.T) {
+	t.Parallel()
 	cmdExec := cmd_test.MockCmdExec{
 		RunFunc: func(cmd *exec.Cmd) error { return nil },
 		OutputFunc: func(cmd *exec.Cmd) ([]byte, error) {
@@ -195,6 +205,7 @@ func TestHasUpdated_StableContentDebounces(t *testing.T) {
 }
 
 func TestHasUpdatedWithContent_ReturnsContent(t *testing.T) {
+	t.Parallel()
 	cmdExec := cmd_test.MockCmdExec{
 		RunFunc: func(cmd *exec.Cmd) error { return nil },
 		OutputFunc: func(cmd *exec.Cmd) ([]byte, error) {
@@ -210,6 +221,7 @@ func TestHasUpdatedWithContent_ReturnsContent(t *testing.T) {
 }
 
 func TestHasUpdatedWithContent_DetectsOpenCodePrompt(t *testing.T) {
+	t.Parallel()
 	cmdExec := cmd_test.MockCmdExec{
 		RunFunc: func(cmd *exec.Cmd) error { return nil },
 		OutputFunc: func(cmd *exec.Cmd) ([]byte, error) {
@@ -225,6 +237,7 @@ func TestHasUpdatedWithContent_DetectsOpenCodePrompt(t *testing.T) {
 }
 
 func TestHasUpdatedWithContent_NoPromptWhileRunning(t *testing.T) {
+	t.Parallel()
 	cmdExec := cmd_test.MockCmdExec{
 		RunFunc: func(cmd *exec.Cmd) error { return nil },
 		OutputFunc: func(cmd *exec.Cmd) ([]byte, error) {

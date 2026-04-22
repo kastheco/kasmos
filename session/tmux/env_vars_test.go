@@ -4,7 +4,6 @@ import (
 	"fmt"
 	cmd2 "github.com/kastheco/kasmos/cmd"
 	"github.com/kastheco/kasmos/cmd/cmd_test"
-	"github.com/kastheco/kasmos/log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,8 +15,7 @@ import (
 )
 
 func TestStartTmuxSession_WithTaskEnvVars(t *testing.T) {
-	log.Initialize(false)
-	defer log.Close()
+	t.Parallel()
 
 	ptyFactory := NewMockPtyFactory(t)
 	created := false
@@ -54,8 +52,7 @@ func TestStartTmuxSession_WithTaskEnvVars(t *testing.T) {
 }
 
 func TestStartTmuxSession_WithoutTaskEnvVars(t *testing.T) {
-	log.Initialize(false)
-	defer log.Close()
+	t.Parallel()
 
 	ptyFactory := NewMockPtyFactory(t)
 	created := false
@@ -90,8 +87,7 @@ func TestStartTmuxSession_WithoutTaskEnvVars(t *testing.T) {
 }
 
 func TestStartTmuxSession_WithProjectEnvVar(t *testing.T) {
-	log.Initialize(false)
-	defer log.Close()
+	t.Parallel()
 
 	ptyFactory := NewMockPtyFactory(t)
 	created := false
@@ -129,8 +125,7 @@ func TestStartTmuxSession_WithProjectEnvVar(t *testing.T) {
 }
 
 func TestStartTmuxSession_WithoutProject_NoProjectEnvVar(t *testing.T) {
-	log.Initialize(false)
-	defer log.Close()
+	t.Parallel()
 
 	ptyFactory := NewMockPtyFactory(t)
 	created := false
@@ -164,8 +159,7 @@ func TestStartTmuxSession_WithoutProject_NoProjectEnvVar(t *testing.T) {
 }
 
 func TestStartTmuxSession_OpenCodeInjectsProjectConfigEnv(t *testing.T) {
-	log.Initialize(false)
-	defer log.Close()
+	t.Parallel()
 
 	ptyFactory := NewMockPtyFactory(t)
 	created := false

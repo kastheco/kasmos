@@ -58,6 +58,7 @@ func NewMockPtyFactory(t *testing.T) *MockPtyFactory {
 }
 
 func TestSanitizeName(t *testing.T) {
+	t.Parallel()
 	session := NewTmuxSession("asdf", "program", false)
 	require.Equal(t, TmuxPrefix+"asdf", session.sanitizedName)
 
@@ -66,6 +67,7 @@ func TestSanitizeName(t *testing.T) {
 }
 
 func TestStartTmuxSession(t *testing.T) {
+	t.Parallel()
 	ptyFactory := NewMockPtyFactory(t)
 
 	created := false
@@ -109,6 +111,7 @@ func TestStartTmuxSession(t *testing.T) {
 }
 
 func TestStartTmuxSessionWithSkipPermissions(t *testing.T) {
+	t.Parallel()
 	ptyFactory := NewMockPtyFactory(t)
 
 	created := false
@@ -155,7 +158,9 @@ func recordKilledSessions(killedSessions *[]string) func(cmd *exec.Cmd) error {
 }
 
 func TestCleanupSessions(t *testing.T) {
+	t.Parallel()
 	t.Run("kills kas and legacy klique/hivemind sessions", func(t *testing.T) {
+		t.Parallel()
 		var killedSessions []string
 		cmdExec := cmd_test.MockCmdExec{
 			RunFunc: recordKilledSessions(&killedSessions),
@@ -179,6 +184,7 @@ func TestCleanupSessions(t *testing.T) {
 	})
 
 	t.Run("leaves unrelated sessions alone", func(t *testing.T) {
+		t.Parallel()
 		var killedSessions []string
 		cmdExec := cmd_test.MockCmdExec{
 			RunFunc: recordKilledSessions(&killedSessions),
@@ -195,6 +201,7 @@ func TestCleanupSessions(t *testing.T) {
 }
 
 func TestStartTmuxSessionSkipPermissionsNotAppliedToAider(t *testing.T) {
+	t.Parallel()
 	ptyFactory := NewMockPtyFactory(t)
 
 	created := false
@@ -226,6 +233,7 @@ func TestStartTmuxSessionSkipPermissionsNotAppliedToAider(t *testing.T) {
 }
 
 func TestStartTmuxSessionOpenCode(t *testing.T) {
+	t.Parallel()
 	ptyFactory := NewMockPtyFactory(t)
 
 	created := false
@@ -265,6 +273,7 @@ func TestStartTmuxSessionOpenCode(t *testing.T) {
 }
 
 func TestSendKeys(t *testing.T) {
+	t.Parallel()
 	ptyFactory := NewMockPtyFactory(t)
 
 	var ranCmds []string
@@ -288,6 +297,7 @@ func TestSendKeys(t *testing.T) {
 }
 
 func TestTapEnter(t *testing.T) {
+	t.Parallel()
 	ptyFactory := NewMockPtyFactory(t)
 
 	var ranCmds []string
@@ -310,6 +320,7 @@ func TestTapEnter(t *testing.T) {
 }
 
 func TestStartTmuxSessionInjectsAgentFlag(t *testing.T) {
+	t.Parallel()
 	ptyFactory := NewMockPtyFactory(t)
 
 	created := false
@@ -343,6 +354,7 @@ func TestStartTmuxSessionInjectsAgentFlag(t *testing.T) {
 }
 
 func TestTapDAndEnter(t *testing.T) {
+	t.Parallel()
 	ptyFactory := NewMockPtyFactory(t)
 
 	var ranCmds []string
@@ -365,6 +377,7 @@ func TestTapDAndEnter(t *testing.T) {
 }
 
 func TestSetInitialPrompt(t *testing.T) {
+	t.Parallel()
 	ptyFactory := NewMockPtyFactory(t)
 	cmdExec := cmd_test.MockCmdExec{
 		RunFunc:    func(cmd *exec.Cmd) error { return nil },
@@ -379,6 +392,7 @@ func TestSetInitialPrompt(t *testing.T) {
 }
 
 func TestStartOpenCodeWithInitialPrompt(t *testing.T) {
+	t.Parallel()
 	ptyFactory := NewMockPtyFactory(t)
 
 	created := false
@@ -413,6 +427,7 @@ func TestStartOpenCodeWithInitialPrompt(t *testing.T) {
 }
 
 func TestStartClaudeWithInitialPrompt(t *testing.T) {
+	t.Parallel()
 	ptyFactory := NewMockPtyFactory(t)
 
 	created := false
@@ -444,6 +459,7 @@ func TestStartClaudeWithInitialPrompt(t *testing.T) {
 }
 
 func TestStartResolvesExecutablePath(t *testing.T) {
+	// serial: overrides resolveProgramPath global
 	origResolve := resolveProgramPath
 	defer func() { resolveProgramPath = origResolve }()
 	resolveProgramPath = func(name string) (string, error) {
@@ -480,6 +496,7 @@ func TestStartResolvesExecutablePath(t *testing.T) {
 }
 
 func TestStartClaudeWithNoFlickerEnabled(t *testing.T) {
+	t.Parallel()
 	ptyFactory := NewMockPtyFactory(t)
 
 	created := false
@@ -509,6 +526,7 @@ func TestStartClaudeWithNoFlickerEnabled(t *testing.T) {
 }
 
 func TestStartClaudeWithLongPromptUsesFile(t *testing.T) {
+	t.Parallel()
 	ptyFactory := NewMockPtyFactory(t)
 
 	created := false
@@ -556,6 +574,7 @@ func TestStartClaudeWithLongPromptUsesFile(t *testing.T) {
 }
 
 func TestDiscoverOrphans(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name       string
 		tmuxOutput string
@@ -597,7 +616,9 @@ func TestDiscoverOrphans(t *testing.T) {
 	}
 
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			cmdExec := cmd_test.NewMockExecutor()
 			if tt.tmuxErr != nil {
 				cmdExec.OutputFunc = func(cmd *exec.Cmd) ([]byte, error) {
@@ -621,6 +642,7 @@ func TestDiscoverOrphans(t *testing.T) {
 }
 
 func TestDiscoverAll(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name        string
 		tmuxOutput  string
@@ -661,7 +683,9 @@ func TestDiscoverAll(t *testing.T) {
 	}
 
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			cmdExec := cmd_test.NewMockExecutor()
 			if tt.tmuxErr != nil {
 				cmdExec.OutputFunc = func(cmd *exec.Cmd) ([]byte, error) {
@@ -693,6 +717,7 @@ func TestDiscoverAll(t *testing.T) {
 }
 
 func TestCountKasSessions(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name       string
 		tmuxOutput string
@@ -717,7 +742,9 @@ func TestCountKasSessions(t *testing.T) {
 	}
 
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			cmdExec := cmd_test.NewMockExecutor()
 			if tt.tmuxErr != nil {
 				cmdExec.OutputFunc = func(cmd *exec.Cmd) ([]byte, error) {
@@ -736,6 +763,7 @@ func TestCountKasSessions(t *testing.T) {
 }
 
 func TestStartOpenCodeWithLongPromptUsesCommandSubstitution(t *testing.T) {
+	t.Parallel()
 	ptyFactory := NewMockPtyFactory(t)
 
 	created := false
@@ -783,6 +811,7 @@ func TestStartOpenCodeWithLongPromptUsesCommandSubstitution(t *testing.T) {
 }
 
 func TestStartOpenCodeWithPromptContainingSingleQuotes(t *testing.T) {
+	t.Parallel()
 	ptyFactory := NewMockPtyFactory(t)
 
 	created := false

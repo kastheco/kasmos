@@ -12,6 +12,7 @@ import (
 
 // Compile-time assertion: *AttachExecCommand must satisfy tea.ExecCommand.
 func TestAttachExecCommand_ImplementsExecCommand(t *testing.T) {
+	t.Parallel()
 	var _ tea.ExecCommand = (*AttachExecCommand)(nil)
 }
 
@@ -24,6 +25,7 @@ func (s stubAttacher) Attach() (chan struct{}, error) {
 }
 
 func TestAttachExecCommand_RunWaitsForDetach(t *testing.T) {
+	t.Parallel()
 	detachCh := make(chan struct{})
 	var called atomic.Bool
 
@@ -48,6 +50,7 @@ func TestAttachExecCommand_RunWaitsForDetach(t *testing.T) {
 }
 
 func TestAttachExecCommand_RunReturnsAttachError(t *testing.T) {
+	t.Parallel()
 	want := errors.New("attach failed")
 	cmd := NewAttachExecCommand(stubAttacher{attach: func() (chan struct{}, error) {
 		return nil, want
@@ -59,6 +62,7 @@ func TestAttachExecCommand_RunReturnsAttachError(t *testing.T) {
 }
 
 func TestAttachExecCommand_SetStdinStdoutStderr_NoPanic(t *testing.T) {
+	t.Parallel()
 	cmd := NewAttachExecCommand(stubAttacher{attach: func() (chan struct{}, error) {
 		return make(chan struct{}), nil
 	}})

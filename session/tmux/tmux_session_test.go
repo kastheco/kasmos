@@ -14,16 +14,19 @@ import (
 )
 
 func TestToKasTmuxName(t *testing.T) {
+	t.Parallel()
 	assert.Equal(t, "kas_asdf", toKasTmuxName("asdf"))
 	assert.Equal(t, "kas_asdf__asdf", toKasTmuxName("a sd f . . asdf"))
 }
 
 func TestNewTmuxSession_SanitizesName(t *testing.T) {
+	t.Parallel()
 	s := NewTmuxSession("my.session", "claude", false)
 	assert.Equal(t, "kas_my_session", s.GetSanitizedName())
 }
 
 func TestSetAgentType(t *testing.T) {
+	t.Parallel()
 	s := NewTmuxSession("test", "opencode", false)
 	s.SetAgentType("  planner  ")
 	// agentType should be trimmed — verified indirectly via Start command construction
@@ -31,6 +34,7 @@ func TestSetAgentType(t *testing.T) {
 }
 
 func TestSetTaskEnv(t *testing.T) {
+	t.Parallel()
 	s := NewTmuxSession("test", "claude", false)
 	s.SetTaskEnv(3, 2, 4)
 	assert.Equal(t, 3, s.taskNumber)
@@ -39,6 +43,7 @@ func TestSetTaskEnv(t *testing.T) {
 }
 
 func TestSetProject(t *testing.T) {
+	t.Parallel()
 	s := NewTmuxSession("test", "claude", false)
 	assert.Empty(t, s.project, "project should be empty by default")
 	s.SetProject("myrepo")
@@ -46,6 +51,7 @@ func TestSetProject(t *testing.T) {
 }
 
 func TestNewReset_PreservesDeps(t *testing.T) {
+	t.Parallel()
 	pty := NewMockPtyFactory(t)
 	exec := cmd_test.NewMockExecutor()
 	s := NewTmuxSessionWithDeps("orig", "claude", false, pty, exec)
@@ -54,15 +60,18 @@ func TestNewReset_PreservesDeps(t *testing.T) {
 }
 
 func TestNewTmuxSessionFromExisting(t *testing.T) {
+	t.Parallel()
 	s := NewTmuxSessionFromExisting("kas_orphan", "claude", false)
 	assert.Equal(t, "kas_orphan", s.GetSanitizedName())
 }
 
 func TestToKasTmuxNamePublic(t *testing.T) {
+	t.Parallel()
 	assert.Equal(t, "kas_foo", ToKasTmuxNamePublic("foo"))
 }
 
 func TestCleanupSessions_KillsKasAndLegacy(t *testing.T) {
+	t.Parallel()
 	var killed []string
 	cmdExec := cmd_test.MockCmdExec{
 		RunFunc: func(cmd *exec.Cmd) error {
@@ -92,6 +101,7 @@ func TestCleanupSessions_KillsKasAndLegacy(t *testing.T) {
 }
 
 func TestClose_IgnoresMissingTmuxSession(t *testing.T) {
+	t.Parallel()
 	missingSessionErr := func(t *testing.T) error {
 		t.Helper()
 		cmd := exec.Command("sh", "-c", "exit 1")
@@ -122,6 +132,7 @@ func TestClose_IgnoresMissingTmuxSession(t *testing.T) {
 }
 
 func TestDiscoverOrphans_FindsUntracked(t *testing.T) {
+	t.Parallel()
 	cmdExec := cmd_test.NewMockExecutor()
 	cmdExec.OutputFunc = func(cmd *exec.Cmd) ([]byte, error) {
 		return []byte("kas_foo|1740000000|1|0|80|24\nkas_orphan|1740000000|1|0|80|24\n"), nil
@@ -133,6 +144,7 @@ func TestDiscoverOrphans_FindsUntracked(t *testing.T) {
 }
 
 func TestDiscoverAll_MarksManaged(t *testing.T) {
+	t.Parallel()
 	cmdExec := cmd_test.NewMockExecutor()
 	cmdExec.OutputFunc = func(cmd *exec.Cmd) ([]byte, error) {
 		return []byte("kas_foo|1740000000|1|0|80|24\nkas_bar|1740000000|1|0|80|24\n"), nil
@@ -150,6 +162,7 @@ func TestDiscoverAll_MarksManaged(t *testing.T) {
 }
 
 func TestCountKasSessions_Simple(t *testing.T) {
+	t.Parallel()
 	cmdExec := cmd_test.NewMockExecutor()
 	cmdExec.OutputFunc = func(cmd *exec.Cmd) ([]byte, error) {
 		return []byte("kas_foo:1 windows\nkas_bar:1 windows\nother:1 windows\n"), nil
@@ -287,6 +300,7 @@ func TestStart_DisablesMouseOnInnerSession(t *testing.T) {
 }
 
 func TestRestore_DisablesMouseOnRestoredSession(t *testing.T) {
+	t.Parallel()
 	ptyFactory := NewMockPtyFactory(t)
 	var ranCmds []string
 	cmdExec := cmd_test.MockCmdExec{
@@ -405,7 +419,9 @@ func TestStart_WithInitialPrompt_OpenCode(t *testing.T) {
 }
 
 func TestHasAttachedClients(t *testing.T) {
+	t.Parallel()
 	t.Run("attached", func(t *testing.T) {
+		t.Parallel()
 		var capturedCmd *exec.Cmd
 		cmdExec := cmd_test.NewMockExecutor()
 		cmdExec.OutputFunc = func(cmd *exec.Cmd) ([]byte, error) {
@@ -422,6 +438,7 @@ func TestHasAttachedClients(t *testing.T) {
 	})
 
 	t.Run("detached", func(t *testing.T) {
+		t.Parallel()
 		cmdExec := cmd_test.NewMockExecutor()
 		cmdExec.OutputFunc = func(cmd *exec.Cmd) ([]byte, error) {
 			return []byte("0\n"), nil
@@ -431,6 +448,7 @@ func TestHasAttachedClients(t *testing.T) {
 	})
 
 	t.Run("tmux error returns true to defer cleanup", func(t *testing.T) {
+		t.Parallel()
 		cmdExec := cmd_test.NewMockExecutor()
 		cmdExec.OutputFunc = func(cmd *exec.Cmd) ([]byte, error) {
 			return nil, fmt.Errorf("tmux unavailable")
@@ -443,6 +461,7 @@ func TestHasAttachedClients(t *testing.T) {
 }
 
 func TestParseClientCount(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		input    string
 		expected int
@@ -454,7 +473,9 @@ func TestParseClientCount(t *testing.T) {
 		{"-1", 0},
 	}
 	for _, tc := range cases {
+		tc := tc
 		t.Run(tc.input, func(t *testing.T) {
+			t.Parallel()
 			assert.Equal(t, tc.expected, parseClientCount(tc.input))
 		})
 	}
