@@ -395,6 +395,8 @@ func TestSpawnTaskAgent_PlanUsesDaemonWhenRepoManaged(t *testing.T) {
 }
 
 func TestWaitForDaemonPlannerInstance_SkipsExitedPlaceholder(t *testing.T) {
+	// serial: mutates app timing globals
+	withFastAppTimings(t)
 	oldRestore := restoreInstanceFromData
 	t.Cleanup(func() {
 		restoreInstanceFromData = oldRestore
@@ -439,6 +441,8 @@ func TestWaitForDaemonPlannerInstance_SkipsExitedPlaceholder(t *testing.T) {
 }
 
 func TestWaitForDaemonPlannerInstance_ToleratesSlowStartup(t *testing.T) {
+	// serial: mutates app timing globals
+	withFastAppTimings(t)
 	oldRestore := restoreInstanceFromData
 	t.Cleanup(func() {
 		restoreInstanceFromData = oldRestore
