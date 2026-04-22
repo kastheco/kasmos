@@ -123,6 +123,7 @@ merging.
 
 ## ci
 
-the build matrix runs `go build ./...` and `go vet ./...`. the test suite runs
-separately via `make test-full` so the suite cost is paid once, not once per
-matrix leg.
+ci runs one `test` job (`go test ./...`) and four `build` jobs (linux/darwin ×
+amd64/arm64). the build jobs declare `needs: test`, so the suite cost is paid
+once, not once per matrix leg. the build jobs only run `go build`; they do not
+re-run tests.

@@ -40,11 +40,11 @@ hr
 if ! command -v jq >/dev/null 2>&1; then
     printf 'warning: jq not found — skipping per-package table\n'
 else
-    go test -json -count=1 ./... 2>/dev/null \
+    { printf "%-10s  %s\n%-10s  %s\n" "elapsed" "package" "-------" "-------";
+      go test -json -count=1 ./... 2>/dev/null \
         | jq -r 'select(.Action=="pass" and .Package and (.Test|not)) | [.Elapsed, .Package] | @tsv' \
         | sort -rn \
-        | awk 'BEGIN{printf "%-10s  %s\n","elapsed","package"; printf "%-10s  %s\n","-------","-------"}
-               {printf "%-10ss  %s\n",$1,$2}'
+        | while IFS=$'\t' read -r elapsed pkg; do printf "%-10ss  %s\n" "$elapsed" "$pkg"; done; }
 fi
 
 hr
