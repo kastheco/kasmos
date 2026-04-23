@@ -1304,6 +1304,12 @@ func (m *home) instanceChanged() tea.Cmd {
 	m.updateInfoPane()
 	// Update menu with current instance.
 	m.menu.SetInstance(selected)
+	if m.shouldAttachPreviewTerminal(selected) &&
+		(m.previewTerminal == nil || m.previewTerminalInstance != previewIdentityKey(selected)) {
+		m.tabbedWindow.SetConnectingState()
+	} else if err := m.tabbedWindow.UpdatePreview(selected); err != nil {
+		log.ErrorLog.Printf("preview update error: %v", err)
+	}
 
 	// Collect async commands.
 	var cmds []tea.Cmd

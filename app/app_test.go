@@ -2565,6 +2565,46 @@ func TestInstanceChanged_AutoRequestsPreview(t *testing.T) {
 	assert.NotNil(t, cmd, "instanceChanged should auto-attach preview for a running instance")
 }
 
+func TestInstanceChanged_RefreshesPreviewWhenSelectionMovesBetweenInstances(t *testing.T) {
+	h := newTestHome()
+	h.tabbedWindow.SetSize(80, 20)
+
+	instA, err := session.NewInstance(session.InstanceOptions{
+		Title:         "instance-A",
+		Path:          t.TempDir(),
+		Program:       "codex",
+		ExecutionMode: session.ExecutionModeSDK,
+	})
+	require.NoError(t, err)
+	instA.CachedContentSet = true
+	instA.CachedContent = "preview from instance A"
+
+	instB, err := session.NewInstance(session.InstanceOptions{
+		Title:         "instance-B",
+		Path:          t.TempDir(),
+		Program:       "codex",
+		ExecutionMode: session.ExecutionModeSDK,
+	})
+	require.NoError(t, err)
+	instB.CachedContentSet = true
+	instB.CachedContent = "preview from instance B"
+
+	h.nav.AddInstance(instA)
+	h.nav.AddInstance(instB)
+
+	require.True(t, h.nav.SelectInstance(instA))
+	require.NoError(t, h.tabbedWindow.UpdatePreview(instA))
+	require.Contains(t, h.tabbedWindow.String(), "preview from instance A")
+
+	require.True(t, h.nav.SelectInstance(instB))
+	cmd := h.instanceChanged()
+
+	require.Nil(t, cmd, "sdk preview refresh should not need an async terminal attach")
+	rendered := h.tabbedWindow.String()
+	assert.Contains(t, rendered, "preview from instance B")
+	assert.NotContains(t, rendered, "preview from instance A")
+}
+
 func TestInit_PrimesPreviewForSelectedInstance(t *testing.T) {
 	h := newTestHome()
 	inst, err := session.NewInstance(session.InstanceOptions{
