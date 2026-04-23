@@ -572,6 +572,14 @@ func summariseToolArgs(raw string) string {
 }
 
 func shortenCommandDisplay(cmd string) string {
+	cmd = strings.TrimSpace(cmd)
+	for range 3 {
+		inner, ok := unwrapShellCommandWrapper(cmd)
+		if !ok {
+			break
+		}
+		cmd = inner
+	}
 	fields := strings.Fields(cmd)
 	if len(fields) == 0 {
 		return cmd
@@ -581,6 +589,83 @@ func shortenCommandDisplay(cmd string) string {
 		fields[0] = filepath.Base(fields[0])
 	}
 	return strings.Join(fields, " ")
+}
+
+type shellFieldSpan struct {
+	Value string
+	Start int
+}
+
+func unwrapShellCommandWrapper(cmd string) (string, bool) {
+	fields := shellFieldSpans(cmd)
+	if len(fields) < 3 {
+		return "", false
+	}
+	shell := filepath.Base(fields[0].Value)
+	if shell != "zsh" && shell != "bash" && shell != "sh" {
+		return "", false
+	}
+	if fields[1].Value != "-lc" && fields[1].Value != "-c" {
+		return "", false
+	}
+	if len(fields) == 3 {
+		return strings.TrimSpace(fields[2].Value), true
+	}
+	return strings.TrimSpace(cmd[fields[2].Start:]), true
+}
+
+func shellFieldSpans(s string) []shellFieldSpan {
+	var fields []shellFieldSpan
+	for i := 0; i < len(s); {
+		for i < len(s) && s[i] <= ' ' {
+			i++
+		}
+		if i >= len(s) {
+			break
+		}
+		start := i
+		var b strings.Builder
+		var quote byte
+		escaped := false
+		for i < len(s) {
+			ch := s[i]
+			if escaped {
+				b.WriteByte(ch)
+				escaped = false
+				i++
+				continue
+			}
+			if ch == '\\' && quote != '\'' {
+				escaped = true
+				i++
+				continue
+			}
+			if quote != 0 {
+				if ch == quote {
+					quote = 0
+				} else {
+					b.WriteByte(ch)
+				}
+				i++
+				continue
+			}
+			if ch == '\'' || ch == '"' {
+				quote = ch
+				i++
+				continue
+			}
+			if ch <= ' ' {
+				break
+			}
+			b.WriteByte(ch)
+			i++
+		}
+		fields = append(fields, shellFieldSpan{Value: b.String(), Start: start})
+		for i < len(s) && s[i] <= ' ' {
+			i++
+		}
+	}
+	return fields
 }
 
 // formatToolResultLine renders a short, single-line summary of a tool

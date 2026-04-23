@@ -166,6 +166,34 @@ func TestRenderToolCallLine(t *testing.T) {
 	}
 }
 
+func TestRenderToolCallLineWithStatus_RightAlignsMarker(t *testing.T) {
+	plain := lipgloss.NewStyle()
+
+	got := RenderToolCallLineWithStatus("• bash", "go test ./...", "✓", 24, plain, plain, plain)
+
+	assert.Equal(t, "• bash go test ./...   ✓", got)
+	assert.Equal(t, 24, lipgloss.Width(got))
+}
+
+func TestToolCallSuccessMarker(t *testing.T) {
+	rows := []PresentationRow{
+		{Kind: RowTool, Text: "• bash go test", ToolName: "commandExecution"},
+		{Kind: RowToolDiff, ToolName: "commandExecution"},
+		{Kind: RowResult, Text: "→ tests passed", ToolName: "commandExecution"},
+	}
+
+	assert.Equal(t, "✓", ToolCallSuccessMarker(rows, 0))
+}
+
+func TestToolCallSuccessMarker_ErrorResult(t *testing.T) {
+	rows := []PresentationRow{
+		{Kind: RowTool, Text: "• bash go test", ToolName: "commandExecution"},
+		{Kind: RowResult, Text: "✗ exit=1", ToolName: "commandExecution", IsError: true},
+	}
+
+	assert.Equal(t, "", ToolCallSuccessMarker(rows, 0))
+}
+
 func TestRenderPromptLine(t *testing.T) {
 	plain := lipgloss.NewStyle()
 	bold := lipgloss.NewStyle().Bold(true)

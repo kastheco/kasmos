@@ -649,13 +649,21 @@ func renderSDKTurn(turn *sdk.PresentationTurn, width int) []string {
 	previewStyle := lipgloss.NewStyle().Foreground(ColorSubtle)
 
 	prevKind := sdk.PresentationRowKind("")
-	for _, row := range turn.Rows {
+	for i, row := range turn.Rows {
 		switch row.Kind {
 		case sdk.RowUser:
 			rows = append(rows, sdk.RenderPromptLineWithTimestamp(">", row.Text, row.Timestamp, width, userPrefixStyle, userTextStyle, timestampStyle))
 		case sdk.RowTool:
 			head, args := sdk.SplitToolCallText(row.Text, row.ToolName)
-			line := sdk.RenderToolCallLine(head, args, toolStyle, toolArgStyle)
+			line := sdk.RenderToolCallLineWithStatus(
+				head,
+				args,
+				sdk.ToolCallSuccessMarker(turn.Rows, i),
+				width-lipgloss.Width(sdk.ToolCallIndent),
+				toolStyle,
+				toolArgStyle,
+				toolStyle,
+			)
 			if line != "" {
 				rows = append(rows, sdk.ToolCallIndent+line)
 			}
@@ -687,6 +695,9 @@ func renderSDKTurn(turn *sdk.PresentationTurn, width int) []string {
 				}
 			}
 		case sdk.RowResult:
+			if sdk.SuppressInlineSuccessResult(turn.Rows, i) {
+				break
+			}
 			if row.IsError {
 				rows = append(rows, sdk.ToolChildIndent+resultErrStyle.Render(row.Text))
 			} else {

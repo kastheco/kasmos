@@ -53,6 +53,83 @@ func RenderToolCallLine(head, args string, headStyle, argsStyle lipgloss.Style) 
 	return headStyle.Render(head) + " " + argsStyle.Render(args)
 }
 
+// RenderToolCallLineWithStatus renders a tool-call line with an optional status
+// marker aligned to the right edge when width allows.
+func RenderToolCallLineWithStatus(head, args, status string, width int, headStyle, argsStyle, statusStyle lipgloss.Style) string {
+	line := RenderToolCallLine(head, args, headStyle, argsStyle)
+	status = strings.TrimSpace(status)
+	if line == "" || status == "" {
+		return line
+	}
+
+	styledStatus := statusStyle.Render(status)
+	if width <= 0 {
+		return line + " " + styledStatus
+	}
+
+	lineWidth := lipgloss.Width(line)
+	statusWidth := lipgloss.Width(status)
+	if lineWidth+1+statusWidth <= width {
+		return line + strings.Repeat(" ", width-lineWidth-statusWidth) + styledStatus
+	}
+	return line + " " + styledStatus
+}
+
+// ToolCallSuccessMarker returns the marker to display on a RowTool when the
+// following result row shows the tool completed successfully.
+func ToolCallSuccessMarker(rows []PresentationRow, toolIdx int) string {
+	if toolIdx < 0 || toolIdx >= len(rows) || rows[toolIdx].Kind != RowTool {
+		return ""
+	}
+	toolName := strings.TrimSpace(rows[toolIdx].ToolName)
+	for i := toolIdx + 1; i < len(rows); i++ {
+		row := rows[i]
+		switch row.Kind {
+		case RowTool, RowResponse, RowProse, RowUser:
+			return ""
+		case RowResult:
+			if row.IsError {
+				return ""
+			}
+			if toolName != "" && strings.TrimSpace(row.ToolName) != "" && !strings.EqualFold(toolName, strings.TrimSpace(row.ToolName)) {
+				return ""
+			}
+			return "✓"
+		}
+	}
+	return ""
+}
+
+// SuppressInlineSuccessResult reports whether a successful result row is fully
+// represented by the right-aligned status marker on its tool-call row.
+func SuppressInlineSuccessResult(rows []PresentationRow, resultIdx int) bool {
+	if resultIdx < 0 || resultIdx >= len(rows) {
+		return false
+	}
+	row := rows[resultIdx]
+	if row.Kind != RowResult || row.IsError {
+		return false
+	}
+	hasInlineMarker := false
+scanPrevious:
+	for i := resultIdx - 1; i >= 0; i-- {
+		switch rows[i].Kind {
+		case RowTool:
+			hasInlineMarker = ToolCallSuccessMarker(rows, i) != ""
+			break scanPrevious
+		case RowResponse, RowProse, RowUser:
+			break scanPrevious
+		}
+	}
+	if !hasInlineMarker {
+		return false
+	}
+	if row.ExitCode != nil && *row.ExitCode == 0 {
+		return strings.TrimSpace(row.Output) == ""
+	}
+	return strings.TrimSpace(row.Text) == "✓"
+}
+
 // RenderPromptLine renders a one-token prefix followed by a content segment.
 // It is used for quiet transcript rows like user prompts where the prefix
 // should carry a stronger accent than the body text.

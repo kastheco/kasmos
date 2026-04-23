@@ -390,6 +390,20 @@ func TestRenderer_ToolCall_CommandExecution_SanitizesDisplay(t *testing.T) {
 	assert.NotContains(t, content, "/usr/bin/ls")
 }
 
+func TestRenderer_ToolCall_CommandExecution_UnwrapsZshLCDisplay(t *testing.T) {
+	r := NewRenderer()
+	r.AddEvent(Event{
+		Kind:      EventToolCall,
+		ToolName:  "commandExecution",
+		ToolInput: `{"command":"zsh -lc \"rg -n 'needle' session/sdk\""}`,
+		Timestamp: time.Now(),
+	})
+
+	content := r.Capture()
+	assert.Contains(t, content, "• rg -n 'needle' session/sdk")
+	assert.NotContains(t, content, "zsh -lc")
+}
+
 func TestRenderer_CapturePresentation_ToolResult_IsError(t *testing.T) {
 	r := NewRenderer()
 	r.AddEvent(Event{Kind: EventTurnStarted, TurnID: "t1"})

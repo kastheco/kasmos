@@ -117,13 +117,21 @@ func renderPresentationTurn(turn *PresentationTurn, width int) []string {
 	previewStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorSubtle))
 
 	prevKind := PresentationRowKind("")
-	for _, row := range turn.Rows {
+	for i, row := range turn.Rows {
 		switch row.Kind {
 		case RowUser:
 			rows = append(rows, RenderPromptLineWithTimestamp(">", row.Text, row.Timestamp, width, userPrefixStyle, userTextStyle, timestampStyle))
 		case RowTool:
 			head, args := SplitToolCallText(row.Text, row.ToolName)
-			line := RenderToolCallLine(head, args, toolStyle, toolArgStyle)
+			line := RenderToolCallLineWithStatus(
+				head,
+				args,
+				ToolCallSuccessMarker(turn.Rows, i),
+				width-lipgloss.Width(ToolCallIndent),
+				toolStyle,
+				toolArgStyle,
+				toolStyle,
+			)
 			if line != "" {
 				rows = append(rows, ToolCallIndent+line)
 			}
@@ -155,27 +163,33 @@ func renderPresentationTurn(turn *PresentationTurn, width int) []string {
 				}
 			}
 		case RowResult:
+			if SuppressInlineSuccessResult(turn.Rows, i) {
+				break
+			}
 			if row.ExitCode != nil {
 				// Structured commandExecution result: render coloured glyph + output.
 				var markerStyle, outputStyle lipgloss.Style
 				var glyph, codeSegment string
 				output := normalizeCommandResultOutput(row.Output)
 				if *row.ExitCode == 0 {
-					markerStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorPine))
 					outputStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorFoam))
-					glyph = "✓"
-					codeSegment = ""
 				} else {
 					markerStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorLove))
 					outputStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorLove))
 					glyph = "✗"
 					codeSegment = " " + strconv.Itoa(*row.ExitCode)
 				}
-				rendered := ToolChildIndent + markerStyle.Render(glyph+codeSegment)
-				if output != "" {
-					rendered += " " + outputStyle.Render(output)
+				if *row.ExitCode == 0 {
+					if output != "" {
+						rows = append(rows, ToolChildIndent+outputStyle.Render(output))
+					}
+				} else {
+					rendered := ToolChildIndent + markerStyle.Render(glyph+codeSegment)
+					if output != "" {
+						rendered += " " + outputStyle.Render(output)
+					}
+					rows = append(rows, rendered)
 				}
-				rows = append(rows, rendered)
 			} else if row.IsError {
 				rows = append(rows, ToolChildIndent+resultErrStyle.Render(row.Text))
 			} else {

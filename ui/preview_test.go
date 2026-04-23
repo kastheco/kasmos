@@ -676,6 +676,8 @@ func TestPreviewPane_SDKPresentation_RendersTurnHierarchy(t *testing.T) {
 		"prose row must be rendered in ColorText")
 
 	plain := stripPreviewANSI(rendered)
+	require.Regexp(t, `(?m)^  • read_file main\.go\s+✓$`, plain,
+		"successful tool marker must be right-aligned on the tool row")
 	require.NotContains(t, plain, "response",
 		"RowResponse must not emit a visible label")
 	require.Regexp(t, `(?s)42 lines\s+─{8,}\s+assistant text`, plain,

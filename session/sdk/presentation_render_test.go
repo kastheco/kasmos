@@ -99,6 +99,8 @@ func TestRenderPresentation_ToolLineHighlightAndIndent(t *testing.T) {
 		" " +
 		lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorGold)).Render("main.go")
 	require.Contains(t, result, expectedTool, "tool row must indent and highlight head vs args")
+	require.Regexp(t, `(?m)^  • Edit main\.go\s+✓$`, stripANSI(result),
+		"successful tool marker must be right-aligned on the tool row")
 
 	expectedResult := ToolChildIndent +
 		lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorFoam)).Render("→ ok")
@@ -512,7 +514,7 @@ func TestRenderPresentation_NilPreviewPayload(t *testing.T) {
 }
 
 // TestRenderPresentation_CommandExecutionResult_Success verifies that a RowResult
-// with ExitCode=0 renders as a Pine-styled ✓ glyph followed by Foam-styled output.
+// with ExitCode=0 renders output without duplicating the inline success marker.
 func TestRenderPresentation_CommandExecutionResult_Success(t *testing.T) {
 	now := time.Now()
 	exitCode := 0
@@ -522,6 +524,7 @@ func TestRenderPresentation_CommandExecutionResult_Success(t *testing.T) {
 		StartedAt:   now,
 		CompletedAt: now,
 		Rows: []PresentationRow{
+			{Kind: RowTool, Text: "• go test ./...", ToolName: "commandExecution"},
 			{
 				Kind:     RowResult,
 				Text:     "tests passed",
@@ -535,10 +538,10 @@ func TestRenderPresentation_CommandExecutionResult_Success(t *testing.T) {
 	result := RenderPresentation([]*PresentationTurn{turn}, 80)
 
 	expectedMarker := ToolChildIndent +
-		lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorPine)).Render("✓") +
-		" " +
 		lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorFoam)).Render("tests passed")
-	require.Contains(t, result, expectedMarker, "success exit code must render Pine ✓ + Foam output")
+	require.Contains(t, result, expectedMarker, "success exit code must render Foam output")
+	require.NotRegexp(t, `(?m)^    ✓$`, stripANSI(result),
+		"success marker must not be duplicated on a child row")
 	require.NotContains(t, stripANSI(result), "exit_code", "exit_code= prefix must not appear in rendered output")
 	require.NotContains(t, stripANSI(result), "output=", "output= prefix must not appear in rendered output")
 }
@@ -585,6 +588,7 @@ func TestRenderPresentation_CommandExecutionResult_SuccessNoOutput(t *testing.T)
 		StartedAt:   now,
 		CompletedAt: now,
 		Rows: []PresentationRow{
+			{Kind: RowTool, Text: "• true", ToolName: "commandExecution"},
 			{
 				Kind:     RowResult,
 				Text:     "✓",
@@ -597,9 +601,8 @@ func TestRenderPresentation_CommandExecutionResult_SuccessNoOutput(t *testing.T)
 
 	result := RenderPresentation([]*PresentationTurn{turn}, 80)
 
-	expectedMarker := ToolChildIndent +
-		lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorPine)).Render("✓")
-	require.Contains(t, result, expectedMarker, "success with no output must render just Pine ✓")
+	require.NotRegexp(t, `(?m)^    ✓$`, stripANSI(result),
+		"success with no output must be represented by the inline tool marker only")
 }
 
 func TestRenderPresentation_CommandExecutionResult_NormalizesMultilineOutput(t *testing.T) {
@@ -611,6 +614,7 @@ func TestRenderPresentation_CommandExecutionResult_NormalizesMultilineOutput(t *
 		StartedAt:   now,
 		CompletedAt: now,
 		Rows: []PresentationRow{
+			{Kind: RowTool, Text: "• go test ./...", ToolName: "commandExecution"},
 			{
 				Kind:     RowResult,
 				Text:     "→ tests passed with warnings",
@@ -624,8 +628,6 @@ func TestRenderPresentation_CommandExecutionResult_NormalizesMultilineOutput(t *
 	result := RenderPresentation([]*PresentationTurn{turn}, 80)
 
 	expectedMarker := ToolChildIndent +
-		lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorPine)).Render("✓") +
-		" " +
 		lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorFoam)).Render("tests passed with warnings")
 	require.Contains(t, result, expectedMarker)
 	require.NotContains(t, stripANSI(result), "\n\nwith warnings")
