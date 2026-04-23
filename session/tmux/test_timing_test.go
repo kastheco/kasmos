@@ -22,11 +22,11 @@ func withFastTmuxTimings(t *testing.T) {
 	oldDetachTimeout := detachWaitTimeout
 
 	sessionStartWaitTimeout = 50 * time.Millisecond
-	sessionStartPollInitialDelay = 0
-	sessionStartPollMaxDelay = 0
+	sessionStartPollInitialDelay = time.Millisecond
+	sessionStartPollMaxDelay = time.Millisecond
 	programReadyMaxWaitTime = 50 * time.Millisecond
-	programReadyPollInitialDelay = 0
-	programReadyPollMaxDelay = 0
+	programReadyPollInitialDelay = time.Millisecond
+	programReadyPollMaxDelay = time.Millisecond
 	programReadySessionCheckInterval = time.Millisecond
 	codexGracePeriod = 0
 	permissionResponseSettleDelay = 0

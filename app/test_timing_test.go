@@ -15,8 +15,8 @@ func withFastAppTimings(t *testing.T) {
 
 	plannerInstancePollInterval = time.Millisecond
 	plannerInstanceWaitTimeout = 100 * time.Millisecond
-	quickLaunchTitleSyncInitialDelay = 0
-	quickLaunchTitleSyncMaxDelay = 0
+	quickLaunchTitleSyncInitialDelay = time.Millisecond
+	quickLaunchTitleSyncMaxDelay = time.Millisecond
 	quickLaunchTitleSyncTimeout = 50 * time.Millisecond
 
 	t.Cleanup(func() {
