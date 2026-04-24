@@ -13,7 +13,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/kastheco/kasmos/cmd"
 	"github.com/kastheco/kasmos/config"
 	"github.com/kastheco/kasmos/internal/opencodesession"
 	"github.com/kastheco/kasmos/log"
@@ -55,6 +54,27 @@ var ansiRe = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]`)
 
 var resolveProgramPath = config.ResolveCommandPath
 
+// Executor abstracts command execution for testability without importing the
+// top-level cmd package from this lower-level tmux package.
+type Executor interface {
+	Run(cmd *exec.Cmd) error
+	Output(cmd *exec.Cmd) ([]byte, error)
+}
+
+type execExecutor struct{}
+
+func (execExecutor) Run(cmd *exec.Cmd) error {
+	return cmd.Run()
+}
+
+func (execExecutor) Output(cmd *exec.Cmd) ([]byte, error) {
+	return cmd.Output()
+}
+
+func makeExecutor() Executor {
+	return execExecutor{}
+}
+
 // TmuxSession represents a managed tmux session.
 // It implements the Session interface defined in session.go.
 type TmuxSession struct {
@@ -66,7 +86,7 @@ type TmuxSession struct {
 	// ptyFactory is used to create a PTY for the tmux session.
 	ptyFactory PtyFactory
 	// cmdExec is used to execute commands in the tmux session.
-	cmdExec cmd.Executor
+	cmdExec Executor
 	// skipPermissions appends --permission-mode bypassPermissions to Claude commands.
 	skipPermissions bool
 	// agentType, when non-empty, appends --agent <type> to the program command.
@@ -147,15 +167,15 @@ func ToKasTmuxNamePublic(name string) string {
 
 // NewTmuxSession creates a new TmuxSession with the given name and program.
 func NewTmuxSession(name string, program string, skipPermissions bool) *TmuxSession {
-	return newTmuxSession(name, program, skipPermissions, MakePtyFactory(), cmd.MakeExecutor())
+	return newTmuxSession(name, program, skipPermissions, MakePtyFactory(), makeExecutor())
 }
 
 // NewTmuxSessionWithDeps creates a new TmuxSession with provided dependencies for testing.
-func NewTmuxSessionWithDeps(name string, program string, skipPermissions bool, ptyFactory PtyFactory, cmdExec cmd.Executor) *TmuxSession {
+func NewTmuxSessionWithDeps(name string, program string, skipPermissions bool, ptyFactory PtyFactory, cmdExec Executor) *TmuxSession {
 	return newTmuxSession(name, program, skipPermissions, ptyFactory, cmdExec)
 }
 
-func newTmuxSession(name string, program string, skipPermissions bool, ptyFactory PtyFactory, cmdExec cmd.Executor) *TmuxSession {
+func newTmuxSession(name string, program string, skipPermissions bool, ptyFactory PtyFactory, cmdExec Executor) *TmuxSession {
 	return &TmuxSession{
 		sanitizedName:   toKasTmuxName(name),
 		program:         program,
@@ -180,7 +200,7 @@ func NewTmuxSessionFromExisting(sanitizedName string, program string, skipPermis
 		program:         program,
 		skipPermissions: skipPermissions,
 		ptyFactory:      MakePtyFactory(),
-		cmdExec:         cmd.MakeExecutor(),
+		cmdExec:         makeExecutor(),
 	}
 }
 
@@ -683,7 +703,7 @@ func (t *TmuxSession) DoesSessionExist() bool {
 
 // CleanupSessions kills all tmux sessions that start with the kas prefix.
 // Also cleans up legacy "hivemind_" and "klique_" sessions from before the rename.
-func CleanupSessions(cmdExec cmd.Executor) error {
+func CleanupSessions(cmdExec Executor) error {
 	// First try to list sessions.
 	cmd := exec.Command("tmux", "ls")
 	output, err := cmdExec.Output(cmd)
@@ -724,7 +744,7 @@ type OrphanSession struct {
 
 // DiscoverOrphans lists kas_-prefixed tmux sessions that are NOT in knownNames.
 // knownNames should contain the sanitized tmux names of all current Instances.
-func DiscoverOrphans(cmdExec cmd.Executor, knownNames []string) ([]OrphanSession, error) {
+func DiscoverOrphans(cmdExec Executor, knownNames []string) ([]OrphanSession, error) {
 	lsCmd := exec.Command("tmux", "ls", "-F",
 		"#{session_name}|#{session_created}|#{session_windows}|#{session_attached}|#{window_width}|#{window_height}")
 	output, err := cmdExec.Output(lsCmd)
@@ -795,7 +815,7 @@ type SessionInfo struct {
 // DiscoverAll lists all kas_-prefixed tmux sessions, marking each as Managed
 // if its name appears in knownNames. knownNames should contain the sanitized
 // tmux names of all current Instances (e.g. from ToKasTmuxNamePublic).
-func DiscoverAll(cmdExec cmd.Executor, knownNames []string) ([]SessionInfo, error) {
+func DiscoverAll(cmdExec Executor, knownNames []string) ([]SessionInfo, error) {
 	lsCmd := exec.Command("tmux", "ls", "-F",
 		"#{session_name}|#{session_created}|#{session_windows}|#{session_attached}|#{window_width}|#{window_height}")
 	output, err := cmdExec.Output(lsCmd)
@@ -852,7 +872,7 @@ func DiscoverAll(cmdExec cmd.Executor, knownNames []string) ([]SessionInfo, erro
 // or more attached clients. On any error (executor failure, tmux hiccup,
 // non-zero exit) it returns true so that callers defer cleanup rather than
 // risk terminating a session that may have active attached users.
-func HasAttachedClients(cmdExec cmd.Executor, sessionName string) bool {
+func HasAttachedClients(cmdExec Executor, sessionName string) bool {
 	dmCmd := exec.Command("tmux", "display-message", "-t", sessionName, "-p", "#{session_attached}")
 	output, err := cmdExec.Output(dmCmd)
 	if err != nil {
@@ -877,7 +897,7 @@ func parseClientCount(s string) int {
 
 // CountKasSessions returns the number of kas_-prefixed tmux sessions.
 // Returns 0 if no tmux server is running or on any error.
-func CountKasSessions(cmdExec cmd.Executor) int {
+func CountKasSessions(cmdExec Executor) int {
 	lsCmd := exec.Command("tmux", "ls")
 	output, err := cmdExec.Output(lsCmd)
 	if err != nil {

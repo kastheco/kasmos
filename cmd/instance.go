@@ -43,8 +43,7 @@ type instanceWorktree struct {
 // InstanceData must appear here; omitting a field causes silent data loss when
 // the state file is rewritten by kill/pause/resume.
 //
-// Using a local type avoids the import cycle that arises because session/tmux
-// imports cmd for the Executor interface — so cmd cannot import session/tmux.
+// Using a local type avoids coupling instance persistence to session internals.
 type instanceRecord struct {
 	Title     string         `json:"title"`
 	Path      string         `json:"path,omitempty"`
@@ -114,9 +113,8 @@ func statusLabel(s instanceStatus) string {
 var whiteSpaceRe = regexp.MustCompile(`\s+`)
 
 // kasTmuxName converts a human-readable instance title to the kas_-prefixed tmux
-// session name used by the session package.  It replicates toKasTmuxName from
-// session/tmux without importing that package (which would create a cycle:
-// session/tmux → cmd → session/tmux).
+// session name used by the session package. It replicates toKasTmuxName from
+// session/tmux without importing that package.
 func kasTmuxName(title string) string {
 	name := whiteSpaceRe.ReplaceAllString(title, "")
 	name = strings.ReplaceAll(name, ".", "_")
