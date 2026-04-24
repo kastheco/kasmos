@@ -4,6 +4,7 @@ import { useProject } from "./hooks/useProject";
 import { ToastProvider } from "./hooks/useToast";
 import ProjectSwitcher from "./components/ProjectSwitcher";
 import logoFull from "./assets/logo-full.png";
+import { BRAND } from "./brand";
 
 export default function Layout() {
   const { projectSearch } = useProject();
@@ -13,7 +14,8 @@ export default function Layout() {
     <div className={styles.container}>
       <nav className={styles.sidebar}>
         <div className={styles.logo}>
-          <img src={logoFull} alt="kasmos" className={styles.logoImg} />
+          <img src={logoFull} alt={BRAND.wordmarkAlt} className={styles.logoImg} />
+          <span className={`brand-hq-suffix ${styles.hqSuffix}`}>{BRAND.shortName}</span>
         </div>
         <div className={styles.switcherSection}>
           <ProjectSwitcher />
