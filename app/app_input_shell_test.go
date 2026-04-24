@@ -108,6 +108,20 @@ func TestSDKFocus_BackspaceOnEmptyExitsShellMode(t *testing.T) {
 	assert.NotNil(t, cmd)
 }
 
+func TestSDKFocus_DeleteOnEmptyExitsShellMode(t *testing.T) {
+	t.Parallel()
+	h, _ := newSDKFocusHome(t)
+	h.tabbedWindow.SetSDKComposerShellMode(true)
+
+	model, cmd := h.handleKeyPress(tea.KeyPressMsg{Code: tea.KeyDelete})
+	updated := model.(*home)
+
+	assert.Equal(t, stateFocusAgent, updated.state)
+	assert.False(t, updated.tabbedWindow.SDKComposerShellMode())
+	assert.Equal(t, "", updated.tabbedWindow.SDKComposerText())
+	assert.NotNil(t, cmd)
+}
+
 func TestSDKFocus_CtrlCClearsShellMode(t *testing.T) {
 	t.Parallel()
 	h, _ := newSDKFocusHome(t)

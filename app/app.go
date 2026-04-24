@@ -3107,7 +3107,7 @@ type doubleTapTimeoutMsg struct {
 }
 
 // scheduleDoubleTapTimeout returns a Cmd that delivers doubleTapTimeoutMsg after
-// delay. Overrideable in tests to make timing synchronous without real sleeps.
+// delay. Overridable in tests to make timing synchronous without real sleeps.
 var scheduleDoubleTapTimeout = func(delay time.Duration, key string, seq int) tea.Cmd {
 	return tea.Tick(delay, func(time.Time) tea.Msg {
 		return doubleTapTimeoutMsg{key: key, seq: seq}

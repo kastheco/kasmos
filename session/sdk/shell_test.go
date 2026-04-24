@@ -1,6 +1,7 @@
 package sdk
 
 import (
+	"context"
 	"os/exec"
 	"path/filepath"
 	"testing"
@@ -61,4 +62,34 @@ func TestResolveShell_NonExistentShellEnv_FallsBack(t *testing.T) {
 	base := filepath.Base(shell)
 	assert.Contains(t, []string{"zsh", "bash", "sh"}, base)
 	assert.Equal(t, "-lc", flag)
+}
+
+func TestDefaultShellRunner_UsesWorkDirAndPreservesNonZeroExit(t *testing.T) {
+	shell, err := exec.LookPath("sh")
+	if err != nil {
+		t.Skip("sh not available on PATH")
+	}
+	workDir := t.TempDir()
+
+	exitCode, output, truncated, runErr := defaultShellRunner(context.Background(), workDir, shell, []string{"-c", "pwd; exit 7"})
+
+	require.NoError(t, runErr)
+	assert.Equal(t, 7, exitCode)
+	assert.Contains(t, output, workDir)
+	assert.False(t, truncated)
+}
+
+func TestDefaultShellRunner_CapsOutputWithoutChangingExitCode(t *testing.T) {
+	shell, err := exec.LookPath("sh")
+	if err != nil {
+		t.Skip("sh not available on PATH")
+	}
+	workDir := t.TempDir()
+
+	exitCode, output, truncated, runErr := defaultShellRunner(context.Background(), workDir, shell, []string{"-c", "printf '%70000s' ''; exit 7"})
+
+	require.NoError(t, runErr)
+	assert.Equal(t, 7, exitCode)
+	assert.Len(t, output, shellOutputCap)
+	assert.True(t, truncated)
 }

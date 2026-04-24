@@ -1417,7 +1417,7 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 				return m.mutateSDKComposer(selected, m.tabbedWindow.DeleteSDKComposerWordBackward)
 			case msg.Code == tea.KeyDelete && msg.Mod.Contains(tea.ModCtrl):
 				return m.mutateSDKComposer(selected, m.tabbedWindow.DeleteSDKComposerWordForward)
-			case msg.Code == tea.KeyBackspace &&
+			case (msg.Code == tea.KeyBackspace || msg.Code == tea.KeyDelete) &&
 				m.tabbedWindow.SDKComposerShellMode() &&
 				m.tabbedWindow.SDKComposerText() == "":
 				m.tabbedWindow.ClearSDKComposerShellMode()
@@ -2279,7 +2279,7 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 		// covers every non-participant that falls through to
 		// GlobalKeyStringsMap below. Mirrors the resets inside the
 		// dtKey != "" block for unrelated printable keys and debounced
-		// interruptors.
+		// interrupting keys.
 		m.ensureDoubleTap().Reset()
 	}
 

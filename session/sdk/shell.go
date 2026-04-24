@@ -4,10 +4,10 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sync"
 )
 
 // shellOutputCap bounds the bytes captured from a shell subprocess so a runaway
@@ -21,6 +21,46 @@ var errShellNotAvailable = errors.New("no usable shell found in PATH ($SHELL, zs
 // avoid spawning real processes.
 type shellRunner func(ctx context.Context, workDir, shell string, args []string) (exitCode int, output string, truncated bool, err error)
 
+type cappedOutputBuffer struct {
+	mu        sync.Mutex
+	buf       bytes.Buffer
+	limit     int
+	truncated bool
+}
+
+func (b *cappedOutputBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.limit <= 0 {
+		b.truncated = b.truncated || len(p) > 0
+		return len(p), nil
+	}
+	remaining := b.limit - b.buf.Len()
+	if remaining > 0 {
+		if len(p) > remaining {
+			_, _ = b.buf.Write(p[:remaining])
+			b.truncated = true
+		} else {
+			_, _ = b.buf.Write(p)
+		}
+	} else if len(p) > 0 {
+		b.truncated = true
+	}
+	return len(p), nil
+}
+
+func (b *cappedOutputBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+func (b *cappedOutputBuffer) Truncated() bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.truncated
+}
+
 // defaultShellRunner spawns the selected shell with the requested flags and
 // captures up to shellOutputCap bytes of combined stdout+stderr. Non-zero
 // exit codes are NOT returned as errors — they flow through exitCode so the
@@ -29,27 +69,10 @@ func defaultShellRunner(ctx context.Context, workDir, shell string, args []strin
 	cmd := exec.CommandContext(ctx, shell, args...)
 	cmd.Dir = workDir
 
-	pr, pw := io.Pipe()
-	cmd.Stdout = pw
-	cmd.Stderr = pw
-
-	if err := cmd.Start(); err != nil {
-		pr.Close()
-		pw.Close()
-		return -1, "", false, err
-	}
-
-	var buf bytes.Buffer
-	copyDone := make(chan struct{})
-	go func() {
-		defer close(copyDone)
-		io.CopyN(&buf, pr, shellOutputCap+1) //nolint:errcheck
-		pr.Close()
-	}()
-
-	runErr := cmd.Wait()
-	pw.Close()
-	<-copyDone
+	output := &cappedOutputBuffer{limit: shellOutputCap}
+	cmd.Stdout = output
+	cmd.Stderr = output
+	runErr := cmd.Run()
 
 	var exitCode int
 	if runErr != nil {
@@ -62,14 +85,7 @@ func defaultShellRunner(ctx context.Context, workDir, shell string, args []strin
 		}
 	}
 
-	truncated := false
-	out := buf.String()
-	if len(out) > shellOutputCap {
-		out = out[:shellOutputCap]
-		truncated = true
-	}
-
-	return exitCode, out, truncated, nil
+	return exitCode, output.String(), output.Truncated(), nil
 }
 
 // resolveShell returns the shell command and flag ("-lc" for known shells,
