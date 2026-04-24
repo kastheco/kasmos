@@ -2663,6 +2663,40 @@ func TestInstanceChanged_RefreshesPreviewWhenSelectionMovesBetweenInstances(t *t
 	assert.NotContains(t, rendered, "preview from instance A")
 }
 
+func TestMetadataResult_RefreshesSelectedSDKPreview(t *testing.T) {
+	t.Parallel()
+	h := newTestHome()
+	h.tabbedWindow.SetSize(80, 20)
+
+	inst, err := session.NewInstance(session.InstanceOptions{
+		Title:         "sdk-agent",
+		Path:          t.TempDir(),
+		Program:       "codex",
+		ExecutionMode: session.ExecutionModeSDK,
+	})
+	require.NoError(t, err)
+	inst.SetCachedPresentation([]*sessionsdk.PresentationTurn{{
+		Rows: []sessionsdk.PresentationRow{{Kind: sessionsdk.RowProse, Text: "old sdk output"}},
+	}})
+	h.nav.AddInstance(inst)
+	require.True(t, h.nav.SelectInstance(inst))
+	require.NoError(t, h.tabbedWindow.UpdatePreview(inst))
+	require.Contains(t, h.tabbedWindow.String(), "old sdk output")
+
+	model, _ := h.Update(metadataResultMsg{Results: []instanceMetadata{{
+		Title:              inst.Title,
+		PresentationCached: true,
+		PresentationTurns: []*sessionsdk.PresentationTurn{{
+			Rows: []sessionsdk.PresentationRow{{Kind: sessionsdk.RowProse, Text: "fresh sdk output"}},
+		}},
+	}}})
+	updated := model.(*home)
+
+	rendered := updated.tabbedWindow.String()
+	require.Contains(t, rendered, "fresh sdk output")
+	assert.NotContains(t, rendered, "old sdk output")
+}
+
 func TestInit_PrimesPreviewForSelectedInstance(t *testing.T) {
 	t.Parallel()
 	h := newTestHome()

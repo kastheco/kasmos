@@ -2226,6 +2226,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		m.updateSidebarTasks()
 		m.updateInfoPane()
+		m.refreshSelectedPreview()
 
 		// Dismiss stale task-backed context menus when the FSM state has changed
 		// since the menu was opened. drainDeferredDialogs is always called below

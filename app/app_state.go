@@ -735,6 +735,23 @@ func (m *home) syncPreviewTerminal() tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
+func (m *home) refreshSelectedPreview() {
+	if m.nav == nil || m.tabbedWindow == nil || m.tabbedWindow.IsDocumentMode() {
+		return
+	}
+	selected := m.nav.GetSelectedInstance()
+	if m.previewTerminal != nil && (selected == nil || session.NormalizeExecutionMode(selected.ExecutionMode) == session.ExecutionModeTmux) {
+		return
+	}
+	if m.shouldAttachPreviewTerminal(selected) {
+		m.tabbedWindow.SetConnectingState()
+		return
+	}
+	if err := m.tabbedWindow.UpdatePreview(selected); err != nil {
+		log.ErrorLog.Printf("preview update error: %v", err)
+	}
+}
+
 // enterFocusMode enters focus/insert mode and starts the fast preview ticker.
 // enterFocusMode reuses the existing previewTerminal if it is already attached to
 // the selected instance — entering focus just toggles key forwarding to the same
@@ -1308,12 +1325,7 @@ func (m *home) instanceChanged() tea.Cmd {
 	m.updateInfoPane()
 	// Update menu with current instance.
 	m.menu.SetInstance(selected)
-	if m.shouldAttachPreviewTerminal(selected) &&
-		(m.previewTerminal == nil || m.previewTerminalInstance != previewIdentityKey(selected)) {
-		m.tabbedWindow.SetConnectingState()
-	} else if err := m.tabbedWindow.UpdatePreview(selected); err != nil {
-		log.ErrorLog.Printf("preview update error: %v", err)
-	}
+	m.refreshSelectedPreview()
 
 	// Collect async commands.
 	var cmds []tea.Cmd
