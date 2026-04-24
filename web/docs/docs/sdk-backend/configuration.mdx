@@ -97,11 +97,15 @@ execution_mode  = "tmux"
 
 this configuration runs the coder agent via the claude app-server protocol while keeping the reviewer in tmux for interactive attach capability.
 
-## sdk-fast is not a config value
+## speed tier: profile default + per-spawn override
 
-`execution_mode` accepts exactly two stable values: `"tmux"` and `"sdk"` (plus the legacy alias `"headless"`). there is no `"sdk-fast"` config value.
+`execution_mode` accepts exactly two stable values: `"tmux"` and `"sdk"` (plus the legacy alias `"headless"`). there is no `"sdk-fast"` value for `execution_mode` — the speed tier is a separate concern from the execution mode.
 
-the fast speed tier for codex is a **per-spawn, per-session option** selected at spawn time through the `S` execution-mode picker. it is stored as `SDKSpeedTier = "fast"` on the instance record and forwarded by the codex transport as `serviceTier: "fast"` on `thread/start`. it does not appear in `config.toml` and cannot be set as a profile default. to get a fast-tier codex session you must choose `sdk-fast` in the `S` picker each time you spawn.
+**profile default:** `[agents.<role>].tier` sets the per-role Codex SDK speed tier for any session spawned by orchestration into that role. see [agent profiles: tier](../configuration/agent-profiles.mdx#tier) for the full normalization table and gating conditions.
+
+**per-spawn override:** the `S` execution-mode picker offers an `sdk-fast` choice that overrides the profile default for that one spawn. it is stored as `SDKSpeedTier = "fast"` on the instance record and forwarded by the codex transport as `serviceTier: "fast"` on `thread/start`. the choice is **not** written back to `config.toml`.
+
+**daemon api:** external callers can supply the same per-spawn tier via the `sdk_speed_tier` field on `POST /instances`.
 
 ## standalone spawn modes
 
@@ -146,6 +150,15 @@ when kasmos starts an implementing session, it reads `agents.coder.execution_mod
 5. `session.NewExecutionSession(ExecutionModeSDK, ...)` → `sdk.New(...)`
 
 if the program were `opencode` instead, step 4 would return `ExecutionModeTmux` and step 5 would create a tmux session.
+
+for a codex coder with `[agents.coder].tier = "fast"`, the parallel tier resolution path is:
+
+1. `[agents.coder].tier` → `"fast"`
+2. `config.NormalizeTier("fast")` → `"fast"`
+3. `sdkSpeedTierForAgent(repoDir, AgentTypeCoder)` in `daemon/daemon.go` → `"fast"`
+4. `session.Instance.SDKSpeedTier` = `"fast"`
+5. `sdk.Transport.Start(..., SpeedTier: "fast")` → codex transport
+6. `codexServiceTier("fast")` → `thread/start` payload `serviceTier: "fast"`
 
 ## the default_program fallback
 
