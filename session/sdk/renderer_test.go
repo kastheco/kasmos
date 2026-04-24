@@ -194,6 +194,24 @@ func TestRenderer_CaptureRange_OnEmptyRenderer(t *testing.T) {
 	assert.Equal(t, "", r.CaptureRange("0", "0"))
 }
 
+func TestRenderer_AddShellTurn_StatusAppearsInFlatCapture(t *testing.T) {
+	r := NewRenderer()
+
+	r.AddShellTurn("bad", "output", 2, true, "")
+
+	flat := r.Capture()
+	assert.Contains(t, flat, "! bad")
+	assert.Contains(t, flat, "output")
+	assert.Contains(t, flat, "exit 2 · output truncated at 64 KiB")
+
+	turns := r.CapturePresentation()
+	require.Len(t, turns, 1)
+	require.NotEmpty(t, turns[0].Rows)
+	last := turns[0].Rows[len(turns[0].Rows)-1]
+	assert.Equal(t, RowStatus, last.Kind)
+	assert.Equal(t, "exit 2 · output truncated at 64 KiB", last.Text)
+}
+
 func TestRenderer_IsUpdated_ChangesWhenContentAdded(t *testing.T) {
 	r := NewRenderer()
 	hash1 := r.ContentHash()

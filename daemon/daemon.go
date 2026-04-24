@@ -417,7 +417,7 @@ func (a *daemonStateAdapter) SendInstancePermissionResponse(project, title strin
 
 // RunInstanceShellCommand implements StateProvider by resolving the tracked
 // instance and running the command via the optional shellCommandRunner
-// interface. Non-SDK instances return an ErrInvalidRequest-like error.
+// interface. Non-SDK instances return api.ErrInvalidRequest.
 func (a *daemonStateAdapter) RunInstanceShellCommand(project, title, command string) error {
 	repoPath, ok := a.repoPathByProject(project)
 	if !ok {
@@ -426,6 +426,9 @@ func (a *daemonStateAdapter) RunInstanceShellCommand(project, title, command str
 	_, inst, ok := a.d.spawner.trackedInstanceByTitle(repoPath, title)
 	if !ok {
 		return fmt.Errorf("%w: %s/%s", api.ErrInstanceNotFound, project, title)
+	}
+	if session.NormalizeExecutionMode(inst.ExecutionMode) != session.ExecutionModeSDK {
+		return fmt.Errorf("%w: shell execution unsupported for instance %s/%s", api.ErrInvalidRequest, project, title)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()

@@ -680,6 +680,18 @@ func TestHandler_InstanceShell_NotFound(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, w.Code, "body: %s", w.Body.String())
 }
 
+func TestHandler_InstanceShell_InvalidRequest(t *testing.T) {
+	state := &shellStub{err: fmt.Errorf("%w: unsupported", ErrInvalidRequest)}
+	h := NewHandler(state)
+
+	body := bytes.NewBufferString(`{"command":"echo hello"}`)
+	req := httptest.NewRequest("POST", "/v1/repos/myproj/instances/my-agent/shell", body)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code, "body: %s", w.Body.String())
+}
+
 func TestHandler_InstanceShell_StateError(t *testing.T) {
 	state := &shellStub{err: fmt.Errorf("runner failed")}
 	h := NewHandler(state)

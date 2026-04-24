@@ -631,6 +631,8 @@ func (h *Handler) handleInstanceShell(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case errors.Is(err, ErrInstanceNotFound):
 			writeError(w, http.StatusNotFound, err.Error())
+		case errors.Is(err, ErrInvalidRequest):
+			writeError(w, http.StatusBadRequest, err.Error())
 		default:
 			writeError(w, http.StatusInternalServerError, err.Error())
 		}

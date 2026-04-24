@@ -848,8 +848,9 @@ func truncateOneLine(s string, n int) string {
 }
 
 // splitOutputLines splits output into individual lines, trimming exactly one
-// trailing newline before splitting. Returns at most one empty element so
-// zero-output commands still produce a predictable structure.
+// trailing newline before splitting. Consecutive newlines are preserved as
+// empty elements, and zero-output commands still produce a predictable
+// single empty element.
 func splitOutputLines(output string) []string {
 	// Trim exactly one trailing newline.
 	s := output
@@ -857,6 +858,23 @@ func splitOutputLines(output string) []string {
 		s = s[:len(s)-1]
 	}
 	return strings.Split(s, "\n")
+}
+
+func shellTurnStatusText(exitCode int, truncated bool, statusMsg string) string {
+	if exitCode == 0 && !truncated && statusMsg == "" {
+		return ""
+	}
+	if statusMsg != "" {
+		return statusMsg
+	}
+	switch {
+	case truncated && exitCode != 0:
+		return fmt.Sprintf("exit %d · output truncated at 64 KiB", exitCode)
+	case truncated:
+		return "output truncated at 64 KiB"
+	default:
+		return fmt.Sprintf("exit %d", exitCode)
+	}
 }
 
 // AddShellTurn appends a completed standalone turn containing a user row for
@@ -883,28 +901,19 @@ func (r *Renderer) AddShellTurn(command, output string, exitCode int, truncated 
 		Kind:      RowResponse,
 		Timestamp: now,
 	})
-	for _, line := range splitOutputLines(output) {
+	outputLines := splitOutputLines(output)
+	for _, line := range outputLines {
 		turn.Rows = append(turn.Rows, PresentationRow{
 			Kind:      RowProse,
 			Text:      line,
 			Timestamp: now,
 		})
 	}
-	if exitCode != 0 || truncated || statusMsg != "" {
-		text := statusMsg
-		if text == "" {
-			switch {
-			case truncated && exitCode != 0:
-				text = fmt.Sprintf("exit %d · output truncated at 64 KiB", exitCode)
-			case truncated:
-				text = "output truncated at 64 KiB"
-			default:
-				text = fmt.Sprintf("exit %d", exitCode)
-			}
-		}
+	statusText := shellTurnStatusText(exitCode, truncated, statusMsg)
+	if statusText != "" {
 		turn.Rows = append(turn.Rows, PresentationRow{
 			Kind:      RowStatus,
-			Text:      text,
+			Text:      statusText,
 			Timestamp: now,
 		})
 	}
@@ -912,8 +921,11 @@ func (r *Renderer) AddShellTurn(command, output string, exitCode int, truncated 
 	// optional status so CapturePaneContent stays consistent with the
 	// structured model.
 	r.appendLine("! " + command)
-	for _, line := range splitOutputLines(output) {
+	for _, line := range outputLines {
 		r.appendLine(line)
+	}
+	if statusText != "" {
+		r.appendLine(statusText)
 	}
 	r.turns = append(r.turns, turn)
 	// Do NOT assign r.currentTurn — an existing agent turn must remain open.

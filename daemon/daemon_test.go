@@ -344,6 +344,43 @@ func TestDaemonStateAdapter_RunInstanceShellCommand_DelegatesToTrackedSDKInstanc
 	assert.Equal(t, "echo", execSession.command)
 }
 
+func TestDaemonStateAdapter_RunInstanceShellCommand_NonSDKInstanceInvalidRequest(t *testing.T) {
+	const (
+		project  = "proj"
+		repoPath = "/tmp/proj"
+		title    = "tmux-agent"
+	)
+
+	spawner := NewTmuxSpawner()
+	d := &Daemon{
+		repos:       NewRepoManager(),
+		spawner:     spawner,
+		logger:      slog.Default(),
+		broadcaster: api.NewEventBroadcaster(),
+	}
+	d.repos.repos = []RepoEntry{{Path: repoPath, Project: project}}
+
+	inst := &session.Instance{
+		Title:         title,
+		Path:          repoPath,
+		ExecutionMode: session.ExecutionModeTmux,
+		Status:        session.Running,
+	}
+	inst.MarkStartedForTest()
+	spawner.commitInstance(
+		instanceKey(repoPath, "plan.md", session.AgentTypeCoder),
+		"plan.md",
+		session.AgentTypeCoder,
+		project,
+		inst,
+	)
+
+	adapter := &daemonStateAdapter{d: d}
+	err := adapter.RunInstanceShellCommand(project, title, "echo")
+
+	require.ErrorIs(t, err, api.ErrInvalidRequest)
+}
+
 func TestDaemon_GracefulShutdown_DrainsAgents(t *testing.T) {
 	dir := t.TempDir()
 	cfg := &DaemonConfig{
