@@ -257,6 +257,8 @@ func TestScaffoldSync_RefreshesSignalPromptCopies(t *testing.T) {
 	architectSkill, err := os.ReadFile(filepath.Join(dir, ".agents", "skills", "kasmos-architect", "SKILL.md"))
 	require.NoError(t, err)
 	assert.Contains(t, string(architectSkill), "use MCP `signal_create` (signal_type: \"elaborator-finished\", plan_file: \"<plan-file>\", project: \"$KASMOS_PROJECT\") after the round-trip check succeeds.")
+	assert.Contains(t, string(architectSkill), "Before validating the planner draft, create an independent solution baseline")
+	assert.Contains(t, string(architectSkill), "compare planner vs architect baseline and merge")
 }
 
 // TestScaffoldSync_EnforcementDisabled_UninstallsClaudeHook verifies that when
