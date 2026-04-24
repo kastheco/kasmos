@@ -20,6 +20,27 @@ var (
 	terminalRestore = term.Restore
 )
 
+const (
+	cSIDisableBracketedPaste = "\x1b[?2004l"
+	cSIEnableBracketedPaste  = "\x1b[?2004h"
+	cSIDisableFocusReporting = "\x1b[?1004l"
+	cSIEnableFocusReporting  = "\x1b[?1004h"
+	cSIDisableMouseAnyEvent  = "\x1b[?1003l"
+	cSIDisableMouseSGR       = "\x1b[?1006l"
+)
+
+var outerTerminalSilence = func(w io.Writer) {
+	_, _ = io.WriteString(w, cSIDisableBracketedPaste)
+	_, _ = io.WriteString(w, cSIDisableFocusReporting)
+	_, _ = io.WriteString(w, cSIDisableMouseAnyEvent)
+	_, _ = io.WriteString(w, cSIDisableMouseSGR)
+}
+
+var outerTerminalRestore = func(w io.Writer) {
+	_, _ = io.WriteString(w, cSIEnableBracketedPaste)
+	_, _ = io.WriteString(w, cSIEnableFocusReporting)
+}
+
 // detachWaitTimeout is the maximum time to wait for attach goroutines to exit
 // during Detach. Exposed as a var so tests can shorten it without real-time delays.
 var detachWaitTimeout = 500 * time.Millisecond
@@ -44,7 +65,11 @@ func (t *TmuxSession) Attach() (chan struct{}, error) {
 	// can handle scroll events. Start() disables mouse for the kasmos preview
 	// viewport, but during interactive attach the inner program needs it.
 	_ = exec.Command("tmux", "set-option", "-t", t.sanitizedName, "mouse", "on").Run()
+	// Silence outer-terminal modes so their generated escape sequences do not
+	// flow through raw stdin into the inner program's prompt buffer.
+	outerTerminalSilence(os.Stdout)
 	if err := t.enterRawInputMode(); err != nil {
+		outerTerminalRestore(os.Stdout)
 		t.restoreOuterMouse()
 		return nil, err
 	}
@@ -97,7 +122,7 @@ func (t *TmuxSession) Attach() (chan struct{}, error) {
 					return
 				}
 			}
-			_, _ = ptmx.Write(buf[:n])
+			_ = filteredWrite(ptmx, buf[:n])
 		}
 	}()
 
@@ -166,6 +191,7 @@ func (t *TmuxSession) Detach() {
 	drainStdin(100 * time.Millisecond)
 
 	t.exitRawInputMode()
+	outerTerminalRestore(os.Stdout)
 
 	// Recreate a background PTY for status monitoring (HasUpdated ticks).
 	if err := t.Restore(); err != nil {
@@ -177,6 +203,88 @@ func (t *TmuxSession) Detach() {
 		close(t.attachCh)
 		t.attachCh = nil
 	}
+}
+
+func filteredWrite(ptmx io.Writer, buf []byte) error {
+	for i := 0; i < len(buf); {
+		if buf[i] != 0x1b {
+			if _, err := ptmx.Write(buf[i : i+1]); err != nil {
+				return err
+			}
+			i++
+			continue
+		}
+
+		if i+1 >= len(buf) || buf[i+1] != '[' {
+			if _, err := ptmx.Write(buf[i : i+1]); err != nil {
+				return err
+			}
+			i++
+			continue
+		}
+
+		end, drop := filteredCSIEnd(buf[i+2:])
+		if end < 0 {
+			if _, err := ptmx.Write(buf[i:]); err != nil {
+				return err
+			}
+			return nil
+		}
+		end += i + 2
+		if !drop {
+			if _, err := ptmx.Write(buf[i : end+1]); err != nil {
+				return err
+			}
+		}
+		i = end + 1
+	}
+	return nil
+}
+
+func filteredCSIEnd(seq []byte) (int, bool) {
+	if len(seq) == 0 {
+		return -1, false
+	}
+	switch seq[0] {
+	case 'I', 'O':
+		return 0, true
+	case 'M':
+		if len(seq) < 4 {
+			return -1, false
+		}
+		return 3, true
+	}
+	if len(seq) >= 4 && (string(seq[:4]) == "200~" || string(seq[:4]) == "201~") {
+		return 3, true
+	}
+	if seq[0] == '<' {
+		for i, b := range seq {
+			if b == 'M' || b == 'm' {
+				return i, true
+			}
+			if b >= 0x40 && b <= 0x7e && b != ';' && b != '<' {
+				return i, false
+			}
+		}
+		return -1, false
+	}
+	if seq[0] == '?' {
+		for i, b := range seq {
+			if b == 'c' {
+				return i, true
+			}
+			if b >= 0x40 && b <= 0x7e && b != ';' && b != '?' {
+				return i, false
+			}
+		}
+		return -1, false
+	}
+	for i, b := range seq {
+		if b >= 0x40 && b <= 0x7e {
+			return i, false
+		}
+	}
+	return -1, false
 }
 
 // drainStdin reads and discards any bytes currently buffered on stdin, up to

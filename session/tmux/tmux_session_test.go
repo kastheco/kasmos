@@ -692,8 +692,8 @@ func TestStart_Codex_ReadyWaitUsesAdapterPath(t *testing.T) {
 			return nil
 		},
 		OutputFunc: func(cmd *exec.Cmd) ([]byte, error) {
-			// capture-pane returns generic output — codex has no stable ready string
-			return []byte("some codex output"), nil
+			// capture-pane can echo terminal-mode toggles; codex has no stable ready string.
+			return []byte(cSIDisableBracketedPaste + cSIDisableFocusReporting + "some codex output"), nil
 		},
 	}
 

@@ -1,6 +1,8 @@
 package tmux
 
 import (
+	"bytes"
+	"io"
 	"os/exec"
 	"sync"
 	"testing"
@@ -11,6 +13,53 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/term"
 )
+
+func TestAttach_SilencesOuterTerminal(t *testing.T) {
+	// serial: mutates tmux terminal globals
+	withFastTmuxTimings(t)
+	oldStdinFD := stdinFD
+	oldIsTTY := terminalIsTTY
+	oldMakeRaw := terminalMakeRaw
+	oldRestore := terminalRestore
+	oldSilence := outerTerminalSilence
+	oldOuterRestore := outerTerminalRestore
+	oldDrain := drainStdin
+	defer func() {
+		stdinFD = oldStdinFD
+		terminalIsTTY = oldIsTTY
+		terminalMakeRaw = oldMakeRaw
+		terminalRestore = oldRestore
+		outerTerminalSilence = oldSilence
+		outerTerminalRestore = oldOuterRestore
+		drainStdin = oldDrain
+	}()
+
+	stdinFD = func() int { return 9 }
+	terminalIsTTY = func(int) bool { return true }
+	state := &term.State{}
+	terminalMakeRaw = func(int) (*term.State, error) { return state, nil }
+	terminalRestore = func(int, *term.State) error { return nil }
+	drainStdin = func(time.Duration) {}
+
+	var got bytes.Buffer
+	outerTerminalSilence = func(io.Writer) {
+		got.WriteString("silence\n")
+	}
+	outerTerminalRestore = func(io.Writer) {
+		got.WriteString("restore\n")
+	}
+
+	ptyFactory := NewMockPtyFactory(t)
+	s := NewTmuxSessionWithDeps("test-attach-silence", "opencode", false,
+		ptyFactory, cmd_test.NewMockExecutor())
+	require.NoError(t, s.Restore())
+
+	_, err := s.Attach()
+	require.NoError(t, err)
+	s.Detach()
+
+	assert.Equal(t, "silence\nrestore\n", got.String())
+}
 
 func TestDetachSafely_WhenNotAttached(t *testing.T) {
 	s := NewTmuxSessionWithDeps("test-detach", "opencode", false, NewMockPtyFactory(t), cmd_test.NewMockExecutor())
@@ -63,12 +112,14 @@ func TestDetach_DrainsStdinBeforeRestoringTTY(t *testing.T) {
 	oldMakeRaw := terminalMakeRaw
 	oldRestore := terminalRestore
 	oldDrain := drainStdin
+	oldOuterRestore := outerTerminalRestore
 	defer func() {
 		stdinFD = oldStdinFD
 		terminalIsTTY = oldIsTTY
 		terminalMakeRaw = oldMakeRaw
 		terminalRestore = oldRestore
 		drainStdin = oldDrain
+		outerTerminalRestore = oldOuterRestore
 	}()
 
 	stdinFD = func() int { return 7 }
@@ -89,6 +140,7 @@ func TestDetach_DrainsStdinBeforeRestoringTTY(t *testing.T) {
 		defer mu.Unlock()
 		events = append(events, "drainStdin")
 	}
+	outerTerminalRestore = func(io.Writer) {}
 
 	s := NewTmuxSessionWithDeps("test-detach-drain", "opencode", false,
 		NewMockPtyFactory(t), cmd_test.NewMockExecutor())
@@ -105,6 +157,58 @@ func TestDetach_DrainsStdinBeforeRestoringTTY(t *testing.T) {
 	defer mu.Unlock()
 	require.Equal(t, []string{"drainStdin", "restoreTTY"}, events,
 		"stdin must be drained while still in raw mode, before terminalRestore runs")
+}
+
+func TestAttach_StdinFilterDropsBracketedPasteMarkers(t *testing.T) {
+	var pty bytes.Buffer
+
+	require.NoError(t, filteredWrite(&pty, []byte("\x1b[200~hello\x1b[201~")))
+
+	assert.Equal(t, "hello", pty.String())
+}
+
+func TestAttach_StdinFilterPreservesEsc(t *testing.T) {
+	var pty bytes.Buffer
+
+	require.NoError(t, filteredWrite(&pty, []byte("\x1bq")))
+
+	assert.Equal(t, "\x1bq", pty.String())
+}
+
+func TestAttach_StdinFilterDropsFocusReport(t *testing.T) {
+	var pty bytes.Buffer
+
+	require.NoError(t, filteredWrite(&pty, []byte("a\x1b[I\x1b[Ob")))
+
+	assert.Equal(t, "ab", pty.String())
+}
+
+func TestAttach_StdinFilterDropsMouseTracking(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+	}{
+		{name: "x10", in: "a\x1b[M   b"},
+		{name: "sgr", in: "a\x1b[<0;10;10Mb"},
+	}
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			var pty bytes.Buffer
+
+			require.NoError(t, filteredWrite(&pty, []byte(tt.in)))
+
+			assert.Equal(t, "ab", pty.String())
+		})
+	}
+}
+
+func TestAttach_StdinFilterDropsDA1Reply(t *testing.T) {
+	var pty bytes.Buffer
+
+	require.NoError(t, filteredWrite(&pty, []byte("a\x1b[?62;22;52cb")))
+
+	assert.Equal(t, "ab", pty.String())
 }
 
 func TestRawInputMode_RestoresTTYState(t *testing.T) {
