@@ -1,6 +1,7 @@
 package session
 
 import (
+	"context"
 	"fmt"
 	"os/exec"
 	"strconv"
@@ -185,6 +186,24 @@ func (i *Instance) Interrupt() error {
 		return fmt.Errorf("instance not started")
 	}
 	return i.executionSession.SendKeys("\x03")
+}
+
+// RunShellCommand runs a shell command in the SDK session's workdir and
+// appends the result as a synthetic presentation turn. Returns an error
+// for non-SDK backends or if the instance is not started.
+func (i *Instance) RunShellCommand(ctx context.Context, command string) error {
+	if !i.started {
+		return fmt.Errorf("instance not started")
+	}
+	if i.executionSession == nil {
+		return fmt.Errorf("execution session not initialized")
+	}
+	runner, ok := i.executionSession.(shellCommandRunner)
+	if !ok {
+		return fmt.Errorf("shell execution is not supported for %s sessions",
+			NormalizeExecutionMode(i.ExecutionMode))
+	}
+	return runner.RunShellCommand(ctx, command)
 }
 
 // CapturePresentation returns the structured turn-grouped presentation model

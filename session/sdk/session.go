@@ -92,6 +92,7 @@ type Session struct {
 	promptBuf   string // text buffered via SendKeys
 	hasPrompt   bool   // true when agent signals it is ready for input
 	lastContent string // previous content snapshot for HasUpdated
+	workDir     string // workdir for shell command execution
 }
 
 type localImagePromptTransport interface {
@@ -166,6 +167,10 @@ func (s *Session) Start(workDir string) error {
 	s.ctx = ctx
 	s.cancel = cancel
 	s.alive = true
+	s.mu.Unlock()
+
+	s.mu.Lock()
+	s.workDir = workDir
 	s.mu.Unlock()
 
 	go s.consumeEvents()
@@ -409,6 +414,37 @@ func (s *Session) DetachSafely() error { return ErrInteractiveOnly }
 
 // SetDetachedSize returns ErrInteractiveOnly.
 func (s *Session) SetDetachedSize(_, _ int) error { return ErrInteractiveOnly }
+
+// runCommandSeam is the test seam used by RunShellCommand.
+var runCommandSeam shellRunner = defaultShellRunner
+
+// RunShellCommand executes the command through the user's shell in the
+// session workdir and appends a completed synthetic presentation turn
+// containing the result. Non-zero exit codes render as a RowStatus line
+// instead of returning an error; only infrastructure failures (no shell,
+// unable to spawn) return an error.
+func (s *Session) RunShellCommand(ctx context.Context, command string) error {
+	command = strings.TrimSpace(command)
+	if command == "" {
+		return nil
+	}
+	s.mu.Lock()
+	workDir := s.workDir
+	s.mu.Unlock()
+
+	shell, flag, err := resolveShell()
+	if err != nil {
+		s.renderer.AddShellTurn(command, "", -1, false, err.Error())
+		return err
+	}
+	exitCode, output, truncated, runErr := runCommandSeam(ctx, workDir, shell, []string{flag, command})
+	statusMsg := ""
+	if runErr != nil {
+		statusMsg = fmt.Sprintf("shell error: %s", runErr.Error())
+	}
+	s.renderer.AddShellTurn(command, output, exitCode, truncated, statusMsg)
+	return runErr
+}
 
 // --- internal ----------------------------------------------------------
 

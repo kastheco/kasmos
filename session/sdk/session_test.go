@@ -490,3 +490,91 @@ func (c *captureCfgTransport) Start(ctx context.Context, cfg LaunchConfig) error
 	c.onStart(cfg)
 	return c.Transport.Start(ctx, cfg)
 }
+
+// Compile-time assertion: *Session must satisfy the shell runner interface.
+var _ interface{ RunShellCommand(context.Context, string) error } = (*Session)(nil)
+
+// stubShellRunner is a test seam for RunShellCommand that avoids spawning a
+// real subprocess.
+func stubShellRunner(exitCode int, output string, truncated bool, runErr error) shellRunner {
+	return func(_ context.Context, _, _ string, _ []string) (int, string, bool, error) {
+		return exitCode, output, truncated, runErr
+	}
+}
+
+func startedSession(t *testing.T) (*Session, *mockTransport) {
+	t.Helper()
+	mock := newMockTransport()
+	restore := injectTransport(mock)
+	t.Cleanup(restore)
+	s := New("name", "claude", false)
+	require.NoError(t, s.Start(t.TempDir()))
+	return s, mock
+}
+
+func TestRunShellCommand_SuccessAddsCorrectTurn(t *testing.T) {
+	orig := runCommandSeam
+	runCommandSeam = stubShellRunner(0, "hello\nworld", false, nil)
+	t.Cleanup(func() { runCommandSeam = orig })
+
+	s, _ := startedSession(t)
+	err := s.RunShellCommand(context.Background(), "echo")
+	require.NoError(t, err)
+
+	turns := s.CapturePresentation()
+	require.Len(t, turns, 1, "expected exactly one turn")
+	turn := turns[0]
+	kinds := make([]PresentationRowKind, len(turn.Rows))
+	for i, r := range turn.Rows {
+		kinds[i] = r.Kind
+	}
+	require.Equal(t, []PresentationRowKind{RowUser, RowResponse, RowProse, RowProse}, kinds)
+	assert.Equal(t, "! echo", turn.Rows[0].Text)
+	assert.Equal(t, "hello", turn.Rows[2].Text)
+	assert.Equal(t, "world", turn.Rows[3].Text)
+}
+
+func TestRunShellCommand_NonZeroExitAndTruncatedAddsStatusRow(t *testing.T) {
+	orig := runCommandSeam
+	runCommandSeam = stubShellRunner(2, "bad output", true, nil)
+	t.Cleanup(func() { runCommandSeam = orig })
+
+	s, _ := startedSession(t)
+	err := s.RunShellCommand(context.Background(), "bad-cmd")
+	require.NoError(t, err)
+
+	turns := s.CapturePresentation()
+	require.Len(t, turns, 1)
+	turn := turns[0]
+	lastRow := turn.Rows[len(turn.Rows)-1]
+	assert.Equal(t, RowStatus, lastRow.Kind)
+	assert.Contains(t, lastRow.Text, "exit 2")
+	assert.Contains(t, lastRow.Text, "truncated")
+}
+
+func TestRunShellCommand_DoesNotInterruptOpenAgentTurn(t *testing.T) {
+	orig := runCommandSeam
+	runCommandSeam = stubShellRunner(0, "ok", false, nil)
+	t.Cleanup(func() { runCommandSeam = orig })
+
+	s, mock := startedSession(t)
+
+	// Seed an open agent turn via event.
+	mock.events <- Event{Kind: EventTurnStarted, TurnID: "agent-turn-1"}
+	mock.events <- Event{Kind: EventTextDelta, Text: "thinking..."}
+	// Wait for goroutine to process events.
+	require.Eventually(t, func() bool {
+		turns := s.CapturePresentation()
+		return len(turns) == 1
+	}, time.Second, 5*time.Millisecond)
+
+	err := s.RunShellCommand(context.Background(), "ls")
+	require.NoError(t, err)
+
+	turns := s.CapturePresentation()
+	// First turn should be the agent turn (not interrupted), second is shell turn.
+	require.GreaterOrEqual(t, len(turns), 2)
+	agentTurn := turns[0]
+	assert.False(t, agentTurn.Interrupted, "open agent turn must not be interrupted by RunShellCommand")
+	assert.Equal(t, "agent-turn-1", agentTurn.ID)
+}

@@ -1,6 +1,7 @@
 package session
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"time"
@@ -92,6 +93,14 @@ type pendingPermissionProvider interface {
 // pattern as pendingPermissionProvider.
 type presentationProvider interface {
 	CapturePresentation() []*sdk.PresentationTurn
+}
+
+// shellCommandRunner is optionally implemented by execution sessions that can
+// run a local shell command in the session workdir. Follows the same
+// optional-interface pattern as presentationProvider / pendingPermissionProvider
+// so non-SDK backends do not need stub methods.
+type shellCommandRunner interface {
+	RunShellCommand(ctx context.Context, command string) error
 }
 
 // NormalizeSDKSpeedTier canonicalises a speed-tier value.
