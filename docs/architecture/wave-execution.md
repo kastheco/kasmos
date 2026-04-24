@@ -74,6 +74,13 @@ lifecycle signals; signal names stay unchanged (`planner-finished`,
 signals). Blueprint-skip still runs before the final architect pass, so a small
 planner draft may produce a baseline cache that is never consumed.
 
+The final audit artifact is the architect metadata file at
+`.kasmos/cache/<task>-architect.json`. Architect agents may add an optional,
+schema-versioned `decision_audit` object to that file with their
+baseline-vs-planner comparison and final decisions. The parallel
+`.kasmos/cache/<task>-architect-baseline.json` cache is only advisory input for
+that comparison; it is not the durable audit artifact.
+
 ---
 
 ## 2. Concrete two-wave example
@@ -186,7 +193,14 @@ This file is consumed by the orchestrator on every wave start via
 - **`dependency_task_numbers`** — wave-placement cross-check (inter-wave
   ordering is the planner/architect's responsibility)
 
-Schema (Go): `orchestration/meta.go:ArchitectMeta`, `WaveMeta`, `TaskMeta`.
+The same metadata file can include optional **`decision_audit`** data. It is
+schema-versioned for forward compatibility and is read by `kas serve` through
+the task-store-backed architect decisions endpoint. hq shows an `architect
+decisions` tab on task detail pages when that audit metadata is available; older
+metadata without `decision_audit` continues to drive wave orchestration normally.
+
+Schema (Go): `orchestration/meta.go:ArchitectMeta`, `WaveMeta`, `TaskMeta`,
+`ArchitectDecisionAudit`, and `ArchitectDecisionDifference`.
 
 Example fragment (matches this task's own metadata):
 

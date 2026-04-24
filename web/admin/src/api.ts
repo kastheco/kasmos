@@ -1,4 +1,4 @@
-import type { Status, TaskEntry, SubtaskEntry, TopicEntry, AuditEvent, AuditEventKillDetail, InstanceEntry, InstanceAction, ScrollbackDepth, ExecutionMode, PresentationResponse, PresentationRowKind, ToolDiffPayload, ToolPreviewPayload, PermissionDecision } from "./types";
+import type { Status, TaskEntry, SubtaskEntry, TopicEntry, AuditEvent, AuditEventKillDetail, InstanceEntry, InstanceAction, ScrollbackDepth, ExecutionMode, PresentationResponse, PresentationRowKind, ToolDiffPayload, ToolPreviewPayload, PermissionDecision, ArchitectDecisionAuditResponse } from "./types";
 
 // Legacy persisted statuses that predate canonical normalization at ingest.
 // Mirrors config/taskfsm/fsm.go:MapLegacyStatus so the SPA reader boundary
@@ -189,6 +189,22 @@ export async function getSubtasks(
   return (await requestJSON<SubtaskEntry[] | null>(
     `/v1/projects/${encodeURIComponent(project)}/tasks/${encodeURIComponent(filename)}/subtasks`,
   )) ?? [];
+}
+
+export async function getArchitectDecisionAudit(
+  project: string,
+  filename: string,
+): Promise<ArchitectDecisionAuditResponse> {
+  try {
+    return await requestJSON<ArchitectDecisionAuditResponse>(
+      `${taskBase(project, filename)}/architect-decisions`,
+    );
+  } catch (err) {
+    if (err instanceof RequestError && err.code === "repo_not_registered") {
+      return { available: false, reason: "repo_not_registered" };
+    }
+    throw err;
+  }
 }
 
 export async function listTopics(project: string): Promise<TopicEntry[]> {

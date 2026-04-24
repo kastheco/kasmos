@@ -605,6 +605,13 @@ func TestWriteProjectSkills(t *testing.T) {
 	assert.Contains(t, string(architectSkill), "## parallel baseline mode")
 	assert.Contains(t, string(architectSkill), ".kasmos/cache/<plan-file>-architect-baseline.json")
 	assert.Contains(t, string(architectSkill), "validate `plan_file`, `project`, `description_hash`, `schema_version`, and non-empty `baseline_markdown`")
+	assert.Contains(t, string(architectSkill), ".kasmos/cache/<plan-file>-architect.json")
+	assert.Contains(t, string(architectSkill), "decision_audit")
+	assert.Contains(t, string(architectSkill), "planner_summary")
+	assert.Contains(t, string(architectSkill), "baseline_summary")
+	assert.Contains(t, string(architectSkill), "final_decision")
+	assert.Contains(t, string(architectSkill), "`baseline_source`: one of `parallel_cache`, `inline`, `absent`, or `stale`")
+	assert.Contains(t, string(architectSkill), "advisory input and must not be treated as final implementation state")
 	assert.NotContains(t, string(architectSkill), "**elaborator** agent")
 
 	// cli-tools resource files included

@@ -3,7 +3,32 @@
 // for client-server communication.
 package taskstore
 
-import "time"
+import (
+	"errors"
+	"fmt"
+	"time"
+)
+
+// ErrNotFound marks task-store missing-resource errors. Store implementations
+// may preserve their historical Error strings while still matching this
+// sentinel through errors.Is.
+var ErrNotFound = errors.New("not found")
+
+type notFoundError struct {
+	msg string
+}
+
+func newNotFoundError(format string, args ...any) error {
+	return notFoundError{msg: fmt.Sprintf(format, args...)}
+}
+
+func (e notFoundError) Error() string {
+	return e.msg
+}
+
+func (e notFoundError) Is(target error) bool {
+	return target == ErrNotFound
+}
 
 // ExecutionState captures finer-grained execution lifecycle metadata.
 type ExecutionState struct {

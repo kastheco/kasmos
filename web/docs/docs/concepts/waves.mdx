@@ -89,6 +89,8 @@ To restore planner-first behavior — where the planner finishes before the arch
 
 The baseline cache is safe to delete and is not task-store state. The baseline session writes the cache artifact only; it does not edit task content, update lifecycle status, or emit signals. Signal names are unchanged. Blueprint skip can still skip the final architect pass for small planner drafts, so a baseline cache may be produced but unused.
 
+The final architect metadata is written to `.kasmos/cache/<task>-architect.json`. That file may include an optional, schema-versioned `decision_audit` object with the architect's baseline-vs-planner comparison and final decision. The parallel `.kasmos/cache/<task>-architect-baseline.json` file is advisory input only, not the final audit artifact. hq shows an `architect decisions` tab on task detail pages when audit metadata is available.
+
 ## wave confirmation
 
 When a wave completes, kasmos shows a confirmation dialog before advancing to the next wave. This gives you a chance to review what was done and abort if something went wrong. `NeedsConfirm()` returns `true` once per completion — calling it marks the dialog as shown. If you cancel, `ResetConfirm()` re-arms the latch so the dialog reappears.

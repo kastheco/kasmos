@@ -2,7 +2,6 @@ package tmux
 
 import (
 	"fmt"
-	cmd2 "github.com/kastheco/kasmos/cmd"
 	"github.com/kastheco/kasmos/log"
 	"math/rand"
 	"os"
@@ -94,11 +93,11 @@ func TestStartTmuxSession(t *testing.T) {
 	err := session.Start(workdir)
 	require.NoError(t, err)
 	require.Equal(t, 2, len(ptyFactory.cmds))
-	require.Contains(t, cmd2.ToString(ptyFactory.cmds[0]),
+	require.Contains(t, commandString(ptyFactory.cmds[0]),
 		fmt.Sprintf("tmux new-session -d -s kas_test-session -c %s KASMOS_MANAGED=1 CLAUDE_CODE_NO_FLICKER=0 claude", workdir))
-	require.Contains(t, cmd2.ToString(ptyFactory.cmds[0]), "2>>'"+workdir+"/.kasmos/logs/kas_test-session.log'")
+	require.Contains(t, commandString(ptyFactory.cmds[0]), "2>>'"+workdir+"/.kasmos/logs/kas_test-session.log'")
 	require.Equal(t, "tmux attach-session -t kas_test-session",
-		cmd2.ToString(ptyFactory.cmds[1]))
+		commandString(ptyFactory.cmds[1]))
 
 	require.Equal(t, 2, len(ptyFactory.files))
 
@@ -137,9 +136,9 @@ func TestStartTmuxSessionWithSkipPermissions(t *testing.T) {
 	err := session.Start(workdir)
 	require.NoError(t, err)
 	require.Equal(t, 2, len(ptyFactory.cmds))
-	require.Contains(t, cmd2.ToString(ptyFactory.cmds[0]),
+	require.Contains(t, commandString(ptyFactory.cmds[0]),
 		fmt.Sprintf("tmux new-session -d -s kas_test-session -c %s KASMOS_MANAGED=1 CLAUDE_CODE_NO_FLICKER=0 claude --permission-mode bypassPermissions", workdir))
-	require.Contains(t, cmd2.ToString(ptyFactory.cmds[0]), "2>>'"+workdir+"/.kasmos/logs/kas_test-session.log'")
+	require.Contains(t, commandString(ptyFactory.cmds[0]), "2>>'"+workdir+"/.kasmos/logs/kas_test-session.log'")
 }
 
 func recordKilledSessions(killedSessions *[]string) func(cmd *exec.Cmd) error {
@@ -227,9 +226,9 @@ func TestStartTmuxSessionSkipPermissionsNotAppliedToAider(t *testing.T) {
 	err := session.Start(workdir)
 	require.NoError(t, err)
 	require.Equal(t, 2, len(ptyFactory.cmds))
-	require.Contains(t, cmd2.ToString(ptyFactory.cmds[0]),
+	require.Contains(t, commandString(ptyFactory.cmds[0]),
 		fmt.Sprintf("tmux new-session -d -s kas_test-session -c %s KASMOS_MANAGED=1 aider --model gpt-4", workdir))
-	require.Contains(t, cmd2.ToString(ptyFactory.cmds[0]), "2>>'"+workdir+"/.kasmos/logs/kas_test-session.log'")
+	require.Contains(t, commandString(ptyFactory.cmds[0]), "2>>'"+workdir+"/.kasmos/logs/kas_test-session.log'")
 }
 
 func TestStartTmuxSessionOpenCode(t *testing.T) {
@@ -240,7 +239,7 @@ func TestStartTmuxSessionOpenCode(t *testing.T) {
 	var ranCmds []string
 	cmdExec := cmd_test.MockCmdExec{
 		RunFunc: func(cmd *exec.Cmd) error {
-			ranCmds = append(ranCmds, cmd2.ToString(cmd))
+			ranCmds = append(ranCmds, commandString(cmd))
 			if strings.Contains(cmd.String(), "has-session") && !created {
 				created = true
 				return fmt.Errorf("session does not exist yet")
@@ -264,7 +263,7 @@ func TestStartTmuxSessionOpenCode(t *testing.T) {
 
 	// Verify new-session used the right program.
 	require.Equal(t, fmt.Sprintf("tmux new-session -d -s kas_oc-session -c %s KASMOS_MANAGED=1 opencode --print-logs 2>>'%s/.kasmos/logs/kas_oc-session.log'", workdir, workdir),
-		cmd2.ToString(ptyFactory.cmds[0]))
+		commandString(ptyFactory.cmds[0]))
 
 	// Verify no send-keys tap was issued (opencode needs no trust-screen tap).
 	for _, c := range ranCmds {
@@ -279,7 +278,7 @@ func TestSendKeys(t *testing.T) {
 	var ranCmds []string
 	cmdExec := cmd_test.MockCmdExec{
 		RunFunc: func(cmd *exec.Cmd) error {
-			ranCmds = append(ranCmds, cmd2.ToString(cmd))
+			ranCmds = append(ranCmds, commandString(cmd))
 			return nil
 		},
 		OutputFunc: func(cmd *exec.Cmd) ([]byte, error) {
@@ -303,7 +302,7 @@ func TestTapEnter(t *testing.T) {
 	var ranCmds []string
 	cmdExec := cmd_test.MockCmdExec{
 		RunFunc: func(cmd *exec.Cmd) error {
-			ranCmds = append(ranCmds, cmd2.ToString(cmd))
+			ranCmds = append(ranCmds, commandString(cmd))
 			return nil
 		},
 		OutputFunc: func(cmd *exec.Cmd) ([]byte, error) {
@@ -349,7 +348,7 @@ func TestStartTmuxSessionInjectsAgentFlag(t *testing.T) {
 	require.Equal(
 		t,
 		fmt.Sprintf("tmux new-session -d -s kas_agent-test -c %s KASMOS_MANAGED=1 opencode --agent planner --print-logs 2>>'%s/.kasmos/logs/kas_agent-test.log'", workdir, workdir),
-		cmd2.ToString(ptyFactory.cmds[0]),
+		commandString(ptyFactory.cmds[0]),
 	)
 }
 
@@ -360,7 +359,7 @@ func TestTapDAndEnter(t *testing.T) {
 	var ranCmds []string
 	cmdExec := cmd_test.MockCmdExec{
 		RunFunc: func(cmd *exec.Cmd) error {
-			ranCmds = append(ranCmds, cmd2.ToString(cmd))
+			ranCmds = append(ranCmds, commandString(cmd))
 			return nil
 		},
 		OutputFunc: func(cmd *exec.Cmd) ([]byte, error) {
@@ -422,7 +421,7 @@ func TestStartOpenCodeWithInitialPrompt(t *testing.T) {
 	require.Equal(
 		t,
 		fmt.Sprintf("tmux new-session -d -s kas_oc-prompt -c %s KASMOS_MANAGED=1 opencode --agent planner --prompt 'Plan auth. Goal: JWT tokens.' --print-logs 2>>'%s/.kasmos/logs/kas_oc-prompt.log'", workdir, workdir),
-		cmd2.ToString(ptyFactory.cmds[0]),
+		commandString(ptyFactory.cmds[0]),
 	)
 }
 
@@ -453,9 +452,9 @@ func TestStartClaudeWithInitialPrompt(t *testing.T) {
 
 	err := s.Start(workdir)
 	require.NoError(t, err)
-	require.Contains(t, cmd2.ToString(ptyFactory.cmds[0]),
+	require.Contains(t, commandString(ptyFactory.cmds[0]),
 		fmt.Sprintf("tmux new-session -d -s kas_claude-prompt -c %s KASMOS_MANAGED=1 CLAUDE_CODE_NO_FLICKER=0 claude 'Implement the auth module.'", workdir))
-	require.Contains(t, cmd2.ToString(ptyFactory.cmds[0]), "2>>'"+workdir+"/.kasmos/logs/kas_claude-prompt.log'")
+	require.Contains(t, commandString(ptyFactory.cmds[0]), "2>>'"+workdir+"/.kasmos/logs/kas_claude-prompt.log'")
 }
 
 func TestStartResolvesExecutablePath(t *testing.T) {
@@ -490,9 +489,9 @@ func TestStartResolvesExecutablePath(t *testing.T) {
 	s.SetAgentType("planner")
 	err := s.Start(workdir)
 	require.NoError(t, err)
-	require.Contains(t, cmd2.ToString(ptyFactory.cmds[0]),
+	require.Contains(t, commandString(ptyFactory.cmds[0]),
 		fmt.Sprintf("tmux new-session -d -s kas_resolved-path -c %s KASMOS_MANAGED=1 CLAUDE_CODE_NO_FLICKER=0 '/home/test/.local/bin/claude' --agent planner", workdir))
-	require.Contains(t, cmd2.ToString(ptyFactory.cmds[0]), "2>>'"+workdir+"/.kasmos/logs/kas_resolved-path.log'")
+	require.Contains(t, commandString(ptyFactory.cmds[0]), "2>>'"+workdir+"/.kasmos/logs/kas_resolved-path.log'")
 }
 
 func TestStartClaudeWithNoFlickerEnabled(t *testing.T) {
@@ -521,7 +520,7 @@ func TestStartClaudeWithNoFlickerEnabled(t *testing.T) {
 	s.SetNoFlicker(true)
 	err := s.Start(workdir)
 	require.NoError(t, err)
-	require.Contains(t, cmd2.ToString(ptyFactory.cmds[0]),
+	require.Contains(t, commandString(ptyFactory.cmds[0]),
 		fmt.Sprintf("tmux new-session -d -s kas_no-flicker-on -c %s KASMOS_MANAGED=1 CLAUDE_CODE_NO_FLICKER=1 claude", workdir))
 }
 
@@ -555,7 +554,7 @@ func TestStartClaudeWithLongPromptUsesFile(t *testing.T) {
 	require.NoError(t, err)
 
 	// The command should reference a @.kasmos/prompt-*.md instead of inlining.
-	cmdStr := cmd2.ToString(ptyFactory.cmds[0])
+	cmdStr := commandString(ptyFactory.cmds[0])
 	require.Contains(t, cmdStr, "@.kasmos/prompt-")
 	require.NotContains(t, cmdStr, longPrompt, "long prompt must not be inlined")
 
@@ -792,7 +791,7 @@ func TestStartOpenCodeWithLongPromptUsesCommandSubstitution(t *testing.T) {
 	require.NoError(t, err)
 
 	// opencode should use $(cat ...) not @file syntax.
-	cmdStr := cmd2.ToString(ptyFactory.cmds[0])
+	cmdStr := commandString(ptyFactory.cmds[0])
 	require.Contains(t, cmdStr, "$(cat ")
 	require.Contains(t, cmdStr, ".kasmos/prompt-")
 	require.NotContains(t, cmdStr, "@.kasmos/prompt-", "opencode must not use Claude's @file syntax")
@@ -840,6 +839,6 @@ func TestStartOpenCodeWithPromptContainingSingleQuotes(t *testing.T) {
 	require.Equal(
 		t,
 		fmt.Sprintf("tmux new-session -d -s kas_oc-quote -c %s KASMOS_MANAGED=1 opencode --prompt 'it'\\''s a test' --print-logs 2>>'%s/.kasmos/logs/kas_oc-quote.log'", workdir, workdir),
-		cmd2.ToString(ptyFactory.cmds[0]),
+		commandString(ptyFactory.cmds[0]),
 	)
 }

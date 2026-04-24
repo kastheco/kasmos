@@ -53,7 +53,7 @@ After the wizard completes:
 
    Files that already exist are skipped unless `--force` is given.
 
-   The scaffolded architect skill includes the current planning contract, including the default-on parallel baseline guidance and opt-out handling for `[orchestration].parallel_planner_architect = false`. Run `kas setup --force` only when you intend to refresh those scaffold-managed skill and prompt files from the bundled templates.
+   The scaffolded architect skill includes the current planning contract, including the default-on parallel baseline guidance and opt-out handling for `[orchestration].parallel_planner_architect = false`. It also instructs architect agents to write the final `decision_audit` into `.kasmos/cache/<task>-architect.json` so hq can display the baseline-vs-planner decision record. Run `kas setup --force` only when you intend to refresh those scaffold-managed skill and prompt files from the bundled templates.
 
 ## example
 

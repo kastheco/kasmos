@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	cmd2 "github.com/kastheco/kasmos/cmd"
 	"github.com/kastheco/kasmos/cmd/cmd_test"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -196,9 +195,9 @@ func TestStart_CreatesAndRestoresSession(t *testing.T) {
 	err := s.Start(workdir)
 	require.NoError(t, err)
 	require.Len(t, ptyFactory.cmds, 2) // new-session + attach-session
-	assert.Contains(t, cmd2.ToString(ptyFactory.cmds[0]), "new-session")
-	assert.Contains(t, cmd2.ToString(ptyFactory.cmds[0]), "KASMOS_MANAGED=1")
-	assert.Contains(t, cmd2.ToString(ptyFactory.cmds[1]), "attach-session")
+	assert.Contains(t, commandString(ptyFactory.cmds[0]), "new-session")
+	assert.Contains(t, commandString(ptyFactory.cmds[0]), "KASMOS_MANAGED=1")
+	assert.Contains(t, commandString(ptyFactory.cmds[1]), "attach-session")
 }
 
 func TestStart_WithSkipPermissions(t *testing.T) {
@@ -226,7 +225,7 @@ func TestStart_WithSkipPermissions(t *testing.T) {
 	s := NewTmuxSessionWithDeps("test-skip", "claude", true, ptyFactory, cmdExec)
 	err := s.Start(workdir)
 	require.NoError(t, err)
-	assert.Contains(t, cmd2.ToString(ptyFactory.cmds[0]), "--permission-mode bypassPermissions")
+	assert.Contains(t, commandString(ptyFactory.cmds[0]), "--permission-mode bypassPermissions")
 }
 
 func TestStart_OpenCode_NoTrustTap(t *testing.T) {
@@ -237,7 +236,7 @@ func TestStart_OpenCode_NoTrustTap(t *testing.T) {
 	var ranCmds []string
 	cmdExec := cmd_test.MockCmdExec{
 		RunFunc: func(cmd *exec.Cmd) error {
-			ranCmds = append(ranCmds, cmd2.ToString(cmd))
+			ranCmds = append(ranCmds, commandString(cmd))
 			if strings.Contains(cmd.String(), "has-session") && !created {
 				created = true
 				return fmt.Errorf("no session")
@@ -269,7 +268,7 @@ func TestStart_DisablesMouseOnInnerSession(t *testing.T) {
 	var ranCmds []string
 	cmdExec := cmd_test.MockCmdExec{
 		RunFunc: func(cmd *exec.Cmd) error {
-			ranCmds = append(ranCmds, cmd2.ToString(cmd))
+			ranCmds = append(ranCmds, commandString(cmd))
 			if strings.Contains(cmd.String(), "has-session") && !created {
 				created = true
 				return fmt.Errorf("no session")
@@ -305,7 +304,7 @@ func TestRestore_DisablesMouseOnRestoredSession(t *testing.T) {
 	var ranCmds []string
 	cmdExec := cmd_test.MockCmdExec{
 		RunFunc: func(cmd *exec.Cmd) error {
-			ranCmds = append(ranCmds, cmd2.ToString(cmd))
+			ranCmds = append(ranCmds, commandString(cmd))
 			return nil
 		},
 		OutputFunc: func(cmd *exec.Cmd) ([]byte, error) {
@@ -353,7 +352,7 @@ func TestStart_InjectsAgentFlag(t *testing.T) {
 	s.SetAgentType("planner")
 	err := s.Start(workdir)
 	require.NoError(t, err)
-	assert.Contains(t, cmd2.ToString(ptyFactory.cmds[0]), "--agent planner")
+	assert.Contains(t, commandString(ptyFactory.cmds[0]), "--agent planner")
 }
 
 func TestStart_InjectsTaskEnvVars(t *testing.T) {
@@ -382,7 +381,7 @@ func TestStart_InjectsTaskEnvVars(t *testing.T) {
 	s.SetTaskEnv(3, 2, 4)
 	err := s.Start(workdir)
 	require.NoError(t, err)
-	cmdStr := cmd2.ToString(ptyFactory.cmds[0])
+	cmdStr := commandString(ptyFactory.cmds[0])
 	assert.Contains(t, cmdStr, "KASMOS_TASK=3")
 	assert.Contains(t, cmdStr, "KASMOS_WAVE=2")
 	assert.Contains(t, cmdStr, "KASMOS_PEERS=4")
@@ -415,7 +414,7 @@ func TestStart_WithInitialPrompt_OpenCode(t *testing.T) {
 	s.SetInitialPrompt("Plan auth. Goal: JWT tokens.")
 	err := s.Start(workdir)
 	require.NoError(t, err)
-	assert.Contains(t, cmd2.ToString(ptyFactory.cmds[0]), "--prompt 'Plan auth. Goal: JWT tokens.'")
+	assert.Contains(t, commandString(ptyFactory.cmds[0]), "--prompt 'Plan auth. Goal: JWT tokens.'")
 }
 
 func TestHasAttachedClients(t *testing.T) {
@@ -504,7 +503,7 @@ func TestStart_Codex_NoAgentFlag(t *testing.T) {
 	s.SetAgentType("coder")
 	err := s.Start(workdir)
 	require.NoError(t, err)
-	cmdStr := cmd2.ToString(ptyFactory.cmds[0])
+	cmdStr := commandString(ptyFactory.cmds[0])
 	assert.NotContains(t, cmdStr, "--agent", "codex must never receive --agent flag")
 }
 
@@ -530,7 +529,7 @@ func TestStart_Codex_BypassFlagPresentWithSkipPermissions(t *testing.T) {
 	s := NewTmuxSessionWithDeps("test-codex-bypass", "codex", true, ptyFactory, cmdExec)
 	err := s.Start(workdir)
 	require.NoError(t, err)
-	assert.Contains(t, cmd2.ToString(ptyFactory.cmds[0]), codexBypassFlag)
+	assert.Contains(t, commandString(ptyFactory.cmds[0]), codexBypassFlag)
 }
 
 func TestStart_Codex_BypassFlagAbsentWithoutSkipPermissions(t *testing.T) {
@@ -555,7 +554,7 @@ func TestStart_Codex_BypassFlagAbsentWithoutSkipPermissions(t *testing.T) {
 	s := NewTmuxSessionWithDeps("test-codex-nobypass", "codex", false, ptyFactory, cmdExec)
 	err := s.Start(workdir)
 	require.NoError(t, err)
-	assert.NotContains(t, cmd2.ToString(ptyFactory.cmds[0]), codexBypassFlag)
+	assert.NotContains(t, commandString(ptyFactory.cmds[0]), codexBypassFlag)
 }
 
 func TestStart_Codex_BypassFlagNotDuplicatedWhenAlreadyInProgram(t *testing.T) {
@@ -584,7 +583,7 @@ func TestStart_Codex_BypassFlagNotDuplicatedWhenAlreadyInProgram(t *testing.T) {
 	s := NewTmuxSessionWithDeps("test-codex-nodup", program, true, ptyFactory, cmdExec)
 	err := s.Start(workdir)
 	require.NoError(t, err)
-	cmdStr := cmd2.ToString(ptyFactory.cmds[0])
+	cmdStr := commandString(ptyFactory.cmds[0])
 	assert.Equal(t, 1, strings.Count(cmdStr, codexBypassFlag),
 		"bypass flag must appear exactly once even when already in program string")
 }
@@ -612,7 +611,7 @@ func TestStart_Claude_BypassFlagNotDuplicatedWhenAlreadyInProgram(t *testing.T) 
 	s := NewTmuxSessionWithDeps("test-claude-nodup", program, true, ptyFactory, cmdExec)
 	err := s.Start(workdir)
 	require.NoError(t, err)
-	cmdStr := cmd2.ToString(ptyFactory.cmds[0])
+	cmdStr := commandString(ptyFactory.cmds[0])
 	assert.Equal(t, 1, strings.Count(cmdStr, "--permission-mode bypassPermissions"),
 		"bypass flag must appear exactly once even when already in program string")
 }
@@ -640,7 +639,7 @@ func TestStart_Codex_ShortPromptPositional(t *testing.T) {
 	s.SetInitialPrompt("Fix the bug in auth.go")
 	err := s.Start(workdir)
 	require.NoError(t, err)
-	cmdStr := cmd2.ToString(ptyFactory.cmds[0])
+	cmdStr := commandString(ptyFactory.cmds[0])
 	// Prompt should appear as positional arg, not --prompt flag
 	assert.Contains(t, cmdStr, "'Fix the bug in auth.go'")
 	assert.NotContains(t, cmdStr, "--prompt")
@@ -670,7 +669,7 @@ func TestStart_Codex_LongPromptUsesCatSubstitution(t *testing.T) {
 	s.SetInitialPrompt(longPrompt)
 	err := s.Start(workdir)
 	require.NoError(t, err)
-	cmdStr := cmd2.ToString(ptyFactory.cmds[0])
+	cmdStr := commandString(ptyFactory.cmds[0])
 	assert.Contains(t, cmdStr, "$(cat ")
 	assert.Contains(t, cmdStr, ".kasmos/prompt-")
 	assert.NotContains(t, cmdStr, longPrompt, "long prompt must not be inlined")
@@ -684,7 +683,7 @@ func TestStart_Codex_ReadyWaitUsesAdapterPath(t *testing.T) {
 	var ranCmds []string
 	cmdExec := cmd_test.MockCmdExec{
 		RunFunc: func(cmd *exec.Cmd) error {
-			ranCmds = append(ranCmds, cmd2.ToString(cmd))
+			ranCmds = append(ranCmds, commandString(cmd))
 			if strings.Contains(cmd.String(), "has-session") && !created {
 				created = true
 				return fmt.Errorf("no session")
@@ -733,7 +732,7 @@ func TestStart_WithInitialPrompt_Claude(t *testing.T) {
 	s.SetInitialPrompt("Implement the auth module.")
 	err := s.Start(workdir)
 	require.NoError(t, err)
-	assert.Contains(t, cmd2.ToString(ptyFactory.cmds[0]), "'Implement the auth module.'")
+	assert.Contains(t, commandString(ptyFactory.cmds[0]), "'Implement the auth module.'")
 }
 
 func TestStart_WithInitialPrompt_Claude_NoTrustPromptReturnsOnStartupUI(t *testing.T) {
@@ -744,7 +743,7 @@ func TestStart_WithInitialPrompt_Claude_NoTrustPromptReturnsOnStartupUI(t *testi
 	var ranCmds []string
 	cmdExec := cmd_test.MockCmdExec{
 		RunFunc: func(cmd *exec.Cmd) error {
-			ranCmds = append(ranCmds, cmd2.ToString(cmd))
+			ranCmds = append(ranCmds, commandString(cmd))
 			if strings.Contains(cmd.String(), "has-session") && !created {
 				created = true
 				return fmt.Errorf("no session")

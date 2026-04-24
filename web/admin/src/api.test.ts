@@ -32,6 +32,7 @@ import {
   saveProjectConfig,
   runProjectScaffoldSync,
   fetchAuditEvents,
+  getArchitectDecisionAudit,
 } from "./api.ts";
 
 function assertEqual<T>(actual: T, expected: T, msg: string): void {
@@ -214,6 +215,72 @@ assertEqual(
   auditEvents[0].instance_title,
   "coder-5",
   "fetchAuditEvents normalizes snake_case instance title",
+);
+
+// getArchitectDecisionAudit: URL-encodes project and filename, returns parsed body.
+mockFetch(
+  true,
+  200,
+  JSON.stringify({
+    available: true,
+    decision_audit: {
+      schema_version: 1,
+      plan_file: "audit-architect-decisions",
+      project: "kasmos hq",
+      created_at: "2026-04-24T00:00:00Z",
+      summary: "architect changed the task split",
+    },
+  }),
+);
+const decisionAudit = await getArchitectDecisionAudit(
+  "kasmos hq",
+  "audit/architect decisions",
+);
+assertEqual(
+  _lastFetchedUrl,
+  "/v1/projects/kasmos%20hq/tasks/audit%2Farchitect%20decisions/architect-decisions",
+  "getArchitectDecisionAudit encodes project and filename in URL",
+);
+assertEqual(decisionAudit.available, true, "getArchitectDecisionAudit parses response");
+assertEqual(
+  decisionAudit.decision_audit?.plan_file,
+  "audit-architect-decisions",
+  "getArchitectDecisionAudit preserves audit plan_file",
+);
+
+// getArchitectDecisionAudit: repo-not-registered errors become a renderable empty response.
+mockFetch(
+  false,
+  503,
+  JSON.stringify({ error: "repo not registered", code: "repo_not_registered" }),
+);
+const unregisteredAudit = await getArchitectDecisionAudit("missing", "task");
+assertEqual(
+  unregisteredAudit.available,
+  false,
+  "getArchitectDecisionAudit maps repo-not-registered to unavailable",
+);
+assertEqual(
+  unregisteredAudit.reason,
+  "repo_not_registered",
+  "getArchitectDecisionAudit preserves repo-not-registered reason",
+);
+
+// getArchitectDecisionAudit: unrelated API errors still propagate.
+mockFetch(false, 500, JSON.stringify({ error: "cache read failed" }));
+let decisionAuditError: Error | null = null;
+try {
+  await getArchitectDecisionAudit("kasmos", "task");
+} catch (e) {
+  decisionAuditError = e as Error;
+}
+if (!decisionAuditError) {
+  throw new Error("getArchitectDecisionAudit should throw unrelated API errors");
+}
+assertEqual(
+  decisionAuditError.message,
+  "cache read failed",
+  "getArchitectDecisionAudit rethrows unrelated API errors",
 );
 
 // listInstances returns [] for a null body.

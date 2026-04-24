@@ -18,6 +18,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/kastheco/kasmos/config/architectaudit"
 	"github.com/kastheco/kasmos/config/auditlog"
 	"github.com/kastheco/kasmos/config/configactions"
 	"github.com/kastheco/kasmos/config/taskactions"
@@ -294,10 +295,10 @@ func newProjectListHandler(sharedDB *sql.DB, validProjects map[string]struct{}) 
 // the more-specific method+path patterns (e.g. PUT /content) win over the plain
 // prefix delegated to taskAPI. auditAPI keeps its own exact route for
 // GET /audit-events; everything else falls through to taskAPI.
-// previewAPI serves live-preview instance routes and configAPI serves project
-// config and scaffold-sync routes; both are registered before the generic
-// taskstore prefix to take precedence.
-func newServeAPIRootMux(sharedDB *sql.DB, repoRegs serveRepoRegistration, taskAPI, auditAPI, actionsAPI, previewAPI, configAPI http.Handler) *http.ServeMux {
+// previewAPI serves live-preview instance routes, configAPI serves project
+// config and scaffold-sync routes, and architectAuditAPI serves cached architect
+// decisions; all are registered before the generic taskstore prefix.
+func newServeAPIRootMux(sharedDB *sql.DB, repoRegs serveRepoRegistration, taskAPI, auditAPI, actionsAPI, previewAPI, configAPI, architectAuditAPI http.Handler) *http.ServeMux {
 	rootMux := http.NewServeMux()
 	rootMux.Handle("/v1/ping", taskAPI)
 	rootMux.Handle("GET /v1/projects", newProjectListHandler(sharedDB, repoRegs.valid))
@@ -328,6 +329,9 @@ func newServeAPIRootMux(sharedDB *sql.DB, repoRegs serveRepoRegistration, taskAP
 	rootMux.Handle("GET /v1/projects/{project}/config", configAPI)
 	rootMux.Handle("PUT /v1/projects/{project}/config", configAPI)
 	rootMux.Handle("POST /v1/projects/{project}/scaffold-sync", configAPI)
+
+	// Cached architect decisions route — before the generic taskstore prefix.
+	rootMux.Handle("GET /v1/projects/{project}/tasks/{filename}/architect-decisions", architectAuditAPI)
 
 	// Exact audit route, then generic taskstore prefix.
 	rootMux.Handle("GET /v1/projects/{project}/audit-events", auditAPI)
@@ -435,6 +439,7 @@ func NewServeCmd() *cobra.Command {
 			daemonLister := newDaemonInstanceLister()
 			var previewAPI http.Handler
 			var configAPI http.Handler
+			var architectAuditAPI http.Handler
 			switch {
 			case cmd.Flags().Changed("repo"):
 				previewResolve := func(project string) (string, error) {
@@ -456,6 +461,8 @@ func NewServeCmd() *cobra.Command {
 				}
 				configHandler := configactions.NewHandler(configResolve)
 				configAPI = projectValidationMiddleware(repoRegs.valid, configHandler)
+				architectAuditHandler := architectaudit.NewHandler(store, architectaudit.ProjectRootResolver(configResolve))
+				architectAuditAPI = projectValidationMiddleware(repoRegs.valid, architectAuditHandler)
 			case cmd.Flags().Changed("db"):
 				previewAPI = livepreview.NewHTTPHandlerWithDaemon(func(string) (string, error) {
 					return "", livepreview.ErrPreviewUnavailable
@@ -463,10 +470,17 @@ func NewServeCmd() *cobra.Command {
 				configAPI = configactions.NewHandler(func(string) (string, error) {
 					return "", configactions.ErrRepoNotRegistered
 				})
+				architectAuditAPI = architectaudit.NewHandler(store, func(string) (string, error) {
+					return "", architectaudit.ErrRepoNotRegistered
+				})
 			default:
 				previewAPI = livepreview.NewHTTPHandlerWithDaemon(newDynamicProjectRootResolver(), &livepreview.ExecPaneRunner{}, daemonLister, daemonLister)
 				configAPI = configactions.NewHandler(
 					configactions.ProjectRootResolver(newDynamicProjectRootResolverWithUnavailable(configactions.ErrRepoNotRegistered)),
+				)
+				architectAuditAPI = architectaudit.NewHandler(
+					store,
+					architectaudit.ProjectRootResolver(newDynamicProjectRootResolverWithUnavailable(architectaudit.ErrRepoNotRegistered)),
 				)
 			}
 			if len(repoPaths) > 0 {
@@ -475,7 +489,7 @@ func NewServeCmd() *cobra.Command {
 				actionsAPI = projectValidationMiddleware(repoRegs.valid, actionsAPI)
 			}
 
-			rootMux := newServeAPIRootMux(sharedDB, repoRegs, taskAPI, auditAPI, actionsAPI, previewAPI, configAPI)
+			rootMux := newServeAPIRootMux(sharedDB, repoRegs, taskAPI, auditAPI, actionsAPI, previewAPI, configAPI, architectAuditAPI)
 
 			// Resolve the admin filesystem: --admin-dir flag overrides embedded assets.
 			// Require the directory to contain index.html so users aren't accidentally
