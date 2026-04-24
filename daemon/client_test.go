@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -17,6 +18,19 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func newUnixSocketTestServer(t *testing.T, handler http.Handler) string {
+	t.Helper()
+	socketPath := t.TempDir() + "/daemon.sock"
+	ln, err := net.Listen("unix", socketPath)
+	require.NoError(t, err)
+
+	srv := httptest.NewUnstartedServer(handler)
+	srv.Listener = ln
+	srv.Start()
+	t.Cleanup(srv.Close)
+	return socketPath
+}
 
 func TestSocketClient_ListTasks(t *testing.T) {
 	t.Run("happy path", func(t *testing.T) {
@@ -117,6 +131,51 @@ func TestSocketClient_SendInstancePermissionResponse(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "/v1/repos/cms/instances/agent-1/permission")
 		assert.Contains(t, err.Error(), fmt.Sprintf("status %d", http.StatusConflict))
+	})
+}
+
+func TestSocketClient_RunInstanceShellCommand(t *testing.T) {
+	t.Run("happy path over unix socket", func(t *testing.T) {
+		var gotMethod string
+		var gotPath string
+		var gotBody []byte
+		socketPath := newUnixSocketTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			gotMethod = r.Method
+			gotPath = r.URL.Path
+			var err error
+			gotBody, err = io.ReadAll(r.Body)
+			require.NoError(t, err)
+			w.WriteHeader(http.StatusNoContent)
+		}))
+
+		client := NewSocketClient(socketPath)
+
+		err := client.RunInstanceShellCommand("cms", "agent-1", "echo hello")
+		require.NoError(t, err)
+		assert.Equal(t, http.MethodPost, gotMethod)
+		assert.Equal(t, "/v1/repos/cms/instances/agent-1/shell", gotPath)
+		assert.JSONEq(t, `{"command":"echo hello"}`, string(gotBody))
+	})
+
+	t.Run("non-2xx returns ClientStatusError", func(t *testing.T) {
+		socketPath := newUnixSocketTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			assert.Equal(t, http.MethodPost, r.Method)
+			assert.Equal(t, "/v1/repos/cms/instances/agent-1/shell", r.URL.Path)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte(`{"error":"runner failed"}`))
+		}))
+
+		client := NewSocketClient(socketPath)
+
+		err := client.RunInstanceShellCommand("cms", "agent-1", "echo hello")
+		require.Error(t, err)
+		var cse *ClientStatusError
+		require.ErrorAs(t, err, &cse)
+		assert.Equal(t, http.MethodPost, cse.Method)
+		assert.Equal(t, "/v1/repos/cms/instances/agent-1/shell", cse.Path)
+		assert.Equal(t, http.StatusInternalServerError, cse.StatusCode)
+		assert.Contains(t, cse.Message, "runner failed")
 	})
 }
 
