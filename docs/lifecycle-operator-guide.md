@@ -77,3 +77,5 @@ for compatibility with existing automation, the persisted gateway / signal wire 
 the canonical signal names for the master agent verdict are `verify_approved` and `verify_failed`.
 
 deprecated aliases (`readiness_approved`, `readiness_changes_requested`, `readiness-approved`, `readiness-changes`, `readiness-changes-requested`, `master_approved`) are still accepted and canonicalized at ingress. use the canonical names in new automation and operator scripts.
+
+- Docs drift prevention is automated via `.github/workflows/docs-drift.yml` (nightly + PR-triggered). See `docs/docs-mcp-tool.md` for the MCP tool that agents use to look up wiki content.
