@@ -109,14 +109,17 @@ func (a *daemonStateAdapter) Status() api.StatusResponse {
 	repos := a.d.repos.List()
 	active := a.activePlansByProject()
 	repoStatuses := make([]api.RepoStatus, len(repos))
+	instances := make([]api.InstanceStatus, 0)
 	for i, r := range repos {
 		repoStatuses[i] = api.RepoStatus{Path: r.Path, Project: r.Project, ActivePlans: active[r.Project]}
+		instances = append(instances, a.ListInstances(r.Project)...)
 	}
 	return api.StatusResponse{
 		Running:   true,
 		Repos:     repoStatuses,
 		RepoCount: len(repoStatuses),
 		Uptime:    uptime,
+		Instances: instances,
 	}
 }
 
@@ -220,6 +223,7 @@ func (a *daemonStateAdapter) ListInstances(project string) []api.InstanceStatus 
 			active := !inst.Paused() && !inst.Exited && (inst.Started() || inst.Status == session.Loading)
 			ready := active && inst.Status == session.Ready
 			skipPermissions := inst.SkipPermissions
+			lastActivity := instanceLastActivity(inst)
 			out = append(out, api.InstanceStatus{
 				ID:              inst.Title,
 				Project:         project,
@@ -236,6 +240,8 @@ func (a *daemonStateAdapter) ListInstances(project string) []api.InstanceStatus 
 				ReviewCycle:     inst.ReviewCycle,
 				WaveTaskIndex:   inst.WaveTaskIndex,
 				WaveTaskCount:   inst.WaveTaskCount,
+				LastActivity:    lastActivity,
+				HealthReason:    instanceHealthReason(inst),
 				ExecutionMode:   string(session.NormalizeExecutionMode(inst.ExecutionMode)),
 				SoloAgent:       inst.SoloAgent,
 				SDKSpeedTier:    inst.SDKSpeedTier,
@@ -245,6 +251,50 @@ func (a *daemonStateAdapter) ListInstances(project string) []api.InstanceStatus 
 		return out
 	}
 	return nil
+}
+
+func instanceLastActivity(inst *session.Instance) *time.Time {
+	if inst == nil {
+		return nil
+	}
+	if inst.LastActivity != nil && !inst.LastActivity.Timestamp.IsZero() {
+		t := inst.LastActivity.Timestamp
+		return &t
+	}
+	if !inst.LastActiveAt.IsZero() {
+		t := inst.LastActiveAt
+		return &t
+	}
+	if !inst.UpdatedAt.IsZero() {
+		t := inst.UpdatedAt
+		return &t
+	}
+	if !inst.CreatedAt.IsZero() {
+		t := inst.CreatedAt
+		return &t
+	}
+	return nil
+}
+
+func instanceHealthReason(inst *session.Instance) string {
+	if inst == nil {
+		return ""
+	}
+	if inst.Exited {
+		return "exited"
+	}
+	const staleThreshold = 30 * time.Minute
+	last := instanceLastActivity(inst)
+	if last == nil || time.Since(*last) <= staleThreshold {
+		return ""
+	}
+	if inst.Paused() {
+		return "paused_old"
+	}
+	if inst.Started() || inst.Status == session.Loading {
+		return "stale"
+	}
+	return ""
 }
 
 func (a *daemonStateAdapter) StartPlan(project, filename, prompt, program string) error {

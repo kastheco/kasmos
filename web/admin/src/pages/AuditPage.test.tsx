@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import AuditPage from "./AuditPage";
@@ -6,6 +6,7 @@ import type { AuditEvent } from "../types";
 
 const mockUseAutoRefresh = vi.fn();
 const mockUseProject = vi.fn();
+const mockFetchAuditEvents = vi.hoisted(() => vi.fn());
 
 vi.mock("../hooks/useAutoRefresh", () => ({
   useAutoRefresh: (...args: unknown[]) => mockUseAutoRefresh(...args),
@@ -14,6 +15,14 @@ vi.mock("../hooks/useAutoRefresh", () => ({
 vi.mock("../hooks/useProject", () => ({
   useProject: () => mockUseProject(),
 }));
+
+vi.mock("../api", async () => {
+  const actual = await vi.importActual<typeof import("../api")>("../api");
+  return {
+    ...actual,
+    fetchAuditEvents: mockFetchAuditEvents,
+  };
+});
 
 vi.mock("../components/LastUpdated", () => ({
   default: () => <div data-testid="last-updated" />,
@@ -44,6 +53,7 @@ function makeAuditEvent(overrides: Partial<AuditEvent>): AuditEvent {
 describe("AuditPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockFetchAuditEvents.mockResolvedValue([]);
     mockUseProject.mockReturnValue({
       project: "kasmos",
       projectSearch: "?project=kasmos",
@@ -91,5 +101,51 @@ describe("AuditPage", () => {
     expect(screen.getByText(/event 2/)).toBeTruthy();
     expect(screen.getByText(/kill_and_remove_instance/)).toBeTruthy();
     expect(screen.getByText(/kill_instance/)).toBeTruthy();
+  });
+
+  it("passes instance and date range filters to the audit API", () => {
+    vi.useFakeTimers();
+    mockUseAutoRefresh.mockImplementation((loader: () => Promise<AuditEvent[]>) => {
+      void loader();
+      return {
+        data: [],
+        loading: false,
+        error: null,
+        lastUpdatedAt: null,
+        isRefreshing: false,
+      };
+    });
+
+    render(
+      <MemoryRouter>
+        <AuditPage />
+      </MemoryRouter>,
+    );
+
+    fireEvent.change(screen.getByPlaceholderText("filter by instance..."), {
+      target: { value: "coder-5" },
+    });
+    act(() => {
+      vi.advanceTimersByTime(300);
+    });
+    fireEvent.change(screen.getByLabelText("after"), {
+      target: { value: "2026-04-24T00:00:00Z" },
+    });
+    fireEvent.change(screen.getByLabelText("before"), {
+      target: { value: "2026-04-25T00:00:00Z" },
+    });
+
+    const latestCall = mockUseAutoRefresh.mock.calls.at(-1);
+    expect(latestCall?.[1]).toContain("2026-04-24T00:00:00Z");
+    expect(latestCall?.[1]).toContain("2026-04-25T00:00:00Z");
+    expect(mockFetchAuditEvents).toHaveBeenCalledWith(
+      "kasmos",
+      expect.objectContaining({
+        instance: "coder-5",
+        after: "2026-04-24T00:00:00Z",
+        before: "2026-04-25T00:00:00Z",
+      }),
+    );
+    vi.useRealTimers();
   });
 });

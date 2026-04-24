@@ -147,6 +147,8 @@ export interface InstanceEntry {
   task_number?: number;
   created_at?: string;
   updated_at?: string;
+  last_activity?: string;
+  health_reason?: string;
   execution_mode?: ExecutionMode;
   valid_actions?: InstanceAction[];
 }

@@ -82,34 +82,34 @@ async function requestText(path: string, init?: RequestInit): Promise<string> {
 }
 
 type AuditEventResponse = {
-  ID: number;
-  Kind: string;
-  Timestamp: string;
-  Project: string;
-  TaskFile: string;
-  InstanceTitle: string;
-  AgentType: string;
-  WaveNumber: number;
-  TaskNumber: number;
-  Message: string;
-  Detail: string;
-  Level: string;
+  id: number;
+  kind: string;
+  timestamp: string;
+  project: string;
+  task_file: string;
+  instance_title: string;
+  agent_type: string;
+  wave_number: number;
+  task_number: number;
+  message: string;
+  detail: string;
+  level: string;
 };
 
 function normalizeAuditEvent(raw: AuditEventResponse): AuditEvent {
   return {
-    id: raw.ID,
-    kind: raw.Kind,
-    timestamp: raw.Timestamp,
-    project: raw.Project,
-    task_file: raw.TaskFile,
-    instance_title: raw.InstanceTitle,
-    agent_type: raw.AgentType,
-    wave_number: raw.WaveNumber,
-    task_number: raw.TaskNumber,
-    message: raw.Message,
-    detail: raw.Detail,
-    level: raw.Level,
+    id: raw.id,
+    kind: raw.kind,
+    timestamp: raw.timestamp,
+    project: raw.project,
+    task_file: raw.task_file,
+    instance_title: raw.instance_title,
+    agent_type: raw.agent_type,
+    wave_number: raw.wave_number,
+    task_number: raw.task_number,
+    message: raw.message,
+    detail: raw.detail,
+    level: raw.level,
   };
 }
 
@@ -206,8 +206,11 @@ export async function listAuditEvents(project: string): Promise<AuditEvent[]> {
 }
 
 export type AuditEventFilter = {
-  kind?: string;
+  kind?: string | string[];
   task?: string;
+  instance?: string;
+  after?: string;
+  before?: string;
   limit?: number;
 };
 
@@ -216,8 +219,17 @@ export async function fetchAuditEvents(
   filter?: AuditEventFilter,
 ): Promise<AuditEvent[]> {
   const params = new URLSearchParams();
-  if (filter?.kind) params.append("kind", filter.kind);
+  if (Array.isArray(filter?.kind)) {
+    for (const kind of filter.kind) {
+      if (kind) params.append("kind", kind);
+    }
+  } else if (filter?.kind) {
+    params.append("kind", filter.kind);
+  }
   if (filter?.task) params.set("task", filter.task);
+  if (filter?.instance) params.set("instance", filter.instance);
+  if (filter?.after) params.set("after", filter.after);
+  if (filter?.before) params.set("before", filter.before);
   if (filter?.limit != null) params.set("limit", String(filter.limit));
   const qs = params.toString();
   const url = `/v1/projects/${encodeURIComponent(project)}/audit-events${qs ? `?${qs}` : ""}`;

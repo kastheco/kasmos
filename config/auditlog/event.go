@@ -55,16 +55,16 @@ const (
 
 // Event is a single audit log entry.
 type Event struct {
-	ID            int64
-	Kind          EventKind
-	Timestamp     time.Time
-	Project       string
-	TaskFile      string
-	InstanceTitle string
-	AgentType     string
-	WaveNumber    int
-	TaskNumber    int
-	Message       string
-	Detail        string // JSON-encoded extra data
-	Level         string // info, warn, error
+	ID            int64     `json:"id"`
+	Kind          EventKind `json:"kind"`
+	Timestamp     time.Time `json:"timestamp"`
+	Project       string    `json:"project"`
+	TaskFile      string    `json:"task_file"`
+	InstanceTitle string    `json:"instance_title"`
+	AgentType     string    `json:"agent_type"`
+	WaveNumber    int       `json:"wave_number"`
+	TaskNumber    int       `json:"task_number"`
+	Message       string    `json:"message"`
+	Detail        string    `json:"detail"` // JSON-encoded extra data
+	Level         string    `json:"level"`  // info, warn, error
 }

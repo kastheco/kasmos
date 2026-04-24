@@ -55,10 +55,11 @@ type RepoStatus struct {
 
 // StatusResponse is the response body for GET /v1/status.
 type StatusResponse struct {
-	Running   bool         `json:"running"`
-	Repos     []RepoStatus `json:"repos"`
-	RepoCount int          `json:"repo_count"`
-	Uptime    string       `json:"uptime,omitempty"`
+	Running   bool             `json:"running"`
+	Repos     []RepoStatus     `json:"repos"`
+	RepoCount int              `json:"repo_count"`
+	Uptime    string           `json:"uptime,omitempty"`
+	Instances []InstanceStatus `json:"instances,omitempty"`
 }
 
 // InstanceStatus describes a running agent instance.
@@ -69,21 +70,23 @@ type StatusResponse struct {
 // uses Ready to restrict valid actions to {restart, kill} so ready daemon
 // rows are not rendered as generic "running".
 type InstanceStatus struct {
-	ID            string `json:"id"`
-	Project       string `json:"project"`
-	Plan          string `json:"plan"`
-	Role          string `json:"role"`
-	Active        bool   `json:"active"`
-	Loading       bool   `json:"loading,omitempty"`
-	Ready         bool   `json:"ready,omitempty"`
-	Title         string `json:"title,omitempty"`
-	Branch        string `json:"branch,omitempty"`
-	Program       string `json:"program,omitempty"`
-	TaskNumber    int    `json:"task_number,omitempty"`
-	WaveNumber    int    `json:"wave_number,omitempty"`
-	ReviewCycle   int    `json:"review_cycle,omitempty"`
-	WaveTaskIndex int    `json:"wave_task_index,omitempty"`
-	WaveTaskCount int    `json:"wave_task_count,omitempty"`
+	ID            string     `json:"id"`
+	Project       string     `json:"project"`
+	Plan          string     `json:"plan"`
+	Role          string     `json:"role"`
+	Active        bool       `json:"active"`
+	Loading       bool       `json:"loading,omitempty"`
+	Ready         bool       `json:"ready,omitempty"`
+	Title         string     `json:"title,omitempty"`
+	Branch        string     `json:"branch,omitempty"`
+	Program       string     `json:"program,omitempty"`
+	TaskNumber    int        `json:"task_number,omitempty"`
+	WaveNumber    int        `json:"wave_number,omitempty"`
+	ReviewCycle   int        `json:"review_cycle,omitempty"`
+	WaveTaskIndex int        `json:"wave_task_index,omitempty"`
+	WaveTaskCount int        `json:"wave_task_count,omitempty"`
+	LastActivity  *time.Time `json:"last_activity,omitempty"`
+	HealthReason  string     `json:"health_reason,omitempty"`
 	// ExecutionMode mirrors session.ExecutionMode ("tmux" or "sdk") so
 	// the web admin can disable tmux-only controls for sdk instances
 	// that never had a pane in the first place.
@@ -255,6 +258,7 @@ type StateProvider interface {
 type DaemonState struct {
 	Running   bool
 	Repos     []RepoStatus
+	Instances []InstanceStatus
 	StartedAt time.Time
 }
 
@@ -269,6 +273,7 @@ func (s *DaemonState) Status() StatusResponse {
 		Repos:     s.Repos,
 		RepoCount: len(s.Repos),
 		Uptime:    uptime,
+		Instances: s.Instances,
 	}
 }
 

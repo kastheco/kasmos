@@ -13,7 +13,7 @@ Documentation for `kas monitor`, `kas instance`, `kas audit`, `kas tmux`, `kas s
 Monitor the kasmos daemon event stream in real time via Server-Sent Events (SSE).
 
 ```
-kas monitor [--socket <path>] [--repo <path>] [--plan <slug>] [--json]
+kas monitor [--socket <path>] [--repo <path>] [--plan <slug>] [--kind <kind>] [--since <rfc3339>] [--json]
 ```
 
 Alias: `kas mon`
@@ -28,6 +28,9 @@ kas monitor --repo /home/user/myproject
 # filter to a specific plan slug
 kas monitor --plan my-feature
 
+# filter wave failures since a timestamp
+kas monitor --kind wave_failed --since 2026-04-24T12:00:00Z
+
 # pipe raw JSON to jq
 kas monitor --json | jq .
 ```
@@ -37,6 +40,8 @@ kas monitor --json | jq .
 | `--socket` | auto-detected | path to the daemon unix domain socket |
 | `--repo` | — | filter events to a specific repo path |
 | `--plan` | — | filter events to a specific plan slug |
+| `--kind` | — | filter events to one or more event kinds; repeat for multiple kinds |
+| `--since` | — | filter events after an RFC3339 timestamp |
 | `--json` | false | output raw JSON (disables ANSI color formatting) |
 
 By default, events are formatted with ANSI color codes. `ctrl-c` stops the stream.

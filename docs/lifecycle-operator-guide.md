@@ -1,5 +1,9 @@
 # lifecycle operator guide
 
+Remote audit polling is documented in the [remote task store guide](../web/docs/docs/guides/remote-task-store.mdx#audit-querying).
+
+Wave failure audit details may include `retry_generation`. Operators can use this key to distinguish the first failure from later retry attempts; duplicate wave failures for the same generation are suppressed so Eagle Eye surfaces one actionable row per retry generation instead of repeated noise.
+
 this document describes the operator-facing lifecycle model used by the tui and cli.
 
 ## layered lifecycle model

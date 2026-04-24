@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 
 	"github.com/spf13/cobra"
 )
@@ -15,10 +16,12 @@ import (
 // stream via SSE from the control socket.
 func NewMonitorCmd() *cobra.Command {
 	var (
-		socketPath string
-		repoFilter string
-		planFilter string
-		jsonOutput bool
+		socketPath  string
+		repoFilter  string
+		planFilter  string
+		kindFilter  []string
+		sinceFilter string
+		jsonOutput  bool
 	)
 
 	cmd := &cobra.Command{
@@ -29,13 +32,15 @@ func NewMonitorCmd() *cobra.Command {
 orchestration events. by default it outputs colored ANSI text; use --json for
 raw JSON suitable for piping to jq.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runMonitorTail(cmd, socketPath, repoFilter, planFilter, jsonOutput)
+			return runMonitorTail(cmd, socketPath, repoFilter, planFilter, kindFilter, sinceFilter, jsonOutput)
 		},
 	}
 
 	cmd.PersistentFlags().StringVar(&socketPath, "socket", daemonSocketPath(), "path to the daemon unix domain socket")
 	cmd.Flags().StringVar(&repoFilter, "repo", "", "filter events to a specific repo path")
 	cmd.Flags().StringVar(&planFilter, "plan", "", "filter events to a specific plan slug")
+	cmd.Flags().StringArrayVar(&kindFilter, "kind", nil, "filter events to one or more event kinds")
+	cmd.Flags().StringVar(&sinceFilter, "since", "", "filter events after an RFC3339 timestamp")
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "output raw JSON event stream (for piping to jq)")
 
 	cmd.AddCommand(newMonitorStatusCmd(&socketPath))
@@ -45,8 +50,16 @@ raw JSON suitable for piping to jq.`,
 
 // runMonitorTail opens the daemon SSE event stream and writes events to the
 // command output until the stream is closed or the user interrupts.
-func runMonitorTail(cmd *cobra.Command, socketPath, repoFilter, planFilter string, jsonOutput bool) error {
+func runMonitorTail(cmd *cobra.Command, socketPath, repoFilter, planFilter string, kindFilter []string, sinceFilter string, jsonOutput bool) error {
 	client := daemonHTTPClient(socketPath)
+	var since time.Time
+	if sinceFilter != "" {
+		t, err := time.Parse(time.RFC3339, sinceFilter)
+		if err != nil {
+			return fmt.Errorf("invalid --since timestamp (RFC3339 required): %w", err)
+		}
+		since = t
+	}
 
 	resp, err := client.Get("http://kas/v1/events")
 	if err != nil {
@@ -68,12 +81,16 @@ func runMonitorTail(cmd *cobra.Command, socketPath, repoFilter, planFilter strin
 			payload := line[len(prefix):]
 
 			if jsonOutput {
-				fmt.Fprintln(out, payload)
+				if ok, err := monitorEventMatches(payload, repoFilter, planFilter, kindFilter, since); err != nil {
+					fmt.Fprintln(out, payload)
+				} else if ok {
+					fmt.Fprintln(out, payload)
+				}
 				continue
 			}
 
 			// Pretty-print for human consumption.
-			if err := printMonitorEvent(out, payload, repoFilter, planFilter); err != nil {
+			if err := printMonitorEvent(out, payload, repoFilter, planFilter, kindFilter, since); err != nil {
 				// Non-fatal: keep reading even if one event is malformed.
 				fmt.Fprintf(out, "event: %s\n", payload)
 			}
@@ -87,21 +104,14 @@ func runMonitorTail(cmd *cobra.Command, socketPath, repoFilter, planFilter strin
 }
 
 // printMonitorEvent pretty-prints a single SSE JSON payload.
-func printMonitorEvent(out io.Writer, payload, repoFilter, planFilter string) error {
+func printMonitorEvent(out io.Writer, payload, repoFilter, planFilter string, kindFilter []string, since time.Time) error {
 	var event map[string]interface{}
 	if err := json.Unmarshal([]byte(payload), &event); err != nil {
 		return err
 	}
 
 	eventType, _ := event["kind"].(string)
-	repo, _ := event["repo"].(string)
-	plan, _ := event["plan_file"].(string)
-
-	// Apply filters.
-	if repoFilter != "" && repo != repoFilter {
-		return nil
-	}
-	if planFilter != "" && plan != planFilter {
+	if !monitorEventMapMatches(event, repoFilter, planFilter, kindFilter, since) {
 		return nil
 	}
 
@@ -112,9 +122,63 @@ func printMonitorEvent(out io.Writer, payload, repoFilter, planFilter string) er
 	case "connected":
 		fmt.Fprintf(out, "\033[32m[connected] monitoring daemon events\033[0m\n")
 	default:
-		fmt.Fprintf(out, "[%s] %s\n", eventType, payload)
+		if detail, ok := event["detail"].(string); ok && detail != "" {
+			fmt.Fprintf(out, "[%s] %s  detail=%s\n", eventType, humanMessage(event), detail)
+		} else {
+			fmt.Fprintf(out, "[%s] %s\n", eventType, payload)
+		}
 	}
 	return nil
+}
+
+func monitorEventMatches(payload, repoFilter, planFilter string, kindFilter []string, since time.Time) (bool, error) {
+	var event map[string]interface{}
+	if err := json.Unmarshal([]byte(payload), &event); err != nil {
+		return false, err
+	}
+	return monitorEventMapMatches(event, repoFilter, planFilter, kindFilter, since), nil
+}
+
+func monitorEventMapMatches(event map[string]interface{}, repoFilter, planFilter string, kindFilter []string, since time.Time) bool {
+	eventType, _ := event["kind"].(string)
+	repo, _ := event["repo"].(string)
+	plan, _ := event["plan_file"].(string)
+	if repoFilter != "" && repo != repoFilter {
+		return false
+	}
+	if planFilter != "" && plan != planFilter {
+		return false
+	}
+	if len(kindFilter) > 0 {
+		matched := false
+		for _, kind := range kindFilter {
+			if eventType == kind {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return false
+		}
+	}
+	if !since.IsZero() {
+		raw, _ := event["timestamp"].(string)
+		t, err := time.Parse(time.RFC3339, raw)
+		if err != nil || t.Before(since) {
+			return false
+		}
+	}
+	return true
+}
+
+func humanMessage(event map[string]interface{}) string {
+	if msg, ok := event["message"].(string); ok && msg != "" {
+		return msg
+	}
+	if plan, ok := event["plan_file"].(string); ok && plan != "" {
+		return plan
+	}
+	return "event"
 }
 
 // newMonitorStatusCmd returns the `kas monitor status` subcommand — a one-shot

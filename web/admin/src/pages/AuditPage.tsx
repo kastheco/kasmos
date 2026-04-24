@@ -167,6 +167,10 @@ export default function AuditPage() {
   const [kind, setKind] = useState("");
   const [taskInput, setTaskInput] = useState("");
   const [taskFile, setTaskFile] = useState("");
+  const [instanceInput, setInstanceInput] = useState("");
+  const [instanceTitle, setInstanceTitle] = useState("");
+  const [after, setAfter] = useState("");
+  const [before, setBefore] = useState("");
   const [limit, setLimit] = useState(100);
   const [expandedRowId, setExpandedRowId] = useState<number | null>(null);
 
@@ -176,6 +180,11 @@ export default function AuditPage() {
     return () => clearTimeout(timer);
   }, [taskInput]);
 
+  useEffect(() => {
+    const timer = setTimeout(() => setInstanceTitle(instanceInput), 300);
+    return () => clearTimeout(timer);
+  }, [instanceInput]);
+
   const { data, loading, error, lastUpdatedAt, isRefreshing } =
     useAutoRefresh<AuditEvent[]>(
       async () => {
@@ -183,10 +192,13 @@ export default function AuditPage() {
         return fetchAuditEvents(project, {
           kind: kind || undefined,
           task: taskFile || undefined,
+          instance: instanceTitle || undefined,
+          after: after || undefined,
+          before: before || undefined,
           limit,
         });
       },
-      [project, kind, taskFile, limit],
+      [project, kind, taskFile, instanceTitle, after, before, limit],
     );
 
   const events = data ?? [];
@@ -315,6 +327,32 @@ export default function AuditPage() {
           placeholder="filter by task file..."
           value={taskInput}
           onChange={(e) => setTaskInput(e.target.value)}
+        />
+
+        <input
+          className={styles.filterInput}
+          type="text"
+          placeholder="filter by instance..."
+          value={instanceInput}
+          onChange={(e) => setInstanceInput(e.target.value)}
+        />
+
+        <input
+          className={styles.filterInput}
+          type="text"
+          aria-label="after"
+          placeholder="after RFC3339..."
+          value={after}
+          onChange={(e) => setAfter(e.target.value)}
+        />
+
+        <input
+          className={styles.filterInput}
+          type="text"
+          aria-label="before"
+          placeholder="before RFC3339..."
+          value={before}
+          onChange={(e) => setBefore(e.target.value)}
         />
 
         <select
