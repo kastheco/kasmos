@@ -33,17 +33,17 @@ func NewHandler(logger Logger) http.Handler {
 			filter.InstanceTitle = instance
 		}
 		if after := q.Get("after"); after != "" {
-			t, err := time.Parse(time.RFC3339, after)
+			t, err := parseQueryTimestamp(after)
 			if err != nil {
-				writeError(w, http.StatusBadRequest, "invalid after timestamp (RFC3339 required): "+err.Error())
+				writeError(w, http.StatusBadRequest, "invalid after timestamp (RFC3339/RFC3339Nano required): "+err.Error())
 				return
 			}
 			filter.After = t
 		}
 		if before := q.Get("before"); before != "" {
-			t, err := time.Parse(time.RFC3339, before)
+			t, err := parseQueryTimestamp(before)
 			if err != nil {
-				writeError(w, http.StatusBadRequest, "invalid before timestamp (RFC3339 required): "+err.Error())
+				writeError(w, http.StatusBadRequest, "invalid before timestamp (RFC3339/RFC3339Nano required): "+err.Error())
 				return
 			}
 			filter.Before = t
@@ -76,6 +76,10 @@ func NewHandler(logger Logger) http.Handler {
 	})
 
 	return mux
+}
+
+func parseQueryTimestamp(raw string) (time.Time, error) {
+	return time.Parse(time.RFC3339Nano, raw)
 }
 
 // writeJSON encodes v as JSON and writes it to w with the given status code.

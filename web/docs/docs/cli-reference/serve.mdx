@@ -98,7 +98,7 @@ All task endpoints use the project-scoped URL prefix `/v1/projects/{project}/tas
 |--------|------|-------------|
 | `GET` | `/v1/projects/{project}/audit-events` | query audit log entries |
 
-Query parameters: repeated `kind=` values, `task`, `instance`, `after`, `before`, and `limit`. `after` and `before` must be RFC3339 timestamps; `limit` defaults to 100 and is capped at 500. Responses include stable `id` values for idempotent pollers.
+Query parameters: repeated `kind=` values, `task`, `instance`, `after`, `before`, and `limit`. `after` and `before` accept RFC3339 timestamps with optional fractional seconds; `limit` defaults to 100 and is capped at 500. Responses include stable `id` values for idempotent pollers. Because `after` is a strict timestamp filter, pollers should overlap windows and de-duplicate by `id` instead of relying on timestamp-only checkpoints.
 
 ### instances
 

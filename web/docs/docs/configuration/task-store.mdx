@@ -106,6 +106,14 @@ the http store exposes the following endpoints (implemented in `config/taskstore
 | `GET` | `/v1/projects/{project}/topics` | list all topics |
 | `POST` | `/v1/projects/{project}/topics` | create a topic |
 
+### audit events
+
+| method | path | description |
+|--------|------|-------------|
+| `GET` | `/v1/projects/{project}/audit-events` | query audit log entries for a project |
+
+Audit filters include repeated `kind=`, `task`, `instance`, `after`, `before`, and `limit`. `after` and `before` accept RFC3339 timestamps with optional fractional seconds; `limit` defaults to 100 and is capped at 500. Responses include stable numeric `id` values so external pollers can de-duplicate when using overlapping timestamp windows.
+
 ## project name
 
 the `{project}` path segment is the project identifier — typically the repository directory name (e.g. `kasmos` for `/home/alice/projects/kasmos`). kasmos derives this from the resolved repo root and passes it to all store operations. when using the http store, all projects on the server are namespaced by this identifier.

@@ -160,7 +160,7 @@ func TestHandler_ExtendedFiltersAndJSONID(t *testing.T) {
 	srv := httptest.NewServer(auditlog.NewHandler(logger))
 	defer srv.Close()
 
-	url := srv.URL + "/v1/projects/p/audit-events?kind=wave_started&kind=agent_finished&instance=coder-2&after=2026-04-24T10:30:00Z&before=2026-04-24T11:30:00Z"
+	url := srv.URL + "/v1/projects/p/audit-events?kind=wave_started&kind=agent_finished&instance=coder-2&after=2026-04-24T10:30:00.123456Z&before=2026-04-24T11:30:00.123456789Z"
 	resp, err := http.Get(url)
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)

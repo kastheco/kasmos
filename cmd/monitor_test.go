@@ -44,3 +44,25 @@ func TestPrintMonitorEvent_DetailBranch(t *testing.T) {
 
 	assert.Equal(t, "[wave_failed] wave 3 failed  detail={\"retry_generation\":1}\n", out.String())
 }
+
+func TestParseMonitorTimestampAcceptsFractionalSeconds(t *testing.T) {
+	t.Parallel()
+
+	parsed, err := parseMonitorTimestamp("2026-04-24T12:00:00.123456789Z")
+	require.NoError(t, err)
+	assert.Equal(t, 123456789, parsed.Nanosecond())
+}
+
+func TestMonitorEventMapMatchesSinceAcceptsFractionalTimestamp(t *testing.T) {
+	t.Parallel()
+
+	since, err := parseMonitorTimestamp("2026-04-24T12:00:00.123456Z")
+	require.NoError(t, err)
+
+	event := map[string]interface{}{
+		"kind":      "wave_failed",
+		"timestamp": "2026-04-24T12:00:00.123456789Z",
+	}
+
+	assert.True(t, monitorEventMapMatches(event, "", "", nil, since))
+}

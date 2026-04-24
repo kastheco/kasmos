@@ -40,7 +40,7 @@ raw JSON suitable for piping to jq.`,
 	cmd.Flags().StringVar(&repoFilter, "repo", "", "filter events to a specific repo path")
 	cmd.Flags().StringVar(&planFilter, "plan", "", "filter events to a specific plan slug")
 	cmd.Flags().StringArrayVar(&kindFilter, "kind", nil, "filter events to one or more event kinds")
-	cmd.Flags().StringVar(&sinceFilter, "since", "", "filter events after an RFC3339 timestamp")
+	cmd.Flags().StringVar(&sinceFilter, "since", "", "filter events after an RFC3339/RFC3339Nano timestamp")
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "output raw JSON event stream (for piping to jq)")
 
 	cmd.AddCommand(newMonitorStatusCmd(&socketPath))
@@ -54,9 +54,9 @@ func runMonitorTail(cmd *cobra.Command, socketPath, repoFilter, planFilter strin
 	client := daemonHTTPClient(socketPath)
 	var since time.Time
 	if sinceFilter != "" {
-		t, err := time.Parse(time.RFC3339, sinceFilter)
+		t, err := parseMonitorTimestamp(sinceFilter)
 		if err != nil {
-			return fmt.Errorf("invalid --since timestamp (RFC3339 required): %w", err)
+			return fmt.Errorf("invalid --since timestamp (RFC3339/RFC3339Nano required): %w", err)
 		}
 		since = t
 	}
@@ -163,12 +163,16 @@ func monitorEventMapMatches(event map[string]interface{}, repoFilter, planFilter
 	}
 	if !since.IsZero() {
 		raw, _ := event["timestamp"].(string)
-		t, err := time.Parse(time.RFC3339, raw)
+		t, err := parseMonitorTimestamp(raw)
 		if err != nil || t.Before(since) {
 			return false
 		}
 	}
 	return true
+}
+
+func parseMonitorTimestamp(raw string) (time.Time, error) {
+	return time.Parse(time.RFC3339Nano, raw)
 }
 
 func humanMessage(event map[string]interface{}) string {

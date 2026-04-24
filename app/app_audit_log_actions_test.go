@@ -75,7 +75,7 @@ func TestAuditLineActions_AgentKilledCleanupOffersReopenWorktree(t *testing.T) {
 		Kind:          "agent_killed",
 		Message:       "agent stopped",
 		InstanceTitle: "auth-coder-1",
-		DetailJSON:    `{"action":"kill_and_remove","cleanup":true,"branch_preserved":true}`,
+		DetailJSON:    `{"action":"kill_and_remove_instance","cleanup":true,"branch_preserved":true}`,
 	}
 	items := ui.AuditLineActions(e)
 	require.NotEmpty(t, items, "agent_killed with cleanup detail should produce actions")
