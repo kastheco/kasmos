@@ -39,6 +39,13 @@ Use raw git/gh for branch and worktree operations:
 - `gh pr create` — create pull requests
 - `git merge` — merge branches
 
+## docs research
+
+before guessing at kasmos behavior, signal semantics, config keys, or cli flags, call `mcp__kasmos__docs_search` first.
+use `mcp__kasmos__docs_read` to fetch full docs when a match looks relevant.
+the canonical wiki is https://kasmos.kasthe.co/docs/ — the mcp tools serve the same content and work offline inside the kasmos repo.
+search docs for the symptom + component before instrumenting.
+
 ## Slash Commands
 
 These commands are available for one-shot operations:

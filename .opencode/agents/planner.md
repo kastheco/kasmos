@@ -55,6 +55,13 @@ ast-grep, comby, difftastic, sd, yq, typos, and scc. The deep-dive reference
 files in `resources/` should be read when you need to use that specific tool —
 you don't need to read all of them upfront.
 
+## docs research
+
+before guessing at kasmos behavior, signal semantics, config keys, or cli flags, call `mcp__kasmos__docs_search` first.
+use `mcp__kasmos__docs_read` to fetch full docs when a match looks relevant.
+the canonical wiki is https://kasmos.kasthe.co/docs/ — the mcp tools serve the same content and work offline inside the kasmos repo.
+cite docs when choosing between documented patterns; do not re-invent flows the wiki already documents.
+
 ## Scaffold-Managed Files
 
 The files below are scaffold-managed. Unless the user, in this conversation, directly asks for the change, do not edit them and do not stage or commit existing diffs in them.

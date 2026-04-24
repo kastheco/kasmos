@@ -25,3 +25,10 @@ Valid statuses: `ready` → `planning` → `implementing` → `reviewing` → `v
 
 Read the `cli-tools` skill (SKILL.md) at session start. Read individual
 resource files in `resources/` when using that specific tool.
+
+## docs research
+
+before guessing at kasmos behavior, signal semantics, config keys, or cli flags, call `mcp__kasmos__docs_search` first.
+use `mcp__kasmos__docs_read` to fetch full docs when a match looks relevant.
+the canonical wiki is https://kasmos.kasthe.co/docs/ — the mcp tools serve the same content and work offline inside the kasmos repo.
+when acting as planner, coder, or reviewer, validate documented patterns, behavior, config keys, and signal types before deciding.
