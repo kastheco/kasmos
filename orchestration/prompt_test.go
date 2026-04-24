@@ -240,7 +240,15 @@ func TestBuildElaborationPrompt(t *testing.T) {
 	assert.Contains(t, prompt, "plan header fields")
 	// Must reference reading the codebase
 	assert.Contains(t, prompt, "codebase")
-	assert.NotContains(t, prompt, "architect-baseline.json")
+	assert.Contains(t, prompt, ".kasmos/cache/my-feature-architect.json")
+	assert.Contains(t, prompt, "decision_audit")
+	assert.Contains(t, prompt, "planner_summary")
+	assert.Contains(t, prompt, "baseline_summary")
+	assert.Contains(t, prompt, "final_decision")
+	assert.Contains(t, prompt, "`parallel_cache`, `inline`, `absent`, or `stale`")
+	assert.Contains(t, prompt, "advisory input only and must not be treated as final implementation state")
+	assert.NotContains(t, prompt, "raw planner snapshot")
+	assert.NotContains(t, prompt, "architect-finished")
 }
 
 func TestBuildArchitectBaselinePrompt(t *testing.T) {
@@ -295,9 +303,14 @@ func TestBuildElaborationPromptWithOptions_ParallelBaseline(t *testing.T) {
 	assert.Contains(t, prompt, "2. Read the advisory parallel architect baseline cache")
 	assert.Contains(t, prompt, "3. Read the relevant codebase surfaces")
 	assert.Contains(t, prompt, "4. Create your independent solution baseline")
-	assert.Contains(t, prompt, "9. Signal architect-pass completion")
+	assert.Contains(t, prompt, "9. Write the architect metadata cache")
+	assert.Contains(t, prompt, "10. Signal architect-pass completion")
 	assert.Contains(t, prompt, "task_update_content")
 	assert.Contains(t, prompt, "signal_create` (signal_type: \"elaborator-finished\", plan_file: \"my-feature\", project: \"myproject\")")
+	assert.Contains(t, prompt, "decision_audit")
+	assert.Contains(t, prompt, "planner_summary")
+	assert.Contains(t, prompt, "baseline_summary")
+	assert.Contains(t, prompt, "final_decision")
 }
 
 func TestBuildArchitectPrompt(t *testing.T) {
@@ -313,11 +326,21 @@ func TestBuildArchitectPrompt(t *testing.T) {
 	assert.Contains(t, prompt, "kas task show my-feature") // CLI fallback
 	assert.Contains(t, prompt, `project: "myproject"`)
 	assert.Contains(t, prompt, "task_update_content")
-	assert.Contains(t, prompt, "architect-finished")
 	assert.Contains(t, prompt, "architect-v1.json")
 	assert.Contains(t, prompt, "parallel")
+	assert.Contains(t, prompt, ".kasmos/cache/my-feature-architect.json")
+	assert.Contains(t, prompt, "decision_audit")
+	assert.Contains(t, prompt, "planner_summary")
+	assert.Contains(t, prompt, "baseline_summary")
+	assert.Contains(t, prompt, "final_decision")
+	assert.Contains(t, prompt, "differences")
+	assert.Contains(t, prompt, ".kasmos/cache/my-feature-architect-baseline.json")
+	assert.Contains(t, prompt, "advisory input only and must not be treated as final implementation state")
+	assert.Contains(t, prompt, "signal_create` (signal_type: \"elaborator-finished\", plan_file: \"my-feature\", project: \"myproject\")")
 	// Signal completion should prefer MCP with filesystem fallback
 	assert.Contains(t, prompt, "signal_create")
+	assert.NotContains(t, prompt, "architect-finished")
+	assert.NotContains(t, prompt, "raw planner snapshot")
 }
 
 func TestBuildElaborationPrompt_RetainsLegacySignalName(t *testing.T) {

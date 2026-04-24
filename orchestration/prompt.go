@@ -203,6 +203,7 @@ func BuildElaborationPromptWithOptions(planFile, project string, opts ArchitectP
 			"2. Read the advisory parallel architect baseline cache if present: `.kasmos/cache/%[1]s-architect-baseline.json`.\n"+
 				"   - Validate `plan_file` equals \"%[1]s\", `project` equals \"%[2]s\", `description_hash` equals \"%[3]s\", `schema_version` equals 1, and `baseline_markdown` is non-empty.\n"+
 				"   - Treat this cache as advisory input, not authoritative implementation state.\n"+
+				"   - Do not treat `.kasmos/cache/%[1]s-architect-baseline.json` as final implementation state; it is only advisory input for the final architect pass.\n"+
 				"   - If the cache is missing, corrupt, stale, or incomplete, continue with the current inline independent baseline from codebase evidence and mention that fallback in the plan summary.\n"+
 				"   - When valid, merge the planner draft plus cached baseline, choosing the best implementation path before rewriting the stored plan.\n",
 			planFile, project, opts.DescriptionHash,
@@ -244,10 +245,42 @@ func BuildElaborationPromptWithOptions(planFile, project string, opts ArchitectP
 			"%[7]d. Keep ## Wave headers and the plan header fields (Goal, Architecture, Tech Stack, Size). "+
 			"Everything else — task count, task content, file lists, wave assignment — is yours to change.\n"+
 			"%[8]d. Write the updated plan: prefer MCP `task_update_content` (filename: \"%[1]s\", project: \"%[2]s\"); fall back to `kas task update-content %[1]s` (pipe content)\n"+
-			"%[9]d. Signal architect-pass completion: prefer MCP `signal_create` (signal_type: \"elaborator-finished\", plan_file: \"%[1]s\", project: \"%[2]s\")\n"+
+			"%[9]d. Write the architect metadata cache, including the decision audit, to `.kasmos/cache/%[1]s-architect.json` before signaling.\n"+
+			"%[10]s"+
+			"%[11]d. Signal architect-pass completion: prefer MCP `signal_create` (signal_type: \"elaborator-finished\", plan_file: \"%[1]s\", project: \"%[2]s\")\n"+
 			"   - If MCP is unavailable, use `kas signal emit elaborator_finished %[1]s`; if CLI signaling is also unavailable, fallback: `touch .kasmos/signals/elaborator-finished-%[1]s`\n"+
 			"   - Keep the role wording as architect in your notes and output; only the completion signal name stays legacy.\n",
-		planFile, project, codebaseStep, codebaseStep+1, codebaseStep+2, codebaseStep+3, codebaseStep+4, codebaseStep+5, codebaseStep+6,
+		planFile, project, codebaseStep, codebaseStep+1, codebaseStep+2, codebaseStep+3, codebaseStep+4, codebaseStep+5, codebaseStep+6, architectDecisionAuditInstructions(planFile, project), codebaseStep+7,
+	)
+}
+
+func architectDecisionAuditInstructions(planFile, project string) string {
+	return fmt.Sprintf(
+		"   - Preserve the existing wave/task metadata fields and add optional `decision_audit`; do not replace the task metadata with only the audit.\n"+
+			"   - `decision_audit.baseline_source` must be one of `parallel_cache`, `inline`, `absent`, or `stale`.\n"+
+			"   - Include a short `planner_summary`, a short `baseline_summary`, a `differences` list for each meaningful file, wave, API, UI, docs, or verification change, and a `final_decision` sentence that states the implementation path coders should follow.\n"+
+			"   - Include `summary` as the concise overall audit summary.\n"+
+			"   - `.kasmos/cache/%[1]s-architect-baseline.json` is advisory input only and must not be treated as final implementation state.\n"+
+			"   - Prefer this metadata shape:\n\n"+
+			"```json\n"+
+			"{\n"+
+			"  \"schema_version\": 1,\n"+
+			"  \"plan_id\": \"%[1]s\",\n"+
+			"  \"decision_audit\": {\n"+
+			"    \"schema_version\": 1,\n"+
+			"    \"plan_file\": \"%[1]s\",\n"+
+			"    \"project\": \"%[2]s\",\n"+
+			"    \"created_at\": \"<rfc3339>\",\n"+
+			"    \"baseline_source\": \"parallel_cache\",\n"+
+			"    \"summary\": \"...\",\n"+
+			"    \"planner_summary\": \"...\",\n"+
+			"    \"baseline_summary\": \"...\",\n"+
+			"    \"final_decision\": \"...\",\n"+
+			"    \"differences\": []\n"+
+			"  }\n"+
+			"}\n"+
+			"```\n",
+		planFile, project,
 	)
 }
 
@@ -304,10 +337,12 @@ func BuildArchitectPrompt(planFile, project string) string {
 			"4. For each task, classify it as `parallel` when it has no file or execution dependency on other tasks in the same wave; otherwise classify it as serial.\n"+
 			"5. Estimate token budgets for each task, including required context depth and expected implementation footprint.\n"+
 			"6. Write the enriched plan back: prefer MCP `task_update_content` (filename: \"%[1]s\", project: \"%[2]s\"); fall back to `kas task update-content %[1]s` (pipe content)\n"+
-			"7. Write architect metadata to `.kasmos/cache/%[1]s-architect.json` using the schema example in `architect-v1.json`.\n"+
-			"8. Signal completion: prefer MCP `signal_create` (signal_type: \"architect-finished\", plan_file: \"%[1]s\", project: \"%[2]s\"); fall back to `touch .kasmos/signals/architect-finished-%[1]s`\n"+
-			"9. Note: app/FSM consumption of this new architect-finished signal is follow-up work and should be implemented separately.\n",
-		planFile, project,
+			"7. Write architect metadata to `.kasmos/cache/%[1]s-architect.json` using the schema example in `architect-v1.json`, preserving existing wave metadata and adding the decision audit before signaling.\n"+
+			"%[3]s"+
+			"8. Signal architect-pass completion: prefer MCP `signal_create` (signal_type: \"elaborator-finished\", plan_file: \"%[1]s\", project: \"%[2]s\")\n"+
+			"   - If MCP is unavailable, use `kas signal emit elaborator_finished %[1]s`; if CLI signaling is also unavailable, fallback: `touch .kasmos/signals/elaborator-finished-%[1]s`\n"+
+			"   - Keep the role wording as architect in your notes and output; only the completion signal name stays legacy.\n",
+		planFile, project, architectDecisionAuditInstructions(planFile, project),
 	)
 }
 
