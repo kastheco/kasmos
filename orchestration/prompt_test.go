@@ -212,6 +212,12 @@ func TestBuildElaborationPrompt(t *testing.T) {
 
 	assert.Contains(t, prompt, "kasmos-architect")
 	assert.NotContains(t, prompt, "kasmos-elaborator")
+	assert.Contains(t, prompt, "independent solution baseline")
+	assert.Contains(t, prompt, "Before validating the planner draft")
+	assert.Contains(t, prompt, "Compare planner vs architect baseline")
+	assert.Contains(t, prompt, "merging the best")
+	assert.Contains(t, prompt, "hidden integration surfaces")
+	assert.Contains(t, prompt, "non-obvious missing work")
 	// Must reference the plan file for retrieval via MCP
 	assert.Contains(t, prompt, "task_show")
 	assert.Contains(t, prompt, "kas task show my-feature") // CLI fallback
@@ -230,7 +236,8 @@ func TestBuildElaborationPrompt(t *testing.T) {
 	// Must instruct to expand task bodies
 	assert.Contains(t, prompt, "implementation detail")
 	// Must instruct to preserve structure
-	assert.Contains(t, prompt, "Preserve")
+	assert.Contains(t, prompt, "Keep ## Wave headers")
+	assert.Contains(t, prompt, "plan header fields")
 	// Must reference reading the codebase
 	assert.Contains(t, prompt, "codebase")
 }
@@ -239,6 +246,11 @@ func TestBuildArchitectPrompt(t *testing.T) {
 	prompt := BuildArchitectPrompt("my-feature", "myproject")
 
 	assert.Contains(t, prompt, "kasmos-architect")
+	assert.Contains(t, prompt, "independent implementation baseline")
+	assert.Contains(t, prompt, "Compare planner vs architect baseline")
+	assert.Contains(t, prompt, "merging the best")
+	assert.Contains(t, prompt, "hidden integration surfaces")
+	assert.Contains(t, prompt, "non-obvious missing work")
 	assert.Contains(t, prompt, "task_show")
 	assert.Contains(t, prompt, "kas task show my-feature") // CLI fallback
 	assert.Contains(t, prompt, `project: "myproject"`)
