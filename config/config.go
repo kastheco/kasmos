@@ -218,8 +218,8 @@ type Config struct {
 	// blueprint-skip mode is used instead of wave orchestration.
 	// When nil, the default threshold of 2 applies.
 	BlueprintSkipThresholdValue *int `json:"blueprint_skip_threshold,omitempty"`
-	// ParallelPlannerArchitect enables the opt-in parallel architect baseline flow.
-	// Defaults to false.
+	// ParallelPlannerArchitect enables the parallel architect baseline flow.
+	// Defaults to true (opt-out: set to false in config.toml to disable).
 	ParallelPlannerArchitect bool `json:"parallel_planner_architect,omitempty"`
 	// ClaudeNoFlicker sets CLAUDE_CODE_NO_FLICKER for spawned claude agents.
 	// Defaults to false (CLAUDE_CODE_NO_FLICKER=0) so prompt detection works in spawned agents.
@@ -293,6 +293,7 @@ func DefaultConfig() *Config {
 		ReadinessMaxVerifyCycles: 2,
 		NotificationsEnabled:     &trueVal,
 		DoubleTapThresholdMS:     &dtThreshold,
+		ParallelPlannerArchitect: true,
 	}
 	applyConfigDefaults(cfg)
 	return cfg
@@ -425,7 +426,9 @@ func configFromTOML(result *TOMLConfigResult) *Config {
 		cfg.DatabaseURL = result.DatabaseURL
 		cfg.Hooks = result.Hooks
 		cfg.BlueprintSkipThresholdValue = result.BlueprintSkipThreshold
-		cfg.ParallelPlannerArchitect = result.ParallelPlannerArchitect
+		if result.ParallelPlannerArchitect != nil {
+			cfg.ParallelPlannerArchitect = *result.ParallelPlannerArchitect
+		}
 		cfg.DoubleTapThresholdMS = result.DoubleTapThresholdMS
 		if result.AutoAdvanceWaves != nil {
 			cfg.AutoAdvanceWaves = *result.AutoAdvanceWaves
@@ -505,8 +508,7 @@ func configToTOML(cfg *Config) *TOMLConfig {
 		},
 		Telemetry: TOMLTelemetryConfig{Enabled: cfg.TelemetryEnabled},
 		Orchestration: TOMLOrchestrationConfig{
-			BlueprintSkipThreshold:   cfg.BlueprintSkipThresholdValue,
-			ParallelPlannerArchitect: cfg.ParallelPlannerArchitect,
+			BlueprintSkipThreshold: cfg.BlueprintSkipThresholdValue,
 		},
 		Keybinds:             TOMLKeybindsConfig{DoubleTapThresholdMS: cfg.DoubleTapThresholdMS},
 		Enforcement:          cfg.Enforcement,
@@ -518,6 +520,8 @@ func configToTOML(cfg *Config) *TOMLConfig {
 		NotificationsEnabled: cfg.NotificationsEnabled,
 		Hooks:                cfg.Hooks,
 	}
+	parallelPlannerArchitect := cfg.ParallelPlannerArchitect
+	out.Orchestration.ParallelPlannerArchitect = &parallelPlannerArchitect
 	claudeNoFlicker := cfg.ClaudeNoFlicker
 	out.ClaudeNoFlicker = &claudeNoFlicker
 	autoReviewFix := cfg.AutoReviewFix

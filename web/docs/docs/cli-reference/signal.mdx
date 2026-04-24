@@ -31,7 +31,7 @@ Signals describe lifecycle progress only. Permission behavior for any agent spaw
 
 > **Deprecated aliases:** `readiness_approved` → `verify_approved` (aliases: `readiness-approved`, `master_approved`); `readiness_changes_requested` → `verify_failed` (aliases: `readiness-changes`, `readiness-changes-requested`). These are accepted and canonicalized at ingress — use `verify_approved` / `verify_failed` in new automation.
 
-> **Parallel architect baseline:** enabling `[orchestration].parallel_planner_architect` does not add a signal type. The advisory `architect baseline` runtime session writes only `.kasmos/cache/<plan-file>-architect-baseline.json`; the planner still emits `planner_finished`, and the final architect pass still completes with `elaborator_finished`.
+> **Parallel architect baseline:** the architect baseline is default-on and does not add a signal type. The advisory `architect baseline` runtime session writes only `.kasmos/cache/<plan-file>-architect-baseline.json`; the planner still emits `planner_finished`, and the final architect pass still completes with `elaborator_finished`. Set `[orchestration].parallel_planner_architect = false` to disable.
 
 ### payload rules
 

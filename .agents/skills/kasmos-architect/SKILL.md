@@ -121,7 +121,7 @@ That cache is advisory input only:
 - merge the planner draft with the cached baseline when it is valid
 - if the cache is missing, corrupt, stale, or incomplete, continue with your own inline independent solution baseline and mention the fallback in the plan summary
 
-The final architect pass still remains the only task content writer. You must still create your own independent solution baseline before judging the planner draft, even when a cached baseline is present. `.kasmos/cache/<plan-file>-architect-baseline.json` is advisory input and must not be treated as final implementation state.
+The final architect pass still remains the only task content writer. You must still create your own independent solution baseline before judging the planner draft, even when a cached baseline is present.
 
 ---
 
@@ -198,39 +198,6 @@ JSON writing rules:
 - overwrite-in-place so the cache file is the one authoritative version
 - same file path format for all outputs
 
-### decision audit contract (required)
-
-The same `.kasmos/cache/<plan-file>-architect.json` metadata file must include `decision_audit` alongside the existing wave/task metadata. Do not create a separate raw planner snapshot file.
-
-Record:
-- `baseline_source`: one of `parallel_cache`, `inline`, `absent`, or `stale`
-- `summary`: concise overall audit summary
-- `planner_summary`: short summary of the planner's proposed path
-- `baseline_summary`: short summary of your independent architect baseline
-- `differences`: list each meaningful file, wave, API, UI, docs, or verification change
-- `final_decision`: one sentence stating the implementation path coders should follow
-
-Prefer this shape:
-
-```json
-{
-  "schema_version": 1,
-  "plan_id": "<plan-file>",
-  "decision_audit": {
-    "schema_version": 1,
-    "plan_file": "<plan-file>",
-    "project": "<project>",
-    "created_at": "<rfc3339>",
-    "baseline_source": "parallel_cache",
-    "summary": "...",
-    "planner_summary": "...",
-    "baseline_summary": "...",
-    "final_decision": "...",
-    "differences": []
-  }
-}
-```
-
 ### token budget for coders
 
 Tasks should be tuned for `openai/gpt-5.3-codex-spark` and low effort in `.kasmos/config.toml`:
@@ -258,27 +225,12 @@ Use `openai/gpt-5.4` cost logic as follows:
 
 ## phase 6: write, verify, signal
 
-1. write metadata output, including `decision_audit`:
+1. write metadata output:
 
 ```bash
 mkdir -p .kasmos/cache
 cat > .kasmos/cache/<plan-file>-architect.json <<'EOF'
-{
-  "schema_version": 1,
-  "plan_id": "<plan-file>",
-  "decision_audit": {
-    "schema_version": 1,
-    "plan_file": "<plan-file>",
-    "project": "<project>",
-    "created_at": "<rfc3339>",
-    "baseline_source": "parallel_cache",
-    "summary": "...",
-    "planner_summary": "...",
-    "baseline_summary": "...",
-    "final_decision": "...",
-    "differences": []
-  }
-}
+...json...
 EOF
 ```
 
@@ -308,7 +260,6 @@ stop.
 |---------|-----|
 | modifying planner structural blocks | leave `## Wave`, `### Task`, `**Files:**` unchanged |
 | creating import dependency between same-wave tasks | split or move tasks to a later wave |
-| skipping metadata JSON output | generate `.kasmos/cache/<plan-file>-architect.json` with `decision_audit` in the same run |
-| treating `.kasmos/cache/<plan-file>-architect-baseline.json` as final state | use it only as advisory input and classify stale/missing/corrupt caches correctly |
+| skipping metadata JSON output | generate `.kasmos/cache/<plan-file>-architect.json` in the same run |
 | writing signal before round-trip check | run MCP `task_show` (filename: "<plan-file>", project: "$KASMOS_PROJECT") first |
 | writing the compatibility `elaborator-finished` signal with wrong filename | use exact plan file token in filename |

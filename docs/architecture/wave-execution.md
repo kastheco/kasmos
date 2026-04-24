@@ -49,13 +49,8 @@ skipped entirely; the rest of the lifecycle (review → verify → done) is
 identical. See `orchestration/engine.go:ShouldBlueprintSkip` and
 `orchestration/prompt.go:BuildBlueprintSkipPrompt`.
 
-When `[orchestration].parallel_planner_architect` is left at its default
-`false`, the planner-first behavior is unchanged: the planner finishes, then the
-normal architect pass starts and derives its own inline baseline before merging
-that with the planner draft.
-
-When `parallel_planner_architect = true`, plan start adds an advisory baseline
-session beside the planner:
+By default, `[orchestration].parallel_planner_architect` is `true` and plan start
+adds an advisory baseline session beside the planner:
 
 1. plan start clears stale `.kasmos/cache/<planSlug>-architect-baseline.json`
 2. the planner starts normally
@@ -66,6 +61,11 @@ session beside the planner:
    baseline; if the cache is missing, corrupt, or for a different planner input,
    it falls back to the existing inline self-baseline behavior
 6. coder waves proceed normally
+
+To restore planner-first behavior — where the planner finishes and emits
+`planner-finished` before the architect pass starts — set
+`[orchestration].parallel_planner_architect = false`. The architect pass then
+derives its own inline baseline before merging with the planner draft.
 
 The baseline cache is advisory. It is safe to delete, is not task-store state,
 and never drives lifecycle status by itself. The baseline session emits no
@@ -97,7 +97,7 @@ sequenceDiagram
     User->>D: implement_start signal
     Note over D: FSM to implementing, optional stale baseline cache cleared
 
-    opt parallel_planner_architect enabled during plan start
+    opt parallel_planner_architect active (default; disabled when set to false)
         D->>B: spawn architect-baseline session
         Note over B: writes .kasmos/cache/&lt;planSlug&gt;-architect-baseline.json only; emits no lifecycle signal
     end
