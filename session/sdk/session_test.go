@@ -492,7 +492,9 @@ func (c *captureCfgTransport) Start(ctx context.Context, cfg LaunchConfig) error
 }
 
 // Compile-time assertion: *Session must satisfy the shell runner interface.
-var _ interface{ RunShellCommand(context.Context, string) error } = (*Session)(nil)
+var _ interface {
+	RunShellCommand(context.Context, string) error
+} = (*Session)(nil)
 
 // stubShellRunner is a test seam for RunShellCommand that avoids spawning a
 // real subprocess.
