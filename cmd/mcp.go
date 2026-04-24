@@ -10,6 +10,7 @@ import (
 	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/kastheco/kasmos/internal/mcpserver"
 	"github.com/kastheco/kasmos/internal/mcpserver/cache"
+	"github.com/kastheco/kasmos/internal/mcpserver/docstools"
 	"github.com/kastheco/kasmos/internal/mcpserver/fstools"
 	"github.com/kastheco/kasmos/internal/mcpserver/gittools"
 	"github.com/kastheco/kasmos/internal/mcpserver/instancetools"
@@ -152,6 +153,7 @@ func newConfiguredMCPServerSingleRoot(mcpSrv *mcpserver.Server, sharedDB *sql.DB
 
 	fstools.RegisterTools(mcpSrv.MCPServer(), allowedDirs, fstools.RegisterOptions{Runner: runner, FileCache: fileCache, Symbols: symbolStore})
 	gittools.RegisterTools(mcpSrv.MCPServer(), allowedDirs, runner)
+	docstools.RegisterTools(mcpSrv.MCPServer(), allowedDirs, docstools.RegisterOptions{Runner: runner})
 	symbols.RegisterTool(mcpSrv.MCPServer(), validator, symbolStore, indexer.Available,
 		func(_ context.Context) { indexer.Start(indexerCtx) },
 		indexer.PrimeFile,
@@ -240,6 +242,7 @@ func newConfiguredMCPServerMultiRoot(mcpSrv *mcpserver.Server, repoRoots []strin
 	// picks the correct project from the "project" parameter.
 	fstools.RegisterTools(mcpSrv.MCPServer(), allowedDirs, fstools.RegisterOptions{Runner: runner, FileCache: nil, Symbols: symbolStore})
 	gittools.RegisterTools(mcpSrv.MCPServer(), allowedDirs, runner)
+	docstools.RegisterTools(mcpSrv.MCPServer(), allowedDirs, docstools.RegisterOptions{Runner: runner})
 	symbols.RegisterTool(mcpSrv.MCPServer(), validator, symbolStore, ctagsAvailable, nil, nil)
 	tasktools.RegisterTools(mcpSrv.MCPServer(), "", projects, mcpSrv.Store(), mcpSrv.Gateway())
 	signaltools.RegisterTools(mcpSrv.MCPServer(), "", projects, mcpSrv.Gateway())
