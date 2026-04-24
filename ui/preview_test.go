@@ -1939,6 +1939,16 @@ func TestPreviewPane_SDKComposerCursor_WordMovement(t *testing.T) {
 			op: (*PreviewPane).MoveSDKComposerCursorWordRight, wantCur: 2,
 		},
 		{
+			name: "underscore is a word rune (word-right crosses snake_case)",
+			text: "snake_case end", initCur: 0,
+			op: (*PreviewPane).MoveSDKComposerCursorWordRight, wantCur: 10,
+		},
+		{
+			name: "underscore is a word rune (word-left crosses snake_case)",
+			text: "snake_case end", initCur: 10,
+			op: (*PreviewPane).MoveSDKComposerCursorWordLeft, wantCur: 0,
+		},
+		{
 			name: "left at beginning is no-op",
 			text: "hello", initCur: 0,
 			op: (*PreviewPane).MoveSDKComposerCursorLeft, wantCur: 0,

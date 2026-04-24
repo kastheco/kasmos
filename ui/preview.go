@@ -981,9 +981,9 @@ func (p *PreviewPane) deleteSDKComposerRange(start, end int) {
 }
 
 // isComposerWordRune reports whether r is a word rune for composer word-movement.
-// Unicode letters and digits are word runes; emoji and punctuation are separators.
+// Unicode letters, digits, and underscores are word runes; emoji and punctuation are separators.
 func isComposerWordRune(r rune) bool {
-	return unicode.IsLetter(r) || unicode.IsDigit(r)
+	return unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_'
 }
 
 // wordBoundaryLeft returns the rune index of the left word boundary from cursor.
