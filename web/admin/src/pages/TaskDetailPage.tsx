@@ -2,11 +2,18 @@ import { lazy, Suspense, useState, type ComponentProps } from "react";
 import { useParams, useNavigate } from "react-router";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import type { TaskEntry, SubtaskEntry } from "../types";
-import { getTask, getTaskContent, getSubtasks, updateTaskContent } from "../api";
+import type { ArchitectDecisionAuditResponse, TaskEntry, SubtaskEntry } from "../types";
+import {
+  getArchitectDecisionAudit,
+  getTask,
+  getTaskContent,
+  getSubtasks,
+  updateTaskContent,
+} from "../api";
 import { useAutoRefresh } from "../hooks/useAutoRefresh";
 import { useProject } from "../hooks/useProject";
 import { useToast } from "../hooks/useToast";
+import ArchitectDecisionPanel from "../components/ArchitectDecisionPanel";
 import StatusBadge from "../components/StatusBadge";
 import MetadataPanel from "../components/MetadataPanel";
 import SubtaskProgress from "../components/SubtaskProgress";
@@ -16,6 +23,8 @@ import TaskActionsMenu from "../components/TaskActionsMenu";
 import styles from "./TaskDetailPage.module.css";
 
 const PlanEditor = lazy(() => import("../components/PlanEditor"));
+
+type TaskDetailTab = "plan" | "architect";
 
 type TaskDetailData = {
   task: TaskEntry;
@@ -65,6 +74,7 @@ export default function TaskDetailPage() {
   const toast = useToast();
 
   const [editMode, setEditMode] = useState(false);
+  const [activeTab, setActiveTab] = useState<TaskDetailTab>("plan");
 
   const { data, loading, error, lastUpdatedAt, isRefreshing, refresh } =
     useAutoRefresh<TaskDetailData | null>(
@@ -81,6 +91,28 @@ export default function TaskDetailPage() {
       [project, filename],
       editMode ? 0 : 10000,
     );
+
+  const {
+    data: architectAudit,
+    loading: architectLoading,
+    error: architectError,
+  } = useAutoRefresh<ArchitectDecisionAuditResponse | null>(
+    async () => {
+      if (activeTab !== "architect") return null;
+      if (!filename) throw new Error("no task filename provided");
+      if (!project) return null;
+      return getArchitectDecisionAudit(project, filename);
+    },
+    [project, filename, activeTab],
+    activeTab === "architect" ? 10000 : 0,
+  );
+
+  function selectTab(tab: TaskDetailTab) {
+    setActiveTab(tab);
+    if (tab === "architect") {
+      setEditMode(false);
+    }
+  }
 
   if (!filename) {
     return (
@@ -141,19 +173,48 @@ export default function TaskDetailPage() {
             }
             onDeleted={() => navigate(`/tasks${projectSearch}`)}
           />
-          <button
-            className={`${styles.editBtn} ${editMode ? styles.editBtnActive : ""}`}
-            onClick={() => setEditMode((m) => !m)}
-            type="button"
-          >
-            {editMode ? "cancel edit" : "edit"}
-          </button>
+          {activeTab === "plan" && (
+            <button
+              className={`${styles.editBtn} ${editMode ? styles.editBtnActive : ""}`}
+              onClick={() => setEditMode((m) => !m)}
+              type="button"
+            >
+              {editMode ? "cancel edit" : "edit"}
+            </button>
+          )}
         </div>
       </header>
 
+      <div className={styles.tabStrip} role="tablist" aria-label="task detail tabs">
+        <button
+          className={`${styles.tabButton} ${activeTab === "plan" ? styles.tabButtonActive : ""}`}
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "plan"}
+          onClick={() => selectTab("plan")}
+        >
+          plan
+        </button>
+        <button
+          className={`${styles.tabButton} ${activeTab === "architect" ? styles.tabButtonActive : ""}`}
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "architect"}
+          onClick={() => selectTab("architect")}
+        >
+          architect decisions
+        </button>
+      </div>
+
       <div className={styles.layout}>
         <section className={styles.main}>
-          {editMode ? (
+          {activeTab === "architect" ? (
+            <ArchitectDecisionPanel
+              response={architectAudit}
+              loading={architectLoading}
+              error={architectError ? new Error(architectError) : null}
+            />
+          ) : editMode ? (
             <Suspense fallback={<Skeleton variant="block" />}>
               <div className={styles.editorArea}>
                 <PlanEditor

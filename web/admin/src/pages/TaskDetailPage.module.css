@@ -35,6 +35,7 @@
 
 .topicPill {
   display: inline-block;
+  max-width: 240px;
   padding: 2px 10px;
   border-radius: 12px;
   font-size: 11px;
@@ -43,6 +44,51 @@
   border: 1px solid rgba(246, 193, 119, 0.25);
   color: var(--accent-amber);
   text-transform: lowercase;
+  overflow-wrap: anywhere;
+}
+
+/* ── Tabs ── */
+
+.tabStrip {
+  display: inline-flex;
+  width: fit-content;
+  max-width: 100%;
+  gap: 4px;
+  padding: 3px;
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  overflow-x: auto;
+}
+
+.tabButton {
+  border: 0;
+  border-radius: 6px;
+  padding: 5px 12px;
+  background: transparent;
+  color: var(--foreground-tertiary);
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
+}
+
+.tabButton:hover {
+  color: var(--foreground);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.tabButton:focus-visible,
+.editBtn:focus-visible {
+  outline: 2px solid var(--accent-teal);
+  outline-offset: 2px;
+}
+
+.tabButtonActive {
+  color: var(--foreground);
+  background: rgba(156, 207, 216, 0.14);
 }
 
 /* ── Two-column layout ── */
@@ -182,6 +228,7 @@
 .markdown table {
   border-collapse: collapse;
   width: 100%;
+  max-width: 100%;
   font-size: 13px;
   margin-bottom: 1em;
 }
@@ -300,4 +347,5 @@
   .title {
     font-size: 15px;
   }
+
 }

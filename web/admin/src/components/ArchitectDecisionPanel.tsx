@@ -171,7 +171,7 @@ export default function ArchitectDecisionPanel({
     );
   }
 
-  if (error) {
+  if (error && !response) {
     return (
       <section className={styles.panel} aria-label="architect decisions">
         <p className={styles.error}>
@@ -203,6 +203,11 @@ export default function ArchitectDecisionPanel({
           <span className={styles.source}>{audit.baseline_source}</span>
         )}
       </header>
+      {error && (
+        <p className={styles.error}>
+          could not refresh architect decisions: {error.message}
+        </p>
+      )}
 
       <TextSection title="summary">{audit?.summary}</TextSection>
       <TextSection title="planner summary">{audit?.planner_summary}</TextSection>

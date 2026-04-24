@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/kastheco/kasmos/config/taskstore"
+	"github.com/kastheco/kasmos/orchestration"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -23,21 +24,20 @@ const (
 )
 
 type apiResponse struct {
-	Available                 bool                          `json:"available"`
-	Reason                    string                        `json:"reason,omitempty"`
-	Code                      string                        `json:"code,omitempty"`
-	Summary                   string                        `json:"summary,omitempty"`
-	PlannerSummary            string                        `json:"planner_summary,omitempty"`
-	BaselineSummary           string                        `json:"baseline_summary,omitempty"`
-	BaselineSource            string                        `json:"baseline_source,omitempty"`
-	FinalDecision             string                        `json:"final_decision,omitempty"`
-	Differences               []architectDecisionDifference `json:"differences,omitempty"`
-	FinalMarkdown             string                        `json:"final_markdown,omitempty"`
-	ArchitectBaselineMarkdown string                        `json:"architect_baseline_markdown,omitempty"`
-	BaselineCreatedAt         *time.Time                    `json:"baseline_created_at,omitempty"`
-	BaselineReason            string                        `json:"baseline_reason,omitempty"`
-	ArchitectMetaAt           *time.Time                    `json:"architect_meta_at,omitempty"`
-	DecisionAuditCreatedAt    *time.Time                    `json:"decision_audit_created_at,omitempty"`
+	Available                 bool                                  `json:"available"`
+	Reason                    string                                `json:"reason,omitempty"`
+	Code                      string                                `json:"code,omitempty"`
+	FinalMarkdown             string                                `json:"final_markdown,omitempty"`
+	DecisionAudit             *orchestration.ArchitectDecisionAudit `json:"decision_audit,omitempty"`
+	ArchitectBaselineMarkdown string                                `json:"architect_baseline_markdown,omitempty"`
+	BaselineReason            string                                `json:"baseline_reason,omitempty"`
+	Timestamps                architectDecisionResponseTimestamps   `json:"timestamps,omitempty"`
+}
+
+type architectDecisionResponseTimestamps struct {
+	ArchitectMetaAt        *time.Time `json:"architect_meta_at,omitempty"`
+	BaselineCreatedAt      *time.Time `json:"baseline_created_at,omitempty"`
+	DecisionAuditCreatedAt *time.Time `json:"decision_audit_created_at,omitempty"`
 }
 
 func TestArchitectDecisionHandler_HappyPath(t *testing.T) {
@@ -53,20 +53,21 @@ func TestArchitectDecisionHandler_HappyPath(t *testing.T) {
 	var body apiResponse
 	decodeResponse(t, resp, &body)
 	assert.True(t, body.Available)
-	assert.Equal(t, "architect compared the planner draft", body.Summary)
-	assert.Equal(t, "planner wanted the hq route", body.PlannerSummary)
-	assert.Equal(t, "baseline kept it read-only", body.BaselineSummary)
-	assert.Equal(t, "architect-baseline-cache", body.BaselineSource)
-	assert.Equal(t, "ship the read-only route", body.FinalDecision)
-	require.Len(t, body.Differences, 1)
-	assert.Equal(t, "routing", body.Differences[0].Area)
+	require.NotNil(t, body.DecisionAudit)
+	assert.Equal(t, "architect compared the planner draft", body.DecisionAudit.Summary)
+	assert.Equal(t, "planner wanted the hq route", body.DecisionAudit.PlannerSummary)
+	assert.Equal(t, "baseline kept it read-only", body.DecisionAudit.BaselineSummary)
+	assert.Equal(t, "architect-baseline-cache", body.DecisionAudit.BaselineSource)
+	assert.Equal(t, "ship the read-only route", body.DecisionAudit.FinalDecision)
+	require.Len(t, body.DecisionAudit.Differences, 1)
+	assert.Equal(t, "routing", body.DecisionAudit.Differences[0].Area)
 	assert.Equal(t, testContent, body.FinalMarkdown)
 	assert.Equal(t, "## baseline\n", body.ArchitectBaselineMarkdown)
-	require.NotNil(t, body.BaselineCreatedAt)
-	assert.Equal(t, baselineAt, body.BaselineCreatedAt.UTC())
-	require.NotNil(t, body.DecisionAuditCreatedAt)
-	assert.Equal(t, createdAt, body.DecisionAuditCreatedAt.UTC())
-	require.NotNil(t, body.ArchitectMetaAt)
+	require.NotNil(t, body.Timestamps.BaselineCreatedAt)
+	assert.Equal(t, baselineAt, body.Timestamps.BaselineCreatedAt.UTC())
+	require.NotNil(t, body.Timestamps.DecisionAuditCreatedAt)
+	assert.Equal(t, createdAt, body.Timestamps.DecisionAuditCreatedAt.UTC())
+	require.NotNil(t, body.Timestamps.ArchitectMetaAt)
 	assert.Empty(t, body.BaselineReason)
 }
 
@@ -148,7 +149,8 @@ func TestArchitectDecisionHandler_BaselineProblemsDoNotHideAudit(t *testing.T) {
 			decodeResponse(t, resp, &body)
 			assert.True(t, body.Available)
 			assert.Equal(t, tt.wantReason, body.BaselineReason)
-			assert.Equal(t, "ship the read-only route", body.FinalDecision)
+			require.NotNil(t, body.DecisionAudit)
+			assert.Equal(t, "ship the read-only route", body.DecisionAudit.FinalDecision)
 		})
 	}
 }
@@ -254,9 +256,9 @@ func architectDecisionPath() string {
 
 func writeArchitectMeta(t *testing.T, cacheDir string, createdAt time.Time, includeAudit bool) {
 	t.Helper()
-	meta := &architectMeta{}
+	meta := &orchestration.ArchitectMeta{}
 	if includeAudit {
-		meta.DecisionAudit = &architectDecisionAudit{
+		meta.DecisionAudit = &orchestration.ArchitectDecisionAudit{
 			SchemaVersion:   1,
 			PlanFile:        testFilename,
 			Project:         testProject,
@@ -266,7 +268,7 @@ func writeArchitectMeta(t *testing.T, cacheDir string, createdAt time.Time, incl
 			PlannerSummary:  "planner wanted the hq route",
 			BaselineSummary: "baseline kept it read-only",
 			FinalDecision:   "ship the read-only route",
-			Differences: []architectDecisionDifference{{
+			Differences: []orchestration.ArchitectDecisionDifference{{
 				Area:          "routing",
 				FinalDecision: "register before the task-store fallback",
 			}},
@@ -277,12 +279,8 @@ func writeArchitectMeta(t *testing.T, cacheDir string, createdAt time.Time, incl
 
 func writeArchitectBaseline(t *testing.T, cacheDir, description string, createdAt time.Time) {
 	t.Helper()
-	identity := architectBaselineIdentity{
-		PlanFile:        testFilename,
-		Project:         testProject,
-		DescriptionHash: architectBaselineDescriptionHash(description),
-	}
-	writeJSONFixture(t, filepath.Join(cacheDir, testFilename+"-architect-baseline.json"), &architectBaseline{
+	identity := orchestration.NewArchitectBaselineIdentity(testFilename, testProject, description)
+	writeJSONFixture(t, filepath.Join(cacheDir, testFilename+"-architect-baseline.json"), &orchestration.ArchitectBaseline{
 		SchemaVersion:    1,
 		PlanFile:         identity.PlanFile,
 		Project:          identity.Project,

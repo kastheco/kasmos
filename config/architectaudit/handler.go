@@ -3,7 +3,6 @@
 package architectaudit
 
 import (
-	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,6 +14,7 @@ import (
 
 	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/kastheco/kasmos/daemon/api"
+	"github.com/kastheco/kasmos/orchestration"
 )
 
 // ProjectRootResolver maps a project name to its repo root path.
@@ -39,20 +39,19 @@ type handler struct {
 }
 
 type response struct {
-	Available                 bool                          `json:"available"`
-	Reason                    string                        `json:"reason,omitempty"`
-	Summary                   string                        `json:"summary,omitempty"`
-	PlannerSummary            string                        `json:"planner_summary,omitempty"`
-	BaselineSummary           string                        `json:"baseline_summary,omitempty"`
-	BaselineSource            string                        `json:"baseline_source,omitempty"`
-	FinalDecision             string                        `json:"final_decision,omitempty"`
-	Differences               []architectDecisionDifference `json:"differences,omitempty"`
-	FinalMarkdown             string                        `json:"final_markdown,omitempty"`
-	ArchitectBaselineMarkdown string                        `json:"architect_baseline_markdown,omitempty"`
-	BaselineCreatedAt         *time.Time                    `json:"baseline_created_at,omitempty"`
-	BaselineReason            string                        `json:"baseline_reason,omitempty"`
-	ArchitectMetaAt           *time.Time                    `json:"architect_meta_at,omitempty"`
-	DecisionAuditCreatedAt    *time.Time                    `json:"decision_audit_created_at,omitempty"`
+	Available                 bool                                  `json:"available"`
+	Reason                    string                                `json:"reason,omitempty"`
+	FinalMarkdown             string                                `json:"final_markdown,omitempty"`
+	DecisionAudit             *orchestration.ArchitectDecisionAudit `json:"decision_audit,omitempty"`
+	ArchitectBaselineMarkdown string                                `json:"architect_baseline_markdown,omitempty"`
+	BaselineReason            string                                `json:"baseline_reason,omitempty"`
+	Timestamps                responseTimestamps                    `json:"timestamps,omitempty"`
+}
+
+type responseTimestamps struct {
+	ArchitectMetaAt        *time.Time `json:"architect_meta_at,omitempty"`
+	BaselineCreatedAt      *time.Time `json:"baseline_created_at,omitempty"`
+	DecisionAuditCreatedAt *time.Time `json:"decision_audit_created_at,omitempty"`
 }
 
 func (h *handler) handleArchitectDecisions(w http.ResponseWriter, r *http.Request) {
@@ -103,7 +102,7 @@ func (h *handler) handleArchitectDecisions(w http.ResponseWriter, r *http.Reques
 	}
 
 	cacheDir := filepath.Join(root, ".kasmos", "cache")
-	meta, err := loadArchitectMeta(cacheDir, filename)
+	meta, err := orchestration.LoadArchitectMeta(cacheDir, filename)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, fmt.Sprintf("load architect meta: %v", err), "architect_meta_error")
 		return
@@ -116,7 +115,7 @@ func (h *handler) handleArchitectDecisions(w http.ResponseWriter, r *http.Reques
 		writeJSON(w, http.StatusOK, response{Available: false, Reason: "decision_audit_missing"})
 		return
 	}
-	if err := validateArchitectDecisionAudit(meta.DecisionAudit, filename, project); err != nil {
+	if err := orchestration.ValidateArchitectDecisionAudit(meta.DecisionAudit, filename, project); err != nil {
 		writeJSONError(w, http.StatusInternalServerError, fmt.Sprintf("invalid architect decision audit: %v", err), "decision_audit_invalid")
 		return
 	}
@@ -128,16 +127,13 @@ func (h *handler) handleArchitectDecisions(w http.ResponseWriter, r *http.Reques
 	}
 
 	resp := response{
-		Available:              true,
-		Summary:                meta.DecisionAudit.Summary,
-		PlannerSummary:         meta.DecisionAudit.PlannerSummary,
-		BaselineSummary:        meta.DecisionAudit.BaselineSummary,
-		BaselineSource:         meta.DecisionAudit.BaselineSource,
-		FinalDecision:          meta.DecisionAudit.FinalDecision,
-		Differences:            meta.DecisionAudit.Differences,
-		FinalMarkdown:          finalMarkdown,
-		ArchitectMetaAt:        &metaAt,
-		DecisionAuditCreatedAt: &meta.DecisionAudit.CreatedAt,
+		Available:     true,
+		FinalMarkdown: finalMarkdown,
+		DecisionAudit: meta.DecisionAudit,
+		Timestamps: responseTimestamps{
+			ArchitectMetaAt:        &metaAt,
+			DecisionAuditCreatedAt: &meta.DecisionAudit.CreatedAt,
+		},
 	}
 
 	loadBaseline(cacheDir, filename, project, entry.Description, &resp)
@@ -145,7 +141,7 @@ func (h *handler) handleArchitectDecisions(w http.ResponseWriter, r *http.Reques
 }
 
 func loadBaseline(cacheDir, filename, project, description string, resp *response) {
-	baseline, err := loadArchitectBaseline(cacheDir, filename)
+	baseline, err := orchestration.LoadArchitectBaseline(cacheDir, filename)
 	if err != nil {
 		resp.BaselineReason = "baseline_error"
 		return
@@ -155,12 +151,8 @@ func loadBaseline(cacheDir, filename, project, description string, resp *respons
 		return
 	}
 
-	identity := architectBaselineIdentity{
-		PlanFile:        filename,
-		Project:         project,
-		DescriptionHash: architectBaselineDescriptionHash(description),
-	}
-	if err := validateArchitectBaseline(baseline, identity); err != nil {
+	identity := orchestration.NewArchitectBaselineIdentity(filename, project, description)
+	if err := orchestration.ValidateArchitectBaseline(baseline, identity); err != nil {
 		if strings.Contains(err.Error(), "mismatch") {
 			resp.BaselineReason = "baseline_stale"
 			return
@@ -170,136 +162,7 @@ func loadBaseline(cacheDir, filename, project, description string, resp *respons
 	}
 
 	resp.ArchitectBaselineMarkdown = baseline.BaselineMarkdown
-	resp.BaselineCreatedAt = &baseline.CreatedAt
-}
-
-type architectMeta struct {
-	DecisionAudit *architectDecisionAudit `json:"decision_audit,omitempty"`
-}
-
-type architectDecisionAudit struct {
-	SchemaVersion   int                           `json:"schema_version"`
-	PlanFile        string                        `json:"plan_file"`
-	Project         string                        `json:"project"`
-	CreatedAt       time.Time                     `json:"created_at"`
-	BaselineSource  string                        `json:"baseline_source,omitempty"`
-	Summary         string                        `json:"summary,omitempty"`
-	PlannerSummary  string                        `json:"planner_summary,omitempty"`
-	BaselineSummary string                        `json:"baseline_summary,omitempty"`
-	FinalDecision   string                        `json:"final_decision,omitempty"`
-	Differences     []architectDecisionDifference `json:"differences,omitempty"`
-}
-
-type architectDecisionDifference struct {
-	Area              string   `json:"area"`
-	Scope             string   `json:"scope,omitempty"`
-	PlannerProposal   string   `json:"planner_proposal,omitempty"`
-	ArchitectBaseline string   `json:"architect_baseline,omitempty"`
-	FinalDecision     string   `json:"final_decision"`
-	Rationale         string   `json:"rationale,omitempty"`
-	RelatedFiles      []string `json:"related_files,omitempty"`
-	TaskNumbers       []int    `json:"task_numbers,omitempty"`
-}
-
-type architectBaseline struct {
-	SchemaVersion    int       `json:"schema_version"`
-	PlanFile         string    `json:"plan_file"`
-	Project          string    `json:"project"`
-	DescriptionHash  string    `json:"description_hash"`
-	CreatedAt        time.Time `json:"created_at"`
-	BaselineMarkdown string    `json:"baseline_markdown"`
-}
-
-type architectBaselineIdentity struct {
-	PlanFile        string
-	Project         string
-	DescriptionHash string
-}
-
-func loadArchitectMeta(cacheDir, filename string) (*architectMeta, error) {
-	data, err := os.ReadFile(filepath.Join(cacheDir, filename+"-architect.json"))
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("read architect meta: %w", err)
-	}
-
-	var meta architectMeta
-	if err := json.Unmarshal(data, &meta); err != nil {
-		return nil, fmt.Errorf("read architect meta: %w", err)
-	}
-	return &meta, nil
-}
-
-func validateArchitectDecisionAudit(a *architectDecisionAudit, filename, project string) error {
-	if a == nil {
-		return fmt.Errorf("architect decision audit is nil")
-	}
-	if a.SchemaVersion != 1 {
-		return fmt.Errorf("unsupported architect decision audit schema version: %d", a.SchemaVersion)
-	}
-	if a.PlanFile != filename {
-		return fmt.Errorf("architect decision audit plan file mismatch: got %q, want %q", a.PlanFile, filename)
-	}
-	if a.Project != project {
-		return fmt.Errorf("architect decision audit project mismatch: got %q, want %q", a.Project, project)
-	}
-	if strings.TrimSpace(a.FinalDecision) == "" {
-		return fmt.Errorf("architect decision audit final decision is empty")
-	}
-	for i, diff := range a.Differences {
-		if strings.TrimSpace(diff.Area) == "" {
-			return fmt.Errorf("architect decision audit difference %d area is empty", i)
-		}
-		if strings.TrimSpace(diff.FinalDecision) == "" {
-			return fmt.Errorf("architect decision audit difference %d final decision is empty", i)
-		}
-	}
-	return nil
-}
-
-func loadArchitectBaseline(cacheDir, filename string) (*architectBaseline, error) {
-	data, err := os.ReadFile(filepath.Join(cacheDir, filename+"-architect-baseline.json"))
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("read architect baseline: %w", err)
-	}
-
-	var baseline architectBaseline
-	if err := json.Unmarshal(data, &baseline); err != nil {
-		return nil, fmt.Errorf("read architect baseline: %w", err)
-	}
-	return &baseline, nil
-}
-
-func validateArchitectBaseline(b *architectBaseline, expected architectBaselineIdentity) error {
-	if b == nil {
-		return fmt.Errorf("architect baseline is nil")
-	}
-	if b.SchemaVersion != 1 {
-		return fmt.Errorf("unsupported architect baseline schema version: %d", b.SchemaVersion)
-	}
-	if b.BaselineMarkdown == "" {
-		return fmt.Errorf("architect baseline markdown is empty")
-	}
-	if b.PlanFile != expected.PlanFile {
-		return fmt.Errorf("architect baseline plan file mismatch: got %q, want %q", b.PlanFile, expected.PlanFile)
-	}
-	if b.Project != expected.Project {
-		return fmt.Errorf("architect baseline project mismatch: got %q, want %q", b.Project, expected.Project)
-	}
-	if b.DescriptionHash != expected.DescriptionHash {
-		return fmt.Errorf("architect baseline description hash mismatch: got %q, want %q", b.DescriptionHash, expected.DescriptionHash)
-	}
-	return nil
-}
-
-func architectBaselineDescriptionHash(description string) string {
-	sum := sha256.Sum256([]byte(description))
-	return fmt.Sprintf("%x", sum[:])
+	resp.Timestamps.BaselineCreatedAt = &baseline.CreatedAt
 }
 
 func normalizeFilename(raw string) string {
@@ -324,7 +187,7 @@ func architectMetaModTime(cacheDir, filename string) (time.Time, error) {
 }
 
 func isNotFound(err error) bool {
-	return err != nil && strings.Contains(err.Error(), "not found")
+	return errors.Is(err, taskstore.ErrNotFound)
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
