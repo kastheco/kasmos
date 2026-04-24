@@ -27,8 +27,12 @@
   --card-border-hover: rgba(196, 167, 231, 0.35);
   --glow-amber: rgba(246, 193, 119, 0.18);
   --glow-teal: rgba(156, 207, 216, 0.18);
-  --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-sans: "Inter", "Roboto", "Noto Sans", "Liberation Sans", "DejaVu Sans", Arial, sans-serif;
   --font-mono: "JetBrains Mono", "Cascadia Code", "Fira Code", Consolas, monospace;
+  --brand-primary: var(--rp-iris);
+  --brand-accent: var(--rp-foam);
+  --brand-bg: var(--rp-base);
+  --brand-muted: var(--foreground-secondary);
 }
 
 html,
@@ -69,6 +73,16 @@ pre, code {
 ::selection {
   background: rgba(196, 167, 231, 0.35);
   color: var(--rp-text);
+}
+
+.brand-hq-suffix {
+  background: linear-gradient(180deg, #2dd4bf 0%, #67d6df 45%, #c4a7e7 100%);
+  background-clip: text;
+  color: transparent;
+  font-family: "Inter", "Roboto", "Noto Sans", "Liberation Sans", "DejaVu Sans", Arial, sans-serif;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  -webkit-background-clip: text;
 }
 
 #root {

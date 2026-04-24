@@ -17,14 +17,21 @@
 .logo {
   display: flex;
   align-items: center;
+  gap: 6px;
   padding: 4px 4px 4px 0;
 }
 
 .logoImg {
   display: block;
   width: 100%;
-  max-width: 160px;
+  max-width: 120px;
   height: auto;
+}
+
+.hqSuffix {
+  font-size: 22px;
+  line-height: 1;
+  text-transform: lowercase;
 }
 
 .navList {
