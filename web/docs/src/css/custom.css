@@ -141,6 +141,23 @@ body {
    SHARED
    ============================================================ */
 
+/* Lifecycle diagram embed */
+.kasmos-lifecycle-diagram {
+  max-width: 760px;
+  margin: 1rem auto 2rem;
+}
+
+.kasmos-lifecycle-diagram img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.kasmos-lifecycle-diagram:focus-visible {
+  outline: 2px solid var(--kas-accent-iris);
+  outline-offset: 4px;
+}
+
 /* Focus outline */
 :focus-visible {
   outline: 2px solid var(--kas-accent-iris);

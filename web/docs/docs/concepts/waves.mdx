@@ -2,7 +2,17 @@
 title: "waves"
 ---
 
+import lifecycleDiagram from "@site/static/img/kasmos-lifecycle-flow.svg";
+
 # waves
+
+<figure
+  className="kasmos-lifecycle-diagram"
+  tabIndex={0}
+  aria-label="kasmos lifecycle: planner and architect baseline run in parallel, then architect merge, coder waves, review and fix loop, readiness, and done."
+>
+  <img src={lifecycleDiagram} alt="" aria-hidden="true" />
+</figure>
 
 Waves are the parallel execution unit in kasmos. A multi-wave plan runs wave 1 to completion, then wave 2, and so on. All tasks within a single wave run concurrently as separate agent instances on isolated git worktrees.
 
@@ -66,9 +76,7 @@ Before wave 1 begins, kasmos optionally runs an **architect** agent to decompose
 
 When elaboration completes, `UpdatePlan()` replaces the plan and resets the orchestrator to `WaveStateIdle` so waves can begin.
 
-The default planning sequence is planner-first. With `[orchestration].parallel_planner_architect = false`, the planner finishes first, emits `planner-finished`, and the architect pass derives its own baseline inline while reading the planner draft.
-
-When `parallel_planner_architect = true`, kasmos starts an advisory baseline beside the planner:
+By default, `[orchestration].parallel_planner_architect` is `true` and kasmos starts an advisory baseline beside the planner:
 
 1. plan start clears stale `.kasmos/cache/<planSlug>-architect-baseline.json`
 2. the planner starts
@@ -76,6 +84,8 @@ When `parallel_planner_architect = true`, kasmos starts an advisory baseline bes
 4. the planner writes the draft and emits `planner-finished`
 5. the final architect reads the planner draft plus a valid cached baseline, or falls back inline
 6. coder waves proceed normally
+
+To restore planner-first behavior — where the planner finishes before the architect pass starts — set `[orchestration].parallel_planner_architect = false`. The architect pass then derives its own baseline inline while reading the planner draft.
 
 The baseline cache is safe to delete and is not task-store state. The baseline session writes the cache artifact only; it does not edit task content, update lifecycle status, or emit signals. Signal names are unchanged. Blueprint skip can still skip the final architect pass for small planner drafts, so a baseline cache may be produced but unused.
 
