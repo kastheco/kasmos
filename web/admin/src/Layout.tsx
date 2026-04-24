@@ -15,7 +15,7 @@ export default function Layout() {
       <nav className={styles.sidebar}>
         <div className={styles.logo}>
           <img src={logoFull} alt={BRAND.wordmarkAlt} className={styles.logoImg} />
-          <span className={styles.hqSuffix}>{BRAND.shortName}</span>
+          <span className={`brand-hq-suffix ${styles.hqSuffix}`}>{BRAND.shortName}</span>
         </div>
         <div className={styles.switcherSection}>
           <ProjectSwitcher />

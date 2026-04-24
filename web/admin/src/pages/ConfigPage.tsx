@@ -206,7 +206,7 @@ export default function ConfigPage() {
       </div>
 
       <p className={styles.notice}>
-        <a href="/admin/access-login-preview" target="_blank" rel="noreferrer">
+        <a href="/admin/access-login-preview" target="_blank" rel="noopener noreferrer">
           preview cloudflare access login
         </a>
       </p>
