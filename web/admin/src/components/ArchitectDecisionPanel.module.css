@@ -1,0 +1,209 @@
+.panel {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 10px;
+  color: var(--foreground-secondary);
+  padding: 18px 20px;
+}
+
+.header {
+  align-items: center;
+  border-bottom: 1px solid var(--card-border);
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+}
+
+.title,
+.sectionTitle {
+  color: var(--foreground);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.source {
+  color: var(--accent-teal);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.section {
+  margin-top: 16px;
+}
+
+.section:first-of-type {
+  margin-top: 0;
+}
+
+.sectionTitle {
+  color: var(--foreground-tertiary);
+  font-size: 11px;
+  margin-bottom: 8px;
+}
+
+.bodyText,
+.empty,
+.error,
+.baselineReason {
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.empty {
+  color: var(--foreground-tertiary);
+}
+
+.error {
+  color: var(--rp-love);
+}
+
+.tableScroller {
+  overflow-x: auto;
+}
+
+.table {
+  border-collapse: collapse;
+  font-size: 12px;
+  min-width: 900px;
+  width: 100%;
+}
+
+.table th,
+.table td {
+  border: 1px solid var(--card-border);
+  padding: 8px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.table th {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--foreground);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: lowercase;
+}
+
+.table td {
+  color: var(--foreground-secondary);
+  line-height: 1.45;
+}
+
+.metaLine {
+  color: var(--foreground-tertiary);
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  margin-top: 4px;
+}
+
+.markdown {
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.markdown p,
+.markdown ul,
+.markdown ol {
+  margin-bottom: 0.8em;
+}
+
+.markdown p:last-child,
+.markdown ul:last-child,
+.markdown ol:last-child {
+  margin-bottom: 0;
+}
+
+.markdown ul,
+.markdown ol {
+  padding-left: 1.4em;
+}
+
+.markdown a {
+  color: var(--accent-teal);
+  text-decoration: underline;
+}
+
+.markdown code {
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  color: var(--accent-teal);
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  padding: 1px 5px;
+}
+
+.markdown pre {
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid var(--card-border);
+  border-radius: 6px;
+  margin-bottom: 1em;
+  overflow-x: auto;
+  padding: 12px 14px;
+}
+
+.markdown pre code {
+  background: none;
+  border: 0;
+  color: var(--foreground);
+  padding: 0;
+}
+
+.details {
+  border-top: 1px solid var(--card-border);
+  margin-top: 18px;
+  padding-top: 14px;
+}
+
+.details summary {
+  color: var(--foreground);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: lowercase;
+}
+
+.baselineReason {
+  color: var(--foreground-tertiary);
+  margin: 10px 0;
+}
+
+.timestamps {
+  border-top: 1px solid var(--card-border);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-top: 18px;
+  padding-top: 12px;
+}
+
+.timestampRow {
+  display: flex;
+  gap: 6px;
+}
+
+.timestampRow dt,
+.timestampRow dd {
+  color: var(--foreground-tertiary);
+  font-size: 11px;
+}
+
+.timestampRow dd {
+  font-family: var(--font-mono);
+}
+
+@media (max-width: 720px) {
+  .header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .panel {
+    padding: 16px;
+  }
+}

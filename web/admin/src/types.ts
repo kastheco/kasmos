@@ -174,3 +174,46 @@ export interface AuditEventKillDetail {
   branch_preserved: boolean;
   group_key?: string;
 }
+
+export type ArchitectDecisionUnavailableReason =
+  | "architect_not_run"
+  | "decision_audit_missing"
+  | "repo_not_registered";
+
+export interface ArchitectDecisionDifference {
+  area: string;
+  scope?: string;
+  planner_proposal?: string;
+  architect_baseline?: string;
+  final_decision: string;
+  rationale?: string;
+  related_files?: string[];
+  task_numbers?: number[];
+}
+
+export interface ArchitectDecisionAudit {
+  schema_version: number;
+  plan_file: string;
+  project: string;
+  created_at: string;
+  baseline_source?: string;
+  summary?: string;
+  planner_summary?: string;
+  baseline_summary?: string;
+  final_decision?: string;
+  differences?: ArchitectDecisionDifference[];
+}
+
+export interface ArchitectDecisionAuditResponse {
+  available: boolean;
+  reason?: ArchitectDecisionUnavailableReason | string;
+  final_markdown?: string;
+  decision_audit?: ArchitectDecisionAudit;
+  architect_baseline_markdown?: string;
+  baseline_reason?: string;
+  timestamps?: {
+    architect_meta_at?: string;
+    baseline_created_at?: string;
+    decision_audit_created_at?: string;
+  };
+}
