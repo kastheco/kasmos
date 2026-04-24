@@ -24,6 +24,7 @@ export interface AgentCardModel {
    *  NOT used for grouping anymore: a running↔ready flicker would reshuffle
    *  the list on every poll. */
   status: InstanceStatus;
+  presentation: "active" | "retired" | "idle";
   /** Plan / task filename this agent is working on, if any. Solo agents
    *  leave this undefined. Used for grouping + sorting. */
   taskFile?: string;
@@ -159,7 +160,21 @@ function roleFromAgentType(agentType: string | undefined): string | undefined {
 }
 
 /** Parse a single instance into a display model. */
-export function toAgentCardModel(inst: InstanceEntry): AgentCardModel {
+export function deriveAgentPresentation(
+  inst: InstanceEntry,
+  taskStatus?: Status,
+): "active" | "retired" | "idle" {
+  if ((inst.status as string) === "exited" || taskStatus === "done" || taskStatus === "cancelled") {
+    return "retired";
+  }
+  if (inst.status === "paused" && taskStatus !== "reviewing" && taskStatus !== "implementing" && taskStatus !== "verifying") {
+    return "idle";
+  }
+  return "active";
+}
+
+/** Parse a single instance into a display model. */
+export function toAgentCardModel(inst: InstanceEntry, taskStatus?: Status): AgentCardModel {
   const pills: AgentPill[] = [];
 
   // Prefer structured fields when the daemon populated them.
@@ -202,6 +217,7 @@ export function toAgentCardModel(inst: InstanceEntry): AgentCardModel {
     title: inst.title,
     displayName,
     status: inst.status,
+    presentation: deriveAgentPresentation(inst, taskStatus),
     taskFile: inst.task_file || undefined,
     waveNumber:
       typeof inst.wave_number === "number" && inst.wave_number > 0

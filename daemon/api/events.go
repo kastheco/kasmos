@@ -22,6 +22,7 @@ type Event struct {
 	PlanFile  string    `json:"plan_file,omitempty"`
 	AgentType string    `json:"agent_type,omitempty"`
 	Timestamp time.Time `json:"timestamp"`
+	Detail    string    `json:"detail,omitempty"`
 }
 
 // EventBroadcaster is a fan-out event broadcaster. Callers Subscribe to

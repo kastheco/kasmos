@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Link } from "react-router";
-import { fetchAuditEvents } from "../api";
+import { fetchAuditEvents, parseKillDetail } from "../api";
 import { useAutoRefresh } from "../hooks/useAutoRefresh";
 import { useProject } from "../hooks/useProject";
 import LastUpdated from "../components/LastUpdated";
@@ -49,6 +49,70 @@ function prettyDetail(detail: string): string {
   } catch {
     return detail;
   }
+}
+
+function isWaveDecision(event: AuditDisplayEvent): boolean {
+  if (event.kind !== "wave_failed" || !event.detail) return false;
+  try {
+    const detail = JSON.parse(event.detail) as { outcome?: unknown };
+    return detail.outcome === "wave_decision";
+  } catch {
+    return false;
+  }
+}
+
+type AuditDisplayEvent = AuditEvent & {
+  groupedEvents?: AuditEvent[];
+};
+
+function killGroupKey(event: AuditEvent): string | null {
+  const detail = parseKillDetail(event);
+  return detail?.group_key ?? null;
+}
+
+function killCleanup(event: AuditEvent): boolean {
+  return parseKillDetail(event)?.cleanup ?? false;
+}
+
+function coalesceAuditRows(events: AuditEvent[]): AuditDisplayEvent[] {
+  const rows: AuditDisplayEvent[] = [];
+  for (let i = 0; i < events.length; ) {
+    const event = events[i];
+    const groupKey = event.kind === "agent_killed" ? killGroupKey(event) : null;
+    if (!groupKey) {
+      rows.push(event);
+      i += 1;
+      continue;
+    }
+
+    const group = [event];
+    let best = event;
+    let j = i + 1;
+    while (
+      j < events.length &&
+      events[j].kind === "agent_killed" &&
+      killGroupKey(events[j]) === groupKey
+    ) {
+      group.push(events[j]);
+      if (killCleanup(events[j]) && !killCleanup(best)) {
+        best = events[j];
+      }
+      j += 1;
+    }
+
+    rows.push(group.length > 1 ? { ...best, groupedEvents: group } : best);
+    i = j;
+  }
+  return rows;
+}
+
+function prettyEventDetail(event: AuditDisplayEvent): string {
+  if (!event.groupedEvents || event.groupedEvents.length < 2) {
+    return prettyDetail(event.detail);
+  }
+  return event.groupedEvents
+    .map((grouped) => `event ${grouped.id}\n${prettyDetail(grouped.detail)}`)
+    .join("\n\n");
 }
 
 type Tone = "lifecycle" | "plan" | "wave" | "ops" | "error";
@@ -103,6 +167,10 @@ export default function AuditPage() {
   const [kind, setKind] = useState("");
   const [taskInput, setTaskInput] = useState("");
   const [taskFile, setTaskFile] = useState("");
+  const [instanceInput, setInstanceInput] = useState("");
+  const [instanceTitle, setInstanceTitle] = useState("");
+  const [after, setAfter] = useState("");
+  const [before, setBefore] = useState("");
   const [limit, setLimit] = useState(100);
   const [expandedRowId, setExpandedRowId] = useState<number | null>(null);
 
@@ -112,6 +180,11 @@ export default function AuditPage() {
     return () => clearTimeout(timer);
   }, [taskInput]);
 
+  useEffect(() => {
+    const timer = setTimeout(() => setInstanceTitle(instanceInput), 300);
+    return () => clearTimeout(timer);
+  }, [instanceInput]);
+
   const { data, loading, error, lastUpdatedAt, isRefreshing } =
     useAutoRefresh<AuditEvent[]>(
       async () => {
@@ -119,10 +192,13 @@ export default function AuditPage() {
         return fetchAuditEvents(project, {
           kind: kind || undefined,
           task: taskFile || undefined,
+          instance: instanceTitle || undefined,
+          after: after || undefined,
+          before: before || undefined,
           limit,
         });
       },
-      [project, kind, taskFile, limit],
+      [project, kind, taskFile, instanceTitle, after, before, limit],
     );
 
   const events = data ?? [];
@@ -139,7 +215,8 @@ export default function AuditPage() {
     setExpandedRowId((prev) => (prev === event.id ? null : event.id));
   }
 
-  const rows = events.flatMap((event) => {
+  const displayEvents = coalesceAuditRows(events);
+  const rows = displayEvents.flatMap((event) => {
     const isExpanded = expandedRowId === event.id;
     const hasDetail = Boolean(event.detail);
     const rowClasses = [
@@ -171,9 +248,15 @@ export default function AuditPage() {
       >
         <td className={styles.timestamp}>{formatDateTime(event.timestamp)}</td>
         <td>
-          <span className={`${styles.badge} ${levelClass(event.level)}`}>
-            {event.level || "info"}
-          </span>
+            <span
+              className={`${styles.badge} ${levelClass(
+                isWaveDecision(event) && event.level === "error" ? "warn" : event.level,
+              )}`}
+            >
+              {isWaveDecision(event) && event.level === "error"
+                ? "warn"
+                : event.level || "info"}
+            </span>
         </td>
         <td>
           <span
@@ -209,7 +292,7 @@ export default function AuditPage() {
     const detailRow = (
       <tr key={`detail-${event.id}`} className={styles.detailRow}>
         <td colSpan={5}>
-          <pre className={styles.detailPre}>{prettyDetail(event.detail)}</pre>
+          <pre className={styles.detailPre}>{prettyEventDetail(event)}</pre>
         </td>
       </tr>
     );
@@ -244,6 +327,32 @@ export default function AuditPage() {
           placeholder="filter by task file..."
           value={taskInput}
           onChange={(e) => setTaskInput(e.target.value)}
+        />
+
+        <input
+          className={styles.filterInput}
+          type="text"
+          placeholder="filter by instance..."
+          value={instanceInput}
+          onChange={(e) => setInstanceInput(e.target.value)}
+        />
+
+        <input
+          className={styles.filterInput}
+          type="text"
+          aria-label="after"
+          placeholder="after RFC3339..."
+          value={after}
+          onChange={(e) => setAfter(e.target.value)}
+        />
+
+        <input
+          className={styles.filterInput}
+          type="text"
+          aria-label="before"
+          placeholder="before RFC3339..."
+          value={before}
+          onChange={(e) => setBefore(e.target.value)}
         />
 
         <select

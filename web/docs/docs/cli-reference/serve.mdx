@@ -98,6 +98,8 @@ All task endpoints use the project-scoped URL prefix `/v1/projects/{project}/tas
 |--------|------|-------------|
 | `GET` | `/v1/projects/{project}/audit-events` | query audit log entries |
 
+Query parameters: repeated `kind=` values, `task`, `instance`, `after`, `before`, and `limit`. `after` and `before` accept RFC3339 timestamps with optional fractional seconds; `limit` defaults to 100 and is capped at 500. Responses include stable `id` values for idempotent pollers. Because `after` is a strict timestamp filter, pollers should overlap windows and de-duplicate by `id` instead of relying on timestamp-only checkpoints.
+
 ### instances
 
 Live-preview and permission endpoints for daemon-managed SDK instances. These routes
@@ -109,6 +111,8 @@ instances return `supported: false`.
 |--------|------|-------------|
 | `GET` | `/v1/projects/{project}/instances/{title}/presentation` | retrieve the current structured turn snapshot for a daemon-managed SDK instance; returns `{ supported, turns, captured_at }` |
 | `POST` | `/v1/projects/{project}/instances/{title}/permission` | submit the user's permission choice for a pending prompt; body: `{ "choice": <0\|1\|2> }` where `0` = allow once, `1` = allow always, `2` = reject |
+
+Daemon instance rows returned through status/listing APIs may include `last_activity` and `health_reason`. `health_reason` is empty when the instance is healthy, or one of `stale`, `paused_old`, or `exited`.
 
 **permission choice values:**
 

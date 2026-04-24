@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -166,6 +167,36 @@ type instanceTitleSyncMsg struct {
 // the plan is done, has a branch, and does not already have a PR URL.
 func shouldCreatePR(entry taskstore.TaskEntry) bool {
 	return entry.Status == taskstore.StatusDone && entry.Branch != "" && entry.PRURL == ""
+}
+
+// instancePresentation categorises an instance for default-view rendering.
+// It is a pure derivation over session.Instance and taskstore.TaskEntry;
+// callers pass whatever subset they already have in-context. Returning a
+// compact enum keeps renderers decoupled from the FSM.
+type instancePresentation int
+
+const (
+	presentationActive  instancePresentation = iota // running, loading, ready, blocked
+	presentationRetired                             // task Done or Cancelled, or instance Exited
+	presentationIdle                                // paused with nothing pending
+)
+
+func deriveInstancePresentation(inst *session.Instance, entry taskstore.TaskEntry, hasEntry bool) instancePresentation {
+	if inst != nil && inst.Exited {
+		return presentationRetired
+	}
+	if hasEntry {
+		switch entry.Status {
+		case taskstore.StatusDone, taskstore.StatusCancelled:
+			return presentationRetired
+		}
+	}
+	if inst != nil && inst.Status == session.Paused {
+		if !hasEntry || (entry.Status != taskstore.StatusReviewing && entry.Status != taskstore.StatusImplementing && entry.Status != taskstore.StatusVerifying) {
+			return presentationIdle
+		}
+	}
+	return presentationActive
 }
 
 // toTaskFSMHooks converts a slice of config.TOMLHook to taskfsm.HookConfig entries.
@@ -993,10 +1024,13 @@ func (m *home) showWaveDialog(planFile string, orch *orchestration.WaveOrchestra
 
 	// Auto-advance path: emit audit, toast, and dispatch advance without overlay.
 	if failed == 0 && m.appConfig != nil && m.appConfig.AutoAdvanceWaves {
-		m.audit(auditlog.EventWaveCompleted,
-			fmt.Sprintf("wave %d complete: %d/%d tasks (auto-advancing)", waveNum, completed, total),
-			auditlog.WithPlan(planFile),
-			auditlog.WithWave(waveNum, 0))
+		if orch.ClaimWaveOutcome() {
+			m.audit(auditlog.EventWaveCompleted,
+				fmt.Sprintf("wave %d complete: %d/%d tasks (auto-advancing)", waveNum, completed, total),
+				auditlog.WithPlan(planFile),
+				auditlog.WithWave(waveNum, 0),
+				auditlog.WithWaveOutcome("wave_success", failed, total, "next_wave|review", orch.RetryGeneration()))
+		}
 		m.toastManager.Info(fmt.Sprintf("%s — wave %d complete, auto-advancing...", planName, waveNum))
 		entry, _ := m.taskState.Entry(planFile)
 		capturedPlanFile := planFile
@@ -1017,16 +1051,21 @@ func (m *home) showWaveDialog(planFile string, orch *orchestration.WaveOrchestra
 	}
 
 	// Emit audit event before showing the overlay.
-	if failed > 0 {
-		m.audit(auditlog.EventWaveFailed,
-			fmt.Sprintf("wave %d: %d/%d tasks failed", waveNum, failed, total),
-			auditlog.WithPlan(planFile),
-			auditlog.WithWave(waveNum, 0))
-	} else {
-		m.audit(auditlog.EventWaveCompleted,
-			fmt.Sprintf("wave %d complete: %d/%d tasks", waveNum, completed, total),
-			auditlog.WithPlan(planFile),
-			auditlog.WithWave(waveNum, 0))
+	if orch.ClaimWaveOutcome() {
+		if failed > 0 {
+			m.audit(auditlog.EventWaveFailed,
+				fmt.Sprintf("wave %d needs a decision — %d of %d tasks failed", waveNum, failed, total),
+				auditlog.WithPlan(planFile),
+				auditlog.WithWave(waveNum, 0),
+				auditlog.WithWaveOutcome("wave_decision", failed, total, "retry|advance|abort", orch.RetryGeneration()),
+				auditlog.WithLevel("warn"))
+		} else {
+			m.audit(auditlog.EventWaveCompleted,
+				fmt.Sprintf("wave %d complete: %d/%d tasks", waveNum, completed, total),
+				auditlog.WithPlan(planFile),
+				auditlog.WithWave(waveNum, 0),
+				auditlog.WithWaveOutcome("wave_success", failed, total, "next_wave|review", orch.RetryGeneration()))
+		}
 	}
 
 	// Focus a task instance so the user can see agent output behind the overlay.
@@ -1235,46 +1274,11 @@ func (m *home) hasLiveOrPendingInstance(planFile, agentType, title string) bool 
 	return false
 }
 
-// cleanupPausedDoneReviewers removes paused reviewer instances whose plan is
-// done and that the user has already navigated away from (i.e. they are not
-// the currently-selected instance). This is called at the start of
-// instanceChanged() to GC the reviewer once the user moves on.
+// cleanupPausedDoneReviewers is retained for compatibility with older call
+// sites. Completed reviewers stay visible now; presentation derives their
+// non-actionable state instead of deleting evidence from the instance list.
 func (m *home) cleanupPausedDoneReviewers(selected *session.Instance) {
-	if m.taskState == nil {
-		return
-	}
-	var toCleanup []*session.Instance
-	for _, inst := range m.nav.GetInstances() {
-		if !isReviewerInstance(inst) {
-			continue
-		}
-		if inst.Status != session.Paused {
-			continue
-		}
-		// Don't remove the instance the user is currently looking at.
-		if selected != nil && inst == selected {
-			continue
-		}
-		entry, ok := m.taskState.Entry(inst.TaskFile)
-		if !ok {
-			continue
-		}
-		if entry.Status != taskstate.StatusDone {
-			continue
-		}
-		toCleanup = append(toCleanup, inst)
-	}
-	if len(toCleanup) == 0 {
-		return
-	}
-	for _, inst := range toCleanup {
-		m.nav.RemoveByTitle(inst.Title)
-		m.removeFromAllInstances(inst.Title)
-		if err := inst.Kill(); err != nil {
-			log.WarningLog.Printf("cleanupPausedDoneReviewers: could not kill reviewer %q: %v", inst.Title, err)
-		}
-	}
-	m.updateNavPanelStatus()
+	_ = selected
 }
 
 // instanceChanged updates the preview pane, menu, and diff pane based on the selected instance.
@@ -4180,6 +4184,8 @@ func (m *home) refreshAuditPane() {
 			TaskFile:      e.TaskFile,
 			InstanceTitle: e.InstanceTitle,
 			AgentType:     e.AgentType,
+			GroupKey:      auditEventGroupKey(e.Detail),
+			DetailJSON:    e.Detail,
 		})
 	}
 
@@ -4323,4 +4329,17 @@ func coalesceRestarts(displays []ui.AuditEventDisplay) []ui.AuditEventDisplay {
 		i++
 	}
 	return out
+}
+
+func auditEventGroupKey(detailJSON string) string {
+	if detailJSON == "" {
+		return ""
+	}
+	var detail struct {
+		GroupKey string `json:"group_key"`
+	}
+	if err := json.Unmarshal([]byte(detailJSON), &detail); err != nil {
+		return ""
+	}
+	return detail.GroupKey
 }

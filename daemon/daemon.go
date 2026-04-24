@@ -109,14 +109,17 @@ func (a *daemonStateAdapter) Status() api.StatusResponse {
 	repos := a.d.repos.List()
 	active := a.activePlansByProject()
 	repoStatuses := make([]api.RepoStatus, len(repos))
+	instances := make([]api.InstanceStatus, 0)
 	for i, r := range repos {
 		repoStatuses[i] = api.RepoStatus{Path: r.Path, Project: r.Project, ActivePlans: active[r.Project]}
+		instances = append(instances, a.ListInstances(r.Project)...)
 	}
 	return api.StatusResponse{
 		Running:   true,
 		Repos:     repoStatuses,
 		RepoCount: len(repoStatuses),
 		Uptime:    uptime,
+		Instances: instances,
 	}
 }
 
@@ -220,6 +223,7 @@ func (a *daemonStateAdapter) ListInstances(project string) []api.InstanceStatus 
 			active := !inst.Paused() && !inst.Exited && (inst.Started() || inst.Status == session.Loading)
 			ready := active && inst.Status == session.Ready
 			skipPermissions := inst.SkipPermissions
+			lastActivity := instanceLastActivity(inst)
 			out = append(out, api.InstanceStatus{
 				ID:              inst.Title,
 				Project:         project,
@@ -236,6 +240,8 @@ func (a *daemonStateAdapter) ListInstances(project string) []api.InstanceStatus 
 				ReviewCycle:     inst.ReviewCycle,
 				WaveTaskIndex:   inst.WaveTaskIndex,
 				WaveTaskCount:   inst.WaveTaskCount,
+				LastActivity:    lastActivity,
+				HealthReason:    instanceHealthReason(inst),
 				ExecutionMode:   string(session.NormalizeExecutionMode(inst.ExecutionMode)),
 				SoloAgent:       inst.SoloAgent,
 				SDKSpeedTier:    inst.SDKSpeedTier,
@@ -245,6 +251,50 @@ func (a *daemonStateAdapter) ListInstances(project string) []api.InstanceStatus 
 		return out
 	}
 	return nil
+}
+
+func instanceLastActivity(inst *session.Instance) *time.Time {
+	if inst == nil {
+		return nil
+	}
+	if inst.LastActivity != nil && !inst.LastActivity.Timestamp.IsZero() {
+		t := inst.LastActivity.Timestamp
+		return &t
+	}
+	if !inst.LastActiveAt.IsZero() {
+		t := inst.LastActiveAt
+		return &t
+	}
+	if !inst.UpdatedAt.IsZero() {
+		t := inst.UpdatedAt
+		return &t
+	}
+	if !inst.CreatedAt.IsZero() {
+		t := inst.CreatedAt
+		return &t
+	}
+	return nil
+}
+
+func instanceHealthReason(inst *session.Instance) string {
+	if inst == nil {
+		return ""
+	}
+	if inst.Exited {
+		return "exited"
+	}
+	const staleThreshold = 30 * time.Minute
+	last := instanceLastActivity(inst)
+	if last == nil || time.Since(*last) <= staleThreshold {
+		return ""
+	}
+	if inst.Paused() {
+		return "paused_old"
+	}
+	if inst.Started() || inst.Status == session.Loading {
+		return "stale"
+	}
+	return ""
 }
 
 func (a *daemonStateAdapter) StartPlan(project, filename, prompt, program string) error {
@@ -1906,20 +1956,50 @@ func (d *Daemon) handleWaveTaskComplete(ctx context.Context, e RepoEntry, action
 				return fmt.Errorf("persist failed-wave waiting state for %s: %w", action.PlanFile, err)
 			}
 			e.Processor.ClearWaveOrchestrator(action.PlanFile)
+			if !orch.ClaimWaveOutcome() {
+				return nil
+			}
+			outcomeDetail := map[string]any{
+				"outcome":          "wave_decision",
+				"blocking":         true,
+				"failed_tasks":     failed,
+				"total_tasks":      total,
+				"next_action":      "retry|advance|abort",
+				"retry_generation": orch.RetryGeneration(),
+			}
+			detailJSON, _ := json.Marshal(outcomeDetail)
 			d.broadcaster.Emit(api.Event{
 				Kind:     "wave_failed",
-				Message:  fmt.Sprintf("%s: wave %d finished with %d/%d failed tasks", planName, waveNum, failed, total),
+				Message:  fmt.Sprintf("%s: wave %d needs a decision (%d of %d tasks failed)", planName, waveNum, failed, total),
 				Repo:     e.Path,
 				PlanFile: action.PlanFile,
+				Detail:   string(detailJSON),
 			})
 			return nil
 		}
 
+		if !orch.ClaimWaveOutcome() {
+			return nil
+		}
+		nextAction := "next_wave"
+		if orch.CurrentWaveNumber() >= orch.TotalWaves() {
+			nextAction = "review"
+		}
+		outcomeDetail := map[string]any{
+			"outcome":          "wave_success",
+			"blocking":         false,
+			"failed_tasks":     failed,
+			"total_tasks":      total,
+			"next_action":      nextAction,
+			"retry_generation": orch.RetryGeneration(),
+		}
+		detailJSON, _ := json.Marshal(outcomeDetail)
 		d.broadcaster.Emit(api.Event{
 			Kind:     "wave_completed",
 			Message:  fmt.Sprintf("%s: wave %d complete (%d/%d)", planName, waveNum, completed, total),
 			Repo:     e.Path,
 			PlanFile: action.PlanFile,
+			Detail:   string(detailJSON),
 		})
 
 		autoAdvanceWaves := d.cfg != nil && d.cfg.AutoAdvanceWaves
@@ -1944,12 +2024,45 @@ func (d *Daemon) handleWaveTaskComplete(ctx context.Context, e RepoEntry, action
 
 	case orchestration.WaveStateAllComplete:
 		waveNum := orch.CurrentWaveNumber()
+		completed := orch.CompletedTaskCount()
+		failed := orch.FailedTaskCount()
+		total := completed + failed
 		killWaveAgents := d.killWaveAgents
 		if killWaveAgents == nil {
 			killWaveAgents = d.spawner.KillWaveAgents
 		}
 		if err := killWaveAgents(e.Path, action.PlanFile, waveNum); err != nil {
 			return err
+		}
+		if failed > 0 {
+			if err := setRepoExecutionState(e, action.PlanFile, taskstore.ExecutionState{
+				Phase:           string(taskfsm.ExecutionPhaseWaveWaiting),
+				ActiveAgentType: session.AgentTypeCoder,
+				ActiveWave:      waveNum,
+			}); err != nil {
+				return fmt.Errorf("persist terminal failed-wave waiting state for %s: %w", action.PlanFile, err)
+			}
+			e.Processor.ClearWaveOrchestrator(action.PlanFile)
+			if !orch.ClaimWaveOutcome() {
+				return nil
+			}
+			outcomeDetail := map[string]any{
+				"outcome":          "wave_terminal",
+				"blocking":         true,
+				"failed_tasks":     failed,
+				"total_tasks":      total,
+				"next_action":      "retry|abort",
+				"retry_generation": orch.RetryGeneration(),
+			}
+			detailJSON, _ := json.Marshal(outcomeDetail)
+			d.broadcaster.Emit(api.Event{
+				Kind:     "wave_failed",
+				Message:  fmt.Sprintf("%s: wave %d needs a decision (%d of %d tasks failed)", planName, waveNum, failed, total),
+				Repo:     e.Path,
+				PlanFile: action.PlanFile,
+				Detail:   string(detailJSON),
+			})
+			return nil
 		}
 		e.Processor.ClearWaveOrchestrator(action.PlanFile)
 
@@ -1964,11 +2077,21 @@ func (d *Daemon) handleWaveTaskComplete(ctx context.Context, e RepoEntry, action
 			return fmt.Errorf("persist reviewing execution state for %s: %w", action.PlanFile, err)
 		}
 
+		outcomeDetail := map[string]any{
+			"outcome":          "wave_terminal",
+			"blocking":         false,
+			"failed_tasks":     0,
+			"total_tasks":      total,
+			"next_action":      "review",
+			"retry_generation": orch.RetryGeneration(),
+		}
+		detailJSON, _ := json.Marshal(outcomeDetail)
 		d.broadcaster.Emit(api.Event{
 			Kind:     "wave_completed",
 			Message:  fmt.Sprintf("all waves complete for %s", planName),
 			Repo:     e.Path,
 			PlanFile: action.PlanFile,
+			Detail:   string(detailJSON),
 		})
 		return d.executeAction(ctx, e, loop.SpawnReviewerAction{PlanFile: action.PlanFile})
 	}

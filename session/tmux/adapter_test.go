@@ -315,6 +315,14 @@ func TestCodexAdapter_DetectPrompt(t *testing.T) {
 	assert.False(t, a.DetectPrompt("Codex is ready"))
 }
 
+func TestCodexAdapter_DetectPromptIgnoresAttachSilencingEcho(t *testing.T) {
+	t.Parallel()
+	a := codexAdapter{}
+	content := cSIDisableBracketedPaste + cSIDisableFocusReporting + "Codex is ready"
+
+	assert.False(t, a.DetectPrompt(content))
+}
+
 func TestCodexAdapter_BuildPromptArg_Short(t *testing.T) {
 	t.Parallel()
 	a := codexAdapter{}

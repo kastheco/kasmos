@@ -166,7 +166,7 @@ type taskRecoverAction struct {
 func canonicalTaskRecoverAction(raw string) (taskRecoverAction, error) {
 	normalized := strings.ReplaceAll(strings.TrimSpace(raw), "_", "-")
 	if normalized == "" {
-		return taskRecoverAction{}, fmt.Errorf("recovery action is required; valid actions: planner-finished, architect-finished, implement-finished, review-approved, review-changes, verify-approved, verify-failed, advance-review-cycle")
+		return taskRecoverAction{}, fmt.Errorf("recovery action is required; valid actions: planner-finished, architect-finished, implement-finished, review-approved, review-changes, verify-approved, verify-failed, advance-review-cycle, advance-wave, retry-wave")
 	}
 
 	signalAction := func(name, signalType string) (taskRecoverAction, error) {
@@ -199,8 +199,12 @@ func canonicalTaskRecoverAction(raw string) (taskRecoverAction, error) {
 		return signalAction("readiness-changes", "readiness_changes")
 	case "advance-review-cycle":
 		return taskRecoverAction{name: "advance-review-cycle"}, nil
+	case "advance-wave":
+		return signalAction("advance-wave", normalized)
+	case "retry-wave":
+		return signalAction("retry-wave", normalized)
 	default:
-		return taskRecoverAction{}, fmt.Errorf("unknown recovery action %q; valid actions: planner-finished, architect-finished, implement-finished, review-approved, review-changes, verify-approved, verify-failed, advance-review-cycle", raw)
+		return taskRecoverAction{}, fmt.Errorf("unknown recovery action %q; valid actions: planner-finished, architect-finished, implement-finished, review-approved, review-changes, verify-approved, verify-failed, advance-review-cycle, advance-wave, retry-wave", raw)
 	}
 }
 
@@ -868,7 +872,7 @@ Deprecated aliases: readiness-approved (→ verify-approved), readiness-changes 
 			return nil
 		},
 	}
-	recoverCmd.Flags().StringVar(&recoverActionName, "action", "", "recovery action (planner-finished, architect-finished, implement-finished, review-approved, review-changes, advance-review-cycle)")
+	recoverCmd.Flags().StringVar(&recoverActionName, "action", "", "recovery action (planner-finished, architect-finished, implement-finished, review-approved, review-changes, advance-review-cycle, advance-wave, retry-wave)")
 	recoverCmd.Flags().StringVar(&recoverFeedback, "feedback", "", "optional reviewer feedback to persist or attach to the queued recovery signal")
 	_ = recoverCmd.MarkFlagRequired("action")
 	planCmd.AddCommand(recoverCmd)

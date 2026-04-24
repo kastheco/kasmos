@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/kastheco/kasmos/config"
 	"github.com/kastheco/kasmos/config/taskstore"
@@ -218,6 +219,7 @@ func newConfiguredMCPServerMultiRoot(mcpSrv *mcpserver.Server, repoRoots []strin
 	}))
 
 	var anyIndexer *symbols.Indexer
+	routes := make(map[string]symbols.PerProject, len(normalized))
 	for _, root := range normalized {
 		r := root // capture
 		watcher := cache.NewWatcher(r)
@@ -225,6 +227,17 @@ func newConfiguredMCPServerMultiRoot(mcpSrv *mcpserver.Server, repoRoots []strin
 		indexer.Start(indexerCtx)
 		if anyIndexer == nil {
 			anyIndexer = indexer
+		}
+		routeSandbox := fstools.NewSandbox([]string{r})
+		routes[resolveTaskProject(r)] = symbols.PerProject{
+			Validator: func(raw string) (string, error) {
+				if !filepath.IsAbs(raw) {
+					raw = filepath.Join(r, raw)
+				}
+				return routeSandbox.Validate(raw)
+			},
+			EnsureStarted: func(context.Context) {},
+			LoadOnMiss:    indexer.PrimeFile,
 		}
 		mcpSrv.AddCloser(closeFunc(watcher.Stop))
 	}
@@ -243,7 +256,7 @@ func newConfiguredMCPServerMultiRoot(mcpSrv *mcpserver.Server, repoRoots []strin
 	fstools.RegisterTools(mcpSrv.MCPServer(), allowedDirs, fstools.RegisterOptions{Runner: runner, FileCache: nil, Symbols: symbolStore})
 	gittools.RegisterTools(mcpSrv.MCPServer(), allowedDirs, runner)
 	docstools.RegisterTools(mcpSrv.MCPServer(), allowedDirs, docstools.RegisterOptions{Runner: runner})
-	symbols.RegisterTool(mcpSrv.MCPServer(), validator, symbolStore, ctagsAvailable, nil, nil)
+	symbols.RegisterToolMulti(mcpSrv.MCPServer(), validator, routes, nil, nil, symbolStore, ctagsAvailable)
 	tasktools.RegisterTools(mcpSrv.MCPServer(), "", projects, mcpSrv.Store(), mcpSrv.Gateway())
 	signaltools.RegisterTools(mcpSrv.MCPServer(), "", projects, mcpSrv.Gateway())
 	instancetools.RegisterTools(

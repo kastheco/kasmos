@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/kastheco/kasmos/cmd/cmd_test"
+	"github.com/kastheco/kasmos/config/taskfsm"
 	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -282,6 +283,110 @@ func TestExecuteStatus_VerifyingPhase(t *testing.T) {
 		assert.NotContains(t, output, "--action review-approved")
 		assert.NotContains(t, output, "--action review-changes")
 	})
+}
+
+func TestStatusRecoveryHints_OperationalFailureModes(t *testing.T) {
+	tests := []struct {
+		name string
+		task statusTask
+		want string
+	}{
+		{
+			name: "dirty worktree after kill",
+			task: statusTask{
+				Status:      string(taskstore.StatusImplementing),
+				Phase:       "dirty_worktree",
+				HasInstance: true,
+			},
+			want: "kas task recover <task-name> --action implement-finished",
+		},
+		{
+			name: "instance never started",
+			task: statusTask{
+				Status: string(taskstore.StatusImplementing),
+			},
+			want: "kas task implement <task-name>",
+		},
+		{
+			name: "stale instance",
+			task: statusTask{
+				Status:        string(taskstore.StatusImplementing),
+				Phase:         string(taskfsm.ExecutionPhaseSingleAgentImplementing),
+				HasInstance:   true,
+				StaleInstance: true,
+			},
+			want: "kas instance restart <title>",
+		},
+		{
+			name: "wave decision advance",
+			task: statusTask{
+				Status:      string(taskstore.StatusImplementing),
+				Phase:       string(taskfsm.ExecutionPhaseWaveWaiting),
+				ActiveWave:  2,
+				HasInstance: true,
+			},
+			want: "kas task recover <task-name> --action advance-wave",
+		},
+		{
+			name: "wave decision retry",
+			task: statusTask{
+				Status:      string(taskstore.StatusImplementing),
+				Phase:       string(taskfsm.ExecutionPhaseWaveWaiting),
+				ActiveWave:  2,
+				HasInstance: true,
+			},
+			want: "kas task recover <task-name> --action retry-wave",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			hints := statusRecoveryHints([]statusTask{tt.task, tt.task})
+			joined := strings.Join(hints, "\n")
+			assert.Equal(t, 1, strings.Count(joined, tt.want), "hint should appear exactly once")
+		})
+	}
+}
+
+func TestExecuteStatus_AnnotatesMissingAndStaleInstances(t *testing.T) {
+	store := taskstore.NewTestSQLiteStore(t)
+	project := "operational-status-project"
+	now := time.Now()
+	require.NoError(t, store.Create(project, taskstore.TaskEntry{
+		Filename:  "never-started",
+		Status:    taskstore.StatusImplementing,
+		Branch:    "plan/never-started",
+		CreatedAt: now,
+	}))
+	require.NoError(t, store.Create(project, taskstore.TaskEntry{
+		Filename:  "stale-plan",
+		Status:    taskstore.StatusImplementing,
+		Branch:    "plan/stale-plan",
+		CreatedAt: now,
+		ExecutionState: taskstore.ExecutionState{
+			Phase: string(taskfsm.ExecutionPhaseSingleAgentImplementing),
+		},
+	}))
+
+	state := newTestStateFromRecords(t, []instanceRecord{
+		{
+			Title:     "stale-coder",
+			Status:    instancePaused,
+			Branch:    "plan/stale-plan",
+			Program:   "claude",
+			TaskFile:  "stale-plan",
+			AgentType: "coder",
+			UpdatedAt: now.Add(-(statusStaleInstanceThreshold + time.Minute)),
+		},
+	})
+	ex := cmd_test.NewMockExecutor()
+	ex.OutputFunc = func(_ *exec.Cmd) ([]byte, error) {
+		return nil, errors.New("no tmux")
+	}
+
+	output := executeStatus(state, store, project, ex, "text")
+	assert.Equal(t, 1, strings.Count(output, "kas task implement <task-name>"))
+	assert.Equal(t, 1, strings.Count(output, "kas instance restart <title>"))
 }
 
 func TestExecuteStatus_NilStore(t *testing.T) {

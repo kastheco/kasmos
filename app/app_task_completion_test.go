@@ -1579,10 +1579,10 @@ func TestReviewApproved_PausesReviewerInsteadOfKilling(t *testing.T) {
 	assert.Equal(t, taskstore.ExecutionState{}, entry.ExecutionState)
 }
 
-// TestPausedReviewer_CleanedUpOnNavigateAway verifies that when the user navigates
-// away from a paused reviewer whose plan is done, the reviewer instance is
-// automatically removed from the nav panel and allInstances list.
-func TestPausedReviewer_CleanedUpOnNavigateAway(t *testing.T) {
+// TestPausedReviewer_RetainedOnNavigateAway verifies that when the user navigates
+// away from a paused reviewer whose plan is done, the reviewer instance remains
+// inspectable and is only de-emphasised by presentation state.
+func TestPausedReviewer_RetainedOnNavigateAway(t *testing.T) {
 	t.Parallel()
 	const planFile = "feature"
 
@@ -1640,12 +1640,22 @@ func TestPausedReviewer_CleanedUpOnNavigateAway(t *testing.T) {
 	require.True(t, h.nav.SelectInstance(other))
 	_ = h.instanceChanged()
 
+	var foundNav, foundAll bool
 	for _, inst := range h.nav.GetInstances() {
-		assert.NotEqual(t, "feature-review-1", inst.Title)
+		if inst.Title == "feature-review-1" {
+			foundNav = true
+		}
 	}
 	for _, inst := range h.allInstances {
-		assert.NotEqual(t, "feature-review-1", inst.Title)
+		if inst.Title == "feature-review-1" {
+			foundAll = true
+		}
 	}
+	assert.True(t, foundNav)
+	assert.True(t, foundAll)
+	entry, ok := ps.Entry(planFile)
+	require.True(t, ok)
+	assert.Equal(t, presentationRetired, deriveInstancePresentation(reviewer, taskstore.TaskEntry{Status: taskstore.Status(entry.Status)}, true))
 }
 
 func TestReviewCycleLimitAction_Kind(t *testing.T) {

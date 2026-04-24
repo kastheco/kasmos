@@ -286,6 +286,90 @@ func TestWaveOrchestrator_RetryFailedTasksRestoresRunning(t *testing.T) {
 	assert.Equal(t, 0, orch.FailedTaskCount(), "no more failures after retry completes")
 }
 
+func TestClaimWaveOutcome_SameGenerationBlocksDuplicate(t *testing.T) {
+	plan := &taskparser.Plan{Waves: []taskparser.Wave{{
+		Number: 1,
+		Tasks:  []taskparser.Task{{Number: 1, Title: "first"}},
+	}}}
+	orch := NewWaveOrchestrator("plan", plan)
+	orch.StartNextWave()
+	orch.MarkTaskComplete(1)
+
+	assert.True(t, orch.ClaimWaveOutcome())
+	assert.False(t, orch.ClaimWaveOutcome())
+	assert.Equal(t, 0, orch.RetryGeneration())
+}
+
+func TestClaimWaveOutcome_RetryAllowsEmission(t *testing.T) {
+	plan := &taskparser.Plan{Waves: []taskparser.Wave{{
+		Number: 1,
+		Tasks:  []taskparser.Task{{Number: 1, Title: "first"}},
+	}}}
+	orch := NewWaveOrchestrator("plan", plan)
+	orch.StartNextWave()
+	orch.MarkTaskFailed(1)
+
+	assert.True(t, orch.ClaimWaveOutcome())
+	retried := orch.RetryFailedTasks()
+	require.Len(t, retried, 1)
+	assert.Equal(t, 1, orch.RetryGeneration())
+	orch.MarkTaskFailed(1)
+	assert.True(t, orch.ClaimWaveOutcome())
+	assert.False(t, orch.ClaimWaveOutcome())
+}
+
+func TestClaimWaveOutcome_RetryGenerationResetsOnNextWave(t *testing.T) {
+	plan := &taskparser.Plan{Waves: []taskparser.Wave{
+		{
+			Number: 1,
+			Tasks:  []taskparser.Task{{Number: 1, Title: "first"}},
+		},
+		{
+			Number: 2,
+			Tasks:  []taskparser.Task{{Number: 2, Title: "second"}},
+		},
+	}}
+	orch := NewWaveOrchestrator("plan", plan)
+	orch.StartNextWave()
+	orch.MarkTaskFailed(1)
+
+	assert.True(t, orch.ClaimWaveOutcome())
+	require.Len(t, orch.RetryFailedTasks(), 1)
+	assert.Equal(t, 1, orch.RetryGeneration())
+	orch.MarkTaskComplete(1)
+	assert.True(t, orch.ClaimWaveOutcome())
+	assert.False(t, orch.ClaimWaveOutcome())
+
+	tasks := orch.StartNextWave()
+	require.Len(t, tasks, 1)
+	assert.Equal(t, 2, orch.CurrentWaveNumber())
+	assert.Equal(t, 0, orch.RetryGeneration())
+
+	orch.MarkTaskComplete(2)
+	assert.True(t, orch.ClaimWaveOutcome())
+	assert.False(t, orch.ClaimWaveOutcome())
+	assert.Equal(t, 0, orch.RetryGeneration())
+}
+
+func TestUpdatePlan_ResetsOutcomeClaims(t *testing.T) {
+	plan := &taskparser.Plan{Waves: []taskparser.Wave{{
+		Number: 1,
+		Tasks:  []taskparser.Task{{Number: 1, Title: "first"}},
+	}}}
+	orch := NewWaveOrchestrator("plan", plan)
+	orch.StartNextWave()
+	orch.MarkTaskFailed(1)
+	assert.True(t, orch.ClaimWaveOutcome())
+	require.Len(t, orch.RetryFailedTasks(), 1)
+	assert.Equal(t, 1, orch.RetryGeneration())
+
+	orch.UpdatePlan(plan)
+
+	assert.Equal(t, 0, orch.RetryGeneration())
+	assert.True(t, orch.ClaimWaveOutcome())
+	assert.False(t, orch.ClaimWaveOutcome())
+}
+
 func TestRestoreToWave(t *testing.T) {
 	plan := &taskparser.Plan{
 		Waves: []taskparser.Wave{

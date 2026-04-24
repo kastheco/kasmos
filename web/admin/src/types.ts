@@ -147,6 +147,8 @@ export interface InstanceEntry {
   task_number?: number;
   created_at?: string;
   updated_at?: string;
+  last_activity?: string;
+  health_reason?: string;
   execution_mode?: ExecutionMode;
   valid_actions?: InstanceAction[];
 }
@@ -164,4 +166,11 @@ export interface AuditEvent {
   message: string;
   detail: string;
   level: string;
+}
+
+export interface AuditEventKillDetail {
+  action: "kill_instance" | "kill_and_remove_instance";
+  cleanup: boolean;
+  branch_preserved: boolean;
+  group_key?: string;
 }

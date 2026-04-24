@@ -4,6 +4,9 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
+	"sort"
+	"strings"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -16,6 +19,15 @@ type toolResult struct {
 	Symbols []Symbol `json:"symbols"`
 	Total   int      `json:"total"`
 	Hint    string   `json:"hint,omitempty"`
+}
+
+// PerProject captures the per-root resources the tool needs when multiple
+// roots are registered. Keys are project names, values the validator and
+// indexer pair bound to that root.
+type PerProject struct {
+	Validator     PathValidator
+	EnsureStarted func(context.Context)
+	LoadOnMiss    func(context.Context, string) ([]Symbol, error)
 }
 
 // RegisterTool registers the symbols tool when srv is non-nil.
@@ -36,6 +48,20 @@ func RegisterTool(
 	ensureStarted func(context.Context),
 	loadOnMiss func(context.Context, string) ([]Symbol, error),
 ) {
+	RegisterToolMulti(srv, validate, nil, ensureStarted, loadOnMiss, store, ctagsAvailable)
+}
+
+// RegisterToolMulti registers the symbols tool with optional per-project
+// routing for multi-root MCP servers.
+func RegisterToolMulti(
+	srv *server.MCPServer,
+	fallback PathValidator,
+	routes map[string]PerProject,
+	fallbackEnsure func(context.Context),
+	fallbackLoadMiss func(context.Context, string) ([]Symbol, error),
+	store *Store,
+	ctagsAvailable func() bool,
+) {
 	if srv == nil {
 		return
 	}
@@ -46,16 +72,44 @@ func RegisterTool(
 			mcp.Required(),
 			mcp.Description("Absolute or relative file path to inspect."),
 		),
+		mcp.WithString("project",
+			mcp.Description("Target project name. Required when multiple repo roots are registered and the path is relative. Ignored for absolute paths."),
+		),
 	)
-	srv.AddTool(tool, makeSymbolsHandler(validate, store, ctagsAvailable, ensureStarted, loadOnMiss))
+	srv.AddTool(tool, makeSymbolsHandlerMulti(fallback, routes, store, ctagsAvailable, fallbackEnsure, fallbackLoadMiss))
 }
 
 func makeSymbolsHandler(validate PathValidator, store *Store, ctagsAvailable func() bool, ensureStarted func(context.Context), loadOnMiss func(context.Context, string) ([]Symbol, error)) server.ToolHandlerFunc {
+	return makeSymbolsHandlerMulti(validate, nil, store, ctagsAvailable, ensureStarted, loadOnMiss)
+}
+
+func makeSymbolsHandlerMulti(fallback PathValidator, routes map[string]PerProject, store *Store, ctagsAvailable func() bool, fallbackEnsure func(context.Context), fallbackLoadMiss func(context.Context, string) ([]Symbol, error)) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		rawPath, err := req.RequireString("path")
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("symbols: %v", err)), nil
 		}
+		reqProject := strings.TrimSpace(req.GetString("project", ""))
+
+		validate := fallback
+		ensureStarted := fallbackEnsure
+		loadOnMiss := fallbackLoadMiss
+
+		if len(routes) > 0 && !filepath.IsAbs(rawPath) {
+			if reqProject == "" {
+				return mcp.NewToolResultError(
+					fmt.Sprintf("symbols: project argument required when multiple repo roots are registered; pass project:\"<name>\" or an absolute path; registered: %s", registeredProjectList(routes)),
+				), nil
+			}
+			route, ok := routes[reqProject]
+			if !ok {
+				return mcp.NewToolResultError(fmt.Sprintf("symbols: unknown project %q; registered: %s", reqProject, registeredProjectList(routes))), nil
+			}
+			validate = route.Validator
+			ensureStarted = route.EnsureStarted
+			loadOnMiss = route.LoadOnMiss
+		}
+
 		if validate == nil {
 			return mcp.NewToolResultError("symbols: path validation unavailable"), nil
 		}
@@ -106,6 +160,18 @@ func makeSymbolsHandler(validate PathValidator, store *Store, ctagsAvailable fun
 
 		return symbolsJSONResult(result)
 	}
+}
+
+func registeredProjectList(routes map[string]PerProject) string {
+	if len(routes) == 0 {
+		return "(none)"
+	}
+	projects := make([]string, 0, len(routes))
+	for project := range routes {
+		projects = append(projects, project)
+	}
+	sort.Strings(projects)
+	return strings.Join(projects, ", ")
 }
 
 func symbolsJSONResult(result toolResult) (*mcp.CallToolResult, error) {

@@ -44,6 +44,11 @@ func TestHandler_Status(t *testing.T) {
 	state := &DaemonState{
 		Running: true,
 		Repos:   []RepoStatus{{Path: "/tmp/test", Project: "test", ActivePlans: 0}},
+		Instances: []InstanceStatus{{
+			ID:           "coder-1",
+			Title:        "coder-1",
+			HealthReason: "exited",
+		}},
 	}
 	h := NewHandler(state)
 
@@ -56,6 +61,39 @@ func TestHandler_Status(t *testing.T) {
 	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
 	assert.True(t, resp.Running)
 	assert.Len(t, resp.Repos, 1)
+	require.Len(t, resp.Instances, 1)
+	assert.Equal(t, "exited", resp.Instances[0].HealthReason)
+}
+
+type instanceHealthStub struct {
+	DaemonState
+	instances []InstanceStatus
+}
+
+func (s *instanceHealthStub) ListInstances(_ string) []InstanceStatus { return s.instances }
+
+func TestHandler_ListInstances_IncludesHealthFields(t *testing.T) {
+	ts := time.Date(2026, 4, 24, 12, 0, 0, 0, time.UTC)
+	state := &instanceHealthStub{instances: []InstanceStatus{{
+		ID:           "coder-1",
+		Project:      "kasmos",
+		Title:        "coder-1",
+		LastActivity: &ts,
+		HealthReason: "stale",
+	}}}
+	h := NewHandler(state)
+
+	req := httptest.NewRequest("GET", "/v1/repos/kasmos/instances", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	var resp []InstanceStatus
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
+	require.Len(t, resp, 1)
+	require.NotNil(t, resp[0].LastActivity)
+	assert.Equal(t, ts, *resp[0].LastActivity)
+	assert.Equal(t, "stale", resp[0].HealthReason)
 }
 
 func TestHandler_ListRepos(t *testing.T) {

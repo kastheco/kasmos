@@ -120,7 +120,7 @@ func (w *WaveDecisionOverlay) render() string {
 	var b strings.Builder
 	if w.input.Failed > 0 {
 		b.WriteString(st.WarningTitle.Render(
-			fmt.Sprintf("△ wave %d complete with failures", w.input.WaveNumber)))
+			fmt.Sprintf("△ wave %d needs a decision", w.input.WaveNumber)))
 	} else {
 		b.WriteString(st.Title.Render(
 			fmt.Sprintf("✓ wave %d complete", w.input.WaveNumber)))

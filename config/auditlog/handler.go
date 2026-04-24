@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"time"
 )
 
 // NewHandler returns an http.Handler that exposes audit log events over HTTP.
@@ -11,7 +12,7 @@ import (
 func NewHandler(logger Logger) http.Handler {
 	mux := http.NewServeMux()
 
-	// List audit events with optional ?kind=, ?task=, and ?limit= filters.
+	// List audit events with optional query filters.
 	mux.HandleFunc("GET /v1/projects/{project}/audit-events", func(w http.ResponseWriter, r *http.Request) {
 		filter := QueryFilter{
 			Project: r.PathValue("project"),
@@ -25,19 +26,32 @@ func NewHandler(logger Logger) http.Handler {
 			filter.Kinds = append(filter.Kinds, EventKind(kind))
 		}
 
-		// Optional task file filter.
 		if task := q.Get("task"); task != "" {
 			filter.TaskFile = task
 		}
-
-		// Optional limit override.
-		if limitStr := q.Get("limit"); limitStr != "" {
-			n, err := strconv.Atoi(limitStr)
+		if instance := q.Get("instance"); instance != "" {
+			filter.InstanceTitle = instance
+		}
+		if after := q.Get("after"); after != "" {
+			t, err := parseQueryTimestamp(after)
 			if err != nil {
-				writeError(w, http.StatusBadRequest, "invalid limit: "+err.Error())
+				writeError(w, http.StatusBadRequest, "invalid after timestamp (RFC3339/RFC3339Nano required): "+err.Error())
 				return
 			}
-			if n <= 0 {
+			filter.After = t
+		}
+		if before := q.Get("before"); before != "" {
+			t, err := parseQueryTimestamp(before)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, "invalid before timestamp (RFC3339/RFC3339Nano required): "+err.Error())
+				return
+			}
+			filter.Before = t
+		}
+
+		if limitStr := q.Get("limit"); limitStr != "" {
+			n, err := strconv.Atoi(limitStr)
+			if err != nil || n <= 0 {
 				writeError(w, http.StatusBadRequest, "limit must be a positive integer")
 				return
 			}
@@ -62,6 +76,10 @@ func NewHandler(logger Logger) http.Handler {
 	})
 
 	return mux
+}
+
+func parseQueryTimestamp(raw string) (time.Time, error) {
+	return time.Parse(time.RFC3339Nano, raw)
 }
 
 // writeJSON encodes v as JSON and writes it to w with the given status code.

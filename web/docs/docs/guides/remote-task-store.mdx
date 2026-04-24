@@ -103,6 +103,18 @@ Content-Type: application/json
 GET /v1/projects/{project}/audit-events
 ```
 
+## audit querying
+
+Audit events can be filtered by repeated `kind=` values, `task`, `instance`, `after`, `before`, and `limit`. `after` and `before` accept RFC3339 timestamps, including fractional seconds from daemon JSON output.
+
+For Eagle Eye ingestion, poll with a moving timestamp window and key processed rows by the stable `id` field:
+
+```bash
+curl "http://your-server:7433/v1/projects/kasmos/audit-events?kind=wave_failed&kind=agent_finished&task=eagle-eye-optimizations&instance=eagle-eye-optimizations-W3-T5&after=2026-04-24T12:00:00Z&limit=500"
+```
+
+The `after` filter is strict (`timestamp > after`), and multiple events can share the same timestamp. Do not advance `after` to the newest processed timestamp by itself, or same-timestamp rows can be skipped. Keep an overlap window when polling and de-duplicate by stable `id`, or store a `(timestamp, id)` high-water mark and continue accepting rows at the same timestamp until every new `id` has been processed.
+
 ### topics
 
 ```bash

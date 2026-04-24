@@ -37,6 +37,17 @@ var probeMCPFunc = func() error {
 	return mcpclient.ProbeHTTP(context.Background(), mcpclient.SharedEndpointURL)
 }
 
+var staleThreshold = 24 * time.Hour
+
+// IsStale reports whether a paused instance has gone without persisted activity
+// long enough to warrant operator recovery guidance.
+func (i *Instance) IsStale(now time.Time) bool {
+	if i == nil || i.Status != Paused || i.UpdatedAt.IsZero() {
+		return false
+	}
+	return now.Sub(i.UpdatedAt) > staleThreshold
+}
+
 // usesManagedKasmosMCP reports whether program depends on the shared kasmos
 // MCP HTTP endpoint. It strips command-line flags and extracts the executable
 // basename so both "claude" and "/usr/local/bin/claude --flag" are recognised.

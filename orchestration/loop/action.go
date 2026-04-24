@@ -118,9 +118,10 @@ func (AutoImplementAction) sealedAction() {}
 
 // TaskCompleteAction signals that an individual task within a wave is done.
 type TaskCompleteAction struct {
-	PlanFile   string
-	TaskNumber int
-	WaveNumber int
+	PlanFile        string
+	TaskNumber      int
+	WaveNumber      int
+	RetryGeneration int
 }
 
 func (TaskCompleteAction) Kind() string  { return "task_complete" }

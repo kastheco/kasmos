@@ -1,6 +1,7 @@
 package app
 
 import (
+	"encoding/json"
 	"fmt"
 	"os/exec"
 	"sort"
@@ -26,6 +27,19 @@ import (
 // executeContextAction performs the action selected from a context menu.
 func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 	switch action {
+	case "cleanup_instance":
+		selected := m.nav.GetSelectedInstance()
+		if selected != nil {
+			m.audit(auditlog.EventAgentKilled, "killed and removed instance",
+				auditlog.WithInstance(selected.Title),
+				auditlog.WithAgent(selected.AgentType),
+				auditlog.WithPlan(selected.TaskFile),
+				auditlog.WithKillDetails("kill_and_remove_instance", true, false),
+			)
+			return m, tea.Batch(softKillInstanceCmd(m, selected), m.dismissInstanceFromList(selected))
+		}
+		return m, nil
+
 	case "kill_instance":
 		selected := m.nav.GetSelectedInstance()
 		if selected != nil {
@@ -35,6 +49,7 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 				auditlog.WithInstance(selected.Title),
 				auditlog.WithAgent(selected.AgentType),
 				auditlog.WithPlan(selected.TaskFile),
+				auditlog.WithKillDetails("kill_instance", false, true),
 			)
 			if err := selected.Pause(); err != nil {
 				return m, m.handleError(err)
@@ -669,8 +684,20 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 		}
 		return m.retryFailedWaveTasks(orch, entry)
 
+	case "log_advance_wave":
+		if m.pendingLogEvent == nil || m.pendingLogEvent.TaskFile == "" {
+			return m, nil
+		}
+		planFile := m.pendingLogEvent.TaskFile
+		m.pendingLogEvent = nil
+		return m, m.queueRecoveryAction(planFile, "advance_wave", "", "advance wave recovery queued")
+
 	case "log_restart_agent":
 		if m.pendingLogEvent == nil || m.pendingLogEvent.InstanceTitle == "" {
+			return m, nil
+		}
+		if auditLogCleanupKill(m.pendingLogEvent) {
+			m.pendingLogEvent = nil
 			return m, nil
 		}
 		title := m.pendingLogEvent.InstanceTitle
@@ -698,6 +725,38 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 		m.toastManager.Error(fmt.Sprintf("instance '%s' not found", title))
 		return m, m.toastTickCmd()
 
+	case "log_reopen_worktree":
+		if m.pendingLogEvent == nil || m.pendingLogEvent.InstanceTitle == "" {
+			return m, nil
+		}
+		if auditLogCleanupKill(m.pendingLogEvent) {
+			m.pendingLogEvent = nil
+			return m, nil
+		}
+		title := m.pendingLogEvent.InstanceTitle
+		m.pendingLogEvent = nil
+		for _, inst := range m.allInstances {
+			if inst.Title == title {
+				capturedTitle := inst.Title
+				capturedAgent := inst.AgentType
+				capturedPlan := inst.TaskFile
+				return m, func() tea.Msg {
+					if err := inst.Resume(); err != nil {
+						return err
+					}
+					m.audit(auditlog.EventAgentResumed, "worktree reopened via log action",
+						auditlog.WithInstance(capturedTitle),
+						auditlog.WithAgent(capturedAgent),
+						auditlog.WithPlan(capturedPlan),
+					)
+					_ = m.saveAllInstances()
+					return instanceChangedMsg{}
+				}
+			}
+		}
+		m.toastManager.Error(fmt.Sprintf("instance '%s' not found", title))
+		return m, m.toastTickCmd()
+
 	case "log_start_review":
 		if m.pendingLogEvent == nil || m.pendingLogEvent.TaskFile == "" {
 			return m, nil
@@ -708,6 +767,19 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 	}
 
 	return m, nil
+}
+
+func auditLogCleanupKill(e *ui.AuditEventDisplay) bool {
+	if e == nil || e.Kind != "agent_killed" || e.DetailJSON == "" {
+		return false
+	}
+	var detail struct {
+		Cleanup bool `json:"cleanup"`
+	}
+	if err := json.Unmarshal([]byte(e.DetailJSON), &detail); err != nil {
+		return false
+	}
+	return detail.Cleanup
 }
 
 func (m *home) mergeTaskToMain(planFile string) (tea.Model, tea.Cmd) {
@@ -1028,15 +1100,21 @@ func instanceSignalItems(inst *session.Instance, entry taskstate.TaskEntry, hasE
 	var items []overlay.ContextMenuItem
 
 	isAttachable := inst.Started() && !inst.Paused() && inst.TmuxAlive()
+	isRetired := inst.Exited || (hasEntry && (entry.Status == taskstate.StatusDone || entry.Status == taskstate.StatusCancelled))
 	if inst.Paused() {
 		items = append(items, overlay.ContextMenuItem{Label: "resume", Action: "resume_instance"})
 	} else if isAttachable {
 		items = append(items, overlay.ContextMenuItem{Label: "open", Action: "open_instance"})
 	}
-	items = append(items,
-		overlay.ContextMenuItem{Label: "kill", Action: "kill_instance"},
-		overlay.ContextMenuItem{Label: "restart", Action: "restart_instance"},
-	)
+	if isRetired {
+		items = append(items, overlay.ContextMenuItem{Label: "cleanup", Action: "cleanup_instance"})
+		if hasEntry && entry.Status == taskstate.StatusReviewing {
+			items = append(items, overlay.ContextMenuItem{Label: "start review", Action: "start_review"})
+		}
+	} else {
+		items = append(items, overlay.ContextMenuItem{Label: "kill", Action: "kill_instance"})
+	}
+	items = append(items, overlay.ContextMenuItem{Label: "restart", Action: "restart_instance"})
 
 	// Task-owner lifecycle signal actions — only for the top-level task agent.
 	// Wave-task rows (TaskNumber > 0) are managed by subtask completion, not FSM signals.
@@ -1437,6 +1515,32 @@ func (m *home) emitSelectedRawSignal(signalType, successToast string) tea.Cmd {
 			instanceTitle: instanceTitle,
 			agentType:     agentType,
 			successToast:  successToast,
+		}
+	}
+}
+
+func (m *home) queueRecoveryAction(planFile, signalType, payload, successToast string) tea.Cmd {
+	if planFile == "" || m.taskStoreProject == "" {
+		return nil
+	}
+	project := m.taskStoreProject
+	gw := m.signalGateway
+	return func() tea.Msg {
+		if gw == nil {
+			var err error
+			gw, err = taskstore.OpenAuthoritativeSignalGateway(project)
+			if err != nil {
+				return manualSignalResultMsg{err: err}
+			}
+			defer gw.Close() //nolint:errcheck
+		}
+		if err := taskfsm.EmitGatewaySignal(gw, project, signalType, planFile, payload); err != nil {
+			return manualSignalResultMsg{err: err}
+		}
+		return manualSignalResultMsg{
+			signalType:   signalType,
+			planFile:     planFile,
+			successToast: successToast,
 		}
 	}
 }

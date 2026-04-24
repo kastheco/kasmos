@@ -19,6 +19,10 @@ The tools prefer local mode (`rg` over `web/docs/docs/**`) when the kasmos repo 
 
 Pass `version: "2.6.0"` (or any entry in `web/docs/versions.json`) to restrict results to a historical snapshot. Local mode reads from `web/docs/versioned_docs/version-2.6.0/`; remote mode fetches `https://kasmos.kasthe.co/docs/2.6.0/llms-full.txt`.
 
+## symbols project routing
+
+The `symbols` tool accepts an optional `project` argument for multi-root deployments. When the daemon registers multiple repo roots, callers must pass either an absolute `path` or `project: "<name>"` alongside a relative path; the tool resolves the path under that project's root before applying sandbox validation.
+
 ## opting out
 
 Set `KASMOS_DOCS_BASE_URL=` (empty string) in the environment to disable remote mode. When the variable is explicitly set to empty, remote fetches return an error instead of silently falling back to the default URL. Local mode is unaffected and remains available whenever `web/docs/docs/` is on disk.

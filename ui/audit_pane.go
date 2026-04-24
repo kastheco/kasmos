@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"encoding/json"
 	"image/color"
 	"strings"
 
@@ -21,6 +22,8 @@ type AuditEventDisplay struct {
 	TaskFile      string      // plan filename if event is plan-scoped (may be empty)
 	InstanceTitle string      // instance title if event is instance-scoped (may be empty)
 	AgentType     string      // agent role (planner, coder, reviewer, fixer, …)
+	GroupKey      string      // display grouping key from Detail.group_key
+	DetailJSON    string      // raw JSON detail payload (preserved verbatim)
 }
 
 // AuditLineActions returns context-menu items available for the given log event.
@@ -40,6 +43,7 @@ func AuditLineActions(e AuditEventDisplay) []overlay.ContextMenuItem {
 		if hasPlan {
 			items = append(items, overlay.ContextMenuItem{Label: "send to fixer agent", Action: "log_send_to_fixer"})
 			items = append(items, overlay.ContextMenuItem{Label: "retry wave", Action: "log_retry_wave"})
+			items = append(items, overlay.ContextMenuItem{Label: "advance to next wave", Action: "log_advance_wave"})
 		}
 	case "error", "fsm_error":
 		if hasPlan {
@@ -47,6 +51,9 @@ func AuditLineActions(e AuditEventDisplay) []overlay.ContextMenuItem {
 		}
 	case "agent_killed":
 		if hasInstance {
+			if killDetail, ok := parseKillDetail(e.DetailJSON); ok && killDetail.Cleanup {
+				return items
+			}
 			items = append(items, overlay.ContextMenuItem{Label: "restart agent", Action: "log_restart_agent"})
 		}
 	case "agent_finished":
@@ -77,15 +84,34 @@ func AuditLineActions(e AuditEventDisplay) []overlay.ContextMenuItem {
 	return items
 }
 
+type killDetail struct {
+	Action          string `json:"action"`
+	Cleanup         bool   `json:"cleanup"`
+	BranchPreserved bool   `json:"branch_preserved"`
+	GroupKey        string `json:"group_key,omitempty"`
+}
+
+func parseKillDetail(raw string) (killDetail, bool) {
+	if raw == "" {
+		return killDetail{}, false
+	}
+	var out killDetail
+	if err := json.Unmarshal([]byte(raw), &out); err != nil {
+		return killDetail{}, false
+	}
+	return out, true
+}
+
 // AuditPane renders a chronological, scrollable activity feed.
 type AuditPane struct {
 	events       []AuditEventDisplay
+	renderEvents []auditRenderEvent
 	viewport     viewport.Model
 	width        int
 	height       int
 	visible      bool
 	bodyLines    int // rendered body line count (events + minute headers, excluding padding)
-	selectedIdx  int // index into events (-1 = none selected)
+	selectedIdx  int // index into renderEvents (-1 = none selected)
 	cursorActive bool
 }
 
@@ -117,10 +143,11 @@ func (p *AuditPane) SetSize(w, h int) {
 // If cursor is active the selection is preserved (clamped to new length).
 func (p *AuditPane) SetEvents(events []AuditEventDisplay) {
 	p.events = events
+	p.rebuildRenderEvents()
 	if !p.cursorActive {
 		p.selectedIdx = -1
-	} else if p.selectedIdx >= len(events) {
-		p.selectedIdx = len(events) - 1
+	} else if p.selectedIdx >= len(p.renderEvents) {
+		p.selectedIdx = len(p.renderEvents) - 1
 	}
 	p.viewport.SetContent(p.renderBody())
 	if !p.cursorActive {
@@ -136,7 +163,7 @@ func (p *AuditPane) SetCursorActive(active bool) {
 		p.selectedIdx = -1
 		p.viewport.SetContent(p.renderBody())
 		p.viewport.GotoBottom()
-	} else if p.selectedIdx < 0 && len(p.events) > 0 {
+	} else if p.selectedIdx < 0 && len(p.renderEvents) > 0 {
 		// Default to the most recent actionable event (lowest index = newest),
 		// or the newest event if no actionable events exist.
 		p.selectedIdx = p.lastActionableIdx()
@@ -154,11 +181,11 @@ func (p *AuditPane) CursorActive() bool { return p.cursorActive }
 // CursorUp moves the cursor toward older events (up the visual display).
 // events[0] is newest (bottom), events[len-1] is oldest (top).
 func (p *AuditPane) CursorUp() {
-	if !p.cursorActive || len(p.events) == 0 {
+	if !p.cursorActive || len(p.renderEvents) == 0 {
 		return
 	}
 	// Moving UP visually = moving toward older events = increasing index.
-	if p.selectedIdx < len(p.events)-1 {
+	if p.selectedIdx < len(p.renderEvents)-1 {
 		p.selectedIdx++
 	}
 	p.viewport.SetContent(p.renderBody())
@@ -167,7 +194,7 @@ func (p *AuditPane) CursorUp() {
 
 // CursorDown moves the cursor toward newer events (down the visual display).
 func (p *AuditPane) CursorDown() {
-	if !p.cursorActive || len(p.events) == 0 {
+	if !p.cursorActive || len(p.renderEvents) == 0 {
 		return
 	}
 	// Moving DOWN visually = moving toward newer events = decreasing index.
@@ -181,10 +208,27 @@ func (p *AuditPane) CursorDown() {
 // SelectedEvent returns the currently selected event and true, or the zero
 // value and false when no event is selected (cursor inactive or no events).
 func (p *AuditPane) SelectedEvent() (AuditEventDisplay, bool) {
-	if !p.cursorActive || p.selectedIdx < 0 || p.selectedIdx >= len(p.events) {
+	if !p.cursorActive || p.selectedIdx < 0 || p.selectedIdx >= len(p.renderEvents) {
 		return AuditEventDisplay{}, false
 	}
-	return p.events[p.selectedIdx], true
+	return p.renderEvents[p.selectedIdx].event, true
+}
+
+// SelectedRawEvents returns the raw events represented by the currently
+// selected rendered row. Coalesced display rows can map to multiple raw audit
+// events, while non-coalesced rows map to exactly one.
+func (p *AuditPane) SelectedRawEvents() []AuditEventDisplay {
+	if !p.cursorActive || p.selectedIdx < 0 || p.selectedIdx >= len(p.renderEvents) {
+		return nil
+	}
+	item := p.renderEvents[p.selectedIdx]
+	out := make([]AuditEventDisplay, 0, len(item.rawIndices))
+	for _, idx := range item.rawIndices {
+		if idx >= 0 && idx < len(p.events) {
+			out = append(out, p.events[idx])
+		}
+	}
+	return out
 }
 
 // SelectedEventHasActions reports whether the currently selected event has
@@ -200,8 +244,8 @@ func (p *AuditPane) SelectedEventHasActions() bool {
 // lastActionableIdx returns the index of the most-recent event (smallest index
 // since events[0] is newest) that has available log actions. Returns -1 if none.
 func (p *AuditPane) lastActionableIdx() int {
-	for i := 0; i < len(p.events); i++ {
-		if len(AuditLineActions(p.events[i])) > 0 {
+	for i := 0; i < len(p.renderEvents); i++ {
+		if len(AuditLineActions(p.renderEvents[i].event)) > 0 {
 			return i
 		}
 	}
@@ -209,7 +253,7 @@ func (p *AuditPane) lastActionableIdx() int {
 }
 
 // scrollToSelected adjusts the viewport so the selected row is visible.
-// renderBody renders events in oldest-first order (len-1 at top, 0 at bottom).
+// renderBody renders display events in oldest-first order (len-1 at top, 0 at bottom).
 func (p *AuditPane) scrollToSelected() {
 	if p.selectedIdx < 0 {
 		return
@@ -222,8 +266,8 @@ func (p *AuditPane) scrollToSelected() {
 	if msgW < 10 {
 		msgW = 10
 	}
-	for i := len(p.events) - 1; i >= 0; i-- {
-		e := p.events[i]
+	for i := len(p.renderEvents) - 1; i >= 0; i-- {
+		e := p.renderEvents[i].event
 		if e.Time != lastMinute {
 			linePos++
 			lastMinute = e.Time
@@ -247,6 +291,10 @@ func (p *AuditPane) scrollToSelected() {
 // Events returns the current event slice (used by tests).
 func (p *AuditPane) Events() []AuditEventDisplay {
 	return p.events
+}
+
+func (p *AuditPane) rebuildRenderEvents() {
+	p.renderEvents = coalesceAuditRenderEvents(p.events)
 }
 
 // ScrollDown advances the viewport by n lines.
@@ -335,6 +383,7 @@ func (p *AuditPane) renderBody() string {
 		return auditRowPad.Render(auditEmptyStyle.Render("· no events"))
 	}
 
+	renderEvents := p.renderEvents
 	const overhead = 4
 	msgW := p.width - overhead
 	if msgW < 10 {
@@ -343,12 +392,13 @@ func (p *AuditPane) renderBody() string {
 
 	// Walk events newest-first so that we can detect minute boundaries, then
 	// append in reverse order so oldest events end up at the top of the output.
-	lines := make([]string, 0, len(p.events)+1)
+	lines := make([]string, 0, len(renderEvents)+1)
 	lines = append(lines, "") // blank line below section header
 	var lastMinute string
 
-	for i := len(p.events) - 1; i >= 0; i-- {
-		e := p.events[i]
+	for i := len(renderEvents) - 1; i >= 0; i-- {
+		item := renderEvents[i]
+		e := item.event
 
 		// Emit a centred minute header whenever the minute value changes.
 		if e.Time != lastMinute {
@@ -400,6 +450,70 @@ func (p *AuditPane) renderBody() string {
 
 	p.bodyLines = len(lines)
 	return strings.Join(lines, "\n")
+}
+
+type auditRenderEvent struct {
+	event      AuditEventDisplay
+	rawIndices []int
+}
+
+func coalesceAuditRenderEvents(events []AuditEventDisplay) []auditRenderEvent {
+	if len(events) == 0 {
+		return nil
+	}
+	out := make([]auditRenderEvent, 0, len(events))
+	for i := 0; i < len(events); {
+		currentKey := auditDisplayGroupKey(events[i])
+		if currentKey == "" {
+			out = append(out, auditRenderEvent{event: events[i], rawIndices: []int{i}})
+			i++
+			continue
+		}
+
+		bestIdx := i
+		rawIndices := []int{i}
+		j := i + 1
+		for j < len(events) && auditDisplayGroupKey(events[j]) == currentKey {
+			rawIndices = append(rawIndices, j)
+			if auditKillCleanup(events[j]) && !auditKillCleanup(events[bestIdx]) {
+				bestIdx = j
+			}
+			j++
+		}
+		out = append(out, auditRenderEvent{event: events[bestIdx], rawIndices: rawIndices})
+		i = j
+	}
+	return out
+}
+
+func auditDisplayGroupKey(e AuditEventDisplay) string {
+	if e.GroupKey != "" {
+		return e.GroupKey
+	}
+	if e.DetailJSON != "" {
+		var detail struct {
+			GroupKey string `json:"group_key"`
+		}
+		if err := json.Unmarshal([]byte(e.DetailJSON), &detail); err == nil && detail.GroupKey != "" {
+			return detail.GroupKey
+		}
+	}
+	if e.Kind == "agent_killed" && e.InstanceTitle != "" {
+		return e.Kind + ":" + e.InstanceTitle
+	}
+	return ""
+}
+
+func auditKillCleanup(e AuditEventDisplay) bool {
+	if e.DetailJSON != "" {
+		var detail struct {
+			Cleanup bool `json:"cleanup"`
+		}
+		if err := json.Unmarshal([]byte(e.DetailJSON), &detail); err == nil {
+			return detail.Cleanup
+		}
+	}
+	return strings.Contains(strings.ToLower(e.Message), "removed")
 }
 
 // EventKindIcon maps an event kind string to a display glyph and colour.

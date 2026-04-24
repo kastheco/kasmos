@@ -156,6 +156,7 @@ export default function InstancesPage() {
   const [selectedTitle, setSelectedTitle] = useState<string | null>(null);
   const [actionTitle, setActionTitle] = useState<string | null>(null);
   const [killConfirmTitle, setKillConfirmTitle] = useState<string | null>(null);
+  const [retiredOpen, setRetiredOpen] = useState(false);
 
   // -- capture state (page-local, not useAutoRefresh) --
   const [captureContent, setCaptureContent] = useState<string>("");
@@ -213,10 +214,26 @@ export default function InstancesPage() {
   const groups = useMemo(
     () =>
       groupAgentsByTaskStatus(
-        (instances.data ?? []).map(toAgentCardModel),
+        (instances.data ?? []).map((inst) =>
+          toAgentCardModel(inst, inst.task_file ? taskStatusByFile.get(inst.task_file) : undefined),
+        ),
         taskStatusByFile,
       ),
     [instances.data, taskStatusByFile],
+  );
+  const activeGroups = useMemo(
+    () =>
+      groups
+        .map((group) => ({
+          ...group,
+          cards: group.cards.filter((card) => card.presentation !== "retired"),
+        }))
+        .filter((group) => group.cards.length > 0),
+    [groups],
+  );
+  const retiredCards = useMemo(
+    () => groups.flatMap((group) => group.cards.filter((card) => card.presentation === "retired")),
+    [groups],
   );
 
   // O(1) lookup from card title → original InstanceEntry.
@@ -228,8 +245,11 @@ export default function InstancesPage() {
   // Flat list of displayed cards in visual order — used for auto-selection
   // and for looking up the card that matches selectedTitle.
   const flatCards = useMemo(
-    () => groups.flatMap((g) => g.cards),
-    [groups],
+    () => [
+      ...activeGroups.flatMap((g) => g.cards),
+      ...(retiredOpen ? retiredCards : []),
+    ],
+    [activeGroups, retiredCards, retiredOpen],
   );
 
   // Auto-select the first instance on first successful load; reassign when
@@ -460,7 +480,7 @@ export default function InstancesPage() {
         <div className={styles.split}>
           {/* left: grouped agent list */}
           <div className={styles.listColumn}>
-            {groups.map((group) => (
+            {activeGroups.map((group) => (
               <section key={group.key} className={styles.group}>
                 <h2 className={styles.groupHeader}>
                   <span className={`${styles.groupDot} ${styles[`dot_${group.key}`] ?? ""}`} />
@@ -486,6 +506,40 @@ export default function InstancesPage() {
                 </ul>
               </section>
             ))}
+            {retiredCards.length > 0 && (
+              <section className={styles.group}>
+                <h2 className={styles.groupHeader}>
+                  <button
+                    type="button"
+                    className={styles.depthBtn}
+                    aria-expanded={retiredOpen}
+                    onClick={() => setRetiredOpen((open) => !open)}
+                  >
+                    {retiredOpen ? "▾" : "▸"}
+                  </button>
+                  <span>retired · {retiredCards.length}</span>
+                </h2>
+                {retiredOpen && (
+                  <ul className={styles.list}>
+                    {retiredCards.map((card) => {
+                      const instance = instanceMap.get(card.title);
+                      if (!instance) return null;
+                      return (
+                        <AgentCard
+                          key={card.title}
+                          card={card}
+                          instance={instance}
+                          selected={card.title === selectedTitle}
+                          actionBusy={actionTitle === card.title}
+                          onSelect={() => setSelectedTitle(card.title)}
+                          onAction={(action) => void handleAction(card.title, action)}
+                        />
+                      );
+                    })}
+                  </ul>
+                )}
+              </section>
+            )}
           </div>
 
           {/* right: preview + composer */}

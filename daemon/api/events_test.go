@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -83,4 +84,39 @@ func TestHandler_EventsSSE(t *testing.T) {
 	defer resp.Body.Close()
 
 	assert.Equal(t, "text/event-stream", resp.Header.Get("Content-Type"))
+}
+
+func TestEventJSON_DetailRoundTrip(t *testing.T) {
+	ev := Event{
+		Kind:      "wave_failed",
+		Message:   "wave 1 needs a decision",
+		Timestamp: time.Date(2026, 4, 24, 12, 0, 0, 0, time.UTC),
+		Detail:    `{"outcome":"wave_decision","retry_generation":1}`,
+	}
+
+	encoded, err := json.Marshal(ev)
+	require.NoError(t, err)
+
+	var raw map[string]any
+	require.NoError(t, json.Unmarshal(encoded, &raw))
+	require.Contains(t, raw, "detail")
+
+	var detail map[string]any
+	require.NoError(t, json.Unmarshal([]byte(raw["detail"].(string)), &detail))
+	assert.Equal(t, "wave_decision", detail["outcome"])
+	assert.Equal(t, float64(1), detail["retry_generation"])
+}
+
+func TestEventJSON_OmitsEmptyDetail(t *testing.T) {
+	ev := Event{
+		Kind:      "wave_completed",
+		Message:   "wave 1 complete",
+		Timestamp: time.Date(2026, 4, 24, 12, 0, 0, 0, time.UTC),
+	}
+
+	encoded, err := json.Marshal(ev)
+	require.NoError(t, err)
+
+	assert.JSONEq(t, `{"kind":"wave_completed","message":"wave 1 complete","timestamp":"2026-04-24T12:00:00Z"}`, string(encoded))
+	assert.NotContains(t, string(encoded), "detail")
 }

@@ -31,6 +31,7 @@ import {
   getProjectConfig,
   saveProjectConfig,
   runProjectScaffoldSync,
+  fetchAuditEvents,
 } from "./api.ts";
 
 function assertEqual<T>(actual: T, expected: T, msg: string): void {
@@ -174,6 +175,46 @@ assertEqual(
 );
 assertEqual(gotInstances.length, 1, "listInstances returns parsed array");
 assertEqual(gotInstances[0].title, "my-inst", "listInstances preserves title");
+
+mockFetch(
+  true,
+  200,
+  JSON.stringify([
+    {
+      id: 42,
+      kind: "wave_failed",
+      timestamp: "2026-04-24T12:00:00Z",
+      project: "kasmos",
+      task_file: "eagle-eye-optimizations",
+      instance_title: "coder-5",
+      agent_type: "coder",
+      wave_number: 3,
+      task_number: 5,
+      message: "wave failed",
+      detail: "{\"retry_generation\":1}",
+      level: "warn",
+    },
+  ]),
+);
+const auditEvents = await fetchAuditEvents("kasmos", {
+  kind: ["wave_failed", "agent_finished"],
+  task: "eagle-eye-optimizations",
+  instance: "coder-5",
+  after: "2026-04-24T00:00:00Z",
+  before: "2026-04-25T00:00:00Z",
+  limit: 50,
+});
+assertEqual(
+  _lastFetchedUrl,
+  "/v1/projects/kasmos/audit-events?kind=wave_failed&kind=agent_finished&task=eagle-eye-optimizations&instance=coder-5&after=2026-04-24T00%3A00%3A00Z&before=2026-04-25T00%3A00%3A00Z&limit=50",
+  "fetchAuditEvents serializes extended filters",
+);
+assertEqual(auditEvents[0].id, 42, "fetchAuditEvents normalizes snake_case id");
+assertEqual(
+  auditEvents[0].instance_title,
+  "coder-5",
+  "fetchAuditEvents normalizes snake_case instance title",
+);
 
 // listInstances returns [] for a null body.
 mockFetch(true, 200, "null");

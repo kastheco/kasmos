@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/kastheco/kasmos/config/auditlog"
 	"github.com/stretchr/testify/assert"
@@ -113,7 +114,7 @@ func TestHandler_InvalidLimitReturnsBadRequest(t *testing.T) {
 
 	var body map[string]string
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
-	assert.Contains(t, body["error"], "invalid limit")
+	assert.Contains(t, body["error"], "limit must be a positive integer")
 }
 
 func TestHandler_MultipleKindFilters(t *testing.T) {
@@ -141,4 +142,48 @@ func TestHandler_MultipleKindFilters(t *testing.T) {
 	}
 	assert.Contains(t, kinds, auditlog.EventAgentSpawned)
 	assert.Contains(t, kinds, auditlog.EventWaveStarted)
+}
+
+func TestHandler_ExtendedFiltersAndJSONID(t *testing.T) {
+	logger, err := auditlog.NewSQLiteLogger(":memory:")
+	require.NoError(t, err)
+	defer logger.Close()
+
+	before := time.Date(2026, 4, 24, 10, 0, 0, 0, time.UTC)
+	matching := before.Add(1 * time.Hour)
+	after := before.Add(2 * time.Hour)
+
+	logger.Emit(auditlog.Event{Kind: auditlog.EventAgentSpawned, Project: "p", InstanceTitle: "coder-1", Timestamp: before})
+	logger.Emit(auditlog.Event{Kind: auditlog.EventWaveStarted, Project: "p", InstanceTitle: "coder-2", Timestamp: matching})
+	logger.Emit(auditlog.Event{Kind: auditlog.EventPlanCreated, Project: "p", InstanceTitle: "coder-2", Timestamp: after})
+
+	srv := httptest.NewServer(auditlog.NewHandler(logger))
+	defer srv.Close()
+
+	url := srv.URL + "/v1/projects/p/audit-events?kind=wave_started&kind=agent_finished&instance=coder-2&after=2026-04-24T10:30:00.123456Z&before=2026-04-24T11:30:00.123456789Z"
+	resp, err := http.Get(url)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+
+	var raw []map[string]any
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&raw))
+	require.Len(t, raw, 1)
+	assert.NotZero(t, raw[0]["id"])
+	assert.Equal(t, "wave_started", raw[0]["kind"])
+	assert.Equal(t, "coder-2", raw[0]["instance_title"])
+}
+
+func TestHandler_InvalidAfterBeforeReturnBadRequest(t *testing.T) {
+	logger, err := auditlog.NewSQLiteLogger(":memory:")
+	require.NoError(t, err)
+	defer logger.Close()
+
+	srv := httptest.NewServer(auditlog.NewHandler(logger))
+	defer srv.Close()
+
+	for _, query := range []string{"after=nope", "before=nope"} {
+		resp, err := http.Get(srv.URL + "/v1/projects/p/audit-events?" + query)
+		require.NoError(t, err)
+		assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	}
 }

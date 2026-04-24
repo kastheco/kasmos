@@ -26,6 +26,7 @@ func TestAuditLineActions_WaveFailed(t *testing.T) {
 	}
 	assert.True(t, actions["log_send_to_fixer"], "should include send-to-fixer action")
 	assert.True(t, actions["log_retry_wave"], "should include retry-wave action")
+	assert.True(t, actions["log_advance_wave"], "should include advance-wave action")
 }
 
 // TestAuditLineActions_WaveFailedNoTaskFile ensures no actions when plan is unknown.
@@ -66,6 +67,38 @@ func TestAuditLineActions_AgentKilled(t *testing.T) {
 	items := ui.AuditLineActions(e)
 	require.NotEmpty(t, items, "agent_killed with InstanceTitle should produce actions")
 	assert.Equal(t, "log_restart_agent", items[0].Action)
+}
+
+func TestAuditLineActions_AgentKilledCleanupSuppressesRecoveryActions(t *testing.T) {
+	t.Parallel()
+	e := ui.AuditEventDisplay{
+		Kind:          "agent_killed",
+		Message:       "agent stopped",
+		InstanceTitle: "auth-coder-1",
+		DetailJSON:    `{"action":"kill_and_remove_instance","cleanup":true,"branch_preserved":true}`,
+	}
+	items := ui.AuditLineActions(e)
+	assert.Empty(t, items, "cleanup kill rows dismiss the instance, so recovery actions cannot target it")
+}
+
+func TestExecuteContextAction_LogRecoveryCleanupKillNoops(t *testing.T) {
+	for _, action := range []string{"log_restart_agent", "log_reopen_worktree"} {
+		t.Run(action, func(t *testing.T) {
+			h := newTestHome()
+			h.pendingLogEvent = &ui.AuditEventDisplay{
+				Kind:          "agent_killed",
+				InstanceTitle: "auth-coder-1",
+				DetailJSON:    `{"action":"kill_and_remove_instance","cleanup":true,"branch_preserved":true}`,
+			}
+
+			model, cmd := h.executeContextAction(action)
+			updated := model.(*home)
+
+			require.Nil(t, cmd)
+			require.Nil(t, updated.pendingLogEvent)
+			assert.False(t, updated.toastManager.HasActiveToasts())
+		})
+	}
 }
 
 // TestAuditLineActions_AgentKilledNoTitle ensures no actions when title is unknown.
@@ -235,4 +268,85 @@ func TestHandleAuditCursorKey_EnterNoActions(t *testing.T) {
 	// Should NOT have opened a context menu — still in audit cursor mode (or toast shown)
 	assert.NotEqual(t, stateContextMenu, updated.state, "inert event should not open context menu")
 	assert.Nil(t, updated.pendingLogEvent)
+}
+
+func TestAuditPane_CoalescesAdjacentKillRowsInDisplayOnly(t *testing.T) {
+	t.Parallel()
+
+	p := ui.NewAuditPane()
+	icon, clr := ui.EventKindIcon("agent_killed")
+	p.SetSize(80, 10)
+	p.SetEvents([]ui.AuditEventDisplay{
+		{
+			Time:          "12:01",
+			Kind:          "agent_killed",
+			Icon:          icon,
+			Color:         clr,
+			Level:         "info",
+			Message:       "killed and removed instance",
+			InstanceTitle: "coder-1",
+			DetailJSON:    `{"cleanup":true,"group_key":"agent_killed:coder-1"}`,
+		},
+		{
+			Time:          "12:01",
+			Kind:          "agent_killed",
+			Icon:          icon,
+			Color:         clr,
+			Level:         "info",
+			Message:       "agent stopped (branch preserved)",
+			InstanceTitle: "coder-1",
+			DetailJSON:    `{"cleanup":false,"group_key":"agent_killed:coder-1"}`,
+		},
+	})
+
+	require.Len(t, p.Events(), 2)
+	rendered := p.String()
+	assert.Contains(t, rendered, "killed and removed instance")
+	assert.NotContains(t, rendered, "agent stopped (branch preserved)")
+}
+
+func TestAuditPane_CursorUsesCoalescedRows(t *testing.T) {
+	t.Parallel()
+
+	p := ui.NewAuditPane()
+	p.SetEvents([]ui.AuditEventDisplay{
+		{
+			Time:          "12:02",
+			Kind:          "agent_killed",
+			Message:       "agent stopped (branch preserved)",
+			InstanceTitle: "coder-1",
+			DetailJSON:    `{"cleanup":false,"group_key":"agent_killed:coder-1"}`,
+		},
+		{
+			Time:          "12:01",
+			Kind:          "agent_killed",
+			Message:       "killed and removed instance",
+			InstanceTitle: "coder-1",
+			DetailJSON:    `{"cleanup":true,"group_key":"agent_killed:coder-1"}`,
+		},
+		{
+			Time:     "12:00",
+			Kind:     "plan_created",
+			Message:  "plan made",
+			TaskFile: "plan-a",
+		},
+	})
+
+	p.SetCursorActive(true)
+	selected, ok := p.SelectedEvent()
+	require.True(t, ok)
+	assert.Equal(t, "killed and removed instance", selected.Message)
+	assert.False(t, p.SelectedEventHasActions())
+
+	raw := p.SelectedRawEvents()
+	require.Len(t, raw, 2)
+	assert.ElementsMatch(t,
+		[]string{"agent stopped (branch preserved)", "killed and removed instance"},
+		[]string{raw[0].Message, raw[1].Message},
+	)
+
+	p.CursorUp()
+	selected, ok = p.SelectedEvent()
+	require.True(t, ok)
+	assert.Equal(t, "plan made", selected.Message)
 }
