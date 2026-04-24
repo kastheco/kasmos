@@ -1,6 +1,7 @@
 package orchestration
 
 import (
+	"fmt"
 	"sort"
 
 	"github.com/kastheco/kasmos/config/taskparser"
@@ -30,15 +31,17 @@ const (
 
 // WaveOrchestrator manages wave-based parallel task execution for a single plan.
 type WaveOrchestrator struct {
-	taskFile          string
-	plan              *taskparser.Plan
-	store             taskstore.Store
-	project           string
-	architectMeta     *ArchitectMeta
-	state             WaveState
-	currentWave       int                // 0-indexed into plan.Waves
-	taskStates        map[int]taskStatus // task number → status
-	waitingForConfirm bool               // true once we've shown the wave-complete dialog
+	taskFile            string
+	plan                *taskparser.Plan
+	store               taskstore.Store
+	project             string
+	architectMeta       *ArchitectMeta
+	state               WaveState
+	currentWave         int                // 0-indexed into plan.Waves
+	taskStates          map[int]taskStatus // task number → status
+	waitingForConfirm   bool               // true once we've shown the wave-complete dialog
+	retryGeneration     int                // incremented on every RetryFailedTasks() call
+	emittedWaveOutcomes map[string]bool    // key: "<wave>:<generation>"
 }
 
 // FileConflict represents a file modified by multiple tasks in the same wave.
@@ -64,10 +67,11 @@ func ShouldBlueprintSkip(plan *taskparser.Plan, threshold int) bool {
 // NewWaveOrchestrator creates an orchestrator for the given plan.
 func NewWaveOrchestrator(planFile string, plan *taskparser.Plan) *WaveOrchestrator {
 	return &WaveOrchestrator{
-		taskFile:   planFile,
-		plan:       plan,
-		state:      WaveStateIdle,
-		taskStates: make(map[int]taskStatus),
+		taskFile:            planFile,
+		plan:                plan,
+		state:               WaveStateIdle,
+		taskStates:          make(map[int]taskStatus),
+		emittedWaveOutcomes: make(map[string]bool),
 	}
 }
 
@@ -137,6 +141,8 @@ func (o *WaveOrchestrator) UpdatePlan(plan *taskparser.Plan) {
 	o.currentWave = 0
 	o.taskStates = make(map[int]taskStatus)
 	o.waitingForConfirm = false
+	o.retryGeneration = 0
+	o.emittedWaveOutcomes = make(map[string]bool)
 }
 
 // StartNextWave advances to the next wave and returns its tasks.
@@ -225,8 +231,30 @@ func (o *WaveOrchestrator) RetryFailedTasks() []taskparser.Task {
 	if len(tasks) > 0 {
 		o.state = WaveStateRunning
 		o.waitingForConfirm = false
+		o.retryGeneration++
 	}
 	return tasks
+}
+
+// ClaimWaveOutcome records that an outcome for the current (wave, generation)
+// tuple has been announced. It returns false on subsequent calls for the same
+// tuple so callers can suppress duplicate emissions without losing retry
+// boundaries.
+func (o *WaveOrchestrator) ClaimWaveOutcome() bool {
+	key := fmt.Sprintf("%d:%d", o.CurrentWaveNumber(), o.retryGeneration)
+	if o.emittedWaveOutcomes != nil && o.emittedWaveOutcomes[key] {
+		return false
+	}
+	if o.emittedWaveOutcomes == nil {
+		o.emittedWaveOutcomes = map[string]bool{}
+	}
+	o.emittedWaveOutcomes[key] = true
+	return true
+}
+
+// RetryGeneration returns the current retry counter (0 for the first wave run).
+func (o *WaveOrchestrator) RetryGeneration() int {
+	return o.retryGeneration
 }
 
 // IsCurrentWaveComplete returns true if all tasks in the current wave have resolved.

@@ -287,6 +287,7 @@ func TestProcessor_ProcessTaskSignals(t *testing.T) {
 	for _, a := range actions {
 		if tc, ok := a.(TaskCompleteAction); ok {
 			assert.Equal(t, 1, tc.TaskNumber)
+			assert.Equal(t, 0, tc.RetryGeneration)
 			found = true
 		}
 	}

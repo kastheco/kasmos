@@ -11,6 +11,7 @@ import (
 	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
 	"github.com/kastheco/kasmos/config"
+	"github.com/kastheco/kasmos/config/auditlog"
 	"github.com/kastheco/kasmos/config/taskfsm"
 	"github.com/kastheco/kasmos/config/taskparser"
 	"github.com/kastheco/kasmos/config/taskstate"
@@ -1543,6 +1544,68 @@ func TestWaveMonitor_FocusesTaskInstance_WhenFailedWaveShown(t *testing.T) {
 	assert.Equal(t, stateWaveDecision, updated.state, "should show failed-wave decision")
 	assert.Equal(t, taskInst, updated.nav.GetSelectedInstance(),
 		"failed-wave overlay should auto-focus a task instance for the plan")
+}
+
+func TestWaveDialog_AuditsOneFailedOutcomePerRetryGeneration(t *testing.T) {
+	t.Parallel()
+	const planFile = "retry-audit"
+
+	plan := &taskparser.Plan{
+		Waves: []taskparser.Wave{
+			{
+				Number: 1,
+				Tasks:  []taskparser.Task{{Number: 1, Title: "Task 1", Body: "do it"}},
+			},
+			{
+				Number: 2,
+				Tasks:  []taskparser.Task{{Number: 2, Title: "Task 2", Body: "follow up"}},
+			},
+		},
+	}
+	orch := orchestration.NewWaveOrchestrator(planFile, plan)
+	orch.StartNextWave()
+	orch.MarkTaskFailed(1)
+
+	dir := t.TempDir()
+	plansDir := filepath.Join(dir, "docs", "plans")
+	require.NoError(t, os.MkdirAll(plansDir, 0o755))
+	ps, err := newTestPlanState(t, plansDir)
+	require.NoError(t, err)
+	require.NoError(t, ps.Register(planFile, "retry audit", "plan/retry-audit", time.Now()))
+	seedPlanStatus(t, ps, planFile, taskstate.StatusImplementing)
+
+	logger, err := auditlog.NewSQLiteLogger(":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, logger.Close()) })
+
+	h := waveFlowHome(t, ps, plansDir, map[string]*orchestration.WaveOrchestrator{planFile: orch})
+	h.auditLogger = logger
+
+	h.showWaveDialog(planFile, orch)
+	h.showWaveDialog(planFile, orch)
+	events, err := logger.Query(auditlog.QueryFilter{
+		Project: "test",
+		Kinds:   []auditlog.EventKind{auditlog.EventWaveFailed},
+		Limit:   10,
+	})
+	require.NoError(t, err)
+	require.Len(t, events, 1)
+	assert.Contains(t, events[0].Detail, `"retry_generation":0`)
+
+	require.Len(t, orch.RetryFailedTasks(), 1)
+	orch.MarkTaskFailed(1)
+	h.showWaveDialog(planFile, orch)
+	h.showWaveDialog(planFile, orch)
+
+	events, err = logger.Query(auditlog.QueryFilter{
+		Project: "test",
+		Kinds:   []auditlog.EventKind{auditlog.EventWaveFailed},
+		Limit:   10,
+	})
+	require.NoError(t, err)
+	require.Len(t, events, 2)
+	assert.Contains(t, events[0].Detail, `"retry_generation":1`)
+	assert.Contains(t, events[1].Detail, `"retry_generation":0`)
 }
 
 // TestPlannerExit_FocusesPlannerInstance_BeforeConfirm verifies that when a

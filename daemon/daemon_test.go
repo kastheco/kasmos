@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -20,6 +21,75 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestDaemon_TaskComplete_ReplayedFailedWaveEmitsOnce(t *testing.T) {
+	store := taskstore.NewTestStore(t)
+	project := "test-project"
+	planFile := "failed-wave.md"
+	require.NoError(t, store.Create(project, taskstore.TaskEntry{
+		Filename: planFile,
+		Status:   taskstore.StatusImplementing,
+	}))
+
+	proc := loop.NewProcessor(loop.ProcessorConfig{Store: store, Project: project})
+	proc.RegisterOrchestrator(planFile, 1, []int{1, 2})
+	orch := proc.WaveOrchestrator(planFile)
+	require.NotNil(t, orch)
+	orch.MarkTaskFailed(1)
+
+	actions := proc.ProcessTaskSignals([]taskfsm.TaskSignal{{
+		TaskFile:   planFile,
+		WaveNumber: 1,
+		TaskNumber: 2,
+	}})
+	require.Len(t, actions, 1)
+	taskAction, ok := actions[0].(loop.TaskCompleteAction)
+	require.True(t, ok)
+
+	broadcaster := api.NewEventBroadcaster()
+	sub := broadcaster.Subscribe()
+	t.Cleanup(func() {
+		broadcaster.Unsubscribe(sub)
+		broadcaster.Close()
+	})
+	d := &Daemon{
+		cfg:         &DaemonConfig{},
+		spawner:     NewTmuxSpawner(),
+		logger:      slog.Default(),
+		broadcaster: broadcaster,
+		killWaveAgents: func(repoPath, pf string, wave int) error {
+			return nil
+		},
+	}
+	e := RepoEntry{
+		Path:      t.TempDir(),
+		Project:   project,
+		Store:     store,
+		Processor: proc,
+	}
+
+	require.NoError(t, d.executeAction(context.Background(), e, taskAction))
+	require.NoError(t, d.executeAction(context.Background(), e, taskAction))
+
+	var waveFailed []api.Event
+	timeout := time.After(200 * time.Millisecond)
+	for {
+		select {
+		case ev := <-sub:
+			if ev.Kind == "wave_failed" {
+				waveFailed = append(waveFailed, ev)
+			}
+		case <-timeout:
+			require.Len(t, waveFailed, 1)
+			assert.Equal(t, "failed-wave.md: wave 1 needs a decision (1 of 2 tasks failed)", waveFailed[0].Message)
+			var detail map[string]any
+			require.NoError(t, json.Unmarshal([]byte(waveFailed[0].Detail), &detail))
+			assert.Equal(t, "wave_terminal", detail["outcome"])
+			assert.Equal(t, float64(0), detail["retry_generation"])
+			return
+		}
+	}
+}
 
 func TestDaemon_StartStop(t *testing.T) {
 	dir := t.TempDir()

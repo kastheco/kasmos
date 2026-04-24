@@ -433,9 +433,10 @@ func (p *Processor) ProcessTaskSignals(signals []taskfsm.TaskSignal) []Action {
 		}
 		orch.MarkTaskComplete(ts.TaskNumber)
 		actions = append(actions, TaskCompleteAction{
-			PlanFile:   ts.TaskFile,
-			TaskNumber: ts.TaskNumber,
-			WaveNumber: ts.WaveNumber,
+			PlanFile:        ts.TaskFile,
+			TaskNumber:      ts.TaskNumber,
+			WaveNumber:      ts.WaveNumber,
+			RetryGeneration: orch.RetryGeneration(),
 		})
 	}
 	return actions

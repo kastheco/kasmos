@@ -1023,10 +1023,13 @@ func (m *home) showWaveDialog(planFile string, orch *orchestration.WaveOrchestra
 
 	// Auto-advance path: emit audit, toast, and dispatch advance without overlay.
 	if failed == 0 && m.appConfig != nil && m.appConfig.AutoAdvanceWaves {
-		m.audit(auditlog.EventWaveCompleted,
-			fmt.Sprintf("wave %d complete: %d/%d tasks (auto-advancing)", waveNum, completed, total),
-			auditlog.WithPlan(planFile),
-			auditlog.WithWave(waveNum, 0))
+		if orch.ClaimWaveOutcome() {
+			m.audit(auditlog.EventWaveCompleted,
+				fmt.Sprintf("wave %d complete: %d/%d tasks (auto-advancing)", waveNum, completed, total),
+				auditlog.WithPlan(planFile),
+				auditlog.WithWave(waveNum, 0),
+				auditlog.WithWaveOutcome("wave_success", failed, total, "next_wave|review", orch.RetryGeneration()))
+		}
 		m.toastManager.Info(fmt.Sprintf("%s — wave %d complete, auto-advancing...", planName, waveNum))
 		entry, _ := m.taskState.Entry(planFile)
 		capturedPlanFile := planFile
@@ -1047,16 +1050,21 @@ func (m *home) showWaveDialog(planFile string, orch *orchestration.WaveOrchestra
 	}
 
 	// Emit audit event before showing the overlay.
-	if failed > 0 {
-		m.audit(auditlog.EventWaveFailed,
-			fmt.Sprintf("wave %d: %d/%d tasks failed", waveNum, failed, total),
-			auditlog.WithPlan(planFile),
-			auditlog.WithWave(waveNum, 0))
-	} else {
-		m.audit(auditlog.EventWaveCompleted,
-			fmt.Sprintf("wave %d complete: %d/%d tasks", waveNum, completed, total),
-			auditlog.WithPlan(planFile),
-			auditlog.WithWave(waveNum, 0))
+	if orch.ClaimWaveOutcome() {
+		if failed > 0 {
+			m.audit(auditlog.EventWaveFailed,
+				fmt.Sprintf("wave %d needs a decision — %d of %d tasks failed", waveNum, failed, total),
+				auditlog.WithPlan(planFile),
+				auditlog.WithWave(waveNum, 0),
+				auditlog.WithWaveOutcome("wave_decision", failed, total, "retry|advance|abort", orch.RetryGeneration()),
+				auditlog.WithLevel("warn"))
+		} else {
+			m.audit(auditlog.EventWaveCompleted,
+				fmt.Sprintf("wave %d complete: %d/%d tasks", waveNum, completed, total),
+				auditlog.WithPlan(planFile),
+				auditlog.WithWave(waveNum, 0),
+				auditlog.WithWaveOutcome("wave_success", failed, total, "next_wave|review", orch.RetryGeneration()))
+		}
 	}
 
 	// Focus a task instance so the user can see agent output behind the overlay.

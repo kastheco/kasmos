@@ -151,6 +151,37 @@ func WithKillDetails(action string, cleanup, branchPreserved bool) EventOption {
 	}
 }
 
+// WithWaveOutcome records structured wave outcome metadata in Event.Detail.
+func WithWaveOutcome(outcome string, failedTasks, totalTasks int, nextAction string, retryGen int) EventOption {
+	return func(e *Event) {
+		detail := map[string]any{}
+		if e.Detail != "" {
+			var existing any
+			if err := json.Unmarshal([]byte(e.Detail), &existing); err == nil {
+				if obj, ok := existing.(map[string]any); ok {
+					detail = obj
+				} else {
+					detail["detail"] = existing
+				}
+			} else {
+				detail["detail"] = e.Detail
+			}
+		}
+		detail["outcome"] = outcome
+		detail["blocking"] = failedTasks > 0
+		detail["failed_tasks"] = failedTasks
+		detail["total_tasks"] = totalTasks
+		detail["next_action"] = nextAction
+		detail["retry_generation"] = retryGen
+
+		encoded, err := json.Marshal(detail)
+		if err != nil {
+			return
+		}
+		e.Detail = string(encoded)
+	}
+}
+
 // WithLevel sets the Level field on the event (info, warn, error).
 func WithLevel(level string) EventOption {
 	return func(e *Event) { e.Level = level }

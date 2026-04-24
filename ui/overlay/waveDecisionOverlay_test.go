@@ -174,7 +174,7 @@ func TestWaveDecisionOverlay_FailureViewText(t *testing.T) {
 	view := w.View()
 	assert.True(t, len(view) > 0)
 	assert.True(t, strings.Contains(view, "My Plan"), "view must contain plan name")
-	assert.True(t, strings.Contains(view, "wave 1"), "view must contain wave number")
+	assert.True(t, strings.Contains(view, "wave 1 needs a decision"), "view must contain decision title")
 	assert.True(t, strings.Contains(view, "r"), "view must show 'r' shortcut for retry")
 	assert.True(t, strings.Contains(view, "n"), "view must show 'n' shortcut for next wave")
 	assert.True(t, strings.Contains(view, "a"), "view must show 'a' shortcut for abort")

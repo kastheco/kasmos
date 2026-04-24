@@ -51,6 +51,16 @@ function prettyDetail(detail: string): string {
   }
 }
 
+function isWaveDecision(event: AuditDisplayEvent): boolean {
+  if (event.kind !== "wave_failed" || !event.detail) return false;
+  try {
+    const detail = JSON.parse(event.detail) as { outcome?: unknown };
+    return detail.outcome === "wave_decision";
+  } catch {
+    return false;
+  }
+}
+
 type AuditDisplayEvent = AuditEvent & {
   groupedEvents?: AuditEvent[];
 };
@@ -226,9 +236,15 @@ export default function AuditPage() {
       >
         <td className={styles.timestamp}>{formatDateTime(event.timestamp)}</td>
         <td>
-          <span className={`${styles.badge} ${levelClass(event.level)}`}>
-            {event.level || "info"}
-          </span>
+            <span
+              className={`${styles.badge} ${levelClass(
+                isWaveDecision(event) && event.level === "error" ? "warn" : event.level,
+              )}`}
+            >
+              {isWaveDecision(event) && event.level === "error"
+                ? "warn"
+                : event.level || "info"}
+            </span>
         </td>
         <td>
           <span
