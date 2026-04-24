@@ -670,6 +670,14 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 		}
 		return m.retryFailedWaveTasks(orch, entry)
 
+	case "log_advance_wave":
+		if m.pendingLogEvent == nil || m.pendingLogEvent.TaskFile == "" {
+			return m, nil
+		}
+		planFile := m.pendingLogEvent.TaskFile
+		m.pendingLogEvent = nil
+		return m, m.queueRecoveryAction(planFile, "advance_wave", "", "advance wave recovery queued")
+
 	case "log_restart_agent":
 		if m.pendingLogEvent == nil || m.pendingLogEvent.InstanceTitle == "" {
 			return m, nil
@@ -687,6 +695,34 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 						return err
 					}
 					m.audit(auditlog.EventAgentRestarted, "agent restarted via log action",
+						auditlog.WithInstance(capturedTitle),
+						auditlog.WithAgent(capturedAgent),
+						auditlog.WithPlan(capturedPlan),
+					)
+					_ = m.saveAllInstances()
+					return instanceChangedMsg{}
+				}
+			}
+		}
+		m.toastManager.Error(fmt.Sprintf("instance '%s' not found", title))
+		return m, m.toastTickCmd()
+
+	case "log_reopen_worktree":
+		if m.pendingLogEvent == nil || m.pendingLogEvent.InstanceTitle == "" {
+			return m, nil
+		}
+		title := m.pendingLogEvent.InstanceTitle
+		m.pendingLogEvent = nil
+		for _, inst := range m.allInstances {
+			if inst.Title == title {
+				capturedTitle := inst.Title
+				capturedAgent := inst.AgentType
+				capturedPlan := inst.TaskFile
+				return m, func() tea.Msg {
+					if err := inst.Resume(); err != nil {
+						return err
+					}
+					m.audit(auditlog.EventAgentResumed, "worktree reopened via log action",
 						auditlog.WithInstance(capturedTitle),
 						auditlog.WithAgent(capturedAgent),
 						auditlog.WithPlan(capturedPlan),
@@ -1444,6 +1480,32 @@ func (m *home) emitSelectedRawSignal(signalType, successToast string) tea.Cmd {
 			instanceTitle: instanceTitle,
 			agentType:     agentType,
 			successToast:  successToast,
+		}
+	}
+}
+
+func (m *home) queueRecoveryAction(planFile, signalType, payload, successToast string) tea.Cmd {
+	if planFile == "" || m.taskStoreProject == "" {
+		return nil
+	}
+	project := m.taskStoreProject
+	gw := m.signalGateway
+	return func() tea.Msg {
+		if gw == nil {
+			var err error
+			gw, err = taskstore.OpenAuthoritativeSignalGateway(project)
+			if err != nil {
+				return manualSignalResultMsg{err: err}
+			}
+			defer gw.Close() //nolint:errcheck
+		}
+		if err := taskfsm.EmitGatewaySignal(gw, project, signalType, planFile, payload); err != nil {
+			return manualSignalResultMsg{err: err}
+		}
+		return manualSignalResultMsg{
+			signalType:   signalType,
+			planFile:     planFile,
+			successToast: successToast,
 		}
 	}
 }

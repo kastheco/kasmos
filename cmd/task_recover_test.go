@@ -125,6 +125,18 @@ func TestExecuteTaskRecover_QueuesSignalActions(t *testing.T) {
 			wantSignalType: "verify_failed",
 			wantPayload:    `{"body":"address security findings"}`,
 		},
+		{
+			name:           "advance-wave queues wave recovery signal",
+			action:         "advance-wave",
+			planFile:       "implement-plan",
+			wantSignalType: "advance_wave",
+		},
+		{
+			name:           "retry-wave queues wave recovery signal",
+			action:         "retry-wave",
+			planFile:       "implement-plan",
+			wantSignalType: "retry_wave",
+		},
 	}
 
 	for _, tt := range tests {
@@ -212,6 +224,8 @@ func TestExecuteTaskRecover_InvalidAction(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "unknown recovery action")
 	assert.Contains(t, err.Error(), "advance-review-cycle")
+	assert.Contains(t, err.Error(), "advance-wave")
+	assert.Contains(t, err.Error(), "retry-wave")
 	assert.Contains(t, err.Error(), "verify-approved")
 	assert.Contains(t, err.Error(), "verify-failed")
 }

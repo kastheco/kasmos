@@ -43,6 +43,7 @@ func AuditLineActions(e AuditEventDisplay) []overlay.ContextMenuItem {
 		if hasPlan {
 			items = append(items, overlay.ContextMenuItem{Label: "send to fixer agent", Action: "log_send_to_fixer"})
 			items = append(items, overlay.ContextMenuItem{Label: "retry wave", Action: "log_retry_wave"})
+			items = append(items, overlay.ContextMenuItem{Label: "advance to next wave", Action: "log_advance_wave"})
 		}
 	case "error", "fsm_error":
 		if hasPlan {
@@ -51,6 +52,9 @@ func AuditLineActions(e AuditEventDisplay) []overlay.ContextMenuItem {
 	case "agent_killed":
 		if hasInstance {
 			items = append(items, overlay.ContextMenuItem{Label: "restart agent", Action: "log_restart_agent"})
+			if killDetail, ok := parseKillDetail(e.DetailJSON); ok && killDetail.Cleanup {
+				items = append(items, overlay.ContextMenuItem{Label: "reopen worktree", Action: "log_reopen_worktree"})
+			}
 		}
 	case "agent_finished":
 		if hasPlan {
@@ -78,6 +82,24 @@ func AuditLineActions(e AuditEventDisplay) []overlay.ContextMenuItem {
 	}
 
 	return items
+}
+
+type killDetail struct {
+	Action          string `json:"action"`
+	Cleanup         bool   `json:"cleanup"`
+	BranchPreserved bool   `json:"branch_preserved"`
+	GroupKey        string `json:"group_key,omitempty"`
+}
+
+func parseKillDetail(raw string) (killDetail, bool) {
+	if raw == "" {
+		return killDetail{}, false
+	}
+	var out killDetail
+	if err := json.Unmarshal([]byte(raw), &out); err != nil {
+		return killDetail{}, false
+	}
+	return out, true
 }
 
 // AuditPane renders a chronological, scrollable activity feed.

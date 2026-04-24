@@ -26,6 +26,7 @@ func TestAuditLineActions_WaveFailed(t *testing.T) {
 	}
 	assert.True(t, actions["log_send_to_fixer"], "should include send-to-fixer action")
 	assert.True(t, actions["log_retry_wave"], "should include retry-wave action")
+	assert.True(t, actions["log_advance_wave"], "should include advance-wave action")
 }
 
 // TestAuditLineActions_WaveFailedNoTaskFile ensures no actions when plan is unknown.
@@ -66,6 +67,24 @@ func TestAuditLineActions_AgentKilled(t *testing.T) {
 	items := ui.AuditLineActions(e)
 	require.NotEmpty(t, items, "agent_killed with InstanceTitle should produce actions")
 	assert.Equal(t, "log_restart_agent", items[0].Action)
+}
+
+func TestAuditLineActions_AgentKilledCleanupOffersReopenWorktree(t *testing.T) {
+	t.Parallel()
+	e := ui.AuditEventDisplay{
+		Kind:          "agent_killed",
+		Message:       "agent stopped",
+		InstanceTitle: "auth-coder-1",
+		DetailJSON:    `{"action":"kill_and_remove","cleanup":true,"branch_preserved":true}`,
+	}
+	items := ui.AuditLineActions(e)
+	require.NotEmpty(t, items, "agent_killed with cleanup detail should produce actions")
+	actions := make(map[string]bool)
+	for _, item := range items {
+		actions[item.Action] = true
+	}
+	assert.True(t, actions["log_restart_agent"], "should include restart action")
+	assert.True(t, actions["log_reopen_worktree"], "should include reopen-worktree action")
 }
 
 // TestAuditLineActions_AgentKilledNoTitle ensures no actions when title is unknown.

@@ -24,6 +24,8 @@ type statusTask struct {
 	ActiveWave        int    `json:"active_wave,omitempty"`
 	ReviewCycle       int    `json:"review_cycle,omitempty"`
 	HasReviewFeedback bool   `json:"has_review_feedback,omitempty"`
+	HasInstance       bool   `json:"has_instance"`
+	StaleInstance     bool   `json:"stale_instance"`
 	Branch            string `json:"branch"`
 }
 
@@ -117,12 +119,21 @@ func statusRecoveryHints(tasks []statusTask) []string {
 	for _, t := range tasks {
 		phase := strings.TrimSpace(t.Phase)
 		switch {
+		case phase == "dirty_worktree":
+			appendHint("  kas task recover <task-name> --action implement-finished               # discard dirty worktree and resume review")
+		case phase == string(taskfsm.ExecutionPhaseWaveWaiting):
+			appendHint("  kas task recover <task-name> --action advance-wave                      # advance to next wave after decision")
+			appendHint("  kas task recover <task-name> --action retry-wave                        # re-run failed tasks in the current wave")
+		case t.Status == string(taskstore.StatusImplementing) && t.StaleInstance:
+			appendHint("  kas instance restart <title>                                            # stale paused instance - restart to continue")
 		case t.Status == string(taskstore.StatusPlanning):
 			appendHint("  kas task recover <task-name> --action planner-finished                # finish planning safely")
 		case phase == string(taskfsm.ExecutionPhaseArchitecting):
 			appendHint("  kas task recover <task-name> --action architect-finished              # resume architect handoff")
 		case phase == string(taskfsm.ExecutionPhaseFixing) || phase == string(taskfsm.ExecutionPhaseSingleAgentImplementing):
 			appendHint("  kas task recover <task-name> --action implement-finished             # hand implementation to review")
+		case t.Status == string(taskstore.StatusImplementing) && !t.HasInstance:
+			appendHint("  kas task implement <task-name>                                          # spawn a coder (no implementing instance found)")
 		case t.Status == string(taskstore.StatusVerifying):
 			appendHint("  kas task recover <task-name> --action verify-approved                     # approve verification and mark done")
 			appendHint("  kas task recover <task-name> --action verify-failed --feedback ...         # send back to implementation")
@@ -137,6 +148,29 @@ func statusRecoveryHints(tasks []statusTask) []string {
 	}
 
 	return hints
+}
+
+var statusStaleInstanceThreshold = 24 * time.Hour
+
+func isStatusRecordStale(r instanceRecord, now time.Time) bool {
+	if r.Status != instancePaused || r.UpdatedAt.IsZero() {
+		return false
+	}
+	return now.Sub(r.UpdatedAt) > statusStaleInstanceThreshold
+}
+
+func annotateStatusTasksWithInstances(tasks []statusTask, records []instanceRecord, now time.Time) {
+	for ti := range tasks {
+		for _, r := range records {
+			if r.TaskFile != tasks[ti].Name {
+				continue
+			}
+			tasks[ti].HasInstance = true
+			if isStatusRecordStale(r, now) {
+				tasks[ti].StaleInstance = true
+			}
+		}
+	}
 }
 
 // executeStatus assembles a unified overview of active tasks, agent instances,
@@ -179,6 +213,7 @@ func executeStatus(state config.StateManager, store taskstore.Store, project str
 	instances := make([]statusInstance, 0)
 	records, recordsErr := loadInstanceRecords(state)
 	if recordsErr == nil {
+		annotateStatusTasksWithInstances(tasks, records, time.Now())
 		for _, r := range records {
 			agentType := r.AgentType
 			if agentType == "" && (r.SoloAgent || r.TaskFile == "") {
