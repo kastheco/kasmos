@@ -2282,6 +2282,14 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.audit(auditlog.EventPromptSent, msg.auditMsg, auditlog.WithInstance(msg.instance.Title))
 		}
 		return m, nil
+	case shellCommandSubmittedMsg:
+		if msg.err != nil {
+			return m, m.handleError(msg.err)
+		}
+		if msg.instance != nil {
+			m.audit(auditlog.EventShellRan, msg.auditMsg, auditlog.WithInstance(msg.instance.Title))
+		}
+		return m, nil
 	case error:
 		// Handle errors from confirmation actions
 		return m, m.handleError(msg)
@@ -3076,6 +3084,13 @@ type instanceStartedMsg struct {
 
 // promptSubmittedMsg is sent when an async prompt delivery finishes.
 type promptSubmittedMsg struct {
+	instance *session.Instance
+	auditMsg string
+	err      error
+}
+
+// shellCommandSubmittedMsg is sent when an async shell execution finishes.
+type shellCommandSubmittedMsg struct {
 	instance *session.Instance
 	auditMsg string
 	err      error

@@ -38,6 +38,7 @@ const (
 // Operational events.
 const (
 	EventPromptSent         EventKind = "prompt_sent"
+	EventShellRan           EventKind = "shell_ran"
 	EventGitPush            EventKind = "git_push"
 	EventPRCreated          EventKind = "pr_created"
 	EventPermissionDetected EventKind = "permission_detected"

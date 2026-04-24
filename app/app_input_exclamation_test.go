@@ -35,6 +35,32 @@ func TestHandleKeyPress_ExclamationEntersFocusMode(t *testing.T) {
 	assert.NotNil(t, cmd)
 }
 
+func TestHandleKeyPress_ExclamationInDefaultStateStillFocusesTmux(t *testing.T) {
+	t.Parallel()
+	h := newTestHome()
+
+	inst, err := session.NewInstance(session.InstanceOptions{
+		Title:         "tmux-inst",
+		Path:          os.TempDir(),
+		Program:       "opencode",
+		ExecutionMode: session.ExecutionModeTmux,
+	})
+	require.NoError(t, err)
+	inst.MarkStartedForTest()
+	inst.SetStatus(session.Running)
+
+	h.nav.AddInstance(inst)()
+	h.nav.SetSelectedInstance(0)
+	h.keySent = true
+
+	model, cmd := h.handleKeyPress(tea.KeyPressMsg{Code: '!', Text: "!"})
+	updated := model.(*home)
+
+	assert.Equal(t, stateFocusAgent, updated.state)
+	assert.False(t, updated.tabbedWindow.SDKComposerShellMode())
+	assert.NotNil(t, cmd)
+}
+
 func TestHandleKeyPress_ExclamationNoOpWithoutRunningInstance(t *testing.T) {
 	t.Parallel()
 	h := newTestHome()

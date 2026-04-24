@@ -42,6 +42,7 @@ var listDaemonInstances = func(project string) ([]api.InstanceStatus, error) {
 type daemonActionClient interface {
 	SendInstancePrompt(project, title, prompt string) error
 	SendInstancePromptWithLocalImages(project, title, prompt string, imagePaths []string) error
+	RunInstanceShellCommand(project, title, command string) error
 	KillInstance(project, title string) error
 	SendInstancePermissionResponse(project, title string, choice tmux.PermissionChoice) error
 }
@@ -436,6 +437,42 @@ func (m *home) daemonRouteSendImagesCmd(inst *session.Instance, prompt string, i
 				auditMsg: auditMsg,
 				err:      err,
 			}
+		}
+	}
+}
+
+// daemonRouteShellCmd posts a shell command to the daemon for SDK placeholders
+// with the same short retry window used by daemonRouteSendCmd while a loading
+// placeholder is registering. Returns nil when inst is not an SDK placeholder.
+func (m *home) daemonRouteShellCmd(inst *session.Instance, command, auditMsg string) tea.Cmd {
+	if !m.isDaemonSDKPlaceholder(inst) {
+		return nil
+	}
+	project := m.taskStoreProject
+	return func() tea.Msg {
+		if project == "" {
+			return shellCommandSubmittedMsg{
+				instance: inst,
+				auditMsg: auditMsg,
+				err:      fmt.Errorf("daemon route: no project for %q", inst.Title),
+			}
+		}
+		client := newDaemonActionClient()
+		deadline := time.Now().Add(plannerInstanceWaitTimeout)
+		for {
+			err := client.RunInstanceShellCommand(project, inst.Title, command)
+			if err == nil {
+				return shellCommandSubmittedMsg{instance: inst, auditMsg: auditMsg}
+			}
+			var statusErr *daemonpkg.ClientStatusError
+			if errors.As(err, &statusErr) &&
+				inst.Status == session.Loading &&
+				(statusErr.StatusCode == http.StatusNotFound || statusErr.StatusCode == http.StatusConflict) &&
+				time.Now().Before(deadline) {
+				time.Sleep(plannerInstancePollInterval)
+				continue
+			}
+			return shellCommandSubmittedMsg{instance: inst, auditMsg: auditMsg, err: err}
 		}
 	}
 }

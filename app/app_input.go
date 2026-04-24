@@ -246,6 +246,25 @@ func (m *home) submitPromptToInstanceWithLocalImages(selected *session.Instance,
 	}
 }
 
+// submitShellCommandToInstance runs command through the SDK session's shell for
+// a local instance, or routes through the daemon API for SDK placeholders.
+// Returns a tea.Cmd that emits shellCommandSubmittedMsg on completion.
+func (m *home) submitShellCommandToInstance(selected *session.Instance, command string) tea.Cmd {
+	auditMsg := "shell ran: " + command
+	if len(auditMsg) > 200 {
+		auditMsg = auditMsg[:200]
+	}
+	if m.isDaemonSDKPlaceholder(selected) {
+		return m.daemonRouteShellCmd(selected, command, auditMsg)
+	}
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer cancel()
+		err := selected.RunShellCommand(ctx, command)
+		return shellCommandSubmittedMsg{instance: selected, auditMsg: auditMsg, err: err}
+	}
+}
+
 func (m *home) appendSDKComposerText(selected *session.Instance, text string) (tea.Model, tea.Cmd) {
 	if text == "" {
 		return m, nil
@@ -345,10 +364,13 @@ func (m *home) handleSDKClipboardPasteShortcut(selected *session.Instance) (tea.
 }
 
 func (m *home) clearSDKComposer(selected *session.Instance) (tea.Model, tea.Cmd) {
-	if strings.TrimSpace(m.tabbedWindow.SDKComposerText()) == "" && len(m.tabbedWindow.SDKComposerImages()) == 0 {
+	if strings.TrimSpace(m.tabbedWindow.SDKComposerText()) == "" &&
+		len(m.tabbedWindow.SDKComposerImages()) == 0 &&
+		!m.tabbedWindow.SDKComposerShellMode() {
 		return m, nil
 	}
 	m.tabbedWindow.ClearSDKComposerText()
+	m.tabbedWindow.ClearSDKComposerShellMode()
 	if err := m.tabbedWindow.UpdatePreview(selected); err != nil {
 		return m, m.handleError(err)
 	}
@@ -1382,10 +1404,27 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 					return m, m.handleError(err)
 				}
 				return m, tea.RequestWindowSize
+			case !m.tabbedWindow.SDKComposerShellMode() &&
+				m.tabbedWindow.SDKComposerText() == "" &&
+				len(m.tabbedWindow.SDKComposerImages()) == 0 &&
+				msg.Text == "!":
+				m.tabbedWindow.SetSDKComposerShellMode(true)
+				if err := m.tabbedWindow.UpdatePreview(selected); err != nil {
+					return m, m.handleError(err)
+				}
+				return m, tea.RequestWindowSize
 			case msg.Code == tea.KeyBackspace && msg.Mod.Contains(tea.ModCtrl):
 				return m.mutateSDKComposer(selected, m.tabbedWindow.DeleteSDKComposerWordBackward)
 			case msg.Code == tea.KeyDelete && msg.Mod.Contains(tea.ModCtrl):
 				return m.mutateSDKComposer(selected, m.tabbedWindow.DeleteSDKComposerWordForward)
+			case msg.Code == tea.KeyBackspace &&
+				m.tabbedWindow.SDKComposerShellMode() &&
+				m.tabbedWindow.SDKComposerText() == "":
+				m.tabbedWindow.ClearSDKComposerShellMode()
+				if err := m.tabbedWindow.UpdatePreview(selected); err != nil {
+					return m, m.handleError(err)
+				}
+				return m, tea.RequestWindowSize
 			case msg.Code == tea.KeyBackspace:
 				return m.mutateSDKComposer(selected, m.tabbedWindow.DeleteSDKComposerBackward)
 			case msg.Code == tea.KeyDelete:
@@ -1407,6 +1446,19 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 			case msg.Code == tea.KeyEnd:
 				return m.mutateSDKComposer(selected, m.tabbedWindow.MoveSDKComposerCursorLineEnd)
 			case msg.Code == tea.KeyEnter:
+				if m.tabbedWindow.SDKComposerShellMode() {
+					command := strings.TrimSpace(m.tabbedWindow.SDKComposerText())
+					if command == "" {
+						return m, nil
+					}
+					runCmd := m.submitShellCommandToInstance(selected, command)
+					m.tabbedWindow.ClearSDKComposerText()
+					m.tabbedWindow.ClearSDKComposerShellMode()
+					if err := m.tabbedWindow.UpdatePreview(selected); err != nil {
+						return m, m.handleError(err)
+					}
+					return m, tea.Batch(tea.RequestWindowSize, runCmd)
+				}
 				value := strings.TrimSpace(m.tabbedWindow.SDKComposerText())
 				images := m.tabbedWindow.SDKComposerImages()
 				if value == "" && len(images) == 0 {
