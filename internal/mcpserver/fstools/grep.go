@@ -30,11 +30,21 @@ type GrepMatch struct {
 	SymbolParent string `json:"symbol_parent,omitempty"`
 }
 
+// GrepSymbolMetadata holds optional symbol context for a compact grep match.
+type GrepSymbolMetadata struct {
+	Kind   string `json:"kind,omitempty"`
+	Name   string `json:"name,omitempty"`
+	Parent string `json:"parent,omitempty"`
+}
+
 // GrepResult wraps grep matches in an object so that MCP structuredContent
-// (which requires a JSON object, not an array) is valid.
+// (which requires a JSON object, not an array) is valid. Matches are keyed as
+// matches[file][line] = text to keep repeated path and field names out of the
+// common response path.
 type GrepResult struct {
-	Matches []GrepMatch `json:"matches"`
-	Total   int         `json:"total"`
+	Matches map[string]map[string]string             `json:"matches"`
+	Symbols map[string]map[string]GrepSymbolMetadata `json:"symbols,omitempty"`
+	Total   int                                      `json:"total"`
 }
 
 // rgLine is the top-level structure of a single rg --json output line.
@@ -99,7 +109,7 @@ func parseRgJSON(data []byte) ([]GrepMatch, error) {
 
 // emptyGrepResult returns a tool result with zero matches.
 func emptyGrepResult() (*mcp.CallToolResult, error) {
-	result, err := mcp.NewToolResultJSON(GrepResult{Matches: []GrepMatch{}, Total: 0})
+	result, err := mcp.NewToolResultJSON(GrepResult{Matches: map[string]map[string]string{}, Total: 0})
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("encode grep result: %v", err)), nil
 	}
@@ -192,17 +202,49 @@ func grepJSONResult(matches []GrepMatch, resolvedPath string, symbolStore Symbol
 	for i := range enriched {
 		enriched[i].File = sb.RelPath(enriched[i].File)
 	}
-	result, err := mcp.NewToolResultJSON(GrepResult{Matches: enriched, Total: len(enriched)})
+	result, err := mcp.NewToolResultJSON(compactGrepResult(enriched))
 	if err != nil {
 		return nil, fmt.Errorf("encode grep result: %w", err)
 	}
 	return result, nil
 }
 
+func compactGrepResult(matches []GrepMatch) GrepResult {
+	result := GrepResult{
+		Matches: make(map[string]map[string]string),
+		Total:   len(matches),
+	}
+
+	for _, match := range matches {
+		line := strconv.Itoa(match.Line)
+		if result.Matches[match.File] == nil {
+			result.Matches[match.File] = make(map[string]string)
+		}
+		result.Matches[match.File][line] = match.Text
+
+		if match.SymbolKind == "" && match.SymbolName == "" && match.SymbolParent == "" {
+			continue
+		}
+		if result.Symbols == nil {
+			result.Symbols = make(map[string]map[string]GrepSymbolMetadata)
+		}
+		if result.Symbols[match.File] == nil {
+			result.Symbols[match.File] = make(map[string]GrepSymbolMetadata)
+		}
+		result.Symbols[match.File][line] = GrepSymbolMetadata{
+			Kind:   match.SymbolKind,
+			Name:   match.SymbolName,
+			Parent: match.SymbolParent,
+		}
+	}
+
+	return result
+}
+
 // registerGrep registers the grep tool with the MCP server.
 func registerGrep(srv *server.MCPServer, sb *Sandbox, opts RegisterOptions) {
 	tool := mcp.NewTool("grep",
-		mcp.WithDescription("Search file contents using ripgrep (rg). Returns structured match objects with file, line, text, and optional symbol metadata."),
+		mcp.WithDescription("Search file contents using ripgrep (rg). Returns compact structured matches as matches[file][line] = text, with optional symbol metadata."),
 		mcp.WithString("pattern",
 			mcp.Required(),
 			mcp.Description("Regular expression pattern to search for"),

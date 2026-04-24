@@ -70,7 +70,7 @@ func TestGrepHandler_PartialResultsStillUseEnrichmentPath(t *testing.T) {
 	var payload GrepResult
 	require.NoError(t, json.Unmarshal([]byte(result.Content[0].(mcp.TextContent).Text), &payload))
 	require.Len(t, payload.Matches, 1)
-	assert.Equal(t, "sample.go", payload.Matches[0].File)
-	assert.Equal(t, "Hello", payload.Matches[0].SymbolName)
-	assert.Equal(t, "function", payload.Matches[0].SymbolKind)
+	assert.Equal(t, "func Hello() {}", payload.Matches["sample.go"]["1"])
+	assert.Equal(t, "Hello", payload.Symbols["sample.go"]["1"].Name)
+	assert.Equal(t, "function", payload.Symbols["sample.go"]["1"].Kind)
 }

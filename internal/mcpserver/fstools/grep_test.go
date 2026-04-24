@@ -124,7 +124,7 @@ func TestGrepHandler_NoMatchesReturnsEmptyJSON(t *testing.T) {
 	require.NotNil(t, result)
 	assert.False(t, result.IsError)
 	require.Len(t, result.Content, 1)
-	assert.Contains(t, result.Content[0].(mcp.TextContent).Text, `"matches":[]`)
+	assert.Contains(t, result.Content[0].(mcp.TextContent).Text, `"matches":{}`)
 }
 
 func TestGrepHandler_Success(t *testing.T) {
@@ -164,13 +164,48 @@ func TestGrepHandler_Success(t *testing.T) {
 	var payload GrepResult
 	require.NoError(t, json.Unmarshal([]byte(raw), &payload))
 	require.Len(t, payload.Matches, 1)
-	assert.Equal(t, filepath.Base(path), payload.Matches[0].File)
-	assert.Equal(t, 1, payload.Matches[0].Line)
-	assert.Equal(t, "func Hello() {}", payload.Matches[0].Text)
+	assert.Equal(t, map[string]string{"1": "func Hello() {}"}, payload.Matches[filepath.Base(path)])
+	assert.Empty(t, payload.Symbols)
+	assert.Equal(t, 1, payload.Total)
 
 	// Verify the runner was invoked with rg and --json.
 	assert.Equal(t, "rg", capturedName)
 	assert.Contains(t, capturedArgs, "--json")
+}
+
+func TestCompactGrepResult_KeysByFileAndLine(t *testing.T) {
+	result := compactGrepResult([]GrepMatch{
+		{File: "a.go", Line: 10, Text: "func A() {}"},
+		{File: "a.go", Line: 20, Text: "func B() {}"},
+		{File: "b.go", Line: 7, Text: "func C() {}"},
+	})
+
+	assert.Equal(t, GrepResult{
+		Matches: map[string]map[string]string{
+			"a.go": {"10": "func A() {}", "20": "func B() {}"},
+			"b.go": {"7": "func C() {}"},
+		},
+		Total: 3,
+	}, result)
+}
+
+func TestCompactGrepResult_SymbolsAreSeparate(t *testing.T) {
+	result := compactGrepResult([]GrepMatch{{
+		File:         "a.go",
+		Line:         10,
+		Text:         "func A() {}",
+		SymbolKind:   "function",
+		SymbolName:   "A",
+		SymbolParent: "T",
+	}})
+
+	assert.Equal(t, map[string]map[string]string{
+		"a.go": {"10": "func A() {}"},
+	}, result.Matches)
+	assert.Equal(t, map[string]map[string]GrepSymbolMetadata{
+		"a.go": {"10": {Kind: "function", Name: "A", Parent: "T"}},
+	}, result.Symbols)
+	assert.Equal(t, 1, result.Total)
 }
 
 func TestGrepHandler_LegacyAliasArguments(t *testing.T) {
