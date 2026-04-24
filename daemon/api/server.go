@@ -143,6 +143,11 @@ type permissionRequest struct {
 	Choice PermissionChoice `json:"choice"`
 }
 
+// shellRequest is the request body for POST .../shell.
+type shellRequest struct {
+	Command string `json:"command"`
+}
+
 // Valid reports whether c is one of the supported wire-level permission
 // choices accepted by the daemon HTTP API.
 func (c PermissionChoice) Valid() bool {
@@ -206,6 +211,12 @@ type StateProvider interface {
 	// SendInstancePermissionResponse forwards a permission-overlay selection to
 	// the tracked instance identified by project/title.
 	SendInstancePermissionResponse(project, title string, choice PermissionChoice) error
+	// RunInstanceShellCommand executes a shell command in the daemon-tracked
+	// instance's workdir. The daemon process owns the SDK session / renderer,
+	// so the result becomes visible through the regular presentation polling
+	// path. Returns ErrInstanceNotFound for unknown instances and an error
+	// that wraps a plain text message for execution failures.
+	RunInstanceShellCommand(project, title, command string) error
 	// SpawnSolo creates a standalone SDK instance for the given project. The
 	// spawn is asynchronous: the instance is tracked immediately and the method
 	// returns before the agent process has started. Errors from the async start
@@ -327,6 +338,9 @@ func (s *DaemonState) CapturePresentation(_, _ string) (json.RawMessage, bool, e
 func (s *DaemonState) SendInstancePermissionResponse(_, _ string, _ PermissionChoice) error {
 	return fmt.Errorf("%w: not tracked", ErrInstanceNotFound)
 }
+func (s *DaemonState) RunInstanceShellCommand(_, _, _ string) error {
+	return fmt.Errorf("%w: not tracked", ErrInstanceNotFound)
+}
 
 // SpawnSolo implements StateProvider. DaemonState has no backing store so it
 // always succeeds as a no-op (useful for unit tests that don't need real spawn behaviour).
@@ -401,6 +415,7 @@ func (h *Handler) registerRoutes() {
 	h.mux.HandleFunc("GET /v1/repos/{project}/instances/{title}/capture", h.handleInstanceCapture)
 	h.mux.HandleFunc("GET /v1/repos/{project}/instances/{title}/presentation", h.handleInstancePresentation)
 	h.mux.HandleFunc("POST /v1/repos/{project}/instances/{title}/send", h.handleInstanceSend)
+	h.mux.HandleFunc("POST /v1/repos/{project}/instances/{title}/shell", h.handleInstanceShell)
 	h.mux.HandleFunc("POST /v1/repos/{project}/instances/{title}/permission", h.handleInstancePermission)
 	h.mux.HandleFunc("POST /v1/repos/{project}/instances/solo", h.handleSpawnSolo)
 	h.mux.HandleFunc("POST /v1/repos/{project}/plans/{filename}/plan", h.handleStartPlan)
@@ -589,6 +604,35 @@ func (h *Handler) handleInstanceSend(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case errors.Is(err, ErrInstanceNotFound):
 			writeError(w, http.StatusNotFound, err.Error())
+		default:
+			writeError(w, http.StatusInternalServerError, err.Error())
+		}
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleInstanceShell serves POST /v1/repos/{project}/instances/{title}/shell.
+// It decodes the {"command":"..."} JSON body and delegates to the StateProvider
+// which resolves the daemon-owned SDK session and appends shell output there.
+func (h *Handler) handleInstanceShell(w http.ResponseWriter, r *http.Request) {
+	project := r.PathValue("project")
+	title := r.PathValue("title")
+	var body shellRequest
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+		return
+	}
+	if strings.TrimSpace(body.Command) == "" {
+		writeError(w, http.StatusBadRequest, "command is required")
+		return
+	}
+	if err := h.state.RunInstanceShellCommand(project, title, body.Command); err != nil {
+		switch {
+		case errors.Is(err, ErrInstanceNotFound):
+			writeError(w, http.StatusNotFound, err.Error())
+		case errors.Is(err, ErrInvalidRequest):
+			writeError(w, http.StatusBadRequest, err.Error())
 		default:
 			writeError(w, http.StatusInternalServerError, err.Error())
 		}

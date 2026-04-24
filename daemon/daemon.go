@@ -414,6 +414,26 @@ func (a *daemonStateAdapter) SendInstancePermissionResponse(project, title strin
 	return nil
 }
 
+// RunInstanceShellCommand implements StateProvider by resolving the tracked
+// instance and running the command via the optional shellCommandRunner
+// interface. Non-SDK instances return api.ErrInvalidRequest.
+func (a *daemonStateAdapter) RunInstanceShellCommand(project, title, command string) error {
+	repoPath, ok := a.repoPathByProject(project)
+	if !ok {
+		return fmt.Errorf("%w: project %s", api.ErrProjectNotFound, project)
+	}
+	_, inst, ok := a.d.spawner.trackedInstanceByTitle(repoPath, title)
+	if !ok {
+		return fmt.Errorf("%w: %s/%s", api.ErrInstanceNotFound, project, title)
+	}
+	if session.NormalizeExecutionMode(inst.ExecutionMode) != session.ExecutionModeSDK {
+		return fmt.Errorf("%w: shell execution unsupported for instance %s/%s", api.ErrInvalidRequest, project, title)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	return inst.RunShellCommand(ctx, command)
+}
+
 // CapturePresentation implements StateProvider. It returns the structured turn
 // model for SDK-backed instances (supported=true) and (nil, false, nil) for
 // tmux-backed instances. The execution mode, not turn count, is the source of

@@ -479,6 +479,42 @@ func TestAuditEmit_PromptSent(t *testing.T) {
 	assert.Equal(t, "implement the feature", events[0].Message)
 }
 
+func TestUpdate_ShellCommandSubmittedMsgEmitsAudit(t *testing.T) {
+	t.Parallel()
+	logger, err := auditlog.NewSQLiteLogger(":memory:")
+	require.NoError(t, err)
+	defer logger.Close()
+
+	h := newTestHome()
+	h.auditLogger = logger
+	h.taskStoreProject = "myproject"
+	inst, err := session.NewInstance(session.InstanceOptions{
+		Title:   "sdk-agent",
+		Path:    t.TempDir(),
+		Program: "codex",
+	})
+	require.NoError(t, err)
+
+	model, cmd := h.Update(shellCommandSubmittedMsg{
+		instance: inst,
+		auditMsg: "shell ran: git status",
+	})
+	require.Nil(t, cmd)
+	_ = model.(*home)
+
+	events, err := logger.Query(auditlog.QueryFilter{
+		Project: "myproject",
+		Kinds:   []auditlog.EventKind{auditlog.EventShellRan},
+		Limit:   10,
+	})
+	require.NoError(t, err)
+	require.Len(t, events, 1)
+	assert.Equal(t, auditlog.EventShellRan, events[0].Kind)
+	assert.Equal(t, "sdk-agent", events[0].InstanceTitle)
+	assert.Equal(t, "shell ran: git status", events[0].Message)
+	assert.Contains(t, events[0].Message, "shell ran: ")
+}
+
 // TestAuditEmit_GitPush verifies that git push events are stored and retrieved correctly.
 func TestAuditEmit_GitPush(t *testing.T) {
 	t.Parallel()

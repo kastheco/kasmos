@@ -847,6 +847,90 @@ func truncateOneLine(s string, n int) string {
 	return string(runes[:n]) + "…"
 }
 
+// splitOutputLines splits output into individual lines, trimming exactly one
+// trailing newline before splitting. Consecutive newlines are preserved as
+// empty elements, and zero-output commands still produce a predictable
+// single empty element.
+func splitOutputLines(output string) []string {
+	// Trim exactly one trailing newline.
+	s := output
+	if len(s) > 0 && s[len(s)-1] == '\n' {
+		s = s[:len(s)-1]
+	}
+	return strings.Split(s, "\n")
+}
+
+func shellTurnStatusText(exitCode int, truncated bool, statusMsg string) string {
+	if exitCode == 0 && !truncated && statusMsg == "" {
+		return ""
+	}
+	if statusMsg != "" {
+		return statusMsg
+	}
+	switch {
+	case truncated && exitCode != 0:
+		return fmt.Sprintf("exit %d · output truncated at 64 KiB", exitCode)
+	case truncated:
+		return "output truncated at 64 KiB"
+	default:
+		return fmt.Sprintf("exit %d", exitCode)
+	}
+}
+
+// AddShellTurn appends a completed standalone turn containing a user row for
+// the command, a response sentinel, one prose row per output line, and an
+// optional status row when exitCode != 0, output was truncated, or statusMsg
+// is non-empty. Does NOT interrupt any currently-open agent turn — the new
+// turn is appended to r.turns with both StartedAt and CompletedAt set to now.
+func (r *Renderer) AddShellTurn(command, output string, exitCode int, truncated bool, statusMsg string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	now := time.Now()
+	r.nextTurnNumber++
+	turn := &PresentationTurn{
+		Number:      r.nextTurnNumber,
+		StartedAt:   now,
+		CompletedAt: now,
+	}
+	turn.Rows = append(turn.Rows, PresentationRow{
+		Kind:      RowUser,
+		Text:      "! " + command,
+		Timestamp: now,
+	})
+	turn.Rows = append(turn.Rows, PresentationRow{
+		Kind:      RowResponse,
+		Timestamp: now,
+	})
+	outputLines := splitOutputLines(output)
+	for _, line := range outputLines {
+		turn.Rows = append(turn.Rows, PresentationRow{
+			Kind:      RowProse,
+			Text:      line,
+			Timestamp: now,
+		})
+	}
+	statusText := shellTurnStatusText(exitCode, truncated, statusMsg)
+	if statusText != "" {
+		turn.Rows = append(turn.Rows, PresentationRow{
+			Kind:      RowStatus,
+			Text:      statusText,
+			Timestamp: now,
+		})
+	}
+	// Flat line buffer: include a visible "! <cmd>" line plus output lines and
+	// optional status so CapturePaneContent stays consistent with the
+	// structured model.
+	r.appendLine("! " + command)
+	for _, line := range outputLines {
+		r.appendLine(line)
+	}
+	if statusText != "" {
+		r.appendLine(statusText)
+	}
+	r.turns = append(r.turns, turn)
+	// Do NOT assign r.currentTurn — an existing agent turn must remain open.
+}
+
 // resolveLineIndex converts a tmux-style start/end string to a 0-based line
 // index within n total lines. defaultIdx is returned for "" and "-".
 func resolveLineIndex(s string, n, defaultIdx int) int {

@@ -13,7 +13,11 @@ import (
 )
 
 type recordingExecutionSession struct {
-	sentKeys []string
+	sentKeys           []string
+	tapEnters          int
+	shellCommands      []string
+	localImagePrompts  []string
+	localImagePathSets [][]string
 }
 
 func (r *recordingExecutionSession) Start(string) error     { return nil }
@@ -24,7 +28,10 @@ func (r *recordingExecutionSession) SendKeys(keys string) error {
 	r.sentKeys = append(r.sentKeys, keys)
 	return nil
 }
-func (r *recordingExecutionSession) TapEnter() error                                    { return nil }
+func (r *recordingExecutionSession) TapEnter() error {
+	r.tapEnters++
+	return nil
+}
 func (r *recordingExecutionSession) SendPermissionResponse(tmux.PermissionChoice) error { return nil }
 func (r *recordingExecutionSession) CapturePaneContent() (string, error)                { return "", nil }
 func (r *recordingExecutionSession) CapturePaneContentWithOptions(string, string) (string, error) {
@@ -47,6 +54,15 @@ func (r *recordingExecutionSession) SetProject(string)                          
 func (r *recordingExecutionSession) SetSessionTitle(string)                       {}
 func (r *recordingExecutionSession) SetTitleFunc(func(string, time.Time, string)) {}
 func (r *recordingExecutionSession) SetSDKSpeedTier(string)                       {}
+func (r *recordingExecutionSession) SendPromptWithLocalImages(prompt string, imagePaths []string) error {
+	r.localImagePrompts = append(r.localImagePrompts, prompt)
+	r.localImagePathSets = append(r.localImagePathSets, append([]string(nil), imagePaths...))
+	return nil
+}
+func (r *recordingExecutionSession) RunShellCommand(_ context.Context, command string) error {
+	r.shellCommands = append(r.shellCommands, command)
+	return nil
+}
 
 func TestHandleKeyPress_SendPrompt_SDKEntersFocusMode(t *testing.T) {
 	t.Parallel()
@@ -445,6 +461,7 @@ func newSDKFocusHome(t *testing.T) (*home, *session.Instance) {
 	h.nav.SelectInstance(inst)
 	h.state = stateFocusAgent
 	h.tabbedWindow.SetFocusMode(true)
+	require.NoError(t, h.tabbedWindow.UpdatePreview(inst))
 	return h, inst
 }
 
@@ -641,6 +658,29 @@ func TestHandleKeyPress_SDKFocusMode_EnterSubmitResetsCursor(t *testing.T) {
 
 	assert.Equal(t, "", updated.tabbedWindow.SDKComposerText())
 	assert.Equal(t, 0, updated.tabbedWindow.SDKComposerCursor())
+}
+
+func TestSDKFocus_NormalPromptSubmission_UnaffectedByShellMode(t *testing.T) {
+	t.Parallel()
+	h, inst := newSDKFocusHome(t)
+	exec := &recordingExecutionSession{}
+	inst.SetExecutionSessionForTest(exec)
+	seedSDKText(h, "hello")
+
+	require.False(t, h.tabbedWindow.SDKComposerShellMode())
+
+	model, cmd := h.handleKeyPress(tea.KeyPressMsg{Code: tea.KeyEnter})
+	updated := model.(*home)
+	require.NotNil(t, cmd)
+
+	msgs := collectPromptSubmittedMsgs(cmd)
+	require.Len(t, msgs, 1)
+	require.NoError(t, msgs[0].err)
+	assert.Equal(t, "hello", msgs[0].auditMsg)
+	assert.False(t, updated.tabbedWindow.SDKComposerShellMode())
+	assert.Equal(t, []string{"hello"}, exec.sentKeys)
+	assert.Equal(t, 1, exec.tapEnters)
+	assert.Empty(t, exec.shellCommands)
 }
 
 func TestHandleKeyPress_SDKFocusMode_CtrlCResetsCursor(t *testing.T) {

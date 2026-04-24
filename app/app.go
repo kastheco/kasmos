@@ -2282,6 +2282,14 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.audit(auditlog.EventPromptSent, msg.auditMsg, auditlog.WithInstance(msg.instance.Title))
 		}
 		return m, nil
+	case shellCommandSubmittedMsg:
+		if msg.err != nil {
+			return m, m.handleError(msg.err)
+		}
+		if msg.instance != nil {
+			m.audit(auditlog.EventShellRan, msg.auditMsg, auditlog.WithInstance(msg.instance.Title))
+		}
+		return m, nil
 	case error:
 		// Handle errors from confirmation actions
 		return m, m.handleError(msg)
@@ -3080,6 +3088,13 @@ type promptSubmittedMsg struct {
 	err      error
 }
 
+// shellCommandSubmittedMsg is sent when an async shell execution finishes.
+type shellCommandSubmittedMsg struct {
+	instance *session.Instance
+	auditMsg string
+	err      error
+}
+
 type keyupMsg struct{}
 
 // doubleTapTimeoutMsg fires when the debounce window expires for a debounced
@@ -3091,7 +3106,7 @@ type doubleTapTimeoutMsg struct {
 }
 
 // scheduleDoubleTapTimeout returns a Cmd that delivers doubleTapTimeoutMsg after
-// delay. Overrideable in tests to make timing synchronous without real sleeps.
+// delay. Overridable in tests to make timing synchronous without real sleeps.
 var scheduleDoubleTapTimeout = func(delay time.Duration, key string, seq int) tea.Cmd {
 	return tea.Tick(delay, func(time.Time) tea.Msg {
 		return doubleTapTimeoutMsg{key: key, seq: seq}

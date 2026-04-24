@@ -615,6 +615,96 @@ func TestHandler_InstancePermission_InvalidChoice(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// Shell endpoint tests
+// ---------------------------------------------------------------------------
+
+type shellStub struct {
+	DaemonState
+	project string
+	title   string
+	command string
+	err     error
+}
+
+func (s *shellStub) ListInstances(_ string) []InstanceStatus { return nil }
+func (s *shellStub) EventStream() <-chan Event               { return make(chan Event) }
+func (s *shellStub) StartPlan(_, _, _, _ string) error       { return nil }
+func (s *shellStub) ListPlans(_ string) ([]taskstore.TaskEntry, error) {
+	return nil, nil
+}
+func (s *shellStub) ListTasks(_ string) ([]TaskStatus, error) { return nil, nil }
+func (s *shellStub) RunInstanceShellCommand(project, title, command string) error {
+	s.project = project
+	s.title = title
+	s.command = command
+	return s.err
+}
+
+func TestHandler_InstanceShell_HappyPath(t *testing.T) {
+	state := &shellStub{}
+	h := NewHandler(state)
+
+	body := bytes.NewBufferString(`{"command":"echo hello"}`)
+	req := httptest.NewRequest("POST", "/v1/repos/myproj/instances/my-agent/shell", body)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusNoContent, w.Code, "body: %s", w.Body.String())
+	assert.Equal(t, "myproj", state.project)
+	assert.Equal(t, "my-agent", state.title)
+	assert.Equal(t, "echo hello", state.command)
+}
+
+func TestHandler_InstanceShell_MissingCommand(t *testing.T) {
+	state := &shellStub{}
+	h := NewHandler(state)
+
+	body := bytes.NewBufferString(`{"command":"   "}`)
+	req := httptest.NewRequest("POST", "/v1/repos/myproj/instances/my-agent/shell", body)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code, "body: %s", w.Body.String())
+	assert.Empty(t, state.command, "empty commands must be rejected before reaching the state layer")
+}
+
+func TestHandler_InstanceShell_NotFound(t *testing.T) {
+	state := &shellStub{err: fmt.Errorf("%w: missing", ErrInstanceNotFound)}
+	h := NewHandler(state)
+
+	body := bytes.NewBufferString(`{"command":"echo hello"}`)
+	req := httptest.NewRequest("POST", "/v1/repos/myproj/instances/missing/shell", body)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusNotFound, w.Code, "body: %s", w.Body.String())
+}
+
+func TestHandler_InstanceShell_InvalidRequest(t *testing.T) {
+	state := &shellStub{err: fmt.Errorf("%w: unsupported", ErrInvalidRequest)}
+	h := NewHandler(state)
+
+	body := bytes.NewBufferString(`{"command":"echo hello"}`)
+	req := httptest.NewRequest("POST", "/v1/repos/myproj/instances/my-agent/shell", body)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code, "body: %s", w.Body.String())
+}
+
+func TestHandler_InstanceShell_StateError(t *testing.T) {
+	state := &shellStub{err: fmt.Errorf("runner failed")}
+	h := NewHandler(state)
+
+	body := bytes.NewBufferString(`{"command":"echo hello"}`)
+	req := httptest.NewRequest("POST", "/v1/repos/myproj/instances/my-agent/shell", body)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code, "body: %s", w.Body.String())
+}
+
+// ---------------------------------------------------------------------------
 // SpawnSolo endpoint tests
 // ---------------------------------------------------------------------------
 

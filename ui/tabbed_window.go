@@ -185,6 +185,10 @@ func (w *TabbedWindow) ClearSDKComposerText() {
 	w.preview.ClearSDKComposerText()
 }
 
+func (w *TabbedWindow) SDKComposerShellMode() bool      { return w.preview.SDKComposerShellMode() }
+func (w *TabbedWindow) SetSDKComposerShellMode(on bool) { w.preview.SetSDKComposerShellMode(on) }
+func (w *TabbedWindow) ClearSDKComposerShellMode()      { w.preview.ClearSDKComposerShellMode() }
+
 // SetConnectingState shows the animated banner with a "connecting…" message.
 func (w *TabbedWindow) SetConnectingState() {
 	w.preview.setFallbackState("connecting…")

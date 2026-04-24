@@ -262,6 +262,125 @@ func TestDaemonStateAdapter_InstanceActionErrorMapping(t *testing.T) {
 	})
 }
 
+type shellCommandExecutionSession struct {
+	command string
+	err     error
+}
+
+var _ session.ExecutionSession = (*shellCommandExecutionSession)(nil)
+
+func (s *shellCommandExecutionSession) Start(string) error     { return nil }
+func (s *shellCommandExecutionSession) Restore() error         { return nil }
+func (s *shellCommandExecutionSession) Close() error           { return nil }
+func (s *shellCommandExecutionSession) DoesSessionExist() bool { return true }
+func (s *shellCommandExecutionSession) SendKeys(string) error  { return nil }
+func (s *shellCommandExecutionSession) TapEnter() error        { return nil }
+func (s *shellCommandExecutionSession) SendPermissionResponse(tmuxpkg.PermissionChoice) error {
+	return nil
+}
+func (s *shellCommandExecutionSession) CapturePaneContent() (string, error) { return "", nil }
+func (s *shellCommandExecutionSession) CapturePaneContentWithOptions(string, string) (string, error) {
+	return "", nil
+}
+func (s *shellCommandExecutionSession) HasUpdated() (bool, bool) { return false, false }
+func (s *shellCommandExecutionSession) HasUpdatedWithContent() (bool, bool, string, bool) {
+	return false, false, "", false
+}
+func (s *shellCommandExecutionSession) GetPanePID() (int, error)       { return 0, nil }
+func (s *shellCommandExecutionSession) Attach() (chan struct{}, error) { return nil, nil }
+func (s *shellCommandExecutionSession) DetachSafely() error            { return nil }
+func (s *shellCommandExecutionSession) SetDetachedSize(int, int) error { return nil }
+func (s *shellCommandExecutionSession) GetSanitizedName() string       { return "" }
+func (s *shellCommandExecutionSession) SetAgentType(string)            {}
+func (s *shellCommandExecutionSession) SetInitialPrompt(string)        {}
+func (s *shellCommandExecutionSession) SetNoFlicker(bool)              {}
+func (s *shellCommandExecutionSession) SetTaskEnv(int, int, int)       {}
+func (s *shellCommandExecutionSession) SetProject(string)              {}
+func (s *shellCommandExecutionSession) SetSessionTitle(string)         {}
+func (s *shellCommandExecutionSession) SetTitleFunc(func(string, time.Time, string)) {
+}
+func (s *shellCommandExecutionSession) SetSDKSpeedTier(string) {}
+func (s *shellCommandExecutionSession) RunShellCommand(_ context.Context, command string) error {
+	s.command = command
+	return s.err
+}
+
+func TestDaemonStateAdapter_RunInstanceShellCommand_DelegatesToTrackedSDKInstance(t *testing.T) {
+	const (
+		project  = "proj"
+		repoPath = "/tmp/proj"
+		title    = "sdk-agent"
+	)
+
+	spawner := NewTmuxSpawner()
+	d := &Daemon{
+		repos:       NewRepoManager(),
+		spawner:     spawner,
+		logger:      slog.Default(),
+		broadcaster: api.NewEventBroadcaster(),
+	}
+	d.repos.repos = []RepoEntry{{Path: repoPath, Project: project}}
+
+	execSession := &shellCommandExecutionSession{}
+	inst := &session.Instance{
+		Title:         title,
+		Path:          repoPath,
+		ExecutionMode: session.ExecutionModeSDK,
+		Status:        session.Running,
+	}
+	inst.MarkStartedForTest()
+	inst.SetExecutionSessionForTest(execSession)
+	spawner.commitInstance(
+		instanceKey(repoPath, "plan.md", session.AgentTypeCoder),
+		"plan.md",
+		session.AgentTypeCoder,
+		project,
+		inst,
+	)
+
+	adapter := &daemonStateAdapter{d: d}
+	err := adapter.RunInstanceShellCommand(project, title, "echo")
+	require.NoError(t, err)
+	assert.Equal(t, "echo", execSession.command)
+}
+
+func TestDaemonStateAdapter_RunInstanceShellCommand_NonSDKInstanceInvalidRequest(t *testing.T) {
+	const (
+		project  = "proj"
+		repoPath = "/tmp/proj"
+		title    = "tmux-agent"
+	)
+
+	spawner := NewTmuxSpawner()
+	d := &Daemon{
+		repos:       NewRepoManager(),
+		spawner:     spawner,
+		logger:      slog.Default(),
+		broadcaster: api.NewEventBroadcaster(),
+	}
+	d.repos.repos = []RepoEntry{{Path: repoPath, Project: project}}
+
+	inst := &session.Instance{
+		Title:         title,
+		Path:          repoPath,
+		ExecutionMode: session.ExecutionModeTmux,
+		Status:        session.Running,
+	}
+	inst.MarkStartedForTest()
+	spawner.commitInstance(
+		instanceKey(repoPath, "plan.md", session.AgentTypeCoder),
+		"plan.md",
+		session.AgentTypeCoder,
+		project,
+		inst,
+	)
+
+	adapter := &daemonStateAdapter{d: d}
+	err := adapter.RunInstanceShellCommand(project, title, "echo")
+
+	require.ErrorIs(t, err, api.ErrInvalidRequest)
+}
+
 func TestDaemon_GracefulShutdown_DrainsAgents(t *testing.T) {
 	dir := t.TempDir()
 	cfg := &DaemonConfig{

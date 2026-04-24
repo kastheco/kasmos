@@ -199,6 +199,16 @@ func (c *SocketClient) SendInstancePermissionResponse(project, title string, cho
 	return c.post("/v1/repos/"+project+"/instances/"+title+"/permission", body, nil)
 }
 
+// RunInstanceShellCommand posts a shell command to a daemon-tracked SDK
+// instance. The daemon executes it in the instance workdir and appends a
+// synthetic turn visible through the presentation endpoint.
+func (c *SocketClient) RunInstanceShellCommand(project, title, command string) error {
+	body := struct {
+		Command string `json:"command"`
+	}{Command: command}
+	return c.post("/v1/repos/"+project+"/instances/"+title+"/shell", body, nil)
+}
+
 // PauseInstance, ResumeInstance, RestartInstance, KillInstance route to
 // the corresponding POST /v1/repos/{project}/instances/{title}/<action>
 // endpoint. The daemon dispatches to the spawner which owns the

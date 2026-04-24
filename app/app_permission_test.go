@@ -395,6 +395,7 @@ func TestHandleKeyPress_PermissionEnter_DaemonPlaceholderRoutesResponse(t *testi
 type stubDaemonActionClient struct {
 	sendPromptFunc             func(project, title, prompt string) error
 	sendPromptWithImagesFunc   func(project, title, prompt string, imagePaths []string) error
+	runShellCommandFunc        func(project, title, command string) error
 	killFunc                   func(project, title string) error
 	sendPermissionResponseFunc func(project, title string, choice tmux.PermissionChoice) error
 }
@@ -412,6 +413,13 @@ func (s *stubDaemonActionClient) SendInstancePromptWithLocalImages(project, titl
 	}
 	if s.sendPromptFunc != nil {
 		return s.sendPromptFunc(project, title, prompt)
+	}
+	return nil
+}
+
+func (s *stubDaemonActionClient) RunInstanceShellCommand(project, title, command string) error {
+	if s.runShellCommandFunc != nil {
+		return s.runShellCommandFunc(project, title, command)
 	}
 	return nil
 }

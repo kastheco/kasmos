@@ -1,6 +1,7 @@
 package session
 
 import (
+	"context"
 	"testing"
 
 	"github.com/charmbracelet/x/ansi"
@@ -193,6 +194,56 @@ func TestInstance_SetCachedPresentation_DeepCopy_ToolPreview(t *testing.T) {
 	require.Len(t, result, 1)
 	require.NotNil(t, result[0].Rows[0].ToolPreview)
 	assert.Equal(t, "original line", result[0].Rows[0].ToolPreview.Lines[0])
+}
+
+// mockShellRunner is an ExecutionSession that satisfies shellCommandRunner.
+type mockShellRunner struct {
+	deadExecutionSession
+	runShellErr error
+	lastCommand string
+}
+
+func (m *mockShellRunner) RunShellCommand(_ context.Context, command string) error {
+	m.lastCommand = command
+	return m.runShellErr
+}
+
+func TestInstance_RunShellCommand_NotStarted_ReturnsError(t *testing.T) {
+	inst := &Instance{}
+	err := inst.RunShellCommand(context.Background(), "echo")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not started")
+}
+
+func TestInstance_RunShellCommand_DeadSession_UnsupportedBackend(t *testing.T) {
+	inst := &Instance{}
+	inst.MarkStartedDeadForTest()
+	// deadExecutionSession does not implement shellCommandRunner.
+	err := inst.RunShellCommand(context.Background(), "echo")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "shell execution is not supported")
+}
+
+func TestInstance_RunShellCommand_TmuxSession_UnsupportedBackend(t *testing.T) {
+	inst := &Instance{ExecutionMode: ExecutionModeTmux}
+	inst.started = true
+	// tmuxExecutionSession wraps a nil TmuxSession — won't implement shellCommandRunner.
+	inst.SetExecutionSessionForTest(&tmuxExecutionSession{})
+	err := inst.RunShellCommand(context.Background(), "echo")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "shell execution is not supported")
+	assert.Contains(t, err.Error(), "tmux")
+}
+
+func TestInstance_RunShellCommand_SDKSession_Delegates(t *testing.T) {
+	inst := &Instance{ExecutionMode: ExecutionModeSDK}
+	inst.started = true
+	mock := &mockShellRunner{}
+	inst.SetExecutionSessionForTest(mock)
+
+	err := inst.RunShellCommand(context.Background(), "echo hello")
+	require.NoError(t, err)
+	assert.Equal(t, "echo hello", mock.lastCommand)
 }
 
 // TestInstance_SetCachedPresentation_DeepCopy_Activity verifies that Activity

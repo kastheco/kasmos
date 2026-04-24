@@ -7,3 +7,13 @@ extend-exclude = ["web/admin/dist"]
 # "caf-au-lait" is correct expected output in slugifyTaskName tests that strip
 # non-ASCII from "café au lait". typos incorrectly flags "caf" as "calf".
 caf = "caf"
+# Intentional short identifiers, test fragments, and codepoint suffixes.
+BA = "BA"
+PN = "PN"
+fo = "fo"
+hel = "hel"
+helo = "helo"
+nto = "nto"
+ser = "ser"
+tio = "tio"
+unparseable = "unparseable"

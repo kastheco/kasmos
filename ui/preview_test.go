@@ -2398,3 +2398,118 @@ func TestPreviewPane_SDKPresentation_PlaceholderReplacementPreservesComposerCurs
 	require.Equal(t, "hello world", pane.SDKComposerText())
 	require.Equal(t, 6, pane.SDKComposerCursor(), "cursor must be preserved across placeholder replacement")
 }
+
+// TestPreviewPane_SDKShellMode_FooterNormalMode checks that when shell mode is off the footer
+// shows the ">" prompt prefix (not "!") and hints say "send".
+func TestPreviewPane_SDKShellMode_FooterNormalMode(t *testing.T) {
+	pane := NewPreviewPane()
+	pane.SetSize(80, 24)
+	pane.SetSDKFocusMode(true)
+
+	inst := newSDKInstanceWithTurns(t, nil)
+	require.NoError(t, pane.UpdateContent(inst))
+
+	plain := stripPreviewANSI(pane.previewState.text)
+	require.Contains(t, plain, ">", "normal mode must use '>' prompt prefix")
+	require.NotContains(t, plain, "!", "normal mode must not use '!' prefix")
+	require.Contains(t, plain, "send", "normal mode hint must say 'send'")
+	require.NotContains(t, plain, "run", "normal mode must not say 'run'")
+
+	// The prefix is rendered with ColorRose; the body text is NOT rose-coloured in normal mode.
+	rosePrefix := lipgloss.NewStyle().Foreground(ColorRose).Render(">")
+	require.Contains(t, pane.previewState.text, rosePrefix, "normal mode '>' must be rose-coloured")
+	// Body text in normal mode should not be rendered with ColorRose body style.
+	roseBody := lipgloss.NewStyle().Foreground(ColorRose).Render("█")
+	require.NotContains(t, pane.previewState.text, roseBody,
+		"normal mode cursor must not be rose-coloured body text")
+}
+
+// TestPreviewPane_SDKShellMode_EmptyComposerShowsShellPlaceholder verifies that when
+// shell mode is on and the composer is empty, the footer shows "!" and the shell placeholder.
+func TestPreviewPane_SDKShellMode_EmptyComposerShowsShellPlaceholder(t *testing.T) {
+	pane := NewPreviewPane()
+	pane.SetSize(80, 24)
+	pane.SetSDKFocusMode(false)
+
+	inst := newSDKInstanceWithTurns(t, nil)
+	// Register the composer owner key first so the subsequent Set is not clobbered.
+	require.NoError(t, pane.UpdateContent(inst))
+	pane.SetSDKComposerShellMode(true)
+	require.NoError(t, pane.UpdateContent(inst))
+
+	plain := stripPreviewANSI(pane.previewState.text)
+	require.Contains(t, plain, "!", "shell mode must use '!' prompt prefix")
+	require.Contains(t, plain, "run a shell command", "shell mode empty composer must show shell placeholder")
+	require.Contains(t, plain, "run", "shell mode hint must say 'run'")
+}
+
+// TestPreviewPane_SDKShellMode_TypedTextUsesRoseForeground checks that when shell mode is on
+// and the user has typed text, the composer body uses ColorRose and the cursor block appears.
+func TestPreviewPane_SDKShellMode_TypedTextUsesRoseForeground(t *testing.T) {
+	pane := NewPreviewPane()
+	pane.SetSize(80, 24)
+	pane.SetSDKFocusMode(true)
+
+	inst := newSDKInstanceWithTurns(t, nil)
+	// Register the composer owner key first so the subsequent Set is not clobbered.
+	require.NoError(t, pane.UpdateContent(inst))
+	pane.SetSDKComposerShellMode(true)
+	pane.AppendSDKComposerText("git status")
+	require.NoError(t, pane.UpdateContent(inst))
+
+	// The composed text must be rose-coloured.
+	roseStyle := lipgloss.NewStyle().Foreground(ColorRose)
+	roseBody := roseStyle.Render("git status")
+	require.Contains(t, pane.previewState.text, roseBody,
+		"shell mode body text must be rendered with ColorRose")
+	// Cursor block must still appear.
+	plain := stripPreviewANSI(pane.previewState.text)
+	require.Contains(t, plain, "█", "cursor block must appear in shell mode")
+}
+
+// TestPreviewPane_SDKShellMode_ClearSDKComposerTextResetsShellMode verifies that
+// ClearSDKComposerText resets shell mode to false.
+func TestPreviewPane_SDKShellMode_ClearSDKComposerTextResetsShellMode(t *testing.T) {
+	pane := NewPreviewPane()
+	pane.SetSDKComposerShellMode(true)
+	require.True(t, pane.SDKComposerShellMode(), "shell mode must be true after set")
+
+	pane.ClearSDKComposerText()
+	require.False(t, pane.SDKComposerShellMode(), "ClearSDKComposerText must reset shell mode to false")
+}
+
+// TestPreviewPane_SDKShellMode_ComposerOwnerChangeResetsShellMode verifies that switching to
+// a different composer owner via UpdateContent resets shell mode.
+func TestPreviewPane_SDKShellMode_ComposerOwnerChangeResetsShellMode(t *testing.T) {
+	pane := NewPreviewPane()
+	pane.SetSize(80, 24)
+
+	repoPath := t.TempDir()
+	inst1, err := session.NewInstance(session.InstanceOptions{
+		Title:   "shell-owner-a",
+		Path:    repoPath,
+		Program: "bash",
+	})
+	require.NoError(t, err)
+	inst1.ExecutionMode = session.ExecutionModeSDK
+	inst1.SetExecutionSessionForTest(&fakeSDKSession{turns: nil})
+	inst1.MarkStartedForTest()
+
+	require.NoError(t, pane.UpdateContent(inst1))
+	pane.SetSDKComposerShellMode(true)
+	require.True(t, pane.SDKComposerShellMode(), "shell mode must be true after set")
+
+	inst2, err := session.NewInstance(session.InstanceOptions{
+		Title:   "shell-owner-b",
+		Path:    repoPath,
+		Program: "bash",
+	})
+	require.NoError(t, err)
+	inst2.ExecutionMode = session.ExecutionModeSDK
+	inst2.SetExecutionSessionForTest(&fakeSDKSession{turns: nil})
+	inst2.MarkStartedForTest()
+
+	require.NoError(t, pane.UpdateContent(inst2))
+	require.False(t, pane.SDKComposerShellMode(),
+		"composer owner change must reset shell mode to false")
+}
