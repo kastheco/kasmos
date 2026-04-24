@@ -21,9 +21,9 @@ changed_paths() {
 
 echo '{"drift": ['
 first=true
-yq -o=json -I=0 '.[]' "$MAP" | while IFS= read -r entry; do
-	mapfile -t code < <(printf '%s\n' "$entry" | yq -p=json -r '.code_paths[]' -)
-	mapfile -t docs < <(printf '%s\n' "$entry" | yq -p=json -r '.docs_paths[]' -)
+yq -c '.[]' "$MAP" | while IFS= read -r entry; do
+	mapfile -t code < <(printf '%s\n' "$entry" | yq -r '.code_paths[]')
+	mapfile -t docs < <(printf '%s\n' "$entry" | yq -r '.docs_paths[]')
 
 	mapfile -t changed_code_paths < <(changed_paths "${code[@]}")
 	if [ "${#changed_code_paths[@]}" -eq 0 ]; then
