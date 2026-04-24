@@ -639,6 +639,12 @@ func (d *Daemon) startPlanAsync(entry RepoEntry, planFile, prompt, program strin
 		d.logger.Error("kill existing planner failed", "project", entry.Project, "plan", planFile, "err", err)
 		return
 	}
+	if entry.ParallelPlannerArchitect {
+		if err := killAgent(entry.Path, planFile, session.AgentTypeArchitectBaseline); err != nil {
+			d.logger.Error("kill existing architect baseline failed", "project", entry.Project, "plan", planFile, "err", err)
+			return
+		}
+	}
 	if err := spawnPlanner(context.Background(), loop.SpawnOpts{
 		PlanFile:        planFile,
 		RepoPath:        entry.Path,
@@ -1619,6 +1625,14 @@ func (d *Daemon) executeAction(ctx context.Context, e RepoEntry, action loop.Act
 		}
 		return nil
 	case loop.SpawnArchitectBaselineAction:
+		killAgent := d.killAgent
+		if killAgent == nil {
+			killAgent = d.spawner.KillAgent
+		}
+		if err := killAgent(e.Path, a.PlanFile, session.AgentTypeArchitectBaseline); err != nil {
+			d.logger.Error("kill existing architect baseline failed", "plan", a.PlanFile, "err", err)
+			return err
+		}
 		entry := entryFor(a.PlanFile)
 		spec := orchestration.BuildArchitectBaselineAgentSpec(a.PlanFile, e.Project, entry.Description)
 		agentType := session.AgentTypeArchitectBaseline

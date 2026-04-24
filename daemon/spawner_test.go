@@ -479,6 +479,45 @@ func TestTmuxSpawner_PlannerArchitectBaselineAndArchitectAreDistinct(t *testing.
 	}, keys)
 }
 
+func TestTmuxSpawner_KillArchitectBaselineAllowsReplacement(t *testing.T) {
+	s := NewTmuxSpawner()
+	var captured []*session.Instance
+	s.startOnMain = func(inst *session.Instance) error {
+		captured = append(captured, inst)
+		inst.MarkStartedForTest()
+		inst.SetStatus(session.Running)
+		return nil
+	}
+	s.kill = func(inst *session.Instance) error {
+		inst.SetStatus(session.Ready)
+		return nil
+	}
+
+	repoPath := t.TempDir()
+	opts := loop.SpawnOpts{
+		PlanFile:    "feature.md",
+		RepoPath:    repoPath,
+		Project:     "proj",
+		Program:     "true",
+		Description: "ship the feature",
+	}
+
+	require.NoError(t, s.SpawnArchitectBaseline(context.Background(), opts))
+	require.NoError(t, s.KillAgent(repoPath, opts.PlanFile, session.AgentTypeArchitectBaseline))
+	require.NoError(t, s.SpawnArchitectBaseline(context.Background(), opts))
+
+	require.Len(t, captured, 2)
+	assert.NotSame(t, captured[0], captured[1])
+	running := s.RunningInstances()
+	require.Len(t, running, 1)
+	assert.Equal(t, session.AgentTypeArchitectBaseline, running[0].AgentType)
+	key := instanceKey(repoPath, opts.PlanFile, session.AgentTypeArchitectBaseline)
+	s.mu.Lock()
+	tracked := s.instances[key]
+	s.mu.Unlock()
+	assert.Same(t, captured[1], tracked)
+}
+
 func TestTmuxSpawner_SpawnElaborator_StartFailureDiscardsTrackedInstance(t *testing.T) {
 	s := NewTmuxSpawner()
 	repoPath := t.TempDir()
