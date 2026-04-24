@@ -16,6 +16,11 @@ func TestAgentTypeElaborator_Constant(t *testing.T) {
 	assert.Equal(t, "architect", AgentTypeElaborator)
 }
 
+func TestAgentTypeArchitectBaseline_Constant(t *testing.T) {
+	assert.Equal(t, "architect-baseline", AgentTypeArchitectBaseline)
+	assert.NotEqual(t, AgentTypeElaborator, AgentTypeArchitectBaseline)
+}
+
 func TestNewInstance_SetsPlanFile(t *testing.T) {
 	inst, err := NewInstance(InstanceOptions{
 		Title:    "plan-worker",
@@ -115,6 +120,27 @@ func TestInstanceData_RoundTripAgentType(t *testing.T) {
 	roundTrip := inst.ToInstanceData()
 	assert.Equal(t, AgentTypeReviewer, roundTrip.AgentType)
 	assert.False(t, roundTrip.IsReviewer, "deprecated IsReviewer field should not be written for new state")
+}
+
+func TestInstanceData_RoundTripArchitectBaselineAgentType(t *testing.T) {
+	data := InstanceData{
+		Title:     "feature-architect-baseline",
+		Path:      "/tmp/repo",
+		Status:    Paused,
+		Program:   "opencode",
+		TaskFile:  "feature",
+		AgentType: AgentTypeArchitectBaseline,
+	}
+
+	inst, err := FromInstanceData(data)
+	require.NoError(t, err)
+	assert.Equal(t, "feature", inst.TaskFile)
+	assert.Equal(t, AgentTypeArchitectBaseline, inst.AgentType)
+	assert.False(t, inst.sharedWorktree)
+
+	roundTrip := inst.ToInstanceData()
+	assert.Equal(t, "feature", roundTrip.TaskFile)
+	assert.Equal(t, AgentTypeArchitectBaseline, roundTrip.AgentType)
 }
 
 func TestFromInstanceData_RestoresSharedTaskWorktree(t *testing.T) {

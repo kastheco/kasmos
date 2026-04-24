@@ -27,12 +27,13 @@ const (
 
 // AgentType constants identify the role of an agent session within a plan lifecycle.
 const (
-	AgentTypePlanner    = "planner"
-	AgentTypeCoder      = "coder"
-	AgentTypeReviewer   = "reviewer"
-	AgentTypeFixer      = "fixer"
-	AgentTypeElaborator = "architect"
-	AgentTypeMaster     = "master"
+	AgentTypePlanner           = "planner"
+	AgentTypeCoder             = "coder"
+	AgentTypeReviewer          = "reviewer"
+	AgentTypeFixer             = "fixer"
+	AgentTypeElaborator        = "architect"
+	AgentTypeArchitectBaseline = "architect-baseline"
+	AgentTypeMaster            = "master"
 )
 
 // Instance represents a managed agent session with its associated execution backend and git state.

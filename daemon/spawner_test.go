@@ -434,6 +434,51 @@ func TestTmuxSpawner_SpawnElaborator_HonoursOptsSkipPermissions(t *testing.T) {
 	}
 }
 
+func TestTmuxSpawner_PlannerArchitectBaselineAndArchitectAreDistinct(t *testing.T) {
+	s := NewTmuxSpawner()
+	var captured []*session.Instance
+	s.startOnMain = func(inst *session.Instance) error {
+		captured = append(captured, inst)
+		inst.MarkStartedForTest()
+		inst.SetStatus(session.Running)
+		return nil
+	}
+
+	repoPath := t.TempDir()
+	const planFile = "feature.md"
+	opts := loop.SpawnOpts{
+		PlanFile:    planFile,
+		RepoPath:    repoPath,
+		Project:     "proj",
+		Program:     "true",
+		Description: "ship the feature",
+	}
+
+	require.NoError(t, s.SpawnPlanner(context.Background(), opts))
+	require.NoError(t, s.SpawnArchitectBaseline(context.Background(), opts))
+	require.NoError(t, s.SpawnElaborator(context.Background(), opts))
+	require.Len(t, captured, 3)
+
+	assert.Equal(t, "feature.md-plan", captured[0].Title)
+	assert.Equal(t, session.AgentTypePlanner, captured[0].AgentType)
+	assert.Equal(t, "feature.md-architect-baseline", captured[1].Title)
+	assert.Equal(t, session.AgentTypeArchitectBaseline, captured[1].AgentType)
+	assert.Equal(t, "feature.md-architect", captured[2].Title)
+	assert.Equal(t, session.AgentTypeElaborator, captured[2].AgentType)
+
+	running := s.RunningInstances()
+	require.Len(t, running, 3)
+	keys := make([]string, 0, len(running))
+	for _, inst := range running {
+		keys = append(keys, inst.Key)
+	}
+	assert.ElementsMatch(t, []string{
+		instanceKey(repoPath, planFile, session.AgentTypePlanner),
+		instanceKey(repoPath, planFile, session.AgentTypeArchitectBaseline),
+		instanceKey(repoPath, planFile, session.AgentTypeElaborator),
+	}, keys)
+}
+
 func TestTmuxSpawner_SpawnElaborator_StartFailureDiscardsTrackedInstance(t *testing.T) {
 	s := NewTmuxSpawner()
 	repoPath := t.TempDir()

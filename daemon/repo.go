@@ -185,6 +185,7 @@ func (m *RepoManager) Add(path string) error {
 		MaxReviewFixCycles:       m.maxReviewFixCycles,
 		ReadinessSelfFixMaxLines: selfFixMaxLines,
 		ReadinessMaxVerifyCycles: maxVerifyCycles,
+		ParallelPlannerArchitect: parallelPlannerArchitect,
 		Hooks:                    hooks,
 	})
 

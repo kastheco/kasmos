@@ -639,6 +639,119 @@ func TestDaemon_StartPlan_ReturnsBeforeSpawnCompletes(t *testing.T) {
 	close(release)
 }
 
+func TestDaemon_StartPlan_SpawnsOnlyPlannerWhenParallelBaselineDisabled(t *testing.T) {
+	project := "proj"
+	store := taskstore.NewTestStore(t)
+	require.NoError(t, store.Create(project, taskstore.TaskEntry{
+		Filename:    "feature.md",
+		Status:      taskstore.StatusPlanning,
+		Description: "ship feature",
+	}))
+
+	spawnedPlanner := make(chan loop.SpawnOpts, 1)
+	spawnedBaseline := make(chan loop.SpawnOpts, 1)
+	d := &Daemon{
+		repos:       NewRepoManager(),
+		logger:      slog.Default(),
+		broadcaster: api.NewEventBroadcaster(),
+		killAgent: func(repoPath, planFile, agentType string) error {
+			return nil
+		},
+		spawnPlanner: func(_ context.Context, opts loop.SpawnOpts) error {
+			spawnedPlanner <- opts
+			return nil
+		},
+		spawnArchitectBaseline: func(_ context.Context, opts loop.SpawnOpts) error {
+			spawnedBaseline <- opts
+			return nil
+		},
+	}
+	t.Cleanup(func() { d.broadcaster.Close() })
+	d.repos.repos = []RepoEntry{{
+		Path:    t.TempDir(),
+		Project: project,
+		Store:   store,
+	}}
+
+	require.NoError(t, d.StartPlan(project, "feature.md", "plan prompt", "opencode"))
+
+	select {
+	case opts := <-spawnedPlanner:
+		assert.Equal(t, "feature.md", opts.PlanFile)
+	case <-time.After(time.Second):
+		t.Fatal("planner spawn did not run")
+	}
+	select {
+	case <-spawnedBaseline:
+		t.Fatal("baseline must not spawn when parallel mode is disabled")
+	case <-time.After(50 * time.Millisecond):
+	}
+}
+
+func TestDaemon_StartPlan_SpawnsPlannerAndArchitectBaselineWhenEnabled(t *testing.T) {
+	project := "proj"
+	repoPath := t.TempDir()
+	cacheDir := filepath.Join(repoPath, ".kasmos", "cache")
+	require.NoError(t, os.MkdirAll(cacheDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(cacheDir, "feature.md-architect-baseline.json"), []byte("{}"), 0o644))
+
+	store := taskstore.NewTestStore(t)
+	require.NoError(t, store.Create(project, taskstore.TaskEntry{
+		Filename:    "feature.md",
+		Status:      taskstore.StatusPlanning,
+		Description: "ship feature",
+	}))
+
+	type spawnRecord struct {
+		name string
+		opts loop.SpawnOpts
+	}
+	spawned := make(chan spawnRecord, 2)
+	d := &Daemon{
+		repos:       NewRepoManager(),
+		logger:      slog.Default(),
+		broadcaster: api.NewEventBroadcaster(),
+		killAgent: func(repoPath, planFile, agentType string) error {
+			return nil
+		},
+		spawnPlanner: func(_ context.Context, opts loop.SpawnOpts) error {
+			spawned <- spawnRecord{name: "planner", opts: opts}
+			return nil
+		},
+		spawnArchitectBaseline: func(_ context.Context, opts loop.SpawnOpts) error {
+			spawned <- spawnRecord{name: "baseline", opts: opts}
+			return nil
+		},
+	}
+	t.Cleanup(func() { d.broadcaster.Close() })
+	d.repos.repos = []RepoEntry{{
+		Path:                     repoPath,
+		Project:                  project,
+		Store:                    store,
+		ParallelPlannerArchitect: true,
+	}}
+
+	require.NoError(t, d.StartPlan(project, "feature.md", "plan prompt", "opencode"))
+
+	var records []spawnRecord
+	require.Eventually(t, func() bool {
+		for {
+			select {
+			case record := <-spawned:
+				records = append(records, record)
+			default:
+				return len(records) == 2
+			}
+		}
+	}, time.Second, 5*time.Millisecond)
+	require.Len(t, records, 2)
+	assert.Equal(t, "planner", records[0].name)
+	assert.Equal(t, "baseline", records[1].name)
+	assert.Equal(t, "ship feature", records[1].opts.Description)
+	assert.Contains(t, records[1].opts.Prompt, "architect baseline agent")
+	assert.NoFileExists(t, filepath.Join(cacheDir, "feature.md-architect-baseline.json"))
+}
+
 func TestDaemon_AutoAdvanceCompletedImplementer_TransitionsToReviewing(t *testing.T) {
 	project := "proj"
 	store := taskstore.NewTestStore(t)

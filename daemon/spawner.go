@@ -584,6 +584,15 @@ func (s *TmuxSpawner) SpawnPlanner(ctx context.Context, opts loop.SpawnOpts) err
 	return s.spawnOnMainBranch(ctx, opts, session.AgentTypePlanner, "plan")
 }
 
+// SpawnArchitectBaseline launches the cache-only architect baseline agent on
+// the main branch. It tracks a distinct runtime type from the final architect.
+func (s *TmuxSpawner) SpawnArchitectBaseline(ctx context.Context, opts loop.SpawnOpts) error {
+	s.logger.Info("spawn architect baseline", "plan", opts.PlanFile)
+	spec := orchestration.BuildArchitectBaselineAgentSpec(opts.PlanFile, opts.Project, opts.Description)
+	opts.Prompt = spec.Prompt
+	return s.spawnOnMainBranch(ctx, opts, session.AgentTypeArchitectBaseline, "architect-baseline")
+}
+
 // SpawnCoder launches a coder agent in the plan's shared worktree.
 func (s *TmuxSpawner) SpawnCoder(ctx context.Context, opts loop.SpawnOpts) error {
 	s.logger.Info("spawn coder", "plan", opts.PlanFile, "wave", opts.Wave)
@@ -652,6 +661,12 @@ func (s *TmuxSpawner) spawnOnMainBranch(_ context.Context, opts loop.SpawnOpts, 
 	prompt := opts.Prompt
 	if agentType == session.AgentTypeElaborator {
 		spec := orchestration.BuildArchitectAgentSpec(opts.PlanFile, opts.Project)
+		title = spec.Title
+		if prompt == "" {
+			prompt = spec.Prompt
+		}
+	} else if agentType == session.AgentTypeArchitectBaseline {
+		spec := orchestration.BuildArchitectBaselineAgentSpec(opts.PlanFile, opts.Project, opts.Description)
 		title = spec.Title
 		if prompt == "" {
 			prompt = spec.Prompt
