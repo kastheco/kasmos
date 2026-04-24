@@ -1,0 +1,62 @@
+.preview {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  color: var(--foreground);
+  font-family: var(--font-sans);
+}
+
+.header {
+  padding: 24px;
+  text-align: center;
+  font-size: 14px;
+  color: var(--foreground-secondary);
+}
+
+.card {
+  margin: auto;
+  padding: 32px;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  max-width: 420px;
+  width: 100%;
+}
+
+.logo {
+  max-width: 240px;
+  height: auto;
+}
+
+.orgName {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.hint {
+  color: var(--foreground-secondary);
+  font-size: 13px;
+  margin: 0;
+}
+
+.idpButton {
+  padding: 10px 20px;
+  border-radius: 8px;
+  border: 1px solid rgba(156, 207, 216, 0.35);
+  background: rgba(156, 207, 216, 0.08);
+  color: var(--accent-teal);
+  cursor: not-allowed;
+  opacity: 0.8;
+}
+
+.footer {
+  padding: 16px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--foreground-tertiary);
+}

@@ -6,6 +6,7 @@ import TaskDetailPage from "./pages/TaskDetailPage";
 import AuditPage from "./pages/AuditPage";
 import InstancesPage from "./pages/InstancesPage";
 import ConfigPage from "./pages/ConfigPage";
+import AccessLoginPreviewPage from "./pages/AccessLoginPreviewPage";
 import { ProjectProvider } from "./hooks/useProject";
 
 export default function App() {
@@ -13,6 +14,7 @@ export default function App() {
     <BrowserRouter basename="/admin">
       <ProjectProvider>
         <Routes>
+          <Route path="/access-login-preview" element={<AccessLoginPreviewPage />} />
           <Route element={<Layout />}>
             <Route path="/" element={<DashboardPage />} />
             <Route path="/tasks" element={<TasksPage />} />
