@@ -31,7 +31,8 @@ type Renderer struct {
 	nextTurnNumber int                 // monotonically increasing turn counter
 
 	currentTurnHasResponse bool
-	currentTurnOpenProse   int
+	currentTurnOpenTextRow int
+	currentTurnInCodeFence bool
 }
 
 // NewRenderer constructs an empty Renderer.
@@ -51,7 +52,7 @@ func (r *Renderer) AddEvent(e Event) {
 	case EventTextDelta:
 		// Flat path — unchanged.
 		r.appendText(e.Text)
-		// Structured path — create implicit turn if needed and append prose rows.
+		// Structured path — create implicit turn if needed and append text rows.
 		turn := r.ensureTurn(e.TurnID, e.Timestamp)
 		r.appendTurnText(turn, e.Text, e.Timestamp)
 
@@ -166,6 +167,9 @@ func (r *Renderer) AddEvent(e Event) {
 				Timestamp: e.Timestamp,
 			}
 			if r.currentTurn != nil {
+				if e.Final {
+					r.finalizeOpenTurnTextRow(r.currentTurn)
+				}
 				r.closeStructuredProseBlock()
 				r.currentTurn.Rows = append(r.currentTurn.Rows, row)
 			} else {
@@ -177,6 +181,7 @@ func (r *Renderer) AddEvent(e Event) {
 			if ts.IsZero() {
 				ts = time.Now()
 			}
+			r.finalizeOpenTurnTextRow(r.currentTurn)
 			r.currentTurn.CompletedAt = ts
 			r.clearCurrentTurn()
 		}
@@ -196,6 +201,9 @@ func (r *Renderer) AddEvent(e Event) {
 				Timestamp: e.Timestamp,
 			}
 			if r.currentTurn != nil {
+				if e.Final {
+					r.finalizeOpenTurnTextRow(r.currentTurn)
+				}
 				r.closeStructuredProseBlock()
 				r.currentTurn.Rows = append(r.currentTurn.Rows, row)
 			} else {
@@ -210,6 +218,7 @@ func (r *Renderer) AddEvent(e Event) {
 			if ts.IsZero() {
 				ts = time.Now()
 			}
+			r.finalizeOpenTurnTextRow(r.currentTurn)
 			r.currentTurn.CompletedAt = ts
 			r.clearCurrentTurn()
 		}
@@ -250,6 +259,7 @@ func (r *Renderer) AddEvent(e Event) {
 			if ts.IsZero() {
 				ts = time.Now()
 			}
+			r.finalizeOpenTurnTextRow(r.currentTurn)
 			r.currentTurn.CompletedAt = ts
 			r.clearCurrentTurn()
 		}
@@ -265,6 +275,7 @@ func (r *Renderer) AddEvent(e Event) {
 			if ts.IsZero() {
 				ts = time.Now()
 			}
+			r.finalizeOpenTurnTextRow(r.currentTurn)
 			r.currentTurn.Rows = append(r.currentTurn.Rows, PresentationRow{
 				Kind:      RowStatus,
 				Text:      "[interrupted]",
@@ -305,9 +316,9 @@ func (r *Renderer) ensureTurn(turnID string, ts time.Time) *PresentationTurn {
 }
 
 // appendTurnText mirrors the newline/fragment behaviour of appendText but
-// operates on the structured turn's Rows slice. The first prose chunk in a
-// turn inserts a RowResponse sentinel before the prose rows so renderers can
-// identify where assistant prose begins without inspecting row text.
+// operates on the structured turn's Rows slice. The first text chunk in a
+// turn inserts a RowResponse sentinel before prose/code rows so renderers can
+// identify where assistant text begins without inspecting row text.
 // Must be called with r.mu held.
 func (r *Renderer) appendTurnText(turn *PresentationTurn, text string, ts time.Time) {
 	if text == "" {
@@ -325,43 +336,77 @@ func (r *Renderer) appendTurnText(turn *PresentationTurn, text string, ts time.T
 	parts := strings.Split(text, "\n")
 
 	if len(parts) == 1 {
-		// No newline — extend the current partial prose row.
-		if r.currentTurnOpenProse >= 0 {
-			turn.Rows[r.currentTurnOpenProse].Text += parts[0]
-		} else {
-			turn.Rows = append(turn.Rows, PresentationRow{
-				Kind: RowProse, Text: parts[0], Timestamp: ts,
-			})
-			r.currentTurnOpenProse = len(turn.Rows) - 1
-		}
+		// No newline — extend the current partial text row.
+		r.appendOpenTurnTextRow(turn, parts[0], ts)
 		return
 	}
 
-	// First chunk completes the current partial prose row.
-	if r.currentTurnOpenProse >= 0 {
-		turn.Rows[r.currentTurnOpenProse].Text += parts[0]
+	// First chunk completes the current partial text row, or is a complete
+	// standalone line when no row was open.
+	if r.currentTurnOpenTextRow >= 0 {
+		turn.Rows[r.currentTurnOpenTextRow].Text += parts[0]
+		r.finalizeOpenTurnTextRow(turn)
 	} else {
-		turn.Rows = append(turn.Rows, PresentationRow{
-			Kind: RowProse, Text: parts[0], Timestamp: ts,
-		})
+		r.appendCompleteTurnTextLine(turn, parts[0], ts)
 	}
-	r.currentTurnOpenProse = -1
 
-	// Middle chunks are complete prose rows.
+	// Middle chunks are complete text rows.
 	for _, p := range parts[1 : len(parts)-1] {
-		turn.Rows = append(turn.Rows, PresentationRow{
-			Kind: RowProse, Text: p, Timestamp: ts,
-		})
+		r.appendCompleteTurnTextLine(turn, p, ts)
 	}
 
-	// Last chunk starts a new partial prose row unless the delta ended with a
-	// newline, in which case there is no open prose fragment to extend.
+	// Last chunk starts a new partial text row unless the delta ended with a
+	// newline, in which case there is no open text fragment to extend.
 	if tail := parts[len(parts)-1]; tail != "" {
-		turn.Rows = append(turn.Rows, PresentationRow{
-			Kind: RowProse, Text: tail, Timestamp: ts,
-		})
-		r.currentTurnOpenProse = len(turn.Rows) - 1
+		r.appendOpenTurnTextRow(turn, tail, ts)
 	}
+}
+
+func (r *Renderer) currentTurnTextKind() PresentationRowKind {
+	if r.currentTurnInCodeFence {
+		return RowCodeBlock
+	}
+	return RowProse
+}
+
+func (r *Renderer) appendOpenTurnTextRow(turn *PresentationTurn, text string, ts time.Time) {
+	if r.currentTurnOpenTextRow >= 0 {
+		turn.Rows[r.currentTurnOpenTextRow].Text += text
+		return
+	}
+	turn.Rows = append(turn.Rows, PresentationRow{
+		Kind:      r.currentTurnTextKind(),
+		Text:      text,
+		Timestamp: ts,
+	})
+	r.currentTurnOpenTextRow = len(turn.Rows) - 1
+}
+
+func (r *Renderer) appendCompleteTurnTextLine(turn *PresentationTurn, text string, ts time.Time) {
+	if _, ok := ParseMarkdownFenceLine(text); ok {
+		r.currentTurnInCodeFence = !r.currentTurnInCodeFence
+		r.currentTurnOpenTextRow = -1
+		return
+	}
+	turn.Rows = append(turn.Rows, PresentationRow{
+		Kind:      r.currentTurnTextKind(),
+		Text:      text,
+		Timestamp: ts,
+	})
+	r.currentTurnOpenTextRow = -1
+}
+
+func (r *Renderer) finalizeOpenTurnTextRow(turn *PresentationTurn) {
+	if r.currentTurnOpenTextRow < 0 || r.currentTurnOpenTextRow >= len(turn.Rows) {
+		r.currentTurnOpenTextRow = -1
+		return
+	}
+	idx := r.currentTurnOpenTextRow
+	if _, ok := ParseMarkdownFenceLine(turn.Rows[idx].Text); ok {
+		turn.Rows = append(turn.Rows[:idx], turn.Rows[idx+1:]...)
+		r.currentTurnInCodeFence = !r.currentTurnInCodeFence
+	}
+	r.currentTurnOpenTextRow = -1
 }
 
 func (r *Renderer) startTurn(turnID string, ts time.Time) *PresentationTurn {
@@ -377,21 +422,24 @@ func (r *Renderer) startTurn(turnID string, ts time.Time) *PresentationTurn {
 	r.turns = append(r.turns, turn)
 	r.currentTurn = turn
 	r.currentTurnHasResponse = false
-	r.currentTurnOpenProse = -1
+	r.currentTurnOpenTextRow = -1
+	r.currentTurnInCodeFence = false
 	return turn
 }
 
 func (r *Renderer) clearCurrentTurn() {
 	r.currentTurn = nil
 	r.currentTurnHasResponse = false
-	r.currentTurnOpenProse = -1
+	r.currentTurnOpenTextRow = -1
+	r.currentTurnInCodeFence = false
 }
 
-// closeStructuredProseBlock marks the current prose fragment as closed so the
+// closeStructuredProseBlock marks the current text fragment as closed so the
 // next text delta starts a fresh response section instead of extending prose
 // that was already followed by tool/system/permission rows.
 func (r *Renderer) closeStructuredProseBlock() {
-	r.currentTurnOpenProse = -1
+	r.currentTurnOpenTextRow = -1
+	r.currentTurnInCodeFence = false
 	if r.currentTurnHasResponse {
 		r.currentTurnHasResponse = false
 	}

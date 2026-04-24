@@ -29,6 +29,7 @@ func TestPresentationTurn_JSONContract(t *testing.T) {
 			{Kind: RowResult, Text: "file.go", Timestamp: ts, ToolName: "bash", IsError: false},
 			{Kind: RowResponse, Text: "", Timestamp: ts},
 			{Kind: RowProse, Text: "Here is the output.", Timestamp: ts},
+			{Kind: RowCodeBlock, Text: "fmt.Println(\"hi\")", Timestamp: ts},
 			{Kind: RowPermission, Text: "allow write?", Timestamp: ts},
 			{Kind: RowWarning, Text: "mcp server startup is slow", Timestamp: ts},
 			{Kind: RowSystem, Text: "rate limit", Timestamp: ts, IsError: true},
@@ -62,6 +63,9 @@ func TestPresentationTurn_JSONContract(t *testing.T) {
 	assert.Contains(t, row0, "timestamp")
 	assert.Contains(t, row0, "tool_name")
 	assert.Contains(t, row0, "is_error")
+	row5, ok := rows[5].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "code_block", row5["kind"])
 
 	// Confirm values survive the round-trip.
 	var decoded PresentationTurn

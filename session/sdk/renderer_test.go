@@ -347,6 +347,101 @@ func TestRenderer_CapturePresentation_TextDelta_FragmentsExtendLastProse(t *test
 	assert.Equal(t, "hello", prose[0])
 }
 
+func TestRenderer_CapturePresentation_CodeFenceRowsConsumed(t *testing.T) {
+	r := NewRenderer()
+	ts := time.Now()
+	r.AddEvent(Event{Kind: EventTurnStarted, TurnID: "t1", Timestamp: ts})
+	r.AddEvent(Event{Kind: EventTextDelta, TurnID: "t1", Text: "hello\n```\ncode()\n```\nbye\n", Timestamp: ts})
+	r.AddEvent(Event{Kind: EventTurnCompleted, TurnID: "t1", Timestamp: ts})
+
+	turns := r.CapturePresentation()
+	require.Len(t, turns, 1)
+	require.Equal(t, []PresentationRowKind{
+		RowResponse,
+		RowProse,
+		RowCodeBlock,
+		RowProse,
+	}, rowKinds(turns[0].Rows))
+	assert.Equal(t, "hello", turns[0].Rows[1].Text)
+	assert.Equal(t, "code()", turns[0].Rows[2].Text)
+	assert.Equal(t, "bye", turns[0].Rows[3].Text)
+}
+
+func TestRenderer_CapturePresentation_CodeFenceWithLanguageConsumed(t *testing.T) {
+	r := NewRenderer()
+	ts := time.Now()
+	r.AddEvent(Event{Kind: EventTurnStarted, TurnID: "t1", Timestamp: ts})
+	r.AddEvent(Event{Kind: EventTextDelta, TurnID: "t1", Text: "```go\nfmt.Println(\"hi\")\n```\n", Timestamp: ts})
+
+	turns := r.CapturePresentation()
+	require.Len(t, turns, 1)
+	require.Equal(t, []PresentationRowKind{
+		RowResponse,
+		RowCodeBlock,
+	}, rowKinds(turns[0].Rows))
+	assert.Equal(t, "fmt.Println(\"hi\")", turns[0].Rows[1].Text)
+}
+
+func TestRenderer_CapturePresentation_SplitCodeFenceConsumesProvisionalRow(t *testing.T) {
+	r := NewRenderer()
+	ts := time.Now()
+	r.AddEvent(Event{Kind: EventTurnStarted, TurnID: "t1", Timestamp: ts})
+	r.AddEvent(Event{Kind: EventTextDelta, TurnID: "t1", Text: "```", Timestamp: ts})
+
+	before := r.CapturePresentation()
+	require.Len(t, before, 1)
+	require.Equal(t, []PresentationRowKind{RowResponse, RowProse}, rowKinds(before[0].Rows))
+	assert.Equal(t, "```", before[0].Rows[1].Text)
+
+	r.AddEvent(Event{Kind: EventTextDelta, TurnID: "t1", Text: "\ncode\n```\n", Timestamp: ts})
+
+	turns := r.CapturePresentation()
+	require.Len(t, turns, 1)
+	require.Equal(t, []PresentationRowKind{
+		RowResponse,
+		RowCodeBlock,
+	}, rowKinds(turns[0].Rows))
+	assert.Equal(t, "code", turns[0].Rows[1].Text)
+}
+
+func TestRenderer_CapturePresentation_UnclosedCodeFenceDoesNotLeak(t *testing.T) {
+	r := NewRenderer()
+	ts := time.Now()
+	r.AddEvent(Event{Kind: EventTurnStarted, TurnID: "t1", Timestamp: ts})
+	r.AddEvent(Event{Kind: EventTextDelta, TurnID: "t1", Text: "```go\nfunc main() {}", Timestamp: ts})
+	r.AddEvent(Event{Kind: EventTurnCompleted, TurnID: "t1", Timestamp: ts})
+	r.AddEvent(Event{Kind: EventTurnStarted, TurnID: "t2", Timestamp: ts})
+	r.AddEvent(Event{Kind: EventTextDelta, TurnID: "t2", Text: "plain", Timestamp: ts})
+
+	turns := r.CapturePresentation()
+	require.Len(t, turns, 2)
+	require.Equal(t, []PresentationRowKind{
+		RowResponse,
+		RowCodeBlock,
+	}, rowKinds(turns[0].Rows))
+	assert.Equal(t, "func main() {}", turns[0].Rows[1].Text)
+	require.Equal(t, []PresentationRowKind{
+		RowResponse,
+		RowProse,
+	}, rowKinds(turns[1].Rows))
+	assert.Equal(t, "plain", turns[1].Rows[1].Text)
+}
+
+func TestRenderer_CapturePresentation_CodeBlockTextPreservesMarkdownLiterals(t *testing.T) {
+	r := NewRenderer()
+	ts := time.Now()
+	r.AddEvent(Event{Kind: EventTurnStarted, TurnID: "t1", Timestamp: ts})
+	r.AddEvent(Event{Kind: EventTextDelta, TurnID: "t1", Text: "```\n*a_b*\n```\n", Timestamp: ts})
+
+	turns := r.CapturePresentation()
+	require.Len(t, turns, 1)
+	require.Equal(t, []PresentationRowKind{
+		RowResponse,
+		RowCodeBlock,
+	}, rowKinds(turns[0].Rows))
+	assert.Equal(t, "*a_b*", turns[0].Rows[1].Text)
+}
+
 func TestRenderer_CapturePresentation_UserPrompt_AddsUserRow(t *testing.T) {
 	r := NewRenderer()
 	r.AddEvent(Event{Kind: EventUserPrompt, Text: "show logs"})
@@ -819,6 +914,19 @@ func TestRenderer_ThinkingRow_DisappearsWhenProseArrives(t *testing.T) {
 	require.Len(t, turns2, 1)
 	for _, row := range turns2[0].Rows {
 		assert.NotEqual(t, RowThinking, row.Kind, "thinking row must not appear once prose has arrived")
+	}
+}
+
+func TestRenderer_ThinkingRow_NotInjectedWithCodeBlockContent(t *testing.T) {
+	r := NewRenderer()
+	past := time.Now().Add(-3 * time.Second)
+	r.AddEvent(Event{Kind: EventTurnStarted, TurnID: "t1", Timestamp: past})
+	r.AddEvent(Event{Kind: EventTextDelta, TurnID: "t1", Text: "```\ncode\n", Timestamp: past})
+
+	turns := r.CapturePresentation()
+	require.Len(t, turns, 1)
+	for _, row := range turns[0].Rows {
+		assert.NotEqual(t, RowThinking, row.Kind, "thinking row must not appear once code block content has arrived")
 	}
 }
 
@@ -1372,6 +1480,22 @@ func TestDeriveTurnActivity_NoRows_Thinking(t *testing.T) {
 	require.NotNil(t, act)
 	assert.Equal(t, "thinking", act.Kind)
 	assert.Equal(t, "thinking", act.Label)
+}
+
+func TestDeriveTurnActivity_CodeBlockContent_Working(t *testing.T) {
+	ts := time.Now()
+	turn := &PresentationTurn{
+		ID:        "t1",
+		Number:    1,
+		StartedAt: ts,
+		Rows: []PresentationRow{
+			{Kind: RowResponse, Timestamp: ts},
+			{Kind: RowCodeBlock, Text: "code", Timestamp: ts},
+		},
+	}
+	act := deriveTurnActivity(turn, ts)
+	require.NotNil(t, act)
+	assert.Equal(t, "working", act.Kind)
 }
 
 func TestDeriveTurnActivity_CompletedTurn_ReturnsNil(t *testing.T) {
