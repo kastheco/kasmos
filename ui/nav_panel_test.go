@@ -229,28 +229,33 @@ func TestRebuildRows_DeadSection_Collapsible(t *testing.T) {
 	n.selectedIdx = 0
 	n.ToggleSelectedExpand()
 	assert.False(t, n.deadExpanded)
-	require.Len(t, n.rows, 1)
+	require.Len(t, n.rows, 3)
 	assert.Equal(t, navRowDeadToggle, n.rows[0].Kind)
+	assert.Equal(t, navRowRetiredHeader, n.rows[1].Kind)
+	assert.Equal(t, "retired · 1", n.rows[1].Label)
+	assert.Equal(t, navRowInstance, n.rows[2].Kind)
+	assert.Equal(t, "worker", n.rows[2].Label)
+	assert.True(t, n.rows[2].Retired)
 }
 
-func TestRebuildRows_DonePlanWithRunningInstances_AppearsInActiveSection(t *testing.T) {
+func TestRebuildRows_DonePlanWithRunningInstances_AppearsInRetiredSection(t *testing.T) {
 	n := newTestPanel()
 	history := []PlanDisplay{{Filename: "done-plan", Status: "done"}}
 	instances := []*session.Instance{makeInst("worker", "done-plan", session.Running)}
 	n.SetData(nil, instances, history, nil, nil)
 
-	// Done plan with running instances should NOT be in dead section.
-	// It should appear as an active plan (plan header + instance).
+	// Done plan instances retire based on task status, even when the process is
+	// still running.
 	for _, row := range n.rows {
 		assert.NotEqual(t, navRowDeadToggle, row.Kind,
 			"running instances should not be in dead section")
 	}
-	// Should have plan header + instance in the active area.
-	require.True(t, len(n.rows) >= 2, "expected at least plan header + instance, got %d rows", len(n.rows))
-	assert.Equal(t, navRowPlanHeader, n.rows[0].Kind)
-	assert.Equal(t, "done-plan", n.rows[0].TaskFile)
+	require.True(t, len(n.rows) >= 2, "expected at least retired header + instance, got %d rows", len(n.rows))
+	assert.Equal(t, navRowRetiredHeader, n.rows[0].Kind)
+	assert.Equal(t, "retired · 1", n.rows[0].Label)
 	assert.Equal(t, navRowInstance, n.rows[1].Kind)
 	assert.Equal(t, "worker", n.rows[1].Label)
+	assert.True(t, n.rows[1].Retired)
 }
 
 func TestRebuildRows_DonePlanWithDeadInstances_GoesToDeadSection(t *testing.T) {
@@ -268,23 +273,28 @@ func TestRebuildRows_DonePlanWithDeadInstances_GoesToDeadSection(t *testing.T) {
 	assert.Equal(t, navRowPlanHeader, n.rows[1].Kind)
 }
 
-func TestRebuildRows_DonePlanMixedInstances_RunningPromotesToActive(t *testing.T) {
+func TestRebuildRows_DonePlanMixedInstances_AppearInRetiredSection(t *testing.T) {
 	n := newTestPanel()
 	history := []PlanDisplay{{Filename: "done-plan", Status: "done"}}
-	// Mix of running and ready instances — running takes priority.
+	// Mix of running and ready instances — done task status retires both.
 	instances := []*session.Instance{
 		makeInst("ready-worker", "done-plan", session.Ready),
 		makeInst("running-worker", "done-plan", session.Running),
 	}
 	n.SetData(nil, instances, history, nil, nil)
 
-	// Plan has at least one running instance → should be in active section, not dead.
 	for _, row := range n.rows {
 		assert.NotEqual(t, navRowDeadToggle, row.Kind,
 			"plan with running instances should not be in dead section")
 	}
-	assert.Equal(t, navRowPlanHeader, n.rows[0].Kind)
-	assert.Equal(t, "done-plan", n.rows[0].TaskFile)
+	require.True(t, len(n.rows) >= 3, "expected retired header + instances, got %d rows", len(n.rows))
+	assert.Equal(t, navRowRetiredHeader, n.rows[0].Kind)
+	assert.Equal(t, "retired · 2", n.rows[0].Label)
+	assert.Equal(t, navRowInstance, n.rows[1].Kind)
+	assert.Equal(t, navRowInstance, n.rows[2].Kind)
+	assert.True(t, n.rows[1].Retired)
+	assert.True(t, n.rows[2].Retired)
+	assert.ElementsMatch(t, []string{"ready-worker", "running-worker"}, []string{n.rows[1].Label, n.rows[2].Label})
 }
 
 func TestRebuildRows_DeadSection_DonePlanWithoutInstances_GoesToHistory(t *testing.T) {
