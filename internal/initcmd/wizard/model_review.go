@@ -80,8 +80,13 @@ func (r *reviewStep) View(width, height int) string {
 func (r *reviewStep) Apply(_ *State) {}
 
 func formatReviewLine(a AgentState) string {
+	permSuffix := ""
+	if a.PermissionDefault != "" {
+		permSuffix = fmt.Sprintf(" · perm=%s", a.PermissionDefault)
+	}
+
 	if !a.Enabled {
-		return fmt.Sprintf("%s %-8s (disabled)", dotDisabledStyle.Render("○"), a.Role)
+		return fmt.Sprintf("%s %-8s (disabled)%s", dotDisabledStyle.Render("○"), a.Role, permSuffix)
 	}
 
 	effort := a.Effort
@@ -93,7 +98,7 @@ func formatReviewLine(a AgentState) string {
 		temp = "default"
 	}
 
-	return fmt.Sprintf("%s %-8s %s / %s / %s / temp %s", dotEnabledStyle.Render("●"), a.Role, a.Harness, a.Model, effort, temp)
+	return fmt.Sprintf("%s %-8s %s / %s / %s / temp %s%s", dotEnabledStyle.Render("●"), a.Role, a.Harness, a.Model, effort, temp, permSuffix)
 }
 
 func reviewScaffoldPaths(harnesses []string) []string {

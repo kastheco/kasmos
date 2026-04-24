@@ -112,6 +112,7 @@ model          = "o3"            # model name passed to the CLI
 temperature    = 0.2             # omit to use harness default
 effort         = "high"          # omit if harness does not support effort levels
 execution_mode = "tmux"           # "tmux" or "sdk" ("headless" accepted as legacy alias for "sdk")
+# permission_default omitted means inherit; set manually to "prompt" or "bypass" if needed
 
 [agents.planner]
 enabled        = true
@@ -146,5 +147,7 @@ kas setup           # re-run wizard; existing files are skipped by default
 kas setup --force   # overwrite scaffold files with latest templates
 kas setup --clean   # re-run with factory defaults, ignoring current config
 ```
+
+> **Permission defaults:** freshly generated configs omit `permission_default`, which means inherit the current spawn-source default. If you manually add `permission_default = "prompt"` or `permission_default = "bypass"` to an agent profile, later wizard re-runs preserve that value and show it in the review step; edit `config.toml` directly to change it.
 
 After setup, run `kas check -v` to audit skill sync across all harness directories.
