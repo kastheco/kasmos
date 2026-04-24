@@ -135,7 +135,8 @@ describe("AuditPage", () => {
       target: { value: "2026-04-25T00:00:00Z" },
     });
 
-    const latestCall = mockUseAutoRefresh.mock.calls.at(-1);
+    const calls = mockUseAutoRefresh.mock.calls;
+    const latestCall = calls[calls.length - 1];
     expect(latestCall?.[1]).toContain("2026-04-24T00:00:00Z");
     expect(latestCall?.[1]).toContain("2026-04-25T00:00:00Z");
     expect(mockFetchAuditEvents).toHaveBeenCalledWith(

@@ -314,6 +314,8 @@ kas task recover my-feature --action verify-failed --feedback "spec section 3 is
 | `advance-review-cycle` | `review_changes_requested` | requires `--feedback`; alias for `review-changes` |
 | `verify-approved` | `verify_approved` | only valid while task is in `verifying` status |
 | `verify-failed` | `verify_failed` | only valid while task is in `verifying` status; requires `--feedback` |
+| `advance-wave` | `advance_wave` | advance a stuck multi-wave task to the next wave |
+| `retry-wave` | `retry_wave` | re-run failed tasks in the current wave |
 
 `verify-approved` and `verify-failed` are the manual recovery path for the master agent gate. Use them when the master agent session ended before it could emit a signal. The `kas status` command shows these hints automatically when a task is stuck in the `verifying` status.
 
