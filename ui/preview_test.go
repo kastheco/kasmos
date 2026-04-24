@@ -842,10 +842,12 @@ func TestPreviewPane_SDKPresentation_FocusedComposerShowsTypedText(t *testing.T)
 	require.NoError(t, pane.UpdateContent(inst))
 
 	require.Contains(t, stripPreviewANSI(pane.previewState.text), "> hello█")
+	// cursor at end: composed as prefix + composerStyle("hello") + cursorStyle("█")
+	composerStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#ffffff"))
+	cursorStyle := composerStyle.Reverse(true)
 	require.Contains(t, pane.previewState.text,
-		sdk.RenderPromptLine(">", "hello█",
-			lipgloss.NewStyle().Foreground(ColorRose),
-			lipgloss.NewStyle().Foreground(lipgloss.Color("#ffffff"))))
+		lipgloss.NewStyle().Foreground(ColorRose).Render(">")+
+			" "+composerStyle.Render("hello")+cursorStyle.Render("█"))
 	require.Contains(t, stripPreviewANSI(pane.previewState.text), "shift+enter newline")
 	require.Contains(t, stripPreviewANSI(pane.previewState.text), "> hello█\n\nenter send",
 		"typed prompt must be visually separated from footer details")
@@ -1760,4 +1762,450 @@ func TestPreviewPane_ScrollDown_AutoExitsAtBottom(t *testing.T) {
 
 	require.NoError(t, pane.ScrollDown(inst))
 	require.False(t, pane.isScrolling, "scrolling back to the live bottom must auto-exit scroll mode")
+}
+
+// TestPreviewPane_SDKComposerCursor_InsertAtCursor verifies that text is
+// inserted at the cursor position and the cursor advances accordingly.
+func TestPreviewPane_SDKComposerCursor_InsertAtCursor(t *testing.T) {
+	cases := []struct {
+		name     string
+		initial  string
+		initCur  int
+		insert   string
+		wantText string
+		wantCur  int
+	}{
+		{
+			name:    "insert at beginning",
+			initial: "world", initCur: 0,
+			insert: "hello ", wantText: "hello world", wantCur: 6,
+		},
+		{
+			name:    "insert at end",
+			initial: "hello", initCur: 5,
+			insert: " world", wantText: "hello world", wantCur: 11,
+		},
+		{
+			name:    "insert in middle",
+			initial: "helo", initCur: 3,
+			insert: "l", wantText: "hello", wantCur: 4,
+		},
+		{
+			name:    "insert empty is no-op",
+			initial: "hello", initCur: 2,
+			insert: "", wantText: "hello", wantCur: 2,
+		},
+		{
+			name:    "insert unicode rune",
+			initial: "ab", initCur: 1,
+			insert: "é", wantText: "aéb", wantCur: 2,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			pane := NewPreviewPane()
+			pane.AppendSDKComposerText(tc.initial)
+			pane.sdkComposerCursor = tc.initCur
+			pane.AppendSDKComposerText(tc.insert)
+			require.Equal(t, tc.wantText, pane.SDKComposerText())
+			require.Equal(t, tc.wantCur, pane.SDKComposerCursor())
+		})
+	}
+}
+
+// TestPreviewPane_SDKComposerCursor_BackspaceAndDelete verifies backspace
+// (delete-backward) and forward-delete are cursor-aware.
+func TestPreviewPane_SDKComposerCursor_BackspaceAndDelete(t *testing.T) {
+	t.Run("backspace at beginning is no-op", func(t *testing.T) {
+		pane := NewPreviewPane()
+		pane.AppendSDKComposerText("hello")
+		pane.sdkComposerCursor = 0
+		pane.DeleteSDKComposerBackward()
+		require.Equal(t, "hello", pane.SDKComposerText())
+		require.Equal(t, 0, pane.SDKComposerCursor())
+	})
+	t.Run("backspace at end deletes last rune", func(t *testing.T) {
+		pane := NewPreviewPane()
+		pane.AppendSDKComposerText("hello")
+		// cursor is at 5 (end) after Append
+		pane.DeleteSDKComposerBackward()
+		require.Equal(t, "hell", pane.SDKComposerText())
+		require.Equal(t, 4, pane.SDKComposerCursor())
+	})
+	t.Run("backspace in middle deletes rune before cursor", func(t *testing.T) {
+		pane := NewPreviewPane()
+		pane.AppendSDKComposerText("hello")
+		pane.sdkComposerCursor = 3
+		pane.DeleteSDKComposerBackward()
+		require.Equal(t, "helo", pane.SDKComposerText())
+		require.Equal(t, 2, pane.SDKComposerCursor())
+	})
+	t.Run("forward delete at end is no-op", func(t *testing.T) {
+		pane := NewPreviewPane()
+		pane.AppendSDKComposerText("hello")
+		// cursor at 5 (end)
+		pane.DeleteSDKComposerForward()
+		require.Equal(t, "hello", pane.SDKComposerText())
+		require.Equal(t, 5, pane.SDKComposerCursor())
+	})
+	t.Run("forward delete at beginning deletes first rune", func(t *testing.T) {
+		pane := NewPreviewPane()
+		pane.AppendSDKComposerText("hello")
+		pane.sdkComposerCursor = 0
+		pane.DeleteSDKComposerForward()
+		require.Equal(t, "ello", pane.SDKComposerText())
+		require.Equal(t, 0, pane.SDKComposerCursor())
+	})
+	t.Run("forward delete in middle deletes rune at cursor", func(t *testing.T) {
+		pane := NewPreviewPane()
+		pane.AppendSDKComposerText("hello")
+		pane.sdkComposerCursor = 2
+		pane.DeleteSDKComposerForward()
+		require.Equal(t, "helo", pane.SDKComposerText())
+		require.Equal(t, 2, pane.SDKComposerCursor())
+	})
+	t.Run("empty composer backspace and forward are no-ops", func(t *testing.T) {
+		pane := NewPreviewPane()
+		pane.DeleteSDKComposerBackward()
+		pane.DeleteSDKComposerForward()
+		require.Equal(t, "", pane.SDKComposerText())
+		require.Equal(t, 0, pane.SDKComposerCursor())
+	})
+}
+
+// TestPreviewPane_SDKComposerCursor_WordMovement verifies word-left and
+// word-right movement semantics.
+func TestPreviewPane_SDKComposerCursor_WordMovement(t *testing.T) {
+	cases := []struct {
+		name    string
+		text    string
+		initCur int
+		op      func(*PreviewPane)
+		wantCur int
+	}{
+		{
+			name: "word-left from end of single word",
+			text: "hello", initCur: 5,
+			op: (*PreviewPane).MoveSDKComposerCursorWordLeft, wantCur: 0,
+		},
+		{
+			name: "word-left from end of two words",
+			text: "hello world", initCur: 11,
+			op: (*PreviewPane).MoveSDKComposerCursorWordLeft, wantCur: 6,
+		},
+		{
+			name: "word-left from start of second word",
+			text: "hello world", initCur: 6,
+			op: (*PreviewPane).MoveSDKComposerCursorWordLeft, wantCur: 0,
+		},
+		{
+			name: "word-left at beginning is no-op",
+			text: "hello", initCur: 0,
+			op: (*PreviewPane).MoveSDKComposerCursorWordLeft, wantCur: 0,
+		},
+		{
+			name: "word-right from start of single word",
+			text: "hello", initCur: 0,
+			op: (*PreviewPane).MoveSDKComposerCursorWordRight, wantCur: 5,
+		},
+		{
+			name: "word-right from start of two words",
+			text: "hello world", initCur: 0,
+			op: (*PreviewPane).MoveSDKComposerCursorWordRight, wantCur: 5,
+		},
+		{
+			name: "word-right skips separator then word",
+			text: "hello world", initCur: 5,
+			op: (*PreviewPane).MoveSDKComposerCursorWordRight, wantCur: 11,
+		},
+		{
+			name: "word-right at end is no-op",
+			text: "hello", initCur: 5,
+			op: (*PreviewPane).MoveSDKComposerCursorWordRight, wantCur: 5,
+		},
+		{
+			name: "word-left on pure whitespace reaches 0",
+			text: "   ", initCur: 3,
+			op: (*PreviewPane).MoveSDKComposerCursorWordLeft, wantCur: 0,
+		},
+		{
+			name: "word-right on pure whitespace reaches end",
+			text: "   ", initCur: 0,
+			op: (*PreviewPane).MoveSDKComposerCursorWordRight, wantCur: 3,
+		},
+		{
+			name: "emoji treated as separator by word-right",
+			text: "hi 😀 there", initCur: 0,
+			op: (*PreviewPane).MoveSDKComposerCursorWordRight, wantCur: 2,
+		},
+		{
+			name: "left at beginning is no-op",
+			text: "hello", initCur: 0,
+			op: (*PreviewPane).MoveSDKComposerCursorLeft, wantCur: 0,
+		},
+		{
+			name: "right at end is no-op",
+			text: "hello", initCur: 5,
+			op: (*PreviewPane).MoveSDKComposerCursorRight, wantCur: 5,
+		},
+		{
+			name: "left moves one rune",
+			text: "hello", initCur: 3,
+			op: (*PreviewPane).MoveSDKComposerCursorLeft, wantCur: 2,
+		},
+		{
+			name: "right moves one rune",
+			text: "hello", initCur: 2,
+			op: (*PreviewPane).MoveSDKComposerCursorRight, wantCur: 3,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			pane := NewPreviewPane()
+			pane.AppendSDKComposerText(tc.text)
+			pane.sdkComposerCursor = tc.initCur
+			tc.op(pane)
+			require.Equal(t, tc.wantCur, pane.SDKComposerCursor())
+		})
+	}
+}
+
+// TestPreviewPane_SDKComposerCursor_WordDeletion verifies word-backward and
+// word-forward deletion.
+func TestPreviewPane_SDKComposerCursor_WordDeletion(t *testing.T) {
+	t.Run("word-backward from end deletes last word", func(t *testing.T) {
+		pane := NewPreviewPane()
+		pane.AppendSDKComposerText("hello world")
+		// cursor at 11 (end)
+		pane.DeleteSDKComposerWordBackward()
+		require.Equal(t, "hello ", pane.SDKComposerText())
+		require.Equal(t, 6, pane.SDKComposerCursor())
+	})
+	t.Run("word-backward from beginning is no-op", func(t *testing.T) {
+		pane := NewPreviewPane()
+		pane.AppendSDKComposerText("hello")
+		pane.sdkComposerCursor = 0
+		pane.DeleteSDKComposerWordBackward()
+		require.Equal(t, "hello", pane.SDKComposerText())
+		require.Equal(t, 0, pane.SDKComposerCursor())
+	})
+	t.Run("word-backward in middle", func(t *testing.T) {
+		pane := NewPreviewPane()
+		pane.AppendSDKComposerText("hello world")
+		pane.sdkComposerCursor = 8 // inside "world"
+		pane.DeleteSDKComposerWordBackward()
+		require.Equal(t, "hello rld", pane.SDKComposerText())
+		require.Equal(t, 6, pane.SDKComposerCursor())
+	})
+	t.Run("word-forward from start deletes first word", func(t *testing.T) {
+		pane := NewPreviewPane()
+		pane.AppendSDKComposerText("hello world")
+		pane.sdkComposerCursor = 0
+		pane.DeleteSDKComposerWordForward()
+		require.Equal(t, " world", pane.SDKComposerText())
+		require.Equal(t, 0, pane.SDKComposerCursor())
+	})
+	t.Run("word-forward from end is no-op", func(t *testing.T) {
+		pane := NewPreviewPane()
+		pane.AppendSDKComposerText("hello")
+		// cursor at 5 (end)
+		pane.DeleteSDKComposerWordForward()
+		require.Equal(t, "hello", pane.SDKComposerText())
+		require.Equal(t, 5, pane.SDKComposerCursor())
+	})
+	t.Run("word-forward from space skips separator then word", func(t *testing.T) {
+		pane := NewPreviewPane()
+		pane.AppendSDKComposerText("hello world")
+		pane.sdkComposerCursor = 5 // at space
+		pane.DeleteSDKComposerWordForward()
+		require.Equal(t, "hello", pane.SDKComposerText())
+		require.Equal(t, 5, pane.SDKComposerCursor())
+	})
+}
+
+// TestPreviewPane_SDKComposerCursor_LineMovement verifies line-start, line-end,
+// cursor-up, and cursor-down semantics.
+func TestPreviewPane_SDKComposerCursor_LineMovement(t *testing.T) {
+	t.Run("line-start on first line", func(t *testing.T) {
+		pane := NewPreviewPane()
+		pane.AppendSDKComposerText("hello")
+		pane.sdkComposerCursor = 3
+		pane.MoveSDKComposerCursorLineStart()
+		require.Equal(t, 0, pane.SDKComposerCursor())
+	})
+	t.Run("line-start on second line", func(t *testing.T) {
+		pane := NewPreviewPane()
+		pane.AppendSDKComposerText("hello\nworld")
+		pane.sdkComposerCursor = 9 // inside "world"
+		pane.MoveSDKComposerCursorLineStart()
+		require.Equal(t, 6, pane.SDKComposerCursor())
+	})
+	t.Run("line-end on last line", func(t *testing.T) {
+		pane := NewPreviewPane()
+		pane.AppendSDKComposerText("hello")
+		pane.sdkComposerCursor = 2
+		pane.MoveSDKComposerCursorLineEnd()
+		require.Equal(t, 5, pane.SDKComposerCursor())
+	})
+	t.Run("line-end on first line of multiline", func(t *testing.T) {
+		pane := NewPreviewPane()
+		pane.AppendSDKComposerText("hello\nworld")
+		pane.sdkComposerCursor = 2
+		pane.MoveSDKComposerCursorLineEnd()
+		require.Equal(t, 5, pane.SDKComposerCursor())
+	})
+	t.Run("cursor-up from second line", func(t *testing.T) {
+		pane := NewPreviewPane()
+		pane.AppendSDKComposerText("hello\nworld")
+		pane.sdkComposerCursor = 9 // col 3 of "world"
+		pane.MoveSDKComposerCursorUp()
+		require.Equal(t, 3, pane.SDKComposerCursor())
+	})
+	t.Run("cursor-up from first line is no-op", func(t *testing.T) {
+		pane := NewPreviewPane()
+		pane.AppendSDKComposerText("hello")
+		pane.sdkComposerCursor = 3
+		pane.MoveSDKComposerCursorUp()
+		require.Equal(t, 3, pane.SDKComposerCursor())
+	})
+	t.Run("cursor-up clamps to shorter previous line", func(t *testing.T) {
+		pane := NewPreviewPane()
+		pane.AppendSDKComposerText("hi\nworld")
+		pane.sdkComposerCursor = 7 // col 4 of "world"
+		pane.MoveSDKComposerCursorUp()
+		// "hi" is 2 chars; clamp col 4 → 2
+		require.Equal(t, 2, pane.SDKComposerCursor())
+	})
+	t.Run("cursor-down from first line", func(t *testing.T) {
+		pane := NewPreviewPane()
+		pane.AppendSDKComposerText("hello\nworld")
+		pane.sdkComposerCursor = 3 // col 3 of "hello"
+		pane.MoveSDKComposerCursorDown()
+		require.Equal(t, 9, pane.SDKComposerCursor())
+	})
+	t.Run("cursor-down from last line is no-op", func(t *testing.T) {
+		pane := NewPreviewPane()
+		pane.AppendSDKComposerText("hello")
+		pane.sdkComposerCursor = 3
+		pane.MoveSDKComposerCursorDown()
+		require.Equal(t, 3, pane.SDKComposerCursor())
+	})
+	t.Run("cursor-down clamps to shorter next line", func(t *testing.T) {
+		pane := NewPreviewPane()
+		pane.AppendSDKComposerText("hello\nhi")
+		pane.sdkComposerCursor = 4 // col 4 of "hello"
+		pane.MoveSDKComposerCursorDown()
+		// "hi" is 2 chars; clamp col 4 → 2
+		require.Equal(t, 8, pane.SDKComposerCursor())
+	})
+}
+
+// TestPreviewPane_SDKPresentation_FocusedComposerShowsCursorAtStartMiddleAndEnd
+// verifies that renderComposerPromptBody draws the block cursor at the correct
+// position in the rendered output.
+func TestPreviewPane_SDKPresentation_FocusedComposerShowsCursorAtStartMiddleAndEnd(t *testing.T) {
+	composerSty := lipgloss.NewStyle().Foreground(lipgloss.Color("#ffffff"))
+	cursorSty := composerSty.Reverse(true)
+
+	t.Run("cursor at end appends block glyph", func(t *testing.T) {
+		pane := NewPreviewPane()
+		pane.SetSize(80, 24)
+		inst := newSDKInstanceWithTurns(t, nil)
+		require.NoError(t, pane.UpdateContent(inst))
+		pane.SetSDKFocusMode(true)
+		pane.AppendSDKComposerText("hello")
+		// cursor is at 5 (end) after Append
+		require.NoError(t, pane.UpdateContent(inst))
+		plain := stripPreviewANSI(pane.previewState.text)
+		require.Contains(t, plain, "hello█")
+		require.Contains(t, pane.previewState.text, composerSty.Render("hello")+cursorSty.Render("█"))
+	})
+
+	t.Run("cursor at start highlights first rune", func(t *testing.T) {
+		pane := NewPreviewPane()
+		pane.SetSize(80, 24)
+		inst := newSDKInstanceWithTurns(t, nil)
+		require.NoError(t, pane.UpdateContent(inst))
+		pane.SetSDKFocusMode(true)
+		pane.AppendSDKComposerText("hello")
+		pane.sdkComposerCursor = 0
+		require.NoError(t, pane.UpdateContent(inst))
+		require.Contains(t, pane.previewState.text, cursorSty.Render("h"))
+		require.Contains(t, pane.previewState.text, composerSty.Render("ello"))
+	})
+
+	t.Run("cursor at middle highlights rune at cursor", func(t *testing.T) {
+		pane := NewPreviewPane()
+		pane.SetSize(80, 24)
+		inst := newSDKInstanceWithTurns(t, nil)
+		require.NoError(t, pane.UpdateContent(inst))
+		pane.SetSDKFocusMode(true)
+		pane.AppendSDKComposerText("hello")
+		pane.sdkComposerCursor = 2 // on 'l'
+		require.NoError(t, pane.UpdateContent(inst))
+		require.Contains(t, pane.previewState.text, composerSty.Render("he"))
+		require.Contains(t, pane.previewState.text, cursorSty.Render("l"))
+		require.Contains(t, pane.previewState.text, composerSty.Render("lo"))
+	})
+
+	t.Run("cursor on newline renders block glyph on its own line", func(t *testing.T) {
+		pane := NewPreviewPane()
+		pane.SetSize(80, 24)
+		inst := newSDKInstanceWithTurns(t, nil)
+		require.NoError(t, pane.UpdateContent(inst))
+		pane.SetSDKFocusMode(true)
+		pane.AppendSDKComposerText("hello\nworld")
+		pane.sdkComposerCursor = 5 // on '\n'
+		require.NoError(t, pane.UpdateContent(inst))
+		plain := stripPreviewANSI(pane.previewState.text)
+		require.Contains(t, plain, "hello█\nworld")
+	})
+
+	t.Run("focused empty composer shows block glyph only", func(t *testing.T) {
+		pane := NewPreviewPane()
+		pane.SetSize(80, 24)
+		inst := newSDKInstanceWithTurns(t, nil)
+		pane.SetSDKFocusMode(true)
+		require.NoError(t, pane.UpdateContent(inst))
+		plain := stripPreviewANSI(pane.previewState.text)
+		require.Contains(t, plain, "> █")
+		require.Contains(t, pane.previewState.text, cursorSty.Render("█"))
+	})
+}
+
+// TestPreviewPane_SDKPresentation_PlaceholderReplacementPreservesComposerCursor
+// verifies that the cursor position is preserved across a daemon placeholder
+// → live instance transition (same composer owner key).
+func TestPreviewPane_SDKPresentation_PlaceholderReplacementPreservesComposerCursor(t *testing.T) {
+	pane := NewPreviewPane()
+	pane.SetSize(80, 24)
+	pane.SetSDKFocusMode(true)
+
+	repoPath := t.TempDir()
+	inst1, err := session.NewInstance(session.InstanceOptions{
+		Title:   "daemon-sdk-placeholder",
+		Path:    repoPath,
+		Program: "codex",
+	})
+	require.NoError(t, err)
+	inst1.ExecutionMode = session.ExecutionModeSDK
+	inst1.SetStatus(session.Loading)
+	require.NoError(t, pane.UpdateContent(inst1))
+
+	pane.AppendSDKComposerText("hello world")
+	pane.MoveSDKComposerCursorWordLeft() // cursor moves to "world" (position 6)
+	require.Equal(t, 6, pane.SDKComposerCursor())
+
+	inst2, err := session.NewInstance(session.InstanceOptions{
+		Title:   "daemon-sdk-placeholder",
+		Path:    repoPath,
+		Program: "codex",
+	})
+	require.NoError(t, err)
+	inst2.ExecutionMode = session.ExecutionModeSDK
+	inst2.SetStatus(session.Running)
+	require.NoError(t, pane.UpdateContent(inst2))
+
+	require.Equal(t, "hello world", pane.SDKComposerText())
+	require.Equal(t, 6, pane.SDKComposerCursor(), "cursor must be preserved across placeholder replacement")
 }

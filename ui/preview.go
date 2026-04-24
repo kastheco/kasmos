@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode"
 
 	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/viewport"
@@ -71,6 +72,9 @@ type PreviewPane struct {
 	sdkFocusMode bool
 	// sdkComposerText is the inline input buffer shown in the SDK footer while focused.
 	sdkComposerText string
+	// sdkComposerCursor is a rune index into sdkComposerText indicating where
+	// the next keystroke will be inserted. Invariant: 0 <= cursor <= len([]rune(sdkComposerText)).
+	sdkComposerCursor int
 	// sdkComposerImages are local image attachments queued for the next SDK prompt.
 	sdkComposerImages []string
 
@@ -241,6 +245,7 @@ func (p *PreviewPane) UpdateContent(instance *session.Instance) error {
 	}
 	if composerOwnerKey != p.lastSDKComposerOwner {
 		p.sdkComposerText = ""
+		p.sdkComposerCursor = 0
 		p.sdkComposerImages = nil
 		p.lastSDKComposerOwner = composerOwnerKey
 	}
@@ -319,7 +324,7 @@ func (p *PreviewPane) UpdateContent(instance *session.Instance) error {
 	// to flat cached text, then to a placeholder when no output has arrived yet.
 	if session.NormalizeExecutionMode(instance.ExecutionMode) == session.ExecutionModeSDK {
 		if turns := instance.CapturePresentation(); len(turns) > 0 {
-			view := buildSDKPresentationView(turns, p.width, p.sdkComposerText, p.sdkComposerImages, p.sdkFocusMode, instance.Program, instance.SDKSpeedTier, time.Now())
+			view := buildSDKPresentationView(turns, p.width, p.sdkComposerText, p.sdkComposerCursor, p.sdkComposerImages, p.sdkFocusMode, instance.Program, instance.SDKSpeedTier, time.Now())
 			p.sdkView = &view
 			p.previewState = previewState{text: joinSDKView(&view, p.width)}
 			p.isRawTerminal = false
@@ -337,7 +342,7 @@ func (p *PreviewPane) UpdateContent(instance *session.Instance) error {
 		// generic banner so ad-hoc SDK sessions can enter focus mode immediately.
 		p.isScrolling = false
 		p.viewport.SetContent("")
-		p.previewState = previewState{text: renderSDKPresentationWithComposer(nil, p.width, p.sdkComposerText, p.sdkComposerImages, p.sdkFocusMode, instance.Program, instance.SDKSpeedTier)}
+		p.previewState = previewState{text: renderSDKPresentationWithComposer(nil, p.width, p.sdkComposerText, p.sdkComposerCursor, p.sdkComposerImages, p.sdkFocusMode, instance.Program, instance.SDKSpeedTier)}
 		p.isRawTerminal = false
 		return nil
 	}
@@ -458,11 +463,11 @@ const narrowPaneThreshold = 40
 // When width is under narrowPaneThreshold, turns are separated by a single
 // newline instead of a blank line.
 func renderSDKPresentation(turns []*sdk.PresentationTurn, width int) string {
-	return renderSDKPresentationWithComposer(turns, width, "", nil, false, "", "")
+	return renderSDKPresentationWithComposer(turns, width, "", 0, nil, false, "", "")
 }
 
-func renderSDKPresentationWithComposer(turns []*sdk.PresentationTurn, width int, composer string, images []string, focused bool, program string, speedTier string) string {
-	view := buildSDKPresentationView(turns, width, composer, images, focused, program, speedTier, time.Now())
+func renderSDKPresentationWithComposer(turns []*sdk.PresentationTurn, width int, composer string, cursor int, images []string, focused bool, program string, speedTier string) string {
+	view := buildSDKPresentationView(turns, width, composer, cursor, images, focused, program, speedTier, time.Now())
 	return joinSDKView(&view, width)
 }
 
@@ -505,7 +510,7 @@ func joinSDKView(view *sdkPresentationView, width int) string {
 // Callers that need only the joined string should use joinSDKView; callers that
 // need to lay out the regions independently (e.g. String() for tail-slicing)
 // use the struct directly.
-func buildSDKPresentationView(turns []*sdk.PresentationTurn, width int, composer string, images []string, focused bool, program, speedTier string, now time.Time) sdkPresentationView {
+func buildSDKPresentationView(turns []*sdk.PresentationTurn, width int, composer string, cursor int, images []string, focused bool, program, speedTier string, now time.Time) sdkPresentationView {
 	if width <= 0 {
 		width = 80
 	}
@@ -549,7 +554,7 @@ func buildSDKPresentationView(turns []*sdk.PresentationTurn, width int, composer
 		}
 	}
 
-	footer := renderComposerFooter(width, composer, images, focused, program, speedTier)
+	footer := renderComposerFooter(width, composer, cursor, images, focused, program, speedTier)
 
 	return sdkPresentationView{
 		body:   bodyBuilder.String(),
@@ -760,7 +765,7 @@ func renderResponseDivider(width int) string {
 
 // renderComposerFooter returns a quiet display-only footer appended below the
 // turn timeline. The send overlay is not plumbed into the pane in this plan.
-func renderComposerFooter(width int, composer string, images []string, focused bool, program string, speedTier string) []string {
+func renderComposerFooter(width int, composer string, cursor int, images []string, focused bool, program string, speedTier string) []string {
 	ruleStyle := lipgloss.NewStyle().Foreground(ColorMuted)
 	promptPrefixStyle := lipgloss.NewStyle().Foreground(ColorRose)
 	placeholderStyle := lipgloss.NewStyle().Foreground(ColorSubtle)
@@ -776,17 +781,14 @@ func renderComposerFooter(width int, composer string, images []string, focused b
 	if width > 0 {
 		rule = ruleStyle.Render(strings.Repeat("─", width))
 	}
-	promptBody := "send a message to the agent …"
-	promptStyle := placeholderStyle
+	var prompt string
 	if composer != "" || focused {
-		cursor := ""
-		if focused {
-			cursor = "█"
-		}
-		promptBody = composer + cursor
-		promptStyle = composerStyle
+		cursorStyle := composerStyle.Reverse(true)
+		body := renderComposerPromptBody(composer, cursor, focused, composerStyle, cursorStyle)
+		prompt = promptPrefixStyle.Render(">") + " " + body
+	} else {
+		prompt = sdk.RenderPromptLine(">", "send a message to the agent …", promptPrefixStyle, placeholderStyle)
 	}
-	prompt := sdk.RenderPromptLine(">", promptBody, promptPrefixStyle, promptStyle)
 	hints := enterStyle.Render("enter") +
 		hintStyle.Render(" send   ") +
 		newlineStyle.Render("shift+enter") +
@@ -811,6 +813,38 @@ func renderComposerFooter(width int, composer string, images []string, focused b
 		rows = append(rows, hints)
 	}
 	return rows
+}
+
+// clampComposerCursor returns cursor clamped to [0, length].
+func clampComposerCursor(cursor, length int) int {
+	if cursor < 0 {
+		return 0
+	}
+	if cursor > length {
+		return length
+	}
+	return cursor
+}
+
+// renderComposerPromptBody renders the composer text with an ANSI block cursor
+// at the given rune index. When not focused the text is rendered unstyled.
+// When focused and composer is empty or cursor is at end, a "█" block is appended.
+// When cursor rests on a newline, a "█" is shown and the newline is preserved.
+// Otherwise the rune at cursor is highlighted with a reversed style.
+func renderComposerPromptBody(composer string, cursor int, focused bool, composerStyle, cursorStyle lipgloss.Style) string {
+	if !focused {
+		return composerStyle.Render(composer)
+	}
+	runes := []rune(composer)
+	cursor = clampComposerCursor(cursor, len(runes))
+	if len(runes) == 0 || cursor == len(runes) {
+		return composerStyle.Render(string(runes)) + cursorStyle.Render("█")
+	}
+	left := string(runes[:cursor])
+	if runes[cursor] == '\n' {
+		return composerStyle.Render(left) + cursorStyle.Render("█") + "\n" + composerStyle.Render(string(runes[cursor+1:]))
+	}
+	return composerStyle.Render(left) + cursorStyle.Render(string(runes[cursor])) + composerStyle.Render(string(runes[cursor+1:]))
 }
 
 func sdkFooterAttachmentLabel(count int) string {
@@ -899,17 +933,125 @@ func (p *PreviewPane) SetSDKFocusMode(enabled bool) {
 	p.sdkFocusMode = enabled
 }
 
+// composerRunes returns the composer text as a rune slice.
+func (p *PreviewPane) composerRunes() []rune {
+	return []rune(p.sdkComposerText)
+}
+
+// setComposerRunes replaces the composer text and clamps the cursor to the new length.
+func (p *PreviewPane) setComposerRunes(runes []rune) {
+	p.sdkComposerText = string(runes)
+	p.sdkComposerCursor = clampComposerCursor(p.sdkComposerCursor, len(runes))
+}
+
+// insertSDKComposerText inserts text at the current cursor position and
+// advances the cursor by the number of inserted runes.
+func (p *PreviewPane) insertSDKComposerText(text string) {
+	if text == "" {
+		return
+	}
+	runes := p.composerRunes()
+	cursor := clampComposerCursor(p.sdkComposerCursor, len(runes))
+	ins := []rune(text)
+	newRunes := make([]rune, 0, len(runes)+len(ins))
+	newRunes = append(newRunes, runes[:cursor]...)
+	newRunes = append(newRunes, ins...)
+	newRunes = append(newRunes, runes[cursor:]...)
+	p.sdkComposerText = string(newRunes)
+	p.sdkComposerCursor = cursor + len(ins)
+}
+
+// deleteSDKComposerRange removes runes in [start, end) and clamps the cursor.
+func (p *PreviewPane) deleteSDKComposerRange(start, end int) {
+	runes := p.composerRunes()
+	n := len(runes)
+	if start < 0 {
+		start = 0
+	}
+	if end > n {
+		end = n
+	}
+	if start >= end {
+		return
+	}
+	newRunes := make([]rune, 0, n-(end-start))
+	newRunes = append(newRunes, runes[:start]...)
+	newRunes = append(newRunes, runes[end:]...)
+	p.setComposerRunes(newRunes)
+}
+
+// isComposerWordRune reports whether r is a word rune for composer word-movement.
+// Unicode letters and digits are word runes; emoji and punctuation are separators.
+func isComposerWordRune(r rune) bool {
+	return unicode.IsLetter(r) || unicode.IsDigit(r)
+}
+
+// wordBoundaryLeft returns the rune index of the left word boundary from cursor.
+// It skips separators leftward, then skips word runes leftward.
+func wordBoundaryLeft(runes []rune, cursor int) int {
+	i := cursor
+	for i > 0 && !isComposerWordRune(runes[i-1]) {
+		i--
+	}
+	for i > 0 && isComposerWordRune(runes[i-1]) {
+		i--
+	}
+	return i
+}
+
+// wordBoundaryRight returns the rune index of the right word boundary from cursor.
+// It skips separators rightward, then skips word runes rightward.
+func wordBoundaryRight(runes []rune, cursor int) int {
+	n := len(runes)
+	i := cursor
+	for i < n && !isComposerWordRune(runes[i]) {
+		i++
+	}
+	for i < n && isComposerWordRune(runes[i]) {
+		i++
+	}
+	return i
+}
+
+// lineColumn returns the rune index of the start of the line containing cursor
+// (the index after the previous newline, or 0) and the column offset within that line.
+func lineColumn(runes []rune, cursor int) (lineStart, column int) {
+	lineStart = 0
+	for i := cursor - 1; i >= 0; i-- {
+		if runes[i] == '\n' {
+			lineStart = i + 1
+			break
+		}
+	}
+	return lineStart, cursor - lineStart
+}
+
+// lineEnd returns the rune index of the next newline at or after start,
+// or len(runes) if none exists.
+func lineEnd(runes []rune, start int) int {
+	for i := start; i < len(runes); i++ {
+		if runes[i] == '\n' {
+			return i
+		}
+	}
+	return len(runes)
+}
+
+// AppendSDKComposerText inserts text at the cursor position and advances the cursor.
 func (p *PreviewPane) AppendSDKComposerText(text string) {
 	if text == "" {
 		return
 	}
-	p.sdkComposerText += text
+	p.insertSDKComposerText(text)
 }
 
+// InsertSDKComposerNewline inserts a newline at the cursor position.
 func (p *PreviewPane) InsertSDKComposerNewline() {
-	p.sdkComposerText += "\n"
+	p.insertSDKComposerText("\n")
 }
 
+// AppendSDKComposerImage appends a local image path to the attachment list.
+// It does not alter the cursor position.
 func (p *PreviewPane) AppendSDKComposerImage(path string) {
 	if strings.TrimSpace(path) == "" {
 		return
@@ -917,13 +1059,133 @@ func (p *PreviewPane) AppendSDKComposerImage(path string) {
 	p.sdkComposerImages = append(p.sdkComposerImages, path)
 }
 
+// DeleteSDKComposerBackward deletes the rune immediately before the cursor.
+// It is a no-op when the cursor is at position 0.
 func (p *PreviewPane) DeleteSDKComposerBackward() {
-	runes := []rune(p.sdkComposerText)
-	if len(runes) == 0 {
+	cursor := p.sdkComposerCursor
+	if cursor == 0 {
 		return
 	}
-	p.sdkComposerText = string(runes[:len(runes)-1])
+	p.deleteSDKComposerRange(cursor-1, cursor)
+	p.sdkComposerCursor = cursor - 1
 }
+
+// DeleteSDKComposerForward deletes the rune at the cursor position.
+// It is a no-op when the cursor is at the end of the text.
+func (p *PreviewPane) DeleteSDKComposerForward() {
+	runes := p.composerRunes()
+	cursor := p.sdkComposerCursor
+	if cursor >= len(runes) {
+		return
+	}
+	p.deleteSDKComposerRange(cursor, cursor+1)
+	// cursor stays at the same position after a forward delete
+}
+
+// MoveSDKComposerCursorLeft moves the cursor one rune to the left.
+func (p *PreviewPane) MoveSDKComposerCursorLeft() {
+	if p.sdkComposerCursor > 0 {
+		p.sdkComposerCursor--
+	}
+}
+
+// MoveSDKComposerCursorRight moves the cursor one rune to the right.
+func (p *PreviewPane) MoveSDKComposerCursorRight() {
+	runes := p.composerRunes()
+	if p.sdkComposerCursor < len(runes) {
+		p.sdkComposerCursor++
+	}
+}
+
+// MoveSDKComposerCursorWordLeft moves the cursor to the left word boundary.
+func (p *PreviewPane) MoveSDKComposerCursorWordLeft() {
+	runes := p.composerRunes()
+	p.sdkComposerCursor = wordBoundaryLeft(runes, p.sdkComposerCursor)
+}
+
+// MoveSDKComposerCursorWordRight moves the cursor to the right word boundary.
+func (p *PreviewPane) MoveSDKComposerCursorWordRight() {
+	runes := p.composerRunes()
+	p.sdkComposerCursor = wordBoundaryRight(runes, p.sdkComposerCursor)
+}
+
+// MoveSDKComposerCursorLineStart moves the cursor to the start of the current line.
+func (p *PreviewPane) MoveSDKComposerCursorLineStart() {
+	runes := p.composerRunes()
+	lineStart, _ := lineColumn(runes, p.sdkComposerCursor)
+	p.sdkComposerCursor = lineStart
+}
+
+// MoveSDKComposerCursorLineEnd moves the cursor to the end of the current line.
+func (p *PreviewPane) MoveSDKComposerCursorLineEnd() {
+	runes := p.composerRunes()
+	lineStart, _ := lineColumn(runes, p.sdkComposerCursor)
+	p.sdkComposerCursor = lineEnd(runes, lineStart)
+}
+
+// MoveSDKComposerCursorUp moves the cursor to the same column on the previous line,
+// clamping to the line length. It is a no-op when already on the first line.
+func (p *PreviewPane) MoveSDKComposerCursorUp() {
+	runes := p.composerRunes()
+	lineStart, col := lineColumn(runes, p.sdkComposerCursor)
+	if lineStart == 0 {
+		return
+	}
+	prevLineEnd := lineStart - 1 // index of the '\n' character
+	prevLineStart, _ := lineColumn(runes, prevLineEnd)
+	prevLineLen := prevLineEnd - prevLineStart
+	targetCol := col
+	if targetCol > prevLineLen {
+		targetCol = prevLineLen
+	}
+	p.sdkComposerCursor = prevLineStart + targetCol
+}
+
+// MoveSDKComposerCursorDown moves the cursor to the same column on the next line,
+// clamping to the line length. It is a no-op when already on the last line.
+func (p *PreviewPane) MoveSDKComposerCursorDown() {
+	runes := p.composerRunes()
+	lineStart, col := lineColumn(runes, p.sdkComposerCursor)
+	end := lineEnd(runes, lineStart)
+	if end == len(runes) {
+		return
+	}
+	nextLineStart := end + 1
+	nextLineEnd := lineEnd(runes, nextLineStart)
+	nextLineLen := nextLineEnd - nextLineStart
+	targetCol := col
+	if targetCol > nextLineLen {
+		targetCol = nextLineLen
+	}
+	p.sdkComposerCursor = nextLineStart + targetCol
+}
+
+// DeleteSDKComposerWordBackward deletes from the left word boundary to the cursor.
+func (p *PreviewPane) DeleteSDKComposerWordBackward() {
+	runes := p.composerRunes()
+	cursor := p.sdkComposerCursor
+	boundary := wordBoundaryLeft(runes, cursor)
+	if boundary == cursor {
+		return
+	}
+	p.deleteSDKComposerRange(boundary, cursor)
+	p.sdkComposerCursor = boundary
+}
+
+// DeleteSDKComposerWordForward deletes from the cursor to the right word boundary.
+func (p *PreviewPane) DeleteSDKComposerWordForward() {
+	runes := p.composerRunes()
+	cursor := p.sdkComposerCursor
+	boundary := wordBoundaryRight(runes, cursor)
+	if boundary == cursor {
+		return
+	}
+	p.deleteSDKComposerRange(cursor, boundary)
+	// cursor stays at same position (already set by setComposerRunes clamp)
+}
+
+// SDKComposerCursor returns the current cursor position as a rune index.
+func (p *PreviewPane) SDKComposerCursor() int { return p.sdkComposerCursor }
 
 func (p *PreviewPane) SDKComposerText() string { return p.sdkComposerText }
 
@@ -936,9 +1198,11 @@ func (p *PreviewPane) SDKComposerImages() []string {
 	return out
 }
 
+// ClearSDKComposerText clears the composer text, images, and cursor.
 func (p *PreviewPane) ClearSDKComposerText() {
 	p.sdkComposerText = ""
 	p.sdkComposerImages = nil
+	p.sdkComposerCursor = 0
 }
 
 // wrapPreviewRows splits text into logical lines, then hard-wraps each line
@@ -1082,7 +1346,7 @@ func (p *PreviewPane) scrollbackContent(instance *session.Instance) (string, err
 			if width <= 0 {
 				width = p.width
 			}
-			view := buildSDKPresentationView(turns, width, "", nil, false, instance.Program, instance.SDKSpeedTier, time.Now())
+			view := buildSDKPresentationView(turns, width, "", 0, nil, false, instance.Program, instance.SDKSpeedTier, time.Now())
 			p.sdkView = &view
 			return view.body, nil
 		}
