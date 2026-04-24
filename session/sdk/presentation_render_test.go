@@ -37,6 +37,20 @@ func localRenderTime(hour, minute int) time.Time {
 	return time.Date(2026, time.April, 22, hour, minute, 0, 0, time.Local)
 }
 
+func presentationMarkdownStylesForTest() MarkdownLineStyles {
+	proseStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorText))
+	return MarkdownLineStyles{
+		Base:         proseStyle,
+		Bold:         proseStyle.Bold(true),
+		Italic:       proseStyle.Italic(true),
+		Code:         lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorFoam)),
+		Heading:      lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorGold)).Bold(true),
+		BulletPrefix: lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorRose)),
+		NumberPrefix: lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorFoam)),
+		QuotePrefix:  lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorMuted)),
+	}
+}
+
 func TestRenderPresentation_UserPrefix(t *testing.T) {
 	now := localRenderTime(9, 41)
 	turn := &PresentationTurn{
@@ -77,6 +91,205 @@ func TestRenderPresentation_ProseRowsShowRightAlignedTimestamp(t *testing.T) {
 
 	require.Contains(t, plain, expectedLine)
 	require.Contains(t, result, lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorSubtle)).Render("09:42"))
+	require.Equal(t, 1, strings.Count(plain, "09:42"))
+}
+
+func TestRenderPresentation_ProseBlockOnlyTimestampsFirstRow(t *testing.T) {
+	now := localRenderTime(9, 43)
+	turn := &PresentationTurn{
+		ID:          "t1",
+		Number:      1,
+		StartedAt:   now,
+		CompletedAt: now,
+		Rows: []PresentationRow{
+			{Kind: RowResponse, Timestamp: now},
+			{Kind: RowProse, Text: "first response line", Timestamp: now},
+			{Kind: RowProse, Text: "second response line", Timestamp: now},
+		},
+	}
+
+	result := RenderPresentation([]*PresentationTurn{turn}, 40)
+	plain := stripANSI(result)
+	expectedLine := "first response line" + strings.Repeat(" ", 40-len("first response line")-len("09:43")) + "09:43"
+
+	require.Contains(t, plain, expectedLine)
+	require.Contains(t, plain, "second response line")
+	require.Equal(t, 1, strings.Count(plain, "09:43"))
+}
+
+func TestRenderPresentation_ProseTimestampResetsAfterToolResult(t *testing.T) {
+	now := localRenderTime(9, 44)
+	turn := &PresentationTurn{
+		ID:          "t1",
+		Number:      1,
+		StartedAt:   now,
+		CompletedAt: now,
+		Rows: []PresentationRow{
+			{Kind: RowProse, Text: "before tool", Timestamp: now},
+			{Kind: RowTool, Text: "• Read main.go", ToolName: "Read", Timestamp: now},
+			{Kind: RowResult, Text: "→ ok", Timestamp: now},
+			{Kind: RowProse, Text: "after tool", Timestamp: now},
+		},
+	}
+
+	result := RenderPresentation([]*PresentationTurn{turn}, 40)
+	plain := stripANSI(result)
+
+	require.Contains(t, plain, "before tool")
+	require.Contains(t, plain, "after tool")
+	require.Equal(t, 2, strings.Count(plain, "09:44"))
+}
+
+func TestRenderPresentation_ProseMarkdownInlineStyles(t *testing.T) {
+	now := localRenderTime(9, 45)
+	styles := presentationMarkdownStylesForTest()
+	turn := &PresentationTurn{
+		ID:          "t1",
+		Number:      1,
+		StartedAt:   now,
+		CompletedAt: now,
+		Rows: []PresentationRow{
+			{Kind: RowProse, Text: "plain **bold** *italic* `code`", Timestamp: now},
+		},
+	}
+
+	result := RenderPresentation([]*PresentationTurn{turn}, 80)
+
+	require.Contains(t, result, styles.Base.Render("plain "))
+	require.Contains(t, result, styles.Bold.Render("bold"))
+	require.Contains(t, result, styles.Italic.Render("italic"))
+	require.Contains(t, result, styles.Code.Render("code"))
+	require.Contains(t, stripANSI(result), "plain bold italic code")
+}
+
+func TestRenderPresentation_ProseMarkdownLinePrefixes(t *testing.T) {
+	now := localRenderTime(9, 46)
+	styles := presentationMarkdownStylesForTest()
+	tests := []struct {
+		name       string
+		text       string
+		wantPlain  string
+		notPlain   string
+		wantStyled []string
+	}{
+		{
+			name:      "heading",
+			text:      "# Heading **body**",
+			wantPlain: "Heading body",
+			notPlain:  "# Heading",
+			wantStyled: []string{
+				styles.Heading.Render("Heading "),
+				styles.Bold.Render("body"),
+			},
+		},
+		{
+			name:      "bullet",
+			text:      "- item **body**",
+			wantPlain: "• item body",
+			notPlain:  "- item",
+			wantStyled: []string{
+				styles.BulletPrefix.Render("• "),
+				styles.Base.Render("item "),
+				styles.Bold.Render("body"),
+			},
+		},
+		{
+			name:      "numbered",
+			text:      "7. item _body_",
+			wantPlain: "7. item body",
+			notPlain:  "7. item _body_",
+			wantStyled: []string{
+				styles.NumberPrefix.Render("7. "),
+				styles.Base.Render("item "),
+				styles.Italic.Render("body"),
+			},
+		},
+		{
+			name:      "blockquote",
+			text:      "> quote `body`",
+			wantPlain: "│ quote body",
+			notPlain:  "> quote",
+			wantStyled: []string{
+				styles.QuotePrefix.Render("│ "),
+				styles.Base.Render("quote "),
+				styles.Code.Render("body"),
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			turn := &PresentationTurn{
+				ID:          "t1",
+				Number:      1,
+				StartedAt:   now,
+				CompletedAt: now,
+				Rows: []PresentationRow{
+					{Kind: RowProse, Text: tt.text, Timestamp: now},
+				},
+			}
+
+			result := RenderPresentation([]*PresentationTurn{turn}, 80)
+			plain := stripANSI(result)
+
+			require.Contains(t, plain, tt.wantPlain)
+			require.NotContains(t, plain, tt.notPlain)
+			for _, segment := range tt.wantStyled {
+				require.Contains(t, result, segment)
+			}
+		})
+	}
+}
+
+func TestRenderPresentation_CodeBlockRowsUseCodeStyleAndNoInlineMarkdown(t *testing.T) {
+	now := localRenderTime(9, 47)
+	codeText := `fmt.Println("*x*")`
+	codeGutterStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorMuted))
+	codeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorFoam))
+	turn := &PresentationTurn{
+		ID:          "t1",
+		Number:      1,
+		StartedAt:   now,
+		CompletedAt: now,
+		Rows: []PresentationRow{
+			{Kind: RowCodeBlock, Text: codeText, Timestamp: now},
+		},
+	}
+
+	result := RenderPresentation([]*PresentationTurn{turn}, 80)
+	plain := stripANSI(result)
+	expected := ToolCallIndent + codeGutterStyle.Render("│ ") + codeStyle.Render(codeText)
+
+	require.Contains(t, result, expected)
+	require.Contains(t, plain, `  │ fmt.Println("*x*")`)
+	require.Contains(t, plain, "*x*")
+}
+
+func TestRenderPresentation_StyledTimestampAlignmentUsesVisibleWidth(t *testing.T) {
+	now := localRenderTime(9, 48)
+	turn := &PresentationTurn{
+		ID:          "t1",
+		Number:      1,
+		StartedAt:   now,
+		CompletedAt: now,
+		Rows: []PresentationRow{
+			{Kind: RowProse, Text: "hello **bold**", Timestamp: now},
+		},
+	}
+
+	result := RenderPresentation([]*PresentationTurn{turn}, 32)
+	plain := stripANSI(result)
+	var proseLine string
+	for _, line := range strings.Split(plain, "\n") {
+		if strings.Contains(line, "hello bold") {
+			proseLine = line
+			break
+		}
+	}
+
+	require.NotEmpty(t, proseLine)
+	require.Equal(t, 32-len("09:48"), strings.Index(proseLine, "09:48"))
+	require.Contains(t, result, lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorSubtle)).Render("09:48"))
 }
 
 func TestRenderPresentation_ToolLineHighlightAndIndent(t *testing.T) {

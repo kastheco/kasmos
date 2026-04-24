@@ -115,6 +115,18 @@ func renderPresentationTurn(turn *PresentationTurn, width int) []string {
 	removedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorLove))
 	diffContextStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorSubtle))
 	previewStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorSubtle))
+	codeGutterStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorMuted))
+	codeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorFoam))
+	mdStyles := MarkdownLineStyles{
+		Base:         proseStyle,
+		Bold:         proseStyle.Bold(true),
+		Italic:       proseStyle.Italic(true),
+		Code:         lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorFoam)),
+		Heading:      lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorGold)).Bold(true),
+		BulletPrefix: lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorRose)),
+		NumberPrefix: lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorFoam)),
+		QuotePrefix:  lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorMuted)),
+	}
 
 	prevKind := PresentationRowKind("")
 	for i, row := range turn.Rows {
@@ -212,7 +224,19 @@ func renderPresentationTurn(turn *PresentationTurn, width int) []string {
 				rows = append(rows, renderPresentationResponseDivider(width))
 			}
 		case RowProse:
-			rows = append(rows, RenderTextLineWithTimestamp(row.Text, row.Timestamp, width, proseStyle, timestampStyle))
+			base := RenderMarkdownProseLine(row.Text, mdStyles)
+			if presentationResponseTextKind(prevKind) {
+				rows = append(rows, base)
+			} else {
+				rows = append(rows, RenderStyledLineWithTimestamp(base, row.Timestamp, width, timestampStyle))
+			}
+		case RowCodeBlock:
+			base := ToolCallIndent + codeGutterStyle.Render("│ ") + codeStyle.Render(row.Text)
+			if presentationResponseTextKind(prevKind) {
+				rows = append(rows, base)
+			} else {
+				rows = append(rows, RenderStyledLineWithTimestamp(base, row.Timestamp, width, timestampStyle))
+			}
 		case RowStatus:
 			rows = append(rows, statusStyle.Render(row.Text))
 		case RowThinking:
@@ -221,6 +245,10 @@ func renderPresentationTurn(turn *PresentationTurn, width int) []string {
 		prevKind = row.Kind
 	}
 	return rows
+}
+
+func presentationResponseTextKind(kind PresentationRowKind) bool {
+	return kind == RowProse || kind == RowCodeBlock
 }
 
 func renderPresentationResponseDivider(width int) string {
