@@ -4,7 +4,7 @@ The product name is `kasmos hq` for the admin SPA only; it does not rename the m
 
 The preferred source is a separate transparent `hq` suffix PNG or SVG that composes with the existing `web/admin/src/assets/logo-full.png` wordmark.
 
-If no `hq` source is supplied, use the committed SVG fallback in this directory.
+If no `hq` source is supplied, use the committed SVG fallback in this directory. It embeds the existing kasmos wordmark and adds a lowercase gradient `hq` suffix.
 
 The Cloudflare Access logo is served from this directory at `/admin/brand/<file>` as a stable, unhashed public asset. Never reference Vite-hashed `/admin/assets/*` paths from Cloudflare.
 

@@ -16,7 +16,7 @@
 
 .logo {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 6px;
   padding: 4px 4px 4px 0;
 }
@@ -29,12 +29,16 @@
 }
 
 .hqSuffix {
-  color: var(--brand-accent);
-  font-size: 18px;
+  background: linear-gradient(180deg, #2dd4bf 0%, #67d6df 45%, #c4a7e7 100%);
+  background-clip: text;
+  color: transparent;
+  font-family: "Liberation Serif", "DejaVu Serif", Georgia, "Times New Roman", serif;
+  font-size: 22px;
   font-weight: 700;
   letter-spacing: 0.02em;
   line-height: 1;
   text-transform: lowercase;
+  -webkit-background-clip: text;
 }
 
 .navList {
