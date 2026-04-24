@@ -60,10 +60,6 @@ these legacy tools are NEVER permitted. using them is a violation, not a prefere
 
 ---
 
-## looking up kasmos behavior
-
-when you need to confirm how kasmos handles something (signal names, config keys, lifecycle states, cli flags), prefer `mcp__kasmos__docs_search` over guessing or re-reading source files. follow up with `mcp__kasmos__docs_read` for full context. the wiki at https://kasmos.kasthe.co/docs/ is the source of truth; the mcp tools serve it offline when the repo is checked out.
-
 ## where you fit
 
 the plan lifecycle FSM: `ready → planning → implementing → reviewing → done`
