@@ -211,6 +211,61 @@ func TestAttach_StdinFilterDropsDA1Reply(t *testing.T) {
 	assert.Equal(t, "ab", pty.String())
 }
 
+func TestAttach_StdinFilterBuffersSplitControlSequences(t *testing.T) {
+	tests := []struct {
+		name  string
+		parts []string
+		want  string
+	}{
+		{
+			name:  "bracketed paste markers",
+			parts: []string{"a\x1b[20", "0~hello\x1b[", "201~b"},
+			want:  "ahellob",
+		},
+		{
+			name:  "focus report",
+			parts: []string{"a\x1b", "[", "Ib"},
+			want:  "ab",
+		},
+		{
+			name:  "x10 mouse",
+			parts: []string{"a\x1b[M", "  ", " b"},
+			want:  "ab",
+		},
+		{
+			name:  "sgr mouse",
+			parts: []string{"a\x1b[<0", ";10;", "10Mb"},
+			want:  "ab",
+		},
+	}
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			var pty bytes.Buffer
+			filter := csiInputFilter{}
+
+			for _, part := range tt.parts {
+				require.NoError(t, filter.write(&pty, []byte(part)))
+			}
+			require.NoError(t, filter.flush(&pty))
+
+			assert.Equal(t, tt.want, pty.String())
+		})
+	}
+}
+
+func TestAttach_OuterTerminalSilenceDoesNotToggleMouseModes(t *testing.T) {
+	t.Parallel()
+	var out bytes.Buffer
+
+	outerTerminalSilence(&out)
+
+	assert.Contains(t, out.String(), cSIDisableBracketedPaste)
+	assert.Contains(t, out.String(), cSIDisableFocusReporting)
+	assert.NotContains(t, out.String(), "\x1b[?1003l")
+	assert.NotContains(t, out.String(), "\x1b[?1006l")
+}
+
 func TestRawInputMode_RestoresTTYState(t *testing.T) {
 	oldStdinFD := stdinFD
 	oldIsTTY := terminalIsTTY

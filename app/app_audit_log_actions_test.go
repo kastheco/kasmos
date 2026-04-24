@@ -290,3 +290,49 @@ func TestAuditPane_CoalescesAdjacentKillRowsInDisplayOnly(t *testing.T) {
 	assert.Contains(t, rendered, "killed and removed instance")
 	assert.NotContains(t, rendered, "agent stopped (branch preserved)")
 }
+
+func TestAuditPane_CursorUsesCoalescedRows(t *testing.T) {
+	t.Parallel()
+
+	p := ui.NewAuditPane()
+	p.SetEvents([]ui.AuditEventDisplay{
+		{
+			Time:          "12:02",
+			Kind:          "agent_killed",
+			Message:       "agent stopped (branch preserved)",
+			InstanceTitle: "coder-1",
+			DetailJSON:    `{"cleanup":false,"group_key":"agent_killed:coder-1"}`,
+		},
+		{
+			Time:          "12:01",
+			Kind:          "agent_killed",
+			Message:       "killed and removed instance",
+			InstanceTitle: "coder-1",
+			DetailJSON:    `{"cleanup":true,"group_key":"agent_killed:coder-1"}`,
+		},
+		{
+			Time:     "12:00",
+			Kind:     "plan_created",
+			Message:  "plan made",
+			TaskFile: "plan-a",
+		},
+	})
+
+	p.SetCursorActive(true)
+	selected, ok := p.SelectedEvent()
+	require.True(t, ok)
+	assert.Equal(t, "killed and removed instance", selected.Message)
+	assert.True(t, p.SelectedEventHasActions())
+
+	raw := p.SelectedRawEvents()
+	require.Len(t, raw, 2)
+	assert.ElementsMatch(t,
+		[]string{"agent stopped (branch preserved)", "killed and removed instance"},
+		[]string{raw[0].Message, raw[1].Message},
+	)
+
+	p.CursorUp()
+	selected, ok = p.SelectedEvent()
+	require.True(t, ok)
+	assert.Equal(t, "plan made", selected.Message)
+}

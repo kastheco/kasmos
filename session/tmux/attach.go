@@ -25,15 +25,11 @@ const (
 	cSIEnableBracketedPaste  = "\x1b[?2004h"
 	cSIDisableFocusReporting = "\x1b[?1004l"
 	cSIEnableFocusReporting  = "\x1b[?1004h"
-	cSIDisableMouseAnyEvent  = "\x1b[?1003l"
-	cSIDisableMouseSGR       = "\x1b[?1006l"
 )
 
 var outerTerminalSilence = func(w io.Writer) {
 	_, _ = io.WriteString(w, cSIDisableBracketedPaste)
 	_, _ = io.WriteString(w, cSIDisableFocusReporting)
-	_, _ = io.WriteString(w, cSIDisableMouseAnyEvent)
-	_, _ = io.WriteString(w, cSIDisableMouseSGR)
 }
 
 var outerTerminalRestore = func(w io.Writer) {
@@ -99,6 +95,7 @@ func (t *TmuxSession) Attach() (chan struct{}, error) {
 		defer wg.Done()
 
 		buf := make([]byte, 4096)
+		filter := csiInputFilter{}
 
 		for {
 			select {
@@ -112,6 +109,7 @@ func (t *TmuxSession) Attach() (chan struct{}, error) {
 			n, err := os.Stdin.Read(buf)
 			_ = os.Stdin.SetReadDeadline(time.Time{})
 			if err != nil {
+				_ = filter.flushBareEsc(ptmx)
 				// Timeout or EOF — re-check context on next iteration.
 				continue
 			}
@@ -122,7 +120,7 @@ func (t *TmuxSession) Attach() (chan struct{}, error) {
 					return
 				}
 			}
-			_ = filteredWrite(ptmx, buf[:n])
+			_ = filter.write(ptmx, buf[:n])
 		}
 	}()
 
@@ -205,7 +203,27 @@ func (t *TmuxSession) Detach() {
 	}
 }
 
+type csiInputFilter struct {
+	pending []byte
+}
+
 func filteredWrite(ptmx io.Writer, buf []byte) error {
+	filter := csiInputFilter{}
+	if err := filter.write(ptmx, buf); err != nil {
+		return err
+	}
+	return filter.flush(ptmx)
+}
+
+func (f *csiInputFilter) write(ptmx io.Writer, buf []byte) error {
+	if len(f.pending) > 0 {
+		merged := make([]byte, 0, len(f.pending)+len(buf))
+		merged = append(merged, f.pending...)
+		merged = append(merged, buf...)
+		f.pending = nil
+		buf = merged
+	}
+
 	for i := 0; i < len(buf); {
 		if buf[i] != 0x1b {
 			if _, err := ptmx.Write(buf[i : i+1]); err != nil {
@@ -215,7 +233,11 @@ func filteredWrite(ptmx io.Writer, buf []byte) error {
 			continue
 		}
 
-		if i+1 >= len(buf) || buf[i+1] != '[' {
+		if i+1 >= len(buf) {
+			f.pending = append(f.pending[:0], buf[i:]...)
+			return nil
+		}
+		if buf[i+1] != '[' {
 			if _, err := ptmx.Write(buf[i : i+1]); err != nil {
 				return err
 			}
@@ -225,9 +247,7 @@ func filteredWrite(ptmx io.Writer, buf []byte) error {
 
 		end, drop := filteredCSIEnd(buf[i+2:])
 		if end < 0 {
-			if _, err := ptmx.Write(buf[i:]); err != nil {
-				return err
-			}
+			f.pending = append(f.pending[:0], buf[i:]...)
 			return nil
 		}
 		end += i + 2
@@ -239,6 +259,22 @@ func filteredWrite(ptmx io.Writer, buf []byte) error {
 		i = end + 1
 	}
 	return nil
+}
+
+func (f *csiInputFilter) flushBareEsc(ptmx io.Writer) error {
+	if len(f.pending) == 1 && f.pending[0] == 0x1b {
+		return f.flush(ptmx)
+	}
+	return nil
+}
+
+func (f *csiInputFilter) flush(ptmx io.Writer) error {
+	if len(f.pending) == 0 {
+		return nil
+	}
+	_, err := ptmx.Write(f.pending)
+	f.pending = nil
+	return err
 }
 
 func filteredCSIEnd(seq []byte) (int, bool) {

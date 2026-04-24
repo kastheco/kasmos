@@ -105,12 +105,13 @@ func parseKillDetail(raw string) (killDetail, bool) {
 // AuditPane renders a chronological, scrollable activity feed.
 type AuditPane struct {
 	events       []AuditEventDisplay
+	renderEvents []auditRenderEvent
 	viewport     viewport.Model
 	width        int
 	height       int
 	visible      bool
 	bodyLines    int // rendered body line count (events + minute headers, excluding padding)
-	selectedIdx  int // index into events (-1 = none selected)
+	selectedIdx  int // index into renderEvents (-1 = none selected)
 	cursorActive bool
 }
 
@@ -142,10 +143,11 @@ func (p *AuditPane) SetSize(w, h int) {
 // If cursor is active the selection is preserved (clamped to new length).
 func (p *AuditPane) SetEvents(events []AuditEventDisplay) {
 	p.events = events
+	p.rebuildRenderEvents()
 	if !p.cursorActive {
 		p.selectedIdx = -1
-	} else if p.selectedIdx >= len(events) {
-		p.selectedIdx = len(events) - 1
+	} else if p.selectedIdx >= len(p.renderEvents) {
+		p.selectedIdx = len(p.renderEvents) - 1
 	}
 	p.viewport.SetContent(p.renderBody())
 	if !p.cursorActive {
@@ -161,7 +163,7 @@ func (p *AuditPane) SetCursorActive(active bool) {
 		p.selectedIdx = -1
 		p.viewport.SetContent(p.renderBody())
 		p.viewport.GotoBottom()
-	} else if p.selectedIdx < 0 && len(p.events) > 0 {
+	} else if p.selectedIdx < 0 && len(p.renderEvents) > 0 {
 		// Default to the most recent actionable event (lowest index = newest),
 		// or the newest event if no actionable events exist.
 		p.selectedIdx = p.lastActionableIdx()
@@ -179,11 +181,11 @@ func (p *AuditPane) CursorActive() bool { return p.cursorActive }
 // CursorUp moves the cursor toward older events (up the visual display).
 // events[0] is newest (bottom), events[len-1] is oldest (top).
 func (p *AuditPane) CursorUp() {
-	if !p.cursorActive || len(p.events) == 0 {
+	if !p.cursorActive || len(p.renderEvents) == 0 {
 		return
 	}
 	// Moving UP visually = moving toward older events = increasing index.
-	if p.selectedIdx < len(p.events)-1 {
+	if p.selectedIdx < len(p.renderEvents)-1 {
 		p.selectedIdx++
 	}
 	p.viewport.SetContent(p.renderBody())
@@ -192,7 +194,7 @@ func (p *AuditPane) CursorUp() {
 
 // CursorDown moves the cursor toward newer events (down the visual display).
 func (p *AuditPane) CursorDown() {
-	if !p.cursorActive || len(p.events) == 0 {
+	if !p.cursorActive || len(p.renderEvents) == 0 {
 		return
 	}
 	// Moving DOWN visually = moving toward newer events = decreasing index.
@@ -206,10 +208,27 @@ func (p *AuditPane) CursorDown() {
 // SelectedEvent returns the currently selected event and true, or the zero
 // value and false when no event is selected (cursor inactive or no events).
 func (p *AuditPane) SelectedEvent() (AuditEventDisplay, bool) {
-	if !p.cursorActive || p.selectedIdx < 0 || p.selectedIdx >= len(p.events) {
+	if !p.cursorActive || p.selectedIdx < 0 || p.selectedIdx >= len(p.renderEvents) {
 		return AuditEventDisplay{}, false
 	}
-	return p.events[p.selectedIdx], true
+	return p.renderEvents[p.selectedIdx].event, true
+}
+
+// SelectedRawEvents returns the raw events represented by the currently
+// selected rendered row. Coalesced display rows can map to multiple raw audit
+// events, while non-coalesced rows map to exactly one.
+func (p *AuditPane) SelectedRawEvents() []AuditEventDisplay {
+	if !p.cursorActive || p.selectedIdx < 0 || p.selectedIdx >= len(p.renderEvents) {
+		return nil
+	}
+	item := p.renderEvents[p.selectedIdx]
+	out := make([]AuditEventDisplay, 0, len(item.rawIndices))
+	for _, idx := range item.rawIndices {
+		if idx >= 0 && idx < len(p.events) {
+			out = append(out, p.events[idx])
+		}
+	}
+	return out
 }
 
 // SelectedEventHasActions reports whether the currently selected event has
@@ -225,8 +244,8 @@ func (p *AuditPane) SelectedEventHasActions() bool {
 // lastActionableIdx returns the index of the most-recent event (smallest index
 // since events[0] is newest) that has available log actions. Returns -1 if none.
 func (p *AuditPane) lastActionableIdx() int {
-	for i := 0; i < len(p.events); i++ {
-		if len(AuditLineActions(p.events[i])) > 0 {
+	for i := 0; i < len(p.renderEvents); i++ {
+		if len(AuditLineActions(p.renderEvents[i].event)) > 0 {
 			return i
 		}
 	}
@@ -234,7 +253,7 @@ func (p *AuditPane) lastActionableIdx() int {
 }
 
 // scrollToSelected adjusts the viewport so the selected row is visible.
-// renderBody renders events in oldest-first order (len-1 at top, 0 at bottom).
+// renderBody renders display events in oldest-first order (len-1 at top, 0 at bottom).
 func (p *AuditPane) scrollToSelected() {
 	if p.selectedIdx < 0 {
 		return
@@ -247,8 +266,8 @@ func (p *AuditPane) scrollToSelected() {
 	if msgW < 10 {
 		msgW = 10
 	}
-	for i := len(p.events) - 1; i >= 0; i-- {
-		e := p.events[i]
+	for i := len(p.renderEvents) - 1; i >= 0; i-- {
+		e := p.renderEvents[i].event
 		if e.Time != lastMinute {
 			linePos++
 			lastMinute = e.Time
@@ -272,6 +291,10 @@ func (p *AuditPane) scrollToSelected() {
 // Events returns the current event slice (used by tests).
 func (p *AuditPane) Events() []AuditEventDisplay {
 	return p.events
+}
+
+func (p *AuditPane) rebuildRenderEvents() {
+	p.renderEvents = coalesceAuditRenderEvents(p.events)
 }
 
 // ScrollDown advances the viewport by n lines.
@@ -360,7 +383,7 @@ func (p *AuditPane) renderBody() string {
 		return auditRowPad.Render(auditEmptyStyle.Render("· no events"))
 	}
 
-	renderEvents := coalesceAuditRenderEvents(p.events)
+	renderEvents := p.renderEvents
 	const overhead = 4
 	msgW := p.width - overhead
 	if msgW < 10 {
@@ -383,7 +406,7 @@ func (p *AuditPane) renderBody() string {
 			lastMinute = e.Time
 		}
 
-		selected := p.cursorActive && item.rawIndex == p.selectedIdx
+		selected := p.cursorActive && i == p.selectedIdx
 		hasActions := len(AuditLineActions(e)) > 0
 
 		icon := lipgloss.NewStyle().Foreground(e.Color).Render(e.Icon)
@@ -430,8 +453,8 @@ func (p *AuditPane) renderBody() string {
 }
 
 type auditRenderEvent struct {
-	event    AuditEventDisplay
-	rawIndex int
+	event      AuditEventDisplay
+	rawIndices []int
 }
 
 func coalesceAuditRenderEvents(events []AuditEventDisplay) []auditRenderEvent {
@@ -442,20 +465,22 @@ func coalesceAuditRenderEvents(events []AuditEventDisplay) []auditRenderEvent {
 	for i := 0; i < len(events); {
 		currentKey := auditDisplayGroupKey(events[i])
 		if currentKey == "" {
-			out = append(out, auditRenderEvent{event: events[i], rawIndex: i})
+			out = append(out, auditRenderEvent{event: events[i], rawIndices: []int{i}})
 			i++
 			continue
 		}
 
 		bestIdx := i
+		rawIndices := []int{i}
 		j := i + 1
 		for j < len(events) && auditDisplayGroupKey(events[j]) == currentKey {
+			rawIndices = append(rawIndices, j)
 			if auditKillCleanup(events[j]) && !auditKillCleanup(events[bestIdx]) {
 				bestIdx = j
 			}
 			j++
 		}
-		out = append(out, auditRenderEvent{event: events[bestIdx], rawIndex: bestIdx})
+		out = append(out, auditRenderEvent{event: events[bestIdx], rawIndices: rawIndices})
 		i = j
 	}
 	return out
