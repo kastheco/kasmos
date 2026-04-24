@@ -279,8 +279,8 @@ func TestInspectServiceFiles_Linux_NotInstalled(t *testing.T) {
 		assert.Empty(t, r.Normalized, "missing file should have empty normalized path")
 		assert.Contains(t, r.Note, "not installed")
 	}
-	// Should have entries for kasmos.service and kasmosdb.service
-	assert.Len(t, refs, 3, "kasmos.service has ExecStart+ExecStop, kasmosdb.service has ExecStart")
+	// Should have entries for kasmos.service and kasmosdb.service.
+	assert.Len(t, refs, 2, "kasmos.service and kasmosdb.service each have ExecStart")
 }
 
 func TestInspectServiceFiles_Linux_AbsPath(t *testing.T) {
@@ -291,13 +291,13 @@ func TestInspectServiceFiles_Linux_AbsPath(t *testing.T) {
 	svcDir := filepath.Join(home, ".config", "systemd", "user")
 	require.NoError(t, os.MkdirAll(svcDir, 0o755))
 
-	svc := "[Service]\nExecStart=" + kasPath + " daemon start --foreground\nExecStop=" + kasPath + " daemon stop\n"
+	svc := "[Service]\nExecStart=" + kasPath + " daemon start --foreground\n"
 	require.NoError(t, os.WriteFile(filepath.Join(svcDir, "kasmos.service"), []byte(svc), 0o644))
 
 	refs := InspectServiceFiles(home, "linux")
 
-	// kasmos.service: 2 refs; kasmosdb.service: 1 ref (not installed)
-	assert.Len(t, refs, 3)
+	// kasmos.service: 1 ref; kasmosdb.service: 1 ref (not installed).
+	assert.Len(t, refs, 2)
 
 	// Find ExecStart ref for kasmos.service
 	var startRef *Reference
@@ -321,8 +321,8 @@ func TestInspectServiceFiles_Linux_PercentHExpansion(t *testing.T) {
 	svcDir := filepath.Join(home, ".config", "systemd", "user")
 	require.NoError(t, os.MkdirAll(svcDir, 0o755))
 
-	// Use %h in ExecStart — should expand to home
-	svc := "[Service]\nExecStart=%h/bin/kas daemon start --foreground\nExecStop=%h/bin/kas daemon stop\n"
+	// Use %h in ExecStart — should expand to home.
+	svc := "[Service]\nExecStart=%h/bin/kas daemon start --foreground\n"
 	require.NoError(t, os.WriteFile(filepath.Join(svcDir, "kasmos.service"), []byte(svc), 0o644))
 
 	refs := InspectServiceFiles(home, "linux")
@@ -344,7 +344,7 @@ func TestInspectServiceFiles_Linux_Placeholder(t *testing.T) {
 	svcDir := filepath.Join(home, ".config", "systemd", "user")
 	require.NoError(t, os.MkdirAll(svcDir, 0o755))
 
-	svc := "[Service]\nExecStart=__KAS_BIN__ daemon start --foreground\nExecStop=__KAS_BIN__ daemon stop\n"
+	svc := "[Service]\nExecStart=__KAS_BIN__ daemon start --foreground\n"
 	require.NoError(t, os.WriteFile(filepath.Join(svcDir, "kasmos.service"), []byte(svc), 0o644))
 
 	refs := InspectServiceFiles(home, "linux")

@@ -231,16 +231,15 @@ func inspectLinuxServices(home string) []Reference {
 
 	var refs []Reference
 
-	// kasmos.service — ExecStart and ExecStop
+	// kasmos.service — ExecStart only. The foreground systemd unit relies on
+	// systemd SIGTERM handling instead of `kas daemon stop`, which expects a PID
+	// file that the foreground path does not write.
 	kasmosPath := filepath.Join(svcDir, "kasmos.service")
 	kasmosData, err := os.ReadFile(kasmosPath)
 	if err != nil {
-		refs = append(refs,
-			Reference{File: "kasmos.service", Label: "ExecStart", Note: "not installed"},
-			Reference{File: "kasmos.service", Label: "ExecStop", Note: "not installed"},
-		)
+		refs = append(refs, Reference{File: "kasmos.service", Label: "ExecStart", Note: "not installed"})
 	} else {
-		refs = append(refs, parseSystemdRefs("kasmos.service", home, kasmosData, []string{"ExecStart", "ExecStop"})...)
+		refs = append(refs, parseSystemdRefs("kasmos.service", home, kasmosData, []string{"ExecStart"})...)
 	}
 
 	// kasmosdb.service — ExecStart only
