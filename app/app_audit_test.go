@@ -325,6 +325,14 @@ func TestAuditHomeEmit_AgentKilled(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, events, 1, "kill_instance must emit EventAgentKilled")
 	assert.Equal(t, "my-agent", events[0].InstanceTitle)
+
+	var detail struct {
+		Action          string `json:"action"`
+		BranchPreserved bool   `json:"branch_preserved"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(events[0].Detail), &detail))
+	assert.Equal(t, "kill_instance", detail.Action)
+	assert.True(t, detail.BranchPreserved)
 }
 
 // TestAuditHomeEmit_AgentKilled_KeybindCtrlK verifies that the ctrl+k keybind kill path
@@ -347,6 +355,7 @@ func TestAuditHomeEmit_AgentKilled_KeybindCtrlK(t *testing.T) {
 		auditlog.WithInstance("my-agent"),
 		auditlog.WithAgent("coder"),
 		auditlog.WithPlan("plan.md"),
+		auditlog.WithKillDetails("kill_instance", false, true),
 	)
 
 	events, err := logger.Query(auditlog.QueryFilter{
@@ -358,6 +367,48 @@ func TestAuditHomeEmit_AgentKilled_KeybindCtrlK(t *testing.T) {
 	require.Len(t, events, 1, "ctrl+k keybind must emit EventAgentKilled")
 	assert.Equal(t, "my-agent", events[0].InstanceTitle)
 	assert.Contains(t, events[0].Message, "killed instance")
+
+	var detail struct {
+		Action          string `json:"action"`
+		BranchPreserved bool   `json:"branch_preserved"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(events[0].Detail), &detail))
+	assert.Equal(t, "kill_instance", detail.Action)
+	assert.True(t, detail.BranchPreserved)
+}
+
+func TestAuditHomeEmit_AgentKilled_KeybindCtrlKRemoveDetail(t *testing.T) {
+	t.Parallel()
+	logger, err := auditlog.NewSQLiteLogger(":memory:")
+	require.NoError(t, err)
+	defer logger.Close()
+
+	h := newTestHome()
+	h.auditLogger = logger
+	h.taskStoreProject = "myproject"
+
+	h.audit(auditlog.EventAgentKilled, "killed and removed instance",
+		auditlog.WithInstance("my-agent"),
+		auditlog.WithAgent("coder"),
+		auditlog.WithPlan("plan.md"),
+		auditlog.WithKillDetails("kill_and_remove_instance", true, false),
+	)
+
+	events, err := logger.Query(auditlog.QueryFilter{
+		Project: "myproject",
+		Kinds:   []auditlog.EventKind{auditlog.EventAgentKilled},
+		Limit:   10,
+	})
+	require.NoError(t, err)
+	require.Len(t, events, 1, "ctrl+k cleanup keybind must emit EventAgentKilled")
+
+	var detail struct {
+		Action  string `json:"action"`
+		Cleanup bool   `json:"cleanup"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(events[0].Detail), &detail))
+	assert.Equal(t, "kill_and_remove_instance", detail.Action)
+	assert.True(t, detail.Cleanup)
 }
 
 // TestAuditHomeEmit_PlanCreated verifies that createTaskEntry emits

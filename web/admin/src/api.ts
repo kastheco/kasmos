@@ -1,4 +1,4 @@
-import type { Status, TaskEntry, SubtaskEntry, TopicEntry, AuditEvent, InstanceEntry, InstanceAction, ScrollbackDepth, ExecutionMode, PresentationResponse, PresentationRowKind, ToolDiffPayload, ToolPreviewPayload, PermissionDecision } from "./types";
+import type { Status, TaskEntry, SubtaskEntry, TopicEntry, AuditEvent, AuditEventKillDetail, InstanceEntry, InstanceAction, ScrollbackDepth, ExecutionMode, PresentationResponse, PresentationRowKind, ToolDiffPayload, ToolPreviewPayload, PermissionDecision } from "./types";
 
 // Legacy persisted statuses that predate canonical normalization at ingest.
 // Mirrors config/taskfsm/fsm.go:MapLegacyStatus so the SPA reader boundary
@@ -111,6 +111,30 @@ function normalizeAuditEvent(raw: AuditEventResponse): AuditEvent {
     detail: raw.Detail,
     level: raw.Level,
   };
+}
+
+export function parseKillDetail(event: AuditEvent): AuditEventKillDetail | null {
+  if (event.kind !== "agent_killed" || !event.detail) return null;
+  try {
+    const detail = JSON.parse(event.detail) as Partial<AuditEventKillDetail>;
+    if (
+      (detail.action !== "kill_instance" &&
+        detail.action !== "kill_and_remove_instance") ||
+      typeof detail.cleanup !== "boolean" ||
+      typeof detail.branch_preserved !== "boolean"
+    ) {
+      return null;
+    }
+    return {
+      action: detail.action,
+      cleanup: detail.cleanup,
+      branch_preserved: detail.branch_preserved,
+      group_key:
+        typeof detail.group_key === "string" ? detail.group_key : undefined,
+    };
+  } catch {
+    return null;
+  }
 }
 
 export function resolveProjectName(

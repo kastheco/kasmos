@@ -35,6 +35,7 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 				auditlog.WithInstance(selected.Title),
 				auditlog.WithAgent(selected.AgentType),
 				auditlog.WithPlan(selected.TaskFile),
+				auditlog.WithKillDetails("kill_instance", false, true),
 			)
 			if err := selected.Pause(); err != nil {
 				return m, m.handleError(err)

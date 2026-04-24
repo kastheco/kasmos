@@ -165,3 +165,10 @@ export interface AuditEvent {
   detail: string;
   level: string;
 }
+
+export interface AuditEventKillDetail {
+  action: "kill_instance" | "kill_and_remove_instance";
+  cleanup: boolean;
+  branch_preserved: boolean;
+  group_key?: string;
+}

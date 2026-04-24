@@ -2474,6 +2474,7 @@ func (m *home) handleResolvedKey(name keys.KeyName) (tea.Model, tea.Cmd) {
 			auditlog.WithInstance(selected.Title),
 			auditlog.WithAgent(selected.AgentType),
 			auditlog.WithPlan(selected.TaskFile),
+			auditlog.WithKillDetails("kill_instance", false, true),
 		)
 		return m, softKillInstanceCmd(m, selected)
 	case keys.KeyKillAndRemove:
@@ -2489,6 +2490,7 @@ func (m *home) handleResolvedKey(name keys.KeyName) (tea.Model, tea.Cmd) {
 			auditlog.WithInstance(selected.Title),
 			auditlog.WithAgent(selected.AgentType),
 			auditlog.WithPlan(selected.TaskFile),
+			auditlog.WithKillDetails("kill_and_remove_instance", true, false),
 		)
 		return m, tea.Batch(softKillInstanceCmd(m, selected), m.dismissInstanceFromList(selected))
 	case keys.KeyAbort:

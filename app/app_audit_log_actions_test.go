@@ -236,3 +236,38 @@ func TestHandleAuditCursorKey_EnterNoActions(t *testing.T) {
 	assert.NotEqual(t, stateContextMenu, updated.state, "inert event should not open context menu")
 	assert.Nil(t, updated.pendingLogEvent)
 }
+
+func TestAuditPane_CoalescesAdjacentKillRowsInDisplayOnly(t *testing.T) {
+	t.Parallel()
+
+	p := ui.NewAuditPane()
+	icon, clr := ui.EventKindIcon("agent_killed")
+	p.SetSize(80, 10)
+	p.SetEvents([]ui.AuditEventDisplay{
+		{
+			Time:          "12:01",
+			Kind:          "agent_killed",
+			Icon:          icon,
+			Color:         clr,
+			Level:         "info",
+			Message:       "killed and removed instance",
+			InstanceTitle: "coder-1",
+			DetailJSON:    `{"cleanup":true,"group_key":"agent_killed:coder-1"}`,
+		},
+		{
+			Time:          "12:01",
+			Kind:          "agent_killed",
+			Icon:          icon,
+			Color:         clr,
+			Level:         "info",
+			Message:       "agent stopped (branch preserved)",
+			InstanceTitle: "coder-1",
+			DetailJSON:    `{"cleanup":false,"group_key":"agent_killed:coder-1"}`,
+		},
+	})
+
+	require.Len(t, p.Events(), 2)
+	rendered := p.String()
+	assert.Contains(t, rendered, "killed and removed instance")
+	assert.NotContains(t, rendered, "agent stopped (branch preserved)")
+}

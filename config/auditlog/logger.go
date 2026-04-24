@@ -114,6 +114,43 @@ func WithSpeedTier(tier string) EventOption {
 	}
 }
 
+// WithKillDetails records structured kill metadata in Event.Detail.
+// action is the operator intent ("kill_instance" or "kill_and_remove_instance").
+// cleanup is true when worktree/branch cleanup was requested alongside the kill.
+// branchPreserved mirrors the current "branch preserved" semantics used by the
+// context-menu kill path in app_actions.go so admin UIs can render a single
+// coalesced row without losing the stronger action. group_key is a stable
+// string "agent_killed:<instance>" used by display code to coalesce adjacent
+// rows.
+func WithKillDetails(action string, cleanup, branchPreserved bool) EventOption {
+	return func(e *Event) {
+		detail := map[string]any{}
+		if e.Detail != "" {
+			var existing any
+			if err := json.Unmarshal([]byte(e.Detail), &existing); err == nil {
+				if obj, ok := existing.(map[string]any); ok {
+					detail = obj
+				} else {
+					detail["detail"] = existing
+				}
+			} else {
+				detail["detail"] = e.Detail
+			}
+		}
+		detail["action"] = action
+		detail["cleanup"] = cleanup
+		detail["branch_preserved"] = branchPreserved
+		if e.InstanceTitle != "" {
+			detail["group_key"] = "agent_killed:" + e.InstanceTitle
+		}
+		encoded, err := json.Marshal(detail)
+		if err != nil {
+			return
+		}
+		e.Detail = string(encoded)
+	}
+}
+
 // WithLevel sets the Level field on the event (info, warn, error).
 func WithLevel(level string) EventOption {
 	return func(e *Event) { e.Level = level }

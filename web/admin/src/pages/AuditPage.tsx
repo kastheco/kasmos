@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Link } from "react-router";
-import { fetchAuditEvents } from "../api";
+import { fetchAuditEvents, parseKillDetail } from "../api";
 import { useAutoRefresh } from "../hooks/useAutoRefresh";
 import { useProject } from "../hooks/useProject";
 import LastUpdated from "../components/LastUpdated";
@@ -49,6 +49,60 @@ function prettyDetail(detail: string): string {
   } catch {
     return detail;
   }
+}
+
+type AuditDisplayEvent = AuditEvent & {
+  groupedEvents?: AuditEvent[];
+};
+
+function killGroupKey(event: AuditEvent): string | null {
+  const detail = parseKillDetail(event);
+  return detail?.group_key ?? null;
+}
+
+function killCleanup(event: AuditEvent): boolean {
+  return parseKillDetail(event)?.cleanup ?? false;
+}
+
+function coalesceAuditRows(events: AuditEvent[]): AuditDisplayEvent[] {
+  const rows: AuditDisplayEvent[] = [];
+  for (let i = 0; i < events.length; ) {
+    const event = events[i];
+    const groupKey = event.kind === "agent_killed" ? killGroupKey(event) : null;
+    if (!groupKey) {
+      rows.push(event);
+      i += 1;
+      continue;
+    }
+
+    const group = [event];
+    let best = event;
+    let j = i + 1;
+    while (
+      j < events.length &&
+      events[j].kind === "agent_killed" &&
+      killGroupKey(events[j]) === groupKey
+    ) {
+      group.push(events[j]);
+      if (killCleanup(events[j]) && !killCleanup(best)) {
+        best = events[j];
+      }
+      j += 1;
+    }
+
+    rows.push(group.length > 1 ? { ...best, groupedEvents: group } : best);
+    i = j;
+  }
+  return rows;
+}
+
+function prettyEventDetail(event: AuditDisplayEvent): string {
+  if (!event.groupedEvents || event.groupedEvents.length < 2) {
+    return prettyDetail(event.detail);
+  }
+  return event.groupedEvents
+    .map((grouped) => `event ${grouped.id}\n${prettyDetail(grouped.detail)}`)
+    .join("\n\n");
 }
 
 type Tone = "lifecycle" | "plan" | "wave" | "ops" | "error";
@@ -139,7 +193,8 @@ export default function AuditPage() {
     setExpandedRowId((prev) => (prev === event.id ? null : event.id));
   }
 
-  const rows = events.flatMap((event) => {
+  const displayEvents = coalesceAuditRows(events);
+  const rows = displayEvents.flatMap((event) => {
     const isExpanded = expandedRowId === event.id;
     const hasDetail = Boolean(event.detail);
     const rowClasses = [
@@ -209,7 +264,7 @@ export default function AuditPage() {
     const detailRow = (
       <tr key={`detail-${event.id}`} className={styles.detailRow}>
         <td colSpan={5}>
-          <pre className={styles.detailPre}>{prettyDetail(event.detail)}</pre>
+          <pre className={styles.detailPre}>{prettyEventDetail(event)}</pre>
         </td>
       </tr>
     );

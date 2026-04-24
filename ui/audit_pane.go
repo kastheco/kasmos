@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"encoding/json"
 	"image/color"
 	"strings"
 
@@ -21,6 +22,8 @@ type AuditEventDisplay struct {
 	TaskFile      string      // plan filename if event is plan-scoped (may be empty)
 	InstanceTitle string      // instance title if event is instance-scoped (may be empty)
 	AgentType     string      // agent role (planner, coder, reviewer, fixer, …)
+	GroupKey      string      // display grouping key from Detail.group_key
+	DetailJSON    string      // raw JSON detail payload (preserved verbatim)
 }
 
 // AuditLineActions returns context-menu items available for the given log event.
@@ -335,6 +338,7 @@ func (p *AuditPane) renderBody() string {
 		return auditRowPad.Render(auditEmptyStyle.Render("· no events"))
 	}
 
+	renderEvents := coalesceAuditRenderEvents(p.events)
 	const overhead = 4
 	msgW := p.width - overhead
 	if msgW < 10 {
@@ -343,12 +347,13 @@ func (p *AuditPane) renderBody() string {
 
 	// Walk events newest-first so that we can detect minute boundaries, then
 	// append in reverse order so oldest events end up at the top of the output.
-	lines := make([]string, 0, len(p.events)+1)
+	lines := make([]string, 0, len(renderEvents)+1)
 	lines = append(lines, "") // blank line below section header
 	var lastMinute string
 
-	for i := len(p.events) - 1; i >= 0; i-- {
-		e := p.events[i]
+	for i := len(renderEvents) - 1; i >= 0; i-- {
+		item := renderEvents[i]
+		e := item.event
 
 		// Emit a centred minute header whenever the minute value changes.
 		if e.Time != lastMinute {
@@ -356,7 +361,7 @@ func (p *AuditPane) renderBody() string {
 			lastMinute = e.Time
 		}
 
-		selected := p.cursorActive && i == p.selectedIdx
+		selected := p.cursorActive && item.rawIndex == p.selectedIdx
 		hasActions := len(AuditLineActions(e)) > 0
 
 		icon := lipgloss.NewStyle().Foreground(e.Color).Render(e.Icon)
@@ -400,6 +405,68 @@ func (p *AuditPane) renderBody() string {
 
 	p.bodyLines = len(lines)
 	return strings.Join(lines, "\n")
+}
+
+type auditRenderEvent struct {
+	event    AuditEventDisplay
+	rawIndex int
+}
+
+func coalesceAuditRenderEvents(events []AuditEventDisplay) []auditRenderEvent {
+	if len(events) == 0 {
+		return nil
+	}
+	out := make([]auditRenderEvent, 0, len(events))
+	for i := 0; i < len(events); {
+		currentKey := auditDisplayGroupKey(events[i])
+		if currentKey == "" {
+			out = append(out, auditRenderEvent{event: events[i], rawIndex: i})
+			i++
+			continue
+		}
+
+		bestIdx := i
+		j := i + 1
+		for j < len(events) && auditDisplayGroupKey(events[j]) == currentKey {
+			if auditKillCleanup(events[j]) && !auditKillCleanup(events[bestIdx]) {
+				bestIdx = j
+			}
+			j++
+		}
+		out = append(out, auditRenderEvent{event: events[bestIdx], rawIndex: bestIdx})
+		i = j
+	}
+	return out
+}
+
+func auditDisplayGroupKey(e AuditEventDisplay) string {
+	if e.GroupKey != "" {
+		return e.GroupKey
+	}
+	if e.DetailJSON != "" {
+		var detail struct {
+			GroupKey string `json:"group_key"`
+		}
+		if err := json.Unmarshal([]byte(e.DetailJSON), &detail); err == nil && detail.GroupKey != "" {
+			return detail.GroupKey
+		}
+	}
+	if e.Kind == "agent_killed" && e.InstanceTitle != "" {
+		return e.Kind + ":" + e.InstanceTitle
+	}
+	return ""
+}
+
+func auditKillCleanup(e AuditEventDisplay) bool {
+	if e.DetailJSON != "" {
+		var detail struct {
+			Cleanup bool `json:"cleanup"`
+		}
+		if err := json.Unmarshal([]byte(e.DetailJSON), &detail); err == nil {
+			return detail.Cleanup
+		}
+	}
+	return strings.Contains(strings.ToLower(e.Message), "removed")
 }
 
 // EventKindIcon maps an event kind string to a display glyph and colour.
