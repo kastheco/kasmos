@@ -1,5 +1,7 @@
 package orchestration
 
+import "time"
+
 // ArchitectMeta holds structured per-task metadata produced by the architect agent.
 // It is serialized to .kasmos/cache/<plan-slug>-architect.json and consumed by the orchestrator.
 type ArchitectMeta struct {
@@ -10,6 +12,27 @@ type ArchitectMeta struct {
 	Waves           []WaveMeta        `json:"waves"`
 	CacheVersion    int               `json:"cache_version"`
 	CachedSnippets  map[string]string `json:"cached_snippets,omitempty"`
+}
+
+// ArchitectBaseline holds advisory self-planning output produced before the final architect pass.
+// It is serialized to .kasmos/cache/<plan-slug>-architect-baseline.json and never replaces final metadata.
+type ArchitectBaseline struct {
+	SchemaVersion    int       `json:"schema_version"`
+	PlanFile         string    `json:"plan_file"`
+	Project          string    `json:"project"`
+	DescriptionHash  string    `json:"description_hash"`
+	CreatedAt        time.Time `json:"created_at"`
+	BaselineMarkdown string    `json:"baseline_markdown"`
+	Surfaces         []string  `json:"surfaces,omitempty"`
+	Risks            []string  `json:"risks,omitempty"`
+	Notes            []string  `json:"notes,omitempty"`
+}
+
+// ArchitectBaselineIdentity identifies the planner input that a baseline cache entry belongs to.
+type ArchitectBaselineIdentity struct {
+	PlanFile        string
+	Project         string
+	DescriptionHash string
 }
 
 // WaveMeta describes a single wave within an architect metadata document,

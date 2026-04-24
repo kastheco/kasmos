@@ -218,6 +218,9 @@ type Config struct {
 	// blueprint-skip mode is used instead of wave orchestration.
 	// When nil, the default threshold of 2 applies.
 	BlueprintSkipThresholdValue *int `json:"blueprint_skip_threshold,omitempty"`
+	// ParallelPlannerArchitect enables the opt-in parallel architect baseline flow.
+	// Defaults to false.
+	ParallelPlannerArchitect bool `json:"parallel_planner_architect,omitempty"`
 	// ClaudeNoFlicker sets CLAUDE_CODE_NO_FLICKER for spawned claude agents.
 	// Defaults to false (CLAUDE_CODE_NO_FLICKER=0) so prompt detection works in spawned agents.
 	ClaudeNoFlicker bool `json:"claude_no_flicker,omitempty"`
@@ -422,6 +425,7 @@ func configFromTOML(result *TOMLConfigResult) *Config {
 		cfg.DatabaseURL = result.DatabaseURL
 		cfg.Hooks = result.Hooks
 		cfg.BlueprintSkipThresholdValue = result.BlueprintSkipThreshold
+		cfg.ParallelPlannerArchitect = result.ParallelPlannerArchitect
 		cfg.DoubleTapThresholdMS = result.DoubleTapThresholdMS
 		if result.AutoAdvanceWaves != nil {
 			cfg.AutoAdvanceWaves = *result.AutoAdvanceWaves
@@ -499,8 +503,11 @@ func configToTOML(cfg *Config) *TOMLConfig {
 			AnimateBanner: cfg.AnimateBanner,
 			AccentColor:   cfg.AccentColor,
 		},
-		Telemetry:            TOMLTelemetryConfig{Enabled: cfg.TelemetryEnabled},
-		Orchestration:        TOMLOrchestrationConfig{BlueprintSkipThreshold: cfg.BlueprintSkipThresholdValue},
+		Telemetry: TOMLTelemetryConfig{Enabled: cfg.TelemetryEnabled},
+		Orchestration: TOMLOrchestrationConfig{
+			BlueprintSkipThreshold:   cfg.BlueprintSkipThresholdValue,
+			ParallelPlannerArchitect: cfg.ParallelPlannerArchitect,
+		},
 		Keybinds:             TOMLKeybindsConfig{DoubleTapThresholdMS: cfg.DoubleTapThresholdMS},
 		Enforcement:          cfg.Enforcement,
 		DatabaseURL:          cfg.DatabaseURL,

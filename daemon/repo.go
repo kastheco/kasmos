@@ -36,6 +36,8 @@ type RepoEntry struct {
 	ReadinessSelfFixMaxLines int
 	// ReadinessMaxVerifyCycles is the effective per-repo verify-round cap.
 	ReadinessMaxVerifyCycles int
+	// ParallelPlannerArchitect is the effective per-repo opt-in parallel baseline flag.
+	ParallelPlannerArchitect bool
 }
 
 // RepoManager tracks registered repositories for the daemon.
@@ -170,7 +172,7 @@ func (m *RepoManager) Add(path string) error {
 	}
 
 	// Load per-repo TOML overrides once and derive effective config values.
-	autoAdvance, autoReadinessReview, selfFixMaxLines, maxVerifyCycles := m.resolveRepoConfig(path)
+	autoAdvance, autoReadinessReview, selfFixMaxLines, maxVerifyCycles, parallelPlannerArchitect := m.resolveRepoConfig(path)
 
 	// Create a per-repo processor that persists across poll ticks so that wave
 	// orchestrator state is maintained between cycles.
@@ -195,6 +197,7 @@ func (m *RepoManager) Add(path string) error {
 		Processor:                proc,
 		ReadinessSelfFixMaxLines: selfFixMaxLines,
 		ReadinessMaxVerifyCycles: maxVerifyCycles,
+		ParallelPlannerArchitect: parallelPlannerArchitect,
 	})
 	return nil
 }
@@ -289,10 +292,10 @@ func (m *RepoManager) Get(path string) (RepoEntry, error) {
 }
 
 // resolveRepoConfig reads per-repo TOML overrides and returns the effective
-// values for autoAdvance, autoReadinessReview, readinessSelfFixMaxLines, and
-// readinessMaxVerifyCycles for the given repo path. It falls back to the
+// values for autoAdvance, autoReadinessReview, readinessSelfFixMaxLines,
+// readinessMaxVerifyCycles, and parallelPlannerArchitect for the given repo path. It falls back to the
 // daemon-level defaults (stored on m) when no project-local override is found.
-func (m *RepoManager) resolveRepoConfig(path string) (autoAdvance bool, autoReadinessReview bool, selfFixMaxLines int, maxVerifyCycles int) {
+func (m *RepoManager) resolveRepoConfig(path string) (autoAdvance bool, autoReadinessReview bool, selfFixMaxLines int, maxVerifyCycles int, parallelPlannerArchitect bool) {
 	autoAdvance = m.autoAdvance
 	autoReadinessReview = m.autoReadinessReview
 	selfFixMaxLines = m.readinessSelfFixMaxLines
@@ -314,6 +317,7 @@ func (m *RepoManager) resolveRepoConfig(path string) (autoAdvance bool, autoRead
 	if result.AutoReadinessReview != nil {
 		autoReadinessReview = *result.AutoReadinessReview
 	}
+	parallelPlannerArchitect = result.ParallelPlannerArchitect
 	if result.ReadinessSelfFixMaxLines != nil {
 		if *result.ReadinessSelfFixMaxLines > 0 {
 			selfFixMaxLines = *result.ReadinessSelfFixMaxLines
