@@ -120,10 +120,6 @@ Implement the third part.
 		spawner:     NewTmuxSpawner(),
 		logger:      slog.Default(),
 		broadcaster: api.NewEventBroadcaster(),
-		forceKillAgent: func(repoPath, taskFile, agentType string) error {
-			// no-op stub — no real planner tmux session exists in this test
-			return nil
-		},
 		spawnElaborator: func(_ context.Context, opts loop.SpawnOpts) error {
 			spawnCount++
 			spawnedOpts = opts

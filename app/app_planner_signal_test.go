@@ -104,21 +104,22 @@ func TestPlannerFinishedSignal_ShowsConfirmDialog(t *testing.T) {
 		"pendingPlannerTaskFile must be set to the plan file from the signal")
 }
 
-// TestPlannerFinishedSignal_ConfirmKillsPlannerAndTriggersImplement verifies that
-// after the user confirms (plannerCompleteMsg), the planner instance is removed,
+// TestPlannerFinishedSignal_ConfirmKeepsPlannerAndTriggersImplement verifies that
+// after the user confirms (plannerCompleteMsg), the planner instance is kept,
 // plannerPrompted is set, and triggerTaskStage("implement") is called.
-func TestPlannerFinishedSignal_ConfirmKillsPlannerAndTriggersImplement(t *testing.T) {
+func TestPlannerFinishedSignal_ConfirmKeepsPlannerAndTriggersImplement(t *testing.T) {
 	t.Parallel()
 	const planFile = "feature"
-	h, _, plansDir, plannerInst := plannerSignalHome(t, planFile)
+	h, ps, plansDir, plannerInst := plannerSignalHome(t, planFile)
 
 	// Set up the state as if the confirm dialog was shown after a PlannerFinished signal.
 	h.state = stateConfirm
 	h.pendingPlannerInstanceTitle = plannerInst.Title
 	h.pendingPlannerTaskFile = planFile
 
-	// Write a minimal plan file so triggerTaskStage can read it.
-	planContent := "# Plan\n\n## Wave 1\n\n### Task 1: Something\n\nDo it.\n"
+	// Write a multi-task plan so triggerTaskStage uses the architect path.
+	planContent := "# Plan\n\n## Wave 1\n\n### Task 1: First\n\nDo it.\n\n### Task 2: Second\n\nDo it.\n\n### Task 3: Third\n\nDo it.\n"
+	require.NoError(t, ps.SetContent(planFile, planContent))
 	require.NoError(t, os.WriteFile(filepath.Join(plansDir, planFile), []byte(planContent), 0o644))
 
 	// Advance the FSM to StatusReady so triggerTaskStage can proceed to "implement".
@@ -135,15 +136,24 @@ func TestPlannerFinishedSignal_ConfirmKillsPlannerAndTriggersImplement(t *testin
 	assert.Empty(t, h.pendingPlannerTaskFile,
 		"pendingPlannerTaskFile must be cleared after confirm")
 
-	// Planner instance must be removed from nav and allInstances.
+	// Planner instance must remain visible while the architect handoff starts.
+	foundInNav := false
 	for _, inst := range h.nav.GetInstances() {
-		assert.NotEqual(t, plannerInst.Title, inst.Title,
-			"planner instance must be removed from nav after confirm")
+		if inst.Title == plannerInst.Title {
+			foundInNav = true
+			break
+		}
 	}
+	assert.True(t, foundInNav, "planner instance must remain in nav after confirm")
+
+	foundInAllInstances := false
 	for _, inst := range h.allInstances {
-		assert.NotEqual(t, plannerInst.Title, inst.Title,
-			"planner instance must be removed from allInstances after confirm")
+		if inst.Title == plannerInst.Title {
+			foundInAllInstances = true
+			break
+		}
 	}
+	assert.True(t, foundInAllInstances, "planner instance must remain in allInstances after confirm")
 }
 
 // TestPlannerFinishedSignal_CancelKillsPlannerAndLeavesReady verifies that after

@@ -2593,10 +2593,9 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case plannerCompleteMsg:
-		// User confirmed: start implementation. Kill the planner instance (may still be alive
-		// when triggered by the PlannerFinished sentinel, unlike the tmux-death path).
+		// User confirmed: start implementation. Keep the planner session around so
+		// the architect handoff does not discard the planner's terminal history.
 		m.plannerPrompted[msg.planFile] = true
-		m.killExistingPlanAgent(msg.planFile, session.AgentTypePlanner)
 		_ = m.saveAllInstances()
 		m.pendingPlannerInstanceTitle = ""
 		m.pendingPlannerTaskFile = ""

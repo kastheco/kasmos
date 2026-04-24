@@ -123,13 +123,6 @@ Complete the last implementation task and transition into review.
 		spawner:     NewTmuxSpawner(),
 		logger:      slog.Default(),
 		broadcaster: api.NewEventBroadcaster(),
-		forceKillAgent: func(repoPath, taskFile, agentType string) error {
-			assert.Equal(t, repo.Path, repoPath)
-			assert.Equal(t, planFile, taskFile)
-			assert.Equal(t, session.AgentTypePlanner, agentType)
-			recorder("kill:planner")
-			return nil
-		},
 		killAgent: func(repoPath, taskFile, agentType string) error {
 			// Pre-kill hook invoked by SpawnPlannerAction before spawning a
 			// new planner. Must be a no-op when no existing planner is present.
@@ -313,10 +306,11 @@ Complete the last implementation task and transition into review.
 	assert.Equal(t, prURL, finalEntry.PRURL)
 	assert.Equal(t, taskstore.ExecutionState{}, phases["create:pr"])
 
-	require.Len(t, events, 11)
+	require.Len(t, events, 10)
 	// plan_start now dispatches SpawnPlannerAction which first kills any stale
 	// planner (kill:planner:pre-spawn) then spawns the planner (spawn:planner).
-	assert.Equal(t, []string{"kill:planner:pre-spawn", "spawn:planner", "kill:planner", "spawn:architect"}, events[:4])
-	assert.ElementsMatch(t, []string{"spawn:wave-1:task-1", "spawn:wave-1:task-2"}, events[4:6])
-	assert.Equal(t, []string{"kill:wave-1", "spawn:wave-2:task-3", "kill:wave-2", "spawn:reviewer", "create:pr"}, events[6:])
+	// planner_finished transitions to architect without killing that planner session.
+	assert.Equal(t, []string{"kill:planner:pre-spawn", "spawn:planner", "spawn:architect"}, events[:3])
+	assert.ElementsMatch(t, []string{"spawn:wave-1:task-1", "spawn:wave-1:task-2"}, events[3:5])
+	assert.Equal(t, []string{"kill:wave-1", "spawn:wave-2:task-3", "kill:wave-2", "spawn:reviewer", "create:pr"}, events[5:])
 }

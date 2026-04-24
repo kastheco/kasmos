@@ -50,7 +50,6 @@ type Daemon struct {
 	prMonitor       *PRMonitor
 	pushBranch      func(*session.Instance) error
 	killAgent       func(repoPath, planFile, agentType string) error
-	forceKillAgent  func(repoPath, planFile, agentType string) error
 	spawnPlanner    func(context.Context, loop.SpawnOpts) error
 	spawnReviewer   func(context.Context, loop.SpawnOpts) error
 	spawnCoder      func(context.Context, loop.SpawnOpts) error
@@ -1030,20 +1029,6 @@ func clearRepoExecutionState(e RepoEntry, planFile string) error {
 	return ps.ClearExecutionState(planFile)
 }
 
-func (d *Daemon) plannerStillTracked(repoPath, planFile string) bool {
-	if d.spawner == nil {
-		return false
-	}
-
-	key := instanceKey(repoPath, planFile, session.AgentTypePlanner)
-	for _, inst := range d.spawner.RunningInstances() {
-		if inst.Key == key {
-			return true
-		}
-	}
-	return false
-}
-
 func (d *Daemon) blueprintSkipThreshold(repoPath string) int {
 	const defaultThreshold = 2
 
@@ -1064,21 +1049,6 @@ func (d *Daemon) blueprintSkipThreshold(repoPath string) int {
 func (d *Daemon) autoImplementPlan(ctx context.Context, e RepoEntry, planFile string) error {
 	if e.Store == nil {
 		return fmt.Errorf("task store unavailable for %s", planFile)
-	}
-
-	forceKillAgent := d.forceKillAgent
-	if forceKillAgent == nil {
-		forceKillAgent = d.spawner.ForceKillAgent
-	}
-	killErr := forceKillAgent(e.Path, planFile, session.AgentTypePlanner)
-	if killErr != nil {
-		d.logger.Warn("kill planner before auto-implement failed", "repo", e.Path, "plan", planFile, "err", killErr)
-	}
-	if d.plannerStillTracked(e.Path, planFile) {
-		if killErr != nil {
-			return fmt.Errorf("planner agent still tracked for %s after cleanup failure: %w", planFile, killErr)
-		}
-		return fmt.Errorf("planner agent still tracked for %s after cleanup", planFile)
 	}
 
 	content, err := e.Store.GetContent(e.Project, planFile)
