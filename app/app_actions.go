@@ -602,10 +602,6 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 			}
 			switch taskfsm.Status(freshEntry.Status) {
 			case taskfsm.StatusPlanning:
-			case taskfsm.StatusCancelled:
-				if err := m.fsm.Transition(planFile, taskfsm.Reopen); err != nil {
-					return err
-				}
 			case taskfsm.StatusDone:
 				if err := m.fsm.Transition(planFile, taskfsm.StartOver); err != nil {
 					return err

@@ -138,7 +138,7 @@ func ValidateArchitectBaseline(b *ArchitectBaseline, expected ArchitectBaselineI
 		return fmt.Errorf("architect baseline project mismatch: got %q, want %q", b.Project, expected.Project)
 	}
 	if b.DescriptionHash != expected.DescriptionHash {
-		return fmt.Errorf("architect baseline description hash mismatch")
+		return fmt.Errorf("architect baseline description hash mismatch: got %q, want %q", b.DescriptionHash, expected.DescriptionHash)
 	}
 	return nil
 }

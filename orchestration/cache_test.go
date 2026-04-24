@@ -252,6 +252,10 @@ func TestValidateArchitectBaseline(t *testing.T) {
 			err := ValidateArchitectBaseline(tt.baseline, tt.expected)
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), tt.errSubstr)
+			if tt.name == "stale identity" {
+				assert.Contains(t, err.Error(), tt.baseline.DescriptionHash)
+				assert.Contains(t, err.Error(), tt.expected.DescriptionHash)
+			}
 		})
 	}
 }
