@@ -4,19 +4,27 @@ import "strings"
 
 // AgentProfile defines the program and flags for an agent in a specific role.
 type AgentProfile struct {
-	Program       string   `json:"program"     toml:"program"`
-	Flags         []string `json:"flags,omitempty" toml:"flags,omitempty"`
-	Model         string   `json:"model,omitempty" toml:"model,omitempty"`
-	Temperature   *float64 `json:"temperature,omitempty" toml:"temperature,omitempty"`
-	Effort        string   `json:"effort,omitempty" toml:"effort,omitempty"`
-	ExecutionMode string   `json:"execution_mode,omitempty" toml:"execution_mode,omitempty"`
-	Tier          string   `json:"tier,omitempty" toml:"tier,omitempty"`
-	Enabled       bool     `json:"enabled,omitempty" toml:"enabled,omitempty"`
+	Program           string   `json:"program"     toml:"program"`
+	Flags             []string `json:"flags,omitempty" toml:"flags,omitempty"`
+	Model             string   `json:"model,omitempty" toml:"model,omitempty"`
+	Temperature       *float64 `json:"temperature,omitempty" toml:"temperature,omitempty"`
+	Effort            string   `json:"effort,omitempty" toml:"effort,omitempty"`
+	ExecutionMode     string   `json:"execution_mode,omitempty" toml:"execution_mode,omitempty"`
+	Tier              string   `json:"tier,omitempty" toml:"tier,omitempty"`
+	Enabled           bool     `json:"enabled,omitempty" toml:"enabled,omitempty"`
+	PermissionDefault string   `json:"permission_default,omitempty" toml:"permission_default,omitempty"`
 }
 
 const (
 	ExecutionModeTmux = "tmux"
 	ExecutionModeSDK  = "sdk"
+)
+
+// Permission-default token values.
+const (
+	PermissionDefaultInherit = ""
+	PermissionDefaultPrompt  = "prompt"
+	PermissionDefaultBypass  = "bypass"
 )
 
 func (c *Config) resolveRoleForPhase(phase string) (string, bool) {
@@ -53,6 +61,26 @@ func NormalizeExecutionMode(mode string) string {
 		return ExecutionModeSDK
 	default:
 		return ExecutionModeTmux
+	}
+}
+
+// NormalizePermissionDefault canonicalises a profile permission_default string.
+//
+//   - ""         → "" (inherit spawn-source default)
+//   - "inherit" → "" (explicit alias, same behaviour as omitted)
+//   - "prompt"  → "prompt"
+//   - "bypass"  → "bypass"
+//   - anything else → "prompt" (conservative: unknown values ask the operator)
+func NormalizePermissionDefault(v string) string {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "", "inherit":
+		return PermissionDefaultInherit
+	case "prompt":
+		return PermissionDefaultPrompt
+	case "bypass":
+		return PermissionDefaultBypass
+	default:
+		return PermissionDefaultPrompt
 	}
 }
 
@@ -97,6 +125,7 @@ func (c *Config) ResolveProfile(phase string, defaultProgram string) AgentProfil
 		return AgentProfile{Program: defaultProgram, ExecutionMode: ExecutionModeTmux}
 	}
 	profile.ExecutionMode = NormalizeExecutionMode(profile.ExecutionMode)
+	profile.PermissionDefault = NormalizePermissionDefault(profile.PermissionDefault)
 	profile.Tier = NormalizeTier(profile.Tier)
 	return profile
 }
@@ -104,4 +133,20 @@ func (c *Config) ResolveProfile(phase string, defaultProgram string) AgentProfil
 // BuildCommand returns the full command string (program + flags) for this profile.
 func (p AgentProfile) BuildCommand() string {
 	return strings.Join(append([]string{p.Program}, p.Flags...), " ")
+}
+
+// ResolveSkipPermissions returns the effective SkipPermissions bool for a
+// session spawned using this profile. The caller passes the spawn-source
+// default (true for daemon/unattended contexts, false for interactive TUI
+// launches). When PermissionDefault is unset/"inherit", that default wins;
+// "prompt" forces false and "bypass" forces true.
+func (p AgentProfile) ResolveSkipPermissions(defaultSkip bool) bool {
+	switch NormalizePermissionDefault(p.PermissionDefault) {
+	case PermissionDefaultPrompt:
+		return false
+	case PermissionDefaultBypass:
+		return true
+	default:
+		return defaultSkip
+	}
 }

@@ -578,6 +578,31 @@ func TestResolveProfile_ReadinessReviewAlias(t *testing.T) {
 	})
 }
 
+func TestAgentProfile_ResolveSkipPermissions(t *testing.T) {
+	tests := []struct {
+		name              string
+		defaultSkip       bool
+		permissionDefault string
+		want              bool
+	}{
+		{"inherit keeps true default", true, PermissionDefaultInherit, true},
+		{"inherit keeps false default", false, PermissionDefaultInherit, false},
+		{"prompt overrides true default", true, PermissionDefaultPrompt, false},
+		{"prompt keeps false default", false, PermissionDefaultPrompt, false},
+		{"bypass keeps true default", true, PermissionDefaultBypass, true},
+		{"bypass overrides false default", false, PermissionDefaultBypass, true},
+		{"invalid overrides true default as prompt", true, "never", false},
+		{"invalid keeps false default as prompt", false, "never", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			profile := AgentProfile{PermissionDefault: tt.permissionDefault}
+			assert.Equal(t, tt.want, profile.ResolveSkipPermissions(tt.defaultSkip))
+		})
+	}
+}
+
 func TestEnforcementRoundTrip(t *testing.T) {
 	t.Run("nil Enforcement survives configFromTOML and configToTOML", func(t *testing.T) {
 		result := &TOMLConfigResult{

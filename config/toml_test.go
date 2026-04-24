@@ -30,6 +30,7 @@ master_review = "master"
 	model = "anthropic/claude-sonnet-4-6"
 	temperature = 0.7
 	effort = "high"
+	permission_default = "bypass"
 	flags = []
 
 	[agents.reviewer]
@@ -66,6 +67,7 @@ flags = []
 		assert.NotNil(t, coder.Temperature)
 		assert.InDelta(t, 0.7, *coder.Temperature, 0.001)
 		assert.Equal(t, "high", coder.Effort)
+		assert.Equal(t, PermissionDefaultBypass, coder.PermissionDefault)
 		// "headless" in config is a legacy alias normalised to "sdk".
 		assert.Equal(t, ExecutionModeSDK, coder.ExecutionMode)
 		assert.Equal(t, "flex", coder.Tier)
@@ -202,6 +204,43 @@ func TestSaveTOMLConfig(t *testing.T) {
 		assert.InDelta(t, 0.5, *coder.Temperature, 0.001)
 		assert.Equal(t, "#112233", loaded.AccentColor)
 	})
+}
+
+func TestNormalizePermissionDefault(t *testing.T) {
+	tests := []struct {
+		in   string
+		want string
+	}{
+		{"", ""},
+		{"inherit", ""},
+		{"PROMPT", "prompt"},
+		{"  bypass  ", "bypass"},
+		{"never", "prompt"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.in, func(t *testing.T) {
+			assert.Equal(t, tc.want, NormalizePermissionDefault(tc.in))
+		})
+	}
+}
+
+func TestPermissionDefaultRoundTrip(t *testing.T) {
+	result := &TOMLConfigResult{
+		Profiles: map[string]AgentProfile{
+			"coder": {
+				Program:           "opencode",
+				Enabled:           true,
+				PermissionDefault: PermissionDefaultBypass,
+			},
+		},
+		PhaseRoles: map[string]string{"implementing": "coder"},
+	}
+
+	cfg := configFromTOML(result)
+	tc := configToTOML(cfg)
+
+	assert.Equal(t, PermissionDefaultBypass, tc.Agents["coder"].PermissionDefault)
 }
 
 func TestResolveProfile_ExecutionMode(t *testing.T) {
