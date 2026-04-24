@@ -157,6 +157,7 @@ func (o *WaveOrchestrator) StartNextWave() []taskparser.Task {
 	if o.state == WaveStateWaveComplete {
 		o.currentWave++
 		o.waitingForConfirm = false // reset for next wave
+		o.resetWaveOutcomeScope()
 	}
 	if o.currentWave >= len(o.plan.Waves) {
 		o.state = WaveStateAllComplete
@@ -234,6 +235,11 @@ func (o *WaveOrchestrator) RetryFailedTasks() []taskparser.Task {
 		o.retryGeneration++
 	}
 	return tasks
+}
+
+func (o *WaveOrchestrator) resetWaveOutcomeScope() {
+	o.retryGeneration = 0
+	o.emittedWaveOutcomes = make(map[string]bool)
 }
 
 // ClaimWaveOutcome records that an outcome for the current (wave, generation)
