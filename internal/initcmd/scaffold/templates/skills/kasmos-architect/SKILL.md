@@ -112,7 +112,7 @@ This baseline is private working context. Do not preserve the planner's file lis
 
 ## parallel baseline mode
 
-When parallel baseline mode is enabled, another architect-baseline session may run alongside the planner and write `.kasmos/cache/<plan-file>-architect-baseline.json`.
+Parallel baseline mode is default-enabled unless the project config sets `[orchestration].parallel_planner_architect = false`; when active, another architect-baseline session may run alongside the planner and write `.kasmos/cache/<plan-file>-architect-baseline.json`.
 
 That cache is advisory input only:
 - first read the planner draft with MCP `task_show` as usual
