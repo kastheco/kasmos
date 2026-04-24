@@ -5,13 +5,41 @@ import "time"
 // ArchitectMeta holds structured per-task metadata produced by the architect agent.
 // It is serialized to .kasmos/cache/<plan-slug>-architect.json and consumed by the orchestrator.
 type ArchitectMeta struct {
-	PlanID          string            `json:"plan_id"`
-	SchemaVersion   int               `json:"schema_version"`
-	ArchitectModel  string            `json:"architect_model,omitempty"`
-	ArchitectEffort string            `json:"architect_effort,omitempty"`
-	Waves           []WaveMeta        `json:"waves"`
-	CacheVersion    int               `json:"cache_version"`
-	CachedSnippets  map[string]string `json:"cached_snippets,omitempty"`
+	PlanID          string                  `json:"plan_id"`
+	SchemaVersion   int                     `json:"schema_version"`
+	ArchitectModel  string                  `json:"architect_model,omitempty"`
+	ArchitectEffort string                  `json:"architect_effort,omitempty"`
+	DecisionAudit   *ArchitectDecisionAudit `json:"decision_audit,omitempty"`
+	Waves           []WaveMeta              `json:"waves"`
+	CacheVersion    int                     `json:"cache_version"`
+	CachedSnippets  map[string]string       `json:"cached_snippets,omitempty"`
+}
+
+// ArchitectDecisionAudit records the architect's baseline-vs-planner comparison
+// and the final decision set that shaped the architect metadata.
+type ArchitectDecisionAudit struct {
+	SchemaVersion   int                           `json:"schema_version"`
+	PlanFile        string                        `json:"plan_file"`
+	Project         string                        `json:"project"`
+	CreatedAt       time.Time                     `json:"created_at"`
+	BaselineSource  string                        `json:"baseline_source,omitempty"`
+	Summary         string                        `json:"summary,omitempty"`
+	PlannerSummary  string                        `json:"planner_summary,omitempty"`
+	BaselineSummary string                        `json:"baseline_summary,omitempty"`
+	FinalDecision   string                        `json:"final_decision,omitempty"`
+	Differences     []ArchitectDecisionDifference `json:"differences,omitempty"`
+}
+
+// ArchitectDecisionDifference describes one planner-vs-architect decision point.
+type ArchitectDecisionDifference struct {
+	Area              string   `json:"area"`
+	Scope             string   `json:"scope,omitempty"`
+	PlannerProposal   string   `json:"planner_proposal,omitempty"`
+	ArchitectBaseline string   `json:"architect_baseline,omitempty"`
+	FinalDecision     string   `json:"final_decision"`
+	Rationale         string   `json:"rationale,omitempty"`
+	RelatedFiles      []string `json:"related_files,omitempty"`
+	TaskNumbers       []int    `json:"task_numbers,omitempty"`
 }
 
 // ArchitectBaseline holds advisory self-planning output produced before the final architect pass.

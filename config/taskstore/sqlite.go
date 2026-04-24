@@ -458,7 +458,7 @@ func (s *SQLiteStore) Update(project, filename string, entry TaskEntry) error {
 		return fmt.Errorf("update plan rows affected: %w", err)
 	}
 	if n == 0 {
-		return fmt.Errorf("plan not found: %s/%s", project, filename)
+		return newNotFoundError("plan not found: %s/%s", project, filename)
 	}
 	return nil
 }
@@ -499,7 +499,7 @@ func (s *SQLiteStore) Rename(project, oldFilename, newFilename string) error {
 		return fmt.Errorf("rename plan rows affected: %w", err)
 	}
 	if n == 0 {
-		return fmt.Errorf("plan not found: %s/%s", project, oldFilename)
+		return newNotFoundError("plan not found: %s/%s", project, oldFilename)
 	}
 
 	if _, err = tx.Exec(
@@ -536,7 +536,7 @@ func (s *SQLiteStore) Delete(project, filename string) error {
 		return fmt.Errorf("delete plan rows affected: %w", err)
 	}
 	if n == 0 {
-		return fmt.Errorf("plan not found: %s/%s", project, filename)
+		return newNotFoundError("plan not found: %s/%s", project, filename)
 	}
 	return nil
 }
@@ -660,7 +660,7 @@ func (s *SQLiteStore) GetContent(project, filename string) (string, error) {
 	err := s.db.QueryRow(q, project, filename).Scan(&content)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return "", fmt.Errorf("plan not found: %s/%s", project, filename)
+			return "", newNotFoundError("plan not found: %s/%s", project, filename)
 		}
 		return "", fmt.Errorf("get content: %w", err)
 	}
@@ -680,7 +680,7 @@ func (s *SQLiteStore) SetContent(project, filename, content string) error {
 		return fmt.Errorf("set content rows affected: %w", err)
 	}
 	if n == 0 {
-		return fmt.Errorf("plan not found: %s/%s", project, filename)
+		return newNotFoundError("plan not found: %s/%s", project, filename)
 	}
 	return nil
 }
@@ -698,7 +698,7 @@ func (s *SQLiteStore) SetClickUpTaskID(project, filename, taskID string) error {
 		return fmt.Errorf("set clickup_task_id rows affected: %w", err)
 	}
 	if n == 0 {
-		return fmt.Errorf("plan not found: %s/%s", project, filename)
+		return newNotFoundError("plan not found: %s/%s", project, filename)
 	}
 	return nil
 }
@@ -715,7 +715,7 @@ func (s *SQLiteStore) SetExecutionState(project, filename string, state Executio
 		return fmt.Errorf("set execution state rows affected: %w", err)
 	}
 	if n == 0 {
-		return fmt.Errorf("plan not found: %s/%s", project, filename)
+		return newNotFoundError("plan not found: %s/%s", project, filename)
 	}
 	return nil
 }
@@ -733,7 +733,7 @@ func (s *SQLiteStore) IncrementReviewCycle(project, filename string) error {
 		return fmt.Errorf("increment review_cycle rows affected: %w", err)
 	}
 	if n == 0 {
-		return fmt.Errorf("plan not found: %s/%s", project, filename)
+		return newNotFoundError("plan not found: %s/%s", project, filename)
 	}
 	return nil
 }
@@ -851,7 +851,7 @@ func (s *SQLiteStore) SetPhaseTimestamp(project, filename, phase string, ts time
 		return fmt.Errorf("set phase timestamp rows affected: %w", err)
 	}
 	if n == 0 {
-		return fmt.Errorf("plan not found: %s/%s", project, filename)
+		return newNotFoundError("plan not found: %s/%s", project, filename)
 	}
 	return nil
 }
@@ -868,7 +868,7 @@ func (s *SQLiteStore) SetPlanGoal(project, filename, goal string) error {
 		return fmt.Errorf("set plan goal rows affected: %w", err)
 	}
 	if n == 0 {
-		return fmt.Errorf("plan not found: %s/%s", project, filename)
+		return newNotFoundError("plan not found: %s/%s", project, filename)
 	}
 	return nil
 }
@@ -886,7 +886,7 @@ func (s *SQLiteStore) SetPRURL(project, filename, url string) error {
 		return fmt.Errorf("set pr_url rows affected: %w", err)
 	}
 	if n == 0 {
-		return fmt.Errorf("plan not found: %s/%s", project, filename)
+		return newNotFoundError("plan not found: %s/%s", project, filename)
 	}
 	return nil
 }
@@ -904,7 +904,7 @@ func (s *SQLiteStore) SetPRState(project, filename, reviewDecision, checkStatus 
 		return fmt.Errorf("set pr_state rows affected: %w", err)
 	}
 	if n == 0 {
-		return fmt.Errorf("plan not found: %s/%s", project, filename)
+		return newNotFoundError("plan not found: %s/%s", project, filename)
 	}
 	return nil
 }
@@ -1036,7 +1036,7 @@ func scanTaskEntry(row *sql.Row) (TaskEntry, error) {
 		&prCheckStatus,
 	); err != nil {
 		if err == sql.ErrNoRows {
-			return TaskEntry{}, fmt.Errorf("plan not found")
+			return TaskEntry{}, newNotFoundError("plan not found")
 		}
 		return TaskEntry{}, fmt.Errorf("scan plan: %w", err)
 	}

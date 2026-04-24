@@ -221,7 +221,7 @@ func (s *HTTPStore) Get(project, filename string) (TaskEntry, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusNotFound {
-		return TaskEntry{}, fmt.Errorf("task store: plan not found: %s", filename)
+		return TaskEntry{}, newNotFoundError("task store: plan not found: %s", filename)
 	}
 	if resp.StatusCode != http.StatusOK {
 		return TaskEntry{}, decodeError(resp)
@@ -248,7 +248,7 @@ func (s *HTTPStore) Delete(project, filename string) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusNotFound {
-		return fmt.Errorf("task store: plan not found: %s", filename)
+		return newNotFoundError("task store: plan not found: %s", filename)
 	}
 	if resp.StatusCode != http.StatusNoContent {
 		return decodeError(resp)
@@ -347,7 +347,7 @@ func (s *HTTPStore) GetContent(project, filename string) (string, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusNotFound {
-		return "", fmt.Errorf("task store: plan not found: %s", filename)
+		return "", newNotFoundError("task store: plan not found: %s", filename)
 	}
 	if resp.StatusCode != http.StatusOK {
 		return "", decodeError(resp)
@@ -374,7 +374,7 @@ func (s *HTTPStore) SetContent(project, filename, content string) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusNotFound {
-		return fmt.Errorf("task store: plan not found: %s", filename)
+		return newNotFoundError("task store: plan not found: %s", filename)
 	}
 	if resp.StatusCode != http.StatusOK {
 		return decodeError(resp)
@@ -650,7 +650,7 @@ func (s *HTTPStore) SetClickUpTaskID(project, filename, taskID string) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusNotFound {
-		return fmt.Errorf("task store: plan not found: %s", filename)
+		return newNotFoundError("task store: plan not found: %s", filename)
 	}
 	if resp.StatusCode != http.StatusOK {
 		return decodeError(resp)
@@ -673,7 +673,7 @@ func (s *HTTPStore) IncrementReviewCycle(project, filename string) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusNotFound {
-		return fmt.Errorf("task store: plan not found: %s", filename)
+		return newNotFoundError("task store: plan not found: %s", filename)
 	}
 	if resp.StatusCode != http.StatusOK {
 		return decodeError(resp)
@@ -728,7 +728,7 @@ func (s *HTTPStore) SetPRURL(project, filename, prURL string) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusNotFound {
-		return fmt.Errorf("task store: plan not found: %s", filename)
+		return newNotFoundError("task store: plan not found: %s", filename)
 	}
 	if resp.StatusCode != http.StatusOK {
 		return decodeError(resp)
@@ -758,7 +758,7 @@ func (s *HTTPStore) SetPRState(project, filename, reviewDecision, checkStatus st
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusNotFound {
-		return fmt.Errorf("task store: plan not found: %s", filename)
+		return newNotFoundError("task store: plan not found: %s", filename)
 	}
 	if resp.StatusCode != http.StatusOK {
 		return decodeError(resp)
@@ -791,7 +791,7 @@ func (s *HTTPStore) RecordPRReview(project, filename string, reviewID int, state
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusNotFound {
-		return fmt.Errorf("task store: plan not found: %s", filename)
+		return newNotFoundError("task store: plan not found: %s", filename)
 	}
 	if resp.StatusCode != http.StatusCreated {
 		return decodeError(resp)

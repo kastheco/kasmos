@@ -2,7 +2,6 @@ package tmux
 
 import (
 	"fmt"
-	cmd2 "github.com/kastheco/kasmos/cmd"
 	"github.com/kastheco/kasmos/cmd/cmd_test"
 	"os"
 	"os/exec"
@@ -43,7 +42,7 @@ func TestStartTmuxSession_WithTaskEnvVars(t *testing.T) {
 	require.NoError(t, err)
 	require.GreaterOrEqual(t, len(ptyFactory.cmds), 1)
 
-	cmdStr := cmd2.ToString(ptyFactory.cmds[0])
+	cmdStr := commandString(ptyFactory.cmds[0])
 	assert.Contains(t, cmdStr, "KASMOS_TASK=3")
 	assert.Contains(t, cmdStr, "KASMOS_WAVE=2")
 	assert.Contains(t, cmdStr, "KASMOS_PEERS=4")
@@ -78,7 +77,7 @@ func TestStartTmuxSession_WithoutTaskEnvVars(t *testing.T) {
 	err := session.Start(workdir)
 	require.NoError(t, err)
 
-	cmdStr := cmd2.ToString(ptyFactory.cmds[0])
+	cmdStr := commandString(ptyFactory.cmds[0])
 	assert.NotContains(t, cmdStr, "KASMOS_TASK=")
 	assert.NotContains(t, cmdStr, "KASMOS_WAVE=")
 	assert.NotContains(t, cmdStr, "KASMOS_PEERS=")
@@ -115,7 +114,7 @@ func TestStartTmuxSession_WithProjectEnvVar(t *testing.T) {
 	require.NoError(t, err)
 	require.GreaterOrEqual(t, len(ptyFactory.cmds), 1)
 
-	cmdStr := cmd2.ToString(ptyFactory.cmds[0])
+	cmdStr := commandString(ptyFactory.cmds[0])
 	assert.Contains(t, cmdStr, "KASMOS_PROJECT='kasmos'")
 	assert.Contains(t, cmdStr, "KASMOS_MANAGED=1")
 	// KASMOS_PROJECT must appear before KASMOS_MANAGED in the command string.
@@ -153,7 +152,7 @@ func TestStartTmuxSession_WithoutProject_NoProjectEnvVar(t *testing.T) {
 	require.NoError(t, err)
 	require.GreaterOrEqual(t, len(ptyFactory.cmds), 1)
 
-	cmdStr := cmd2.ToString(ptyFactory.cmds[0])
+	cmdStr := commandString(ptyFactory.cmds[0])
 	assert.NotContains(t, cmdStr, "KASMOS_PROJECT=")
 	assert.Contains(t, cmdStr, "KASMOS_MANAGED=1")
 }
@@ -188,7 +187,7 @@ func TestStartTmuxSession_OpenCodeInjectsProjectConfigEnv(t *testing.T) {
 	require.NoError(t, err)
 	require.GreaterOrEqual(t, len(ptyFactory.cmds), 1)
 
-	cmdStr := cmd2.ToString(ptyFactory.cmds[0])
+	cmdStr := commandString(ptyFactory.cmds[0])
 	assert.Contains(t, cmdStr, "KASMOS_MANAGED=1")
 	assert.Contains(t, cmdStr, "OPENCODE_CONFIG='"+configPath+"'")
 	assert.Contains(t, cmdStr, "opencode")
