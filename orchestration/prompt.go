@@ -250,17 +250,21 @@ func BuildElaborationPromptWithOptions(planFile, project string, opts ArchitectP
 			"%[11]d. Signal architect-pass completion: prefer MCP `signal_create` (signal_type: \"elaborator-finished\", plan_file: \"%[1]s\", project: \"%[2]s\")\n"+
 			"   - If MCP is unavailable, use `kas signal emit elaborator_finished %[1]s`; if CLI signaling is also unavailable, fallback: `touch .kasmos/signals/elaborator-finished-%[1]s`\n"+
 			"   - Keep the role wording as architect in your notes and output; only the completion signal name stays legacy.\n",
-		planFile, project, codebaseStep, codebaseStep+1, codebaseStep+2, codebaseStep+3, codebaseStep+4, codebaseStep+5, codebaseStep+6, architectDecisionAuditInstructions(planFile, project), codebaseStep+7,
+		planFile, project, codebaseStep, codebaseStep+1, codebaseStep+2, codebaseStep+3, codebaseStep+4, codebaseStep+5, codebaseStep+6, architectDecisionAuditInstructions(planFile, project, opts.ParallelBaseline), codebaseStep+7,
 	)
 }
 
-func architectDecisionAuditInstructions(planFile, project string) string {
+func architectDecisionAuditInstructions(planFile, project string, includeBaselineCache bool) string {
+	baselineCacheNote := ""
+	if includeBaselineCache {
+		baselineCacheNote = fmt.Sprintf("   - `.kasmos/cache/%s-architect-baseline.json` is advisory input only and must not be treated as final implementation state.\n", planFile)
+	}
 	return fmt.Sprintf(
 		"   - Preserve the existing wave/task metadata fields and add optional `decision_audit`; do not replace the task metadata with only the audit.\n"+
 			"   - `decision_audit.baseline_source` must be one of `parallel_cache`, `inline`, `absent`, or `stale`.\n"+
 			"   - Include a short `planner_summary`, a short `baseline_summary`, a `differences` list for each meaningful file, wave, API, UI, docs, or verification change, and a `final_decision` sentence that states the implementation path coders should follow.\n"+
 			"   - Include `summary` as the concise overall audit summary.\n"+
-			"   - `.kasmos/cache/%[1]s-architect-baseline.json` is advisory input only and must not be treated as final implementation state.\n"+
+			"%[3]s"+
 			"   - Prefer this metadata shape:\n\n"+
 			"```json\n"+
 			"{\n"+
@@ -280,7 +284,7 @@ func architectDecisionAuditInstructions(planFile, project string) string {
 			"  }\n"+
 			"}\n"+
 			"```\n",
-		planFile, project,
+		planFile, project, baselineCacheNote,
 	)
 }
 
@@ -342,7 +346,7 @@ func BuildArchitectPrompt(planFile, project string) string {
 			"8. Signal architect-pass completion: prefer MCP `signal_create` (signal_type: \"elaborator-finished\", plan_file: \"%[1]s\", project: \"%[2]s\")\n"+
 			"   - If MCP is unavailable, use `kas signal emit elaborator_finished %[1]s`; if CLI signaling is also unavailable, fallback: `touch .kasmos/signals/elaborator-finished-%[1]s`\n"+
 			"   - Keep the role wording as architect in your notes and output; only the completion signal name stays legacy.\n",
-		planFile, project, architectDecisionAuditInstructions(planFile, project),
+		planFile, project, architectDecisionAuditInstructions(planFile, project, true),
 	)
 }
 

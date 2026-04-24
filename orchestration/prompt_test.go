@@ -246,7 +246,7 @@ func TestBuildElaborationPrompt(t *testing.T) {
 	assert.Contains(t, prompt, "baseline_summary")
 	assert.Contains(t, prompt, "final_decision")
 	assert.Contains(t, prompt, "`parallel_cache`, `inline`, `absent`, or `stale`")
-	assert.Contains(t, prompt, "advisory input only and must not be treated as final implementation state")
+	assert.NotContains(t, prompt, "architect-baseline.json")
 	assert.NotContains(t, prompt, "raw planner snapshot")
 	assert.NotContains(t, prompt, "architect-finished")
 }

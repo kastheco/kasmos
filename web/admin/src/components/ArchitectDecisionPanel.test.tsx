@@ -18,7 +18,7 @@ const HAPPY_RESPONSE: ArchitectDecisionAuditResponse = {
     plan_file: "audit-architect-decisions",
     project: "kasmos",
     created_at: "2026-04-24T10:05:00Z",
-    baseline_source: "planner draft",
+    baseline_source: "parallel_cache",
     summary: "architect narrowed the implementation boundary",
     planner_summary: "planner split api and ui separately",
     baseline_summary: "baseline used the task detail page contract",

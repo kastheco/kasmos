@@ -78,15 +78,7 @@ func (h *handler) handleArchitectDecisions(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	finalMarkdown, err := h.store.GetContent(project, filename)
-	if err != nil {
-		if isNotFound(err) {
-			writeJSONError(w, http.StatusNotFound, "task not found: "+filename, "task_not_found")
-			return
-		}
-		writeJSONError(w, http.StatusInternalServerError, err.Error(), "task_store_error")
-		return
-	}
+	finalMarkdown := entry.Content
 
 	root, err := h.resolveRoot(project)
 	if err != nil {

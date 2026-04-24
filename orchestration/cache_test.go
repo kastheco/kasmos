@@ -46,7 +46,7 @@ func TestSaveAndLoadArchitectMeta(t *testing.T) {
 			PlanFile:        "planner",
 			Project:         "kasmos",
 			CreatedAt:       time.Date(2026, 4, 24, 12, 30, 0, 0, time.UTC),
-			BaselineSource:  "architect-baseline-cache",
+			BaselineSource:  "parallel_cache",
 			Summary:         "architect accepted the shape with one routing adjustment",
 			PlannerSummary:  "planner split metadata and hq API tasks",
 			BaselineSummary: "baseline kept metadata scoped to orchestration cache",
@@ -157,11 +157,12 @@ func TestValidateArchitectDecisionAudit(t *testing.T) {
 	const project = "kasmos"
 	valid := func() *ArchitectDecisionAudit {
 		return &ArchitectDecisionAudit{
-			SchemaVersion: architectDecisionAuditSchemaVersion,
-			PlanFile:      planFile,
-			Project:       project,
-			FinalDecision: "accept planner draft with metadata audit",
-			Summary:       "no task shape changes",
+			SchemaVersion:  architectDecisionAuditSchemaVersion,
+			PlanFile:       planFile,
+			Project:        project,
+			BaselineSource: "parallel_cache",
+			FinalDecision:  "accept planner draft with metadata audit",
+			Summary:        "no task shape changes",
 			Differences: []ArchitectDecisionDifference{{
 				Area:          "orchestration cache",
 				FinalDecision: "add optional audit field",
@@ -171,11 +172,12 @@ func TestValidateArchitectDecisionAudit(t *testing.T) {
 
 	require.NoError(t, ValidateArchitectDecisionAudit(valid(), planFile, project))
 	require.NoError(t, ValidateArchitectDecisionAudit(&ArchitectDecisionAudit{
-		SchemaVersion: architectDecisionAuditSchemaVersion,
-		PlanFile:      planFile,
-		Project:       project,
-		FinalDecision: "accepted unchanged",
-		Summary:       "planner draft accepted unchanged",
+		SchemaVersion:  architectDecisionAuditSchemaVersion,
+		PlanFile:       planFile,
+		Project:        project,
+		BaselineSource: "inline",
+		FinalDecision:  "accepted unchanged",
+		Summary:        "planner draft accepted unchanged",
 	}, planFile, project))
 
 	tests := []struct {
@@ -214,6 +216,24 @@ func TestValidateArchitectDecisionAudit(t *testing.T) {
 				return a
 			}(),
 			errSubstr: "project mismatch",
+		},
+		{
+			name: "empty baseline source",
+			audit: func() *ArchitectDecisionAudit {
+				a := valid()
+				a.BaselineSource = "  "
+				return a
+			}(),
+			errSubstr: "baseline source is empty",
+		},
+		{
+			name: "unsupported baseline source",
+			audit: func() *ArchitectDecisionAudit {
+				a := valid()
+				a.BaselineSource = "planner draft"
+				return a
+			}(),
+			errSubstr: "unsupported",
 		},
 		{
 			name: "empty final decision",

@@ -57,7 +57,7 @@ func TestArchitectDecisionHandler_HappyPath(t *testing.T) {
 	assert.Equal(t, "architect compared the planner draft", body.DecisionAudit.Summary)
 	assert.Equal(t, "planner wanted the hq route", body.DecisionAudit.PlannerSummary)
 	assert.Equal(t, "baseline kept it read-only", body.DecisionAudit.BaselineSummary)
-	assert.Equal(t, "architect-baseline-cache", body.DecisionAudit.BaselineSource)
+	assert.Equal(t, "parallel_cache", body.DecisionAudit.BaselineSource)
 	assert.Equal(t, "ship the read-only route", body.DecisionAudit.FinalDecision)
 	require.Len(t, body.DecisionAudit.Differences, 1)
 	assert.Equal(t, "routing", body.DecisionAudit.Differences[0].Area)
@@ -263,7 +263,7 @@ func writeArchitectMeta(t *testing.T, cacheDir string, createdAt time.Time, incl
 			PlanFile:        testFilename,
 			Project:         testProject,
 			CreatedAt:       createdAt,
-			BaselineSource:  "architect-baseline-cache",
+			BaselineSource:  "parallel_cache",
 			Summary:         "architect compared the planner draft",
 			PlannerSummary:  "planner wanted the hq route",
 			BaselineSummary: "baseline kept it read-only",

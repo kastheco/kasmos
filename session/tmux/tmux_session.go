@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/kastheco/kasmos/config"
+	"github.com/kastheco/kasmos/internal/cmdexec"
 	"github.com/kastheco/kasmos/internal/opencodesession"
 	"github.com/kastheco/kasmos/log"
 	"golang.org/x/term"
@@ -54,26 +55,8 @@ var ansiRe = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]`)
 
 var resolveProgramPath = config.ResolveCommandPath
 
-// Executor abstracts command execution for testability without importing the
-// top-level cmd package from this lower-level tmux package.
-type Executor interface {
-	Run(cmd *exec.Cmd) error
-	Output(cmd *exec.Cmd) ([]byte, error)
-}
-
-type execExecutor struct{}
-
-func (execExecutor) Run(cmd *exec.Cmd) error {
-	return cmd.Run()
-}
-
-func (execExecutor) Output(cmd *exec.Cmd) ([]byte, error) {
-	return cmd.Output()
-}
-
-func makeExecutor() Executor {
-	return execExecutor{}
-}
+// Executor aliases the canonical command executor type used across packages.
+type Executor = cmdexec.Executor
 
 // TmuxSession represents a managed tmux session.
 // It implements the Session interface defined in session.go.
@@ -167,7 +150,7 @@ func ToKasTmuxNamePublic(name string) string {
 
 // NewTmuxSession creates a new TmuxSession with the given name and program.
 func NewTmuxSession(name string, program string, skipPermissions bool) *TmuxSession {
-	return newTmuxSession(name, program, skipPermissions, MakePtyFactory(), makeExecutor())
+	return newTmuxSession(name, program, skipPermissions, MakePtyFactory(), cmdexec.Make())
 }
 
 // NewTmuxSessionWithDeps creates a new TmuxSession with provided dependencies for testing.
@@ -200,7 +183,7 @@ func NewTmuxSessionFromExisting(sanitizedName string, program string, skipPermis
 		program:         program,
 		skipPermissions: skipPermissions,
 		ptyFactory:      MakePtyFactory(),
-		cmdExec:         makeExecutor(),
+		cmdExec:         cmdexec.Make(),
 	}
 }
 

@@ -185,12 +185,11 @@ export default function TaskDetailPage() {
         </div>
       </header>
 
-      <div className={styles.tabStrip} role="tablist" aria-label="task detail tabs">
+      <div className={styles.tabStrip} aria-label="task detail views">
         <button
           className={`${styles.tabButton} ${activeTab === "plan" ? styles.tabButtonActive : ""}`}
           type="button"
-          role="tab"
-          aria-selected={activeTab === "plan"}
+          aria-pressed={activeTab === "plan"}
           onClick={() => selectTab("plan")}
         >
           plan
@@ -198,8 +197,7 @@ export default function TaskDetailPage() {
         <button
           className={`${styles.tabButton} ${activeTab === "architect" ? styles.tabButtonActive : ""}`}
           type="button"
-          role="tab"
-          aria-selected={activeTab === "architect"}
+          aria-pressed={activeTab === "architect"}
           onClick={() => selectTab("architect")}
         >
           architect decisions

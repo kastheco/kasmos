@@ -98,7 +98,7 @@ describe("TaskDetailPage", () => {
   it("defaults to the plan tab and preserves plan editing", async () => {
     render(<TaskDetailPage />);
 
-    expect(screen.getByRole("tab", { name: "plan" }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByRole("button", { name: "plan" }).getAttribute("aria-pressed")).toBe("true");
     expect(screen.getByText("current task markdown")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "edit" }));
@@ -113,7 +113,7 @@ describe("TaskDetailPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "edit" }));
     expect(await screen.findByTestId("plan-editor")).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("tab", { name: "architect decisions" }));
+    fireEvent.click(screen.getByRole("button", { name: "architect decisions" }));
 
     expect(screen.queryByTestId("plan-editor")).toBeNull();
     expect(screen.queryByRole("button", { name: "cancel edit" })).toBeNull();
