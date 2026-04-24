@@ -206,4 +206,3 @@ func (d *Dispatcher) readRemote(ctx context.Context, slug, version string) (*Doc
 	}
 	return nil, fmt.Errorf("docs_read: slug %q not found in remote manifest", slug)
 }
-
