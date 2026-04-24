@@ -135,7 +135,7 @@ func TestCodexAdapter(t *testing.T) {
 		})
 		assert.Equal(t, []string{
 			"-m", "gpt-5-codex",
-			"-c", "reasoning.effort=high",
+			"-c", "model_reasoning_effort=high",
 			"-c", "temperature=0.3",
 		}, flags)
 	})

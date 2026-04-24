@@ -267,7 +267,7 @@ func TestAdapterFor_Codex(t *testing.T) {
 	tests := []string{
 		"codex",
 		"/usr/local/bin/codex",
-		`codex -c reasoning.effort="high"`,
+		`codex -c model_reasoning_effort="high"`,
 	}
 
 	for _, program := range tests {

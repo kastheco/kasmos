@@ -64,7 +64,7 @@ func TestBuildHarnessAwareProgramCommand(t *testing.T) {
 				Model:   "gpt-5.4",
 				Effort:  "xhigh",
 			},
-			want: "codex -m gpt-5.4 -c reasoning.effort=xhigh",
+			want: "codex -m gpt-5.4 -c model_reasoning_effort=xhigh",
 		},
 		{
 			name: "claude includes model and effort flags",

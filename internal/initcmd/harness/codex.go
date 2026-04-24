@@ -33,7 +33,7 @@ func (c *Codex) BuildFlags(agent AgentConfig) []string {
 		flags = append(flags, "-m", agent.Model)
 	}
 	if agent.Effort != "" {
-		flags = append(flags, "-c", fmt.Sprintf("reasoning.effort=%s", agent.Effort))
+		flags = append(flags, "-c", fmt.Sprintf("model_reasoning_effort=%s", agent.Effort))
 	}
 	if agent.Temperature != nil {
 		flags = append(flags, "-c", fmt.Sprintf("temperature=%g", *agent.Temperature))

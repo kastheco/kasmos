@@ -85,7 +85,7 @@ func TestBuildProgramCommand(t *testing.T) {
 				Temperature: ptr(0.2),
 				Flags:       []string{"--quiet"},
 			},
-			want: "codex -m gpt-5-codex -c reasoning.effort=high -c temperature=0.2 --quiet",
+			want: "codex -m gpt-5-codex -c model_reasoning_effort=high -c temperature=0.2 --quiet",
 		},
 		{
 			name: "codex with empty model and effort",
@@ -232,6 +232,35 @@ func TestProgramForAgent(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("codex coder resolves effort via codex config override key", func(t *testing.T) {
+		repoDir := t.TempDir()
+		kasmosDir := filepath.Join(repoDir, ".kasmos")
+		require.NoError(t, os.MkdirAll(kasmosDir, 0o755))
+
+		configContent := `
+[phases]
+  implementing = "coder"
+
+[agents]
+  [agents.coder]
+    enabled = true
+    program = "codex"
+    model = "gpt-5.5"
+    tier = "fast"
+    effort = "low"
+`
+		require.NoError(t, os.WriteFile(
+			filepath.Join(kasmosDir, "config.toml"),
+			[]byte(configContent),
+			0o644,
+		))
+
+		got := programForAgentWithRegistry(repoDir, session.AgentTypeCoder, registry)
+		assert.Contains(t, got, "codex -m gpt-5.5")
+		assert.Contains(t, got, "-c model_reasoning_effort=low")
+		assert.NotContains(t, got, "reasoning.effort")
+	})
 
 	t.Run("missing config returns empty", func(t *testing.T) {
 		got := programForAgentWithRegistry("/nonexistent/path", session.AgentTypeCoder, registry)
