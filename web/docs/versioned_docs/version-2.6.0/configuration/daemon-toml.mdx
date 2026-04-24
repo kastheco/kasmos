@@ -108,7 +108,7 @@ The `daemon.toml` fields `auto_advance`, `auto_advance_waves`, `auto_review_fix`
 
 **Effective value resolution:** per-repo overrides are resolved for a subset of these fields only — the rest come from `daemon.toml` unchanged.
 
-- **Per-repo overrideable (two-tier priority):**
+- **Per-repo overridable (two-tier priority):**
   1. **Project-local `config.toml`** (`<repo-root>/.kasmos/config.toml`) — wins when the field is explicitly set.
   2. **User-level `daemon.toml`** (`~/.config/kasmos/daemon.toml`) — fallback when no project-local override is present.
 
@@ -116,7 +116,7 @@ The `daemon.toml` fields `auto_advance`, `auto_advance_waves`, `auto_review_fix`
 
 - **Daemon-global only (from `daemon.toml`):** `auto_advance_waves`, `auto_review_fix`, `max_review_fix_cycles`. These are resolved from `daemon.toml` only; project-local `config.toml` values are ignored by the daemon for these fields, even when set.
 
-This means you can set conservative global defaults in `daemon.toml` (e.g. `readiness_max_verify_cycles = 3`) and tighten or loosen the per-repo overrideable settings in `config.toml` (e.g. `readiness_max_verify_cycles = 1` for a fast-moving repo). For daemon-global-only fields, edit `daemon.toml` and restart the daemon. Keep the values in sync across files when you want consistent behavior in both interactive TUI and headless daemon mode.
+This means you can set conservative global defaults in `daemon.toml` (e.g. `readiness_max_verify_cycles = 3`) and tighten or loosen the per-repo overridable settings in `config.toml` (e.g. `readiness_max_verify_cycles = 1` for a fast-moving repo). For daemon-global-only fields, edit `daemon.toml` and restart the daemon. Keep the values in sync across files when you want consistent behavior in both interactive TUI and headless daemon mode.
 
 ## starting the daemon
 
