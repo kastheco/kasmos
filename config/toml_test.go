@@ -743,17 +743,18 @@ plan = "planner"
 }
 
 func TestParallelPlannerArchitectTOML(t *testing.T) {
-	t.Run("absent orchestration key defaults false", func(t *testing.T) {
+	t.Run("absent orchestration key is nil", func(t *testing.T) {
+		// Key absent from TOML — pointer must be nil so the runtime default (true) applies.
 		dir := t.TempDir()
 		path := filepath.Join(dir, "config.toml")
 		require.NoError(t, os.WriteFile(path, []byte("[orchestration]\n"), 0o644))
 
 		result, err := LoadTOMLConfigFrom(path)
 		require.NoError(t, err)
-		assert.False(t, result.ParallelPlannerArchitect)
+		assert.Nil(t, result.ParallelPlannerArchitect)
 	})
 
-	t.Run("true parses from orchestration section", func(t *testing.T) {
+	t.Run("explicit true parses as non-nil true pointer", func(t *testing.T) {
 		dir := t.TempDir()
 		path := filepath.Join(dir, "config.toml")
 		content := `
@@ -764,15 +765,32 @@ parallel_planner_architect = true
 
 		result, err := LoadTOMLConfigFrom(path)
 		require.NoError(t, err)
-		assert.True(t, result.ParallelPlannerArchitect)
+		require.NotNil(t, result.ParallelPlannerArchitect)
+		assert.True(t, *result.ParallelPlannerArchitect)
 	})
 
-	t.Run("save round-trips under orchestration", func(t *testing.T) {
+	t.Run("explicit false parses as non-nil false pointer", func(t *testing.T) {
 		dir := t.TempDir()
 		path := filepath.Join(dir, "config.toml")
+		content := `
+[orchestration]
+parallel_planner_architect = false
+`
+		require.NoError(t, os.WriteFile(path, []byte(content), 0o644))
+
+		result, err := LoadTOMLConfigFrom(path)
+		require.NoError(t, err)
+		require.NotNil(t, result.ParallelPlannerArchitect)
+		assert.False(t, *result.ParallelPlannerArchitect)
+	})
+
+	t.Run("save round-trips true under orchestration", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "config.toml")
+		trueVal := true
 		tc := &TOMLConfig{
 			Orchestration: TOMLOrchestrationConfig{
-				ParallelPlannerArchitect: true,
+				ParallelPlannerArchitect: &trueVal,
 			},
 		}
 
@@ -784,7 +802,30 @@ parallel_planner_architect = true
 
 		result, err := LoadTOMLConfigFrom(path)
 		require.NoError(t, err)
-		assert.True(t, result.ParallelPlannerArchitect)
+		require.NotNil(t, result.ParallelPlannerArchitect)
+		assert.True(t, *result.ParallelPlannerArchitect)
+	})
+
+	t.Run("save round-trips false under orchestration", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "config.toml")
+		falseVal := false
+		tc := &TOMLConfig{
+			Orchestration: TOMLOrchestrationConfig{
+				ParallelPlannerArchitect: &falseVal,
+			},
+		}
+
+		require.NoError(t, SaveTOMLConfigTo(tc, path))
+		data, err := os.ReadFile(path)
+		require.NoError(t, err)
+		assert.Contains(t, string(data), "[orchestration]")
+		assert.Contains(t, string(data), "parallel_planner_architect = false")
+
+		result, err := LoadTOMLConfigFrom(path)
+		require.NoError(t, err)
+		require.NotNil(t, result.ParallelPlannerArchitect)
+		assert.False(t, *result.ParallelPlannerArchitect)
 	})
 }
 

@@ -741,34 +741,54 @@ func TestConfigFromTOML_DoubleTapThreshold(t *testing.T) {
 }
 
 func TestParallelPlannerArchitectConfig(t *testing.T) {
-	t.Run("absent defaults false", func(t *testing.T) {
+	t.Run("DefaultConfig is true", func(t *testing.T) {
+		assert.True(t, DefaultConfig().ParallelPlannerArchitect)
+	})
+
+	t.Run("absent TOML pointer resolves true via DefaultConfig", func(t *testing.T) {
+		// ParallelPlannerArchitect is nil (key absent) — configFromTOML starts from
+		// DefaultConfig() so the resolved value is true.
 		cfg := configFromTOML(&TOMLConfigResult{
 			Profiles:   map[string]AgentProfile{},
 			PhaseRoles: map[string]string{},
 		})
 
-		assert.False(t, cfg.ParallelPlannerArchitect)
+		assert.True(t, cfg.ParallelPlannerArchitect)
 	})
 
-	t.Run("configFromTOML preserves true", func(t *testing.T) {
+	t.Run("explicit false pointer overrides default", func(t *testing.T) {
+		falseVal := false
 		cfg := configFromTOML(&TOMLConfigResult{
 			Profiles:                 map[string]AgentProfile{},
 			PhaseRoles:               map[string]string{},
-			ParallelPlannerArchitect: true,
+			ParallelPlannerArchitect: &falseVal,
+		})
+
+		assert.False(t, cfg.ParallelPlannerArchitect)
+	})
+
+	t.Run("explicit true pointer preserves true", func(t *testing.T) {
+		trueVal := true
+		cfg := configFromTOML(&TOMLConfigResult{
+			Profiles:                 map[string]AgentProfile{},
+			PhaseRoles:               map[string]string{},
+			ParallelPlannerArchitect: &trueVal,
 		})
 
 		assert.True(t, cfg.ParallelPlannerArchitect)
 	})
 
-	t.Run("configToTOML preserves true", func(t *testing.T) {
+	t.Run("configToTOML returns non-nil pointer for true", func(t *testing.T) {
 		tc := configToTOML(&Config{ParallelPlannerArchitect: true})
 
-		assert.True(t, tc.Orchestration.ParallelPlannerArchitect)
+		require.NotNil(t, tc.Orchestration.ParallelPlannerArchitect)
+		assert.True(t, *tc.Orchestration.ParallelPlannerArchitect)
 	})
 
-	t.Run("configToTOML preserves false", func(t *testing.T) {
+	t.Run("configToTOML returns non-nil pointer for false", func(t *testing.T) {
 		tc := configToTOML(&Config{})
 
-		assert.False(t, tc.Orchestration.ParallelPlannerArchitect)
+		require.NotNil(t, tc.Orchestration.ParallelPlannerArchitect)
+		assert.False(t, *tc.Orchestration.ParallelPlannerArchitect)
 	})
 }

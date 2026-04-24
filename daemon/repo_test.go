@@ -189,17 +189,31 @@ func TestRepoManager_MigratesRepoLocalTasks(t *testing.T) {
 }
 
 func TestRepoManager_ParallelPlannerArchitectConfig(t *testing.T) {
-	t.Run("defaults false without project config", func(t *testing.T) {
+	t.Run("defaults true without project config", func(t *testing.T) {
 		repoDir := t.TempDir()
 		rm := newTestRepoManager(t)
 
 		require.NoError(t, rm.Add(repoDir))
 		repos := rm.List()
 		require.Len(t, repos, 1)
-		assert.False(t, repos[0].ParallelPlannerArchitect)
+		assert.True(t, repos[0].ParallelPlannerArchitect)
 	})
 
-	t.Run("follows project config", func(t *testing.T) {
+	t.Run("orchestration section without key resolves true", func(t *testing.T) {
+		// [orchestration] present but key absent — nil pointer, default true applies.
+		repoDir := t.TempDir()
+		kasmosDir := filepath.Join(repoDir, ".kasmos")
+		require.NoError(t, os.MkdirAll(kasmosDir, 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(kasmosDir, "config.toml"), []byte("[orchestration]\n"), 0o644))
+
+		rm := newTestRepoManager(t)
+		require.NoError(t, rm.Add(repoDir))
+		repos := rm.List()
+		require.Len(t, repos, 1)
+		assert.True(t, repos[0].ParallelPlannerArchitect)
+	})
+
+	t.Run("explicit true in project config resolves true", func(t *testing.T) {
 		repoDir := t.TempDir()
 		kasmosDir := filepath.Join(repoDir, ".kasmos")
 		require.NoError(t, os.MkdirAll(kasmosDir, 0o755))
@@ -214,5 +228,22 @@ parallel_planner_architect = true
 		repos := rm.List()
 		require.Len(t, repos, 1)
 		assert.True(t, repos[0].ParallelPlannerArchitect)
+	})
+
+	t.Run("explicit false in project config resolves false", func(t *testing.T) {
+		repoDir := t.TempDir()
+		kasmosDir := filepath.Join(repoDir, ".kasmos")
+		require.NoError(t, os.MkdirAll(kasmosDir, 0o755))
+		content := `
+[orchestration]
+parallel_planner_architect = false
+`
+		require.NoError(t, os.WriteFile(filepath.Join(kasmosDir, "config.toml"), []byte(content), 0o644))
+
+		rm := newTestRepoManager(t)
+		require.NoError(t, rm.Add(repoDir))
+		repos := rm.List()
+		require.Len(t, repos, 1)
+		assert.False(t, repos[0].ParallelPlannerArchitect)
 	})
 }
