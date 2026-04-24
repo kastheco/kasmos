@@ -1299,6 +1299,8 @@ func (n *NavigationPanel) RowCount() int { return len(n.rows) }
 // navInstanceTitle returns the human-readable display label for an instance.
 func navInstanceTitle(inst *session.Instance) string {
 	switch {
+	case inst.AgentType == session.AgentTypeArchitectBaseline && inst.TaskFile != "":
+		return "architect baseline"
 	case inst.WaveNumber > 0 && inst.TaskNumber > 0:
 		taskIndex := inst.WaveTaskIndex
 		if taskIndex == 0 {
