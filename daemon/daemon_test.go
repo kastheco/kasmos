@@ -1932,11 +1932,12 @@ func TestDaemonStateAdapter_ListInstances_IncludesSoloAgentFields(t *testing.T) 
 	// Manually track a standalone SDK instance.
 	key := instanceKeyForStandalone(repoPath, "sdk-solo-agent")
 	inst := &session.Instance{
-		Title:        "sdk-solo-agent",
-		Path:         repoPath,
-		SoloAgent:    true,
-		SDKSpeedTier: "fast",
-		Status:       session.Loading,
+		Title:           "sdk-solo-agent",
+		Path:            repoPath,
+		SoloAgent:       true,
+		SDKSpeedTier:    "fast",
+		SkipPermissions: true,
+		Status:          session.Loading,
 	}
 	spawner.mu.Lock()
 	spawner.instances[key] = inst
@@ -1950,6 +1951,7 @@ func TestDaemonStateAdapter_ListInstances_IncludesSoloAgentFields(t *testing.T) 
 	require.Len(t, statuses, 1)
 	assert.True(t, statuses[0].SoloAgent)
 	assert.Equal(t, "fast", statuses[0].SDKSpeedTier)
+	assert.True(t, statuses[0].SkipPermissions)
 	assert.Equal(t, "sdk-solo-agent", statuses[0].Title)
 	assert.True(t, statuses[0].Loading)
 	assert.True(t, statuses[0].Active)

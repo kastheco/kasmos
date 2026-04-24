@@ -40,7 +40,7 @@ func TestDaemonInstanceLister_PausedRowsNotFiltered(t *testing.T) {
 	// so the web UI can restrict valid_actions to {restart, kill} — collapsing
 	// it into StatusRunning would violate the plan action matrix.
 	statuses := []api.InstanceStatus{
-		{Title: "active-agent", Active: true, Program: "opencode"},
+		{Title: "active-agent", Active: true, Program: "opencode", SkipPermissions: true},
 		{Title: "paused-agent", Active: false, Program: "claude"},
 		{Title: "ready-agent", Active: true, Ready: true, Program: "opencode"},
 	}
@@ -70,6 +70,7 @@ func TestDaemonInstanceLister_PausedRowsNotFiltered(t *testing.T) {
 	require.Contains(t, byTitle, "paused-agent")
 	require.Contains(t, byTitle, "ready-agent")
 	assert.Equal(t, livepreview.StatusRunning, byTitle["active-agent"].Status)
+	assert.True(t, byTitle["active-agent"].SkipPermissions)
 	assert.Equal(t, livepreview.StatusPaused, byTitle["paused-agent"].Status)
 	assert.Equal(t, livepreview.StatusReady, byTitle["ready-agent"].Status)
 }

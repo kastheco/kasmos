@@ -863,13 +863,14 @@ func TestTmuxSpawner_SpawnSolo_DefaultPath_CallsStartOnMain(t *testing.T) {
 
 	const repoPath = "/tmp/repo"
 	err := s.SpawnSolo(context.Background(), SpawnSoloOpts{
-		RepoPath:     repoPath,
-		Project:      "proj",
-		Title:        "my-solo-agent",
-		Program:      "claude",
-		Prompt:       "do the thing",
-		SoloAgent:    true,
-		SDKSpeedTier: "fast",
+		RepoPath:        repoPath,
+		Project:         "proj",
+		Title:           "my-solo-agent",
+		Program:         "claude",
+		Prompt:          "do the thing",
+		SoloAgent:       true,
+		SDKSpeedTier:    "fast",
+		SkipPermissions: true,
 	})
 	require.NoError(t, err)
 	require.NotNil(t, capturedInst)

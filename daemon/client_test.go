@@ -338,6 +338,55 @@ func TestSocketClient_SpawnSolo_HappyPath(t *testing.T) {
 	assert.Equal(t, "fast", decoded.SDKSpeedTier)
 }
 
+func TestSocketClient_SpawnSolo_PreservesNullableSkipPermissions(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		skip       *bool
+		wantNil    bool
+		wantValue  bool
+		wantInBody bool
+	}{
+		{name: "nil", skip: nil, wantNil: true, wantInBody: false},
+		{name: "false", skip: daemonBoolPtr(false), wantValue: false, wantInBody: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var decoded api.SpawnSoloRequest
+			var raw map[string]any
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				body, err := io.ReadAll(r.Body)
+				require.NoError(t, err)
+				require.NoError(t, json.Unmarshal(body, &decoded))
+				require.NoError(t, json.Unmarshal(body, &raw))
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusAccepted)
+				_, _ = w.Write([]byte(`{"title":"my-solo"}`))
+			}))
+			defer srv.Close()
+
+			client := &SocketClient{http: srv.Client(), baseURL: srv.URL}
+			err := client.SpawnSolo("myproj", api.SpawnSoloRequest{
+				Title:           "my-solo",
+				Program:         "claude",
+				SkipPermissions: tc.skip,
+			})
+			require.NoError(t, err)
+
+			_, hasField := raw["skip_permissions"]
+			assert.Equal(t, tc.wantInBody, hasField)
+			if tc.wantNil {
+				assert.Nil(t, decoded.SkipPermissions)
+				return
+			}
+			require.NotNil(t, decoded.SkipPermissions)
+			assert.Equal(t, tc.wantValue, *decoded.SkipPermissions)
+		})
+	}
+}
+
+func daemonBoolPtr(v bool) *bool {
+	return &v
+}
+
 func TestSocketClient_SpawnSolo_Conflict(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

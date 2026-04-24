@@ -57,6 +57,9 @@ type SpawnSoloOpts struct {
 	Branch       string
 	WorkPath     string
 	SDKSpeedTier string
+	// SkipPermissions is resolved by the caller. Daemon.SpawnSolo handles
+	// nullable SpawnSoloRequest.SkipPermissions before creating these opts.
+	SkipPermissions bool
 }
 
 // TmuxSpawner implements loop.AgentSpawner using tmux-backed sessions managed
@@ -988,7 +991,7 @@ func (s *TmuxSpawner) SpawnSolo(ctx context.Context, opts SpawnSoloOpts) error {
 		TaskFile:        opts.TaskFile,
 		AgentType:       agentType,
 		SDKSpeedTier:    opts.SDKSpeedTier,
-		SkipPermissions: true,
+		SkipPermissions: opts.SkipPermissions,
 	})
 	if err != nil {
 		s.releaseReservation(key)

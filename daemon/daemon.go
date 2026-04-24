@@ -220,24 +220,25 @@ func (a *daemonStateAdapter) ListInstances(project string) []api.InstanceStatus 
 			active := !inst.Paused() && !inst.Exited && (inst.Started() || inst.Status == session.Loading)
 			ready := active && inst.Status == session.Ready
 			out = append(out, api.InstanceStatus{
-				ID:            inst.Title,
-				Project:       project,
-				Plan:          inst.TaskFile,
-				Role:          inst.AgentType,
-				Active:        active,
-				Loading:       inst.Status == session.Loading,
-				Ready:         ready,
-				Title:         inst.Title,
-				Branch:        inst.Branch,
-				Program:       inst.Program,
-				TaskNumber:    inst.TaskNumber,
-				WaveNumber:    inst.WaveNumber,
-				ReviewCycle:   inst.ReviewCycle,
-				WaveTaskIndex: inst.WaveTaskIndex,
-				WaveTaskCount: inst.WaveTaskCount,
-				ExecutionMode: string(session.NormalizeExecutionMode(inst.ExecutionMode)),
-				SoloAgent:     inst.SoloAgent,
-				SDKSpeedTier:  inst.SDKSpeedTier,
+				ID:              inst.Title,
+				Project:         project,
+				Plan:            inst.TaskFile,
+				Role:            inst.AgentType,
+				Active:          active,
+				Loading:         inst.Status == session.Loading,
+				Ready:           ready,
+				Title:           inst.Title,
+				Branch:          inst.Branch,
+				Program:         inst.Program,
+				TaskNumber:      inst.TaskNumber,
+				WaveNumber:      inst.WaveNumber,
+				ReviewCycle:     inst.ReviewCycle,
+				WaveTaskIndex:   inst.WaveTaskIndex,
+				WaveTaskCount:   inst.WaveTaskCount,
+				ExecutionMode:   string(session.NormalizeExecutionMode(inst.ExecutionMode)),
+				SoloAgent:       inst.SoloAgent,
+				SDKSpeedTier:    inst.SDKSpeedTier,
+				SkipPermissions: inst.SkipPermissions,
 			})
 		}
 		return out
@@ -643,18 +644,29 @@ func (d *Daemon) startSoloAsync(entry RepoEntry, req api.SpawnSoloRequest) {
 		}
 	}
 
+	skip := true // legacy default: daemon standalone spawns bypass permissions
+	if req.SkipPermissions != nil {
+		skip = *req.SkipPermissions
+	}
+	// If caller omitted the pointer and the project has a profile for the
+	// requested agent type, honour the profile so docs and config behave
+	// identically to lifecycle spawns.
+	if req.SkipPermissions == nil && req.AgentType != "" {
+		skip = skipPermissionsForAgent(entry.Path, req.AgentType)
+	}
 	opts := SpawnSoloOpts{
-		RepoPath:     entry.Path,
-		Project:      entry.Project,
-		Title:        req.Title,
-		Program:      req.Program,
-		Prompt:       req.Prompt,
-		TaskFile:     req.TaskFile,
-		AgentType:    req.AgentType,
-		SoloAgent:    req.SoloAgent,
-		Branch:       req.Branch,
-		WorkPath:     req.WorkPath,
-		SDKSpeedTier: req.SDKSpeedTier,
+		RepoPath:        entry.Path,
+		Project:         entry.Project,
+		Title:           req.Title,
+		Program:         req.Program,
+		Prompt:          req.Prompt,
+		TaskFile:        req.TaskFile,
+		AgentType:       req.AgentType,
+		SoloAgent:       req.SoloAgent,
+		Branch:          req.Branch,
+		WorkPath:        req.WorkPath,
+		SDKSpeedTier:    req.SDKSpeedTier,
+		SkipPermissions: skip,
 	}
 	if err := spawnSolo(context.Background(), opts); err != nil {
 		d.logger.Error("spawn solo failed", "project", entry.Project, "title", req.Title, "err", err)

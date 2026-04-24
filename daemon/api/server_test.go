@@ -728,6 +728,43 @@ func (s *spawnSoloStub) SpawnSolo(project string, req SpawnSoloRequest) error {
 	return s.err
 }
 
+func TestSpawnSoloRequest_NullableSkipPermissions(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		value   *bool
+		wantRaw string
+	}{
+		{name: "nil omits field", value: nil, wantRaw: `{"title":"my-agent","program":"claude"}`},
+		{name: "true emits field", value: ptrBool(true), wantRaw: `{"title":"my-agent","program":"claude","skip_permissions":true}`},
+		{name: "false emits field", value: ptrBool(false), wantRaw: `{"title":"my-agent","program":"claude","skip_permissions":false}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := SpawnSoloRequest{
+				Title:           "my-agent",
+				Program:         "claude",
+				SkipPermissions: tc.value,
+			}
+
+			got, err := json.Marshal(req)
+			require.NoError(t, err)
+			assert.JSONEq(t, tc.wantRaw, string(got))
+
+			var decoded SpawnSoloRequest
+			require.NoError(t, json.Unmarshal(got, &decoded))
+			if tc.value == nil {
+				assert.Nil(t, decoded.SkipPermissions)
+				return
+			}
+			require.NotNil(t, decoded.SkipPermissions)
+			assert.Equal(t, *tc.value, *decoded.SkipPermissions)
+		})
+	}
+}
+
+func ptrBool(v bool) *bool {
+	return &v
+}
+
 func TestHandler_SpawnSolo_HappyPath(t *testing.T) {
 	state := &spawnSoloStub{}
 	h := NewHandler(state)

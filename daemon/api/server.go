@@ -96,6 +96,10 @@ type InstanceStatus struct {
 	// Omitted when empty so that
 	// existing SDK rows without a tier setting are unchanged on the wire.
 	SDKSpeedTier string `json:"sdk_speed_tier,omitempty"`
+	// SkipPermissions mirrors the resolved skip-permissions value used at
+	// spawn time. Omitted when false so old clients that don't know the
+	// field see a clean payload identical to the pre-feature wire format.
+	SkipPermissions bool `json:"skip_permissions,omitempty"`
 }
 
 // SpawnSoloRequest is the request body for POST /v1/repos/{project}/instances/solo.
@@ -111,6 +115,12 @@ type SpawnSoloRequest struct {
 	Branch       string `json:"branch,omitempty"`
 	WorkPath     string `json:"work_path,omitempty"`
 	SDKSpeedTier string `json:"sdk_speed_tier,omitempty"`
+	// SkipPermissions, when non-nil, overrides the daemon's default
+	// skip-permissions behaviour for this spawn. A nil pointer means "use
+	// the daemon default" (preserving the legacy behaviour where omitted
+	// JSON fields implicitly bypassed permissions). Use a pointer so an
+	// explicit false from the TUI is not lost as a zero value.
+	SkipPermissions *bool `json:"skip_permissions,omitempty"`
 }
 
 // SpawnSoloResponse is the response body for a successful POST .../instances/solo.
