@@ -1,0 +1,160 @@
+name: Docs drift
+
+on:
+  schedule:
+    - cron: '17 4 * * *'
+  pull_request:
+    paths:
+      - 'cmd/**.go'
+      - 'config/**.go'
+      - 'daemon/**.go'
+      - 'internal/**.go'
+      - 'orchestration/**.go'
+      - 'web/docs/docs/**'
+  workflow_dispatch:
+
+env:
+  ENABLE_COPILOT_ASSIGN: "true"
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+    outputs:
+      report: ${{ steps.drift.outputs.report }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install yq
+        run: |
+          sudo curl -fsSL -o /usr/local/bin/yq https://github.com/mikefarah/yq/releases/download/v4.45.4/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+
+      - id: drift
+        run: |
+          set -euo pipefail
+          REPORT=$(bash scripts/detect-docs-drift.sh)
+          echo "report<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$REPORT" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+  comment-on-pr:
+    if: github.event_name == 'pull_request'
+    needs: detect
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        env:
+          REPORT: ${{ needs.detect.outputs.report }}
+        with:
+          script: |
+            const report = JSON.parse(process.env.REPORT || '{"drift":[]}');
+            if (!report.drift.length) return;
+
+            const marker = "<!-- docs-drift-report -->";
+            const body = `${marker}
+            ## docs drift detected
+
+            The following code changes don't have matching doc updates:
+
+            \`\`\`json
+            ${JSON.stringify(report, null, 2)}
+            \`\`\``;
+
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              per_page: 100,
+            });
+            const existing = comments.find((comment) =>
+              comment.user?.type === "Bot" && comment.body?.includes(marker)
+            );
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                comment_id: existing.id,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body,
+              });
+            }
+
+  open-or-update-pr:
+    if: github.event_name != 'pull_request'
+    needs: detect
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Open or update tracking PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPORT: ${{ needs.detect.outputs.report }}
+        run: |
+          set -euo pipefail
+          if [ "$(jq '.drift | length' <<<"$REPORT")" = "0" ]; then
+            echo "no drift detected"
+            exit 0
+          fi
+
+          BRANCH=bot/docs-drift
+          TODAY=$(date -u +%Y-%m-%d)
+          git config user.name "kasmos-docs-bot"
+          git config user.email "docs-bot@users.noreply.github.com"
+
+          if git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
+            git fetch origin "$BRANCH:$BRANCH"
+            git checkout "$BRANCH"
+          else
+            git checkout -B "$BRANCH"
+          fi
+
+          git commit --allow-empty -m "docs: refresh from code drift ($TODAY)"
+          git push origin "$BRANCH"
+
+          BODY=$(cat <<EOF
+          ## docs drift report
+
+          \`\`\`json
+          $(jq . <<<"$REPORT")
+          \`\`\`
+
+          @copilot please draft doc updates matching the changes above.
+          EOF
+          )
+
+          gh label create docs-drift --description "Tracks documentation drift" --color "0e8a16" 2>/dev/null || true
+
+          assignee_args=()
+          if [ "$ENABLE_COPILOT_ASSIGN" = "true" ] && gh api "/repos/${{ github.repository }}/assignees?per_page=100" 2>/dev/null | jq -e '.[] | select(.login == "copilot")' >/dev/null; then
+            assignee_args=(--assignee copilot)
+          fi
+
+          if [ "$(gh pr view "$BRANCH" --json state -q .state 2>/dev/null || true)" = "OPEN" ]; then
+            gh pr edit "$BRANCH" --body "$BODY" --add-label docs-drift
+            if [ "${#assignee_args[@]}" -gt 0 ]; then
+              gh pr edit "$BRANCH" --add-assignee copilot
+            fi
+          else
+            gh pr create --head "$BRANCH" --base main \
+              --title "docs: refresh from code drift ($TODAY)" \
+              --body "$BODY" \
+              --label docs-drift \
+              "${assignee_args[@]}"
+          fi
