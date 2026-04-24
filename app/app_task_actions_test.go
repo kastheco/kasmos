@@ -407,6 +407,107 @@ func TestSpawnTaskAgent_PlanUsesDaemonWhenRepoManaged(t *testing.T) {
 	assert.Equal(t, fakeInst.Title, instances[0].Title)
 }
 
+func TestSpawnPlannerWithOptionalBaseline_DisabledSpawnsOnlyPlanner(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	plansDir := filepath.Join(dir, "docs", "plans")
+	require.NoError(t, os.MkdirAll(plansDir, 0o755))
+	ps, err := newTestPlanState(t, plansDir)
+	require.NoError(t, err)
+	const planFile = "local-plan"
+	require.NoError(t, ps.Register(planFile, "local plan", "plan/local-plan", time.Now()))
+
+	sp := spinner.New(spinner.WithSpinner(spinner.Dot))
+	h := &home{
+		appConfig:          &config.Config{},
+		taskState:          ps,
+		activeRepoPath:     dir,
+		taskStoreProject:   "proj",
+		program:            "opencode",
+		nav:                ui.NewNavigationPanel(&sp),
+		menu:               ui.NewMenu(),
+		tabbedWindow:       ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewInfoPane()),
+		toastManager:       overlay.NewToastManager(&sp),
+		instanceFinalizers: make(map[*session.Instance]func()),
+	}
+
+	model, cmd := h.spawnPlannerWithOptionalBaseline(planFile, "plan prompt", "build local plan")
+	require.NotNil(t, cmd)
+	updated := model.(*home)
+	instances := updated.nav.GetInstances()
+	require.Len(t, instances, 1)
+	assert.Equal(t, session.AgentTypePlanner, instances[0].AgentType)
+	assert.Equal(t, "plan prompt", instances[0].QueuedPrompt)
+}
+
+func TestSpawnPlannerWithOptionalBaseline_EnabledSpawnsPlannerAndArchitectBaseline(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	plansDir := filepath.Join(dir, "docs", "plans")
+	require.NoError(t, os.MkdirAll(plansDir, 0o755))
+	ps, err := newTestPlanState(t, plansDir)
+	require.NoError(t, err)
+	const planFile = "parallel-plan"
+	const description = "build the local parallel baseline"
+	require.NoError(t, ps.Register(planFile, "parallel plan", "plan/parallel-plan", time.Now()))
+
+	sp := spinner.New(spinner.WithSpinner(spinner.Dot))
+	h := &home{
+		appConfig:          &config.Config{ParallelPlannerArchitect: true},
+		taskState:          ps,
+		activeRepoPath:     dir,
+		taskStoreProject:   "proj",
+		program:            "opencode",
+		nav:                ui.NewNavigationPanel(&sp),
+		menu:               ui.NewMenu(),
+		tabbedWindow:       ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewInfoPane()),
+		toastManager:       overlay.NewToastManager(&sp),
+		instanceFinalizers: make(map[*session.Instance]func()),
+	}
+
+	model, cmd := h.spawnPlannerWithOptionalBaseline(planFile, "plan prompt", description)
+	require.NotNil(t, cmd)
+	updated := model.(*home)
+
+	var planner, baseline *session.Instance
+	for _, inst := range updated.nav.GetInstances() {
+		switch inst.AgentType {
+		case session.AgentTypePlanner:
+			planner = inst
+		case session.AgentTypeArchitectBaseline:
+			baseline = inst
+		}
+	}
+	require.NotNil(t, planner)
+	require.NotNil(t, baseline)
+	assert.Equal(t, planFile, baseline.TaskFile)
+	assert.Contains(t, baseline.QueuedPrompt, "architect baseline agent")
+	assert.Contains(t, baseline.QueuedPrompt, orchestration.ArchitectBaselineDescriptionHash(description))
+
+	entry, ok := updated.taskState.Entry(planFile)
+	require.True(t, ok)
+	assert.Equal(t, taskstore.ExecutionState{}, entry.ExecutionState,
+		"baseline spawn must not mutate task execution state")
+}
+
+func TestArchitectBaselineInstanceDoesNotOfferArchitectFinishedAction(t *testing.T) {
+	t.Parallel()
+	inst := &session.Instance{
+		TaskFile:  "feature",
+		AgentType: session.AgentTypeArchitectBaseline,
+	}
+	entry := taskstate.TaskEntry{
+		Status: taskstate.StatusImplementing,
+		ExecutionState: taskstore.ExecutionState{
+			Phase:           string(taskfsm.ExecutionPhaseArchitecting),
+			ActiveAgentType: session.AgentTypeElaborator,
+		},
+	}
+
+	items := instanceSignalItems(inst, entry, true)
+	assert.False(t, actionAvailable(items, "mark_architect_finished"))
+}
+
 func TestWaitForDaemonPlannerInstance_SkipsExitedPlaceholder(t *testing.T) {
 	// serial: modifies restoreInstanceFromData and timing vars via withFastAppTimings
 	withFastAppTimings(t)
