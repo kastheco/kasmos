@@ -56,20 +56,20 @@ adds an advisory baseline session beside the planner:
 2. the planner starts normally
 3. an `architect-baseline` runtime session starts separately and writes only the
    baseline cache artifact
-4. the planner writes the draft and emits the existing `planner-finished` signal
+4. the planner writes the draft and emits the existing `planner_finished` signal
 5. the final architect pass reads the planner draft plus a valid cached
    baseline; if the cache is missing, corrupt, or for a different planner input,
    it falls back to the existing inline self-baseline behavior
 6. coder waves proceed normally
 
 To restore planner-first behavior — where the planner finishes and emits
-`planner-finished` before the architect pass starts — set
+`planner_finished` before the architect pass starts — set
 `[orchestration].parallel_planner_architect = false`. The architect pass then
 derives its own inline baseline before merging with the planner draft.
 
 The baseline cache is advisory. It is safe to delete, is not task-store state,
 and never drives lifecycle status by itself. The baseline session emits no
-lifecycle signals; signal names stay unchanged (`planner-finished`,
+lifecycle signals; signal names stay unchanged (`planner_finished`,
 `elaborator_finished`, `implement_task_finished`, and the existing review/verify
 signals). Blueprint-skip still runs before the final architect pass, so a small
 planner draft may produce a baseline cache that is never consumed.

@@ -490,6 +490,31 @@ func TestLoadConfig_MigratesJSON(t *testing.T) {
 	assert.Contains(t, string(written), `auto_review_fix = false`)
 	assert.Contains(t, string(written), `max_review_fix_cycles = 0`)
 	assert.Contains(t, string(written), `notifications_enabled = false`)
+	assert.Contains(t, string(written), `parallel_planner_architect = true`)
+	assert.True(t, cfg.ParallelPlannerArchitect)
+}
+
+func TestLoadConfig_MigratesJSONParallelPlannerArchitectExplicitFalse(t *testing.T) {
+	tempDir := t.TempDir()
+	t.Chdir(tempDir)
+	t.Setenv("HOME", t.TempDir())
+
+	configDir := filepath.Join(tempDir, ".kasmos")
+	require.NoError(t, os.MkdirAll(configDir, 0o755))
+
+	jsonContent := `{
+		"default_program": "migrated-claude",
+		"parallel_planner_architect": false
+	}`
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.json"), []byte(jsonContent), 0o644))
+
+	cfg := LoadConfig()
+	require.NotNil(t, cfg)
+	assert.False(t, cfg.ParallelPlannerArchitect)
+
+	written, err := os.ReadFile(filepath.Join(configDir, TOMLConfigFileName))
+	require.NoError(t, err)
+	assert.Contains(t, string(written), `parallel_planner_architect = false`)
 }
 
 func TestAutoReadinessReviewConfig(t *testing.T) {

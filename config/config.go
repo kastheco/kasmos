@@ -566,6 +566,12 @@ func migrateJSONToTOML(configDir string) (*Config, bool) {
 		log.ErrorLog.Printf("failed to parse config file: %v", err)
 		return nil, false
 	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err == nil {
+		if _, ok := raw["parallel_planner_architect"]; !ok {
+			cfg.ParallelPlannerArchitect = true
+		}
+	}
 	applyConfigDefaults(&cfg)
 
 	tomlPath := filepath.Join(configDir, TOMLConfigFileName)
