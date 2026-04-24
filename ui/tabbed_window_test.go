@@ -221,3 +221,20 @@ func TestTabbedWindow_DocumentMode(t *testing.T) {
 	tw.ClearDocumentMode()
 	assert.False(t, tw.IsDocumentMode(), "should not be in document mode after ClearDocumentMode")
 }
+
+// TestTabbedWindow_SDKComposerShellMode_Delegation verifies that the TabbedWindow
+// delegates shell-mode accessors to the underlying PreviewPane.
+func TestTabbedWindow_SDKComposerShellMode_Delegation(t *testing.T) {
+	preview := NewPreviewPane()
+	preview.SetSize(80, 24)
+	info := NewInfoPane()
+	tw := NewTabbedWindow(preview, info)
+
+	assert.False(t, tw.SDKComposerShellMode(), "shell mode must start false")
+
+	tw.SetSDKComposerShellMode(true)
+	assert.True(t, tw.SDKComposerShellMode(), "SDKComposerShellMode must return true after Set")
+
+	tw.ClearSDKComposerShellMode()
+	assert.False(t, tw.SDKComposerShellMode(), "ClearSDKComposerShellMode must reset to false")
+}

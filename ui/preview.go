@@ -77,6 +77,9 @@ type PreviewPane struct {
 	sdkComposerCursor int
 	// sdkComposerImages are local image attachments queued for the next SDK prompt.
 	sdkComposerImages []string
+	// sdkComposerShellMode is true when the SDK composer is in shell-command mode.
+	// When true, input is prefixed with "!" and submitted text is executed as a shell command.
+	sdkComposerShellMode bool
 
 	// sdkView holds the structured layout regions for SDK sessions. Non-nil
 	// only while displaying SDK structured content.
@@ -247,6 +250,7 @@ func (p *PreviewPane) UpdateContent(instance *session.Instance) error {
 		p.sdkComposerText = ""
 		p.sdkComposerCursor = 0
 		p.sdkComposerImages = nil
+		p.sdkComposerShellMode = false
 		p.lastSDKComposerOwner = composerOwnerKey
 	}
 
@@ -324,7 +328,7 @@ func (p *PreviewPane) UpdateContent(instance *session.Instance) error {
 	// to flat cached text, then to a placeholder when no output has arrived yet.
 	if session.NormalizeExecutionMode(instance.ExecutionMode) == session.ExecutionModeSDK {
 		if turns := instance.CapturePresentation(); len(turns) > 0 {
-			view := buildSDKPresentationView(turns, p.width, p.sdkComposerText, p.sdkComposerCursor, p.sdkComposerImages, p.sdkFocusMode, instance.Program, instance.SDKSpeedTier, time.Now())
+			view := buildSDKPresentationView(turns, p.width, p.sdkComposerText, p.sdkComposerCursor, p.sdkComposerImages, p.sdkFocusMode, instance.Program, instance.SDKSpeedTier, time.Now(), p.sdkComposerShellMode)
 			p.sdkView = &view
 			p.previewState = previewState{text: joinSDKView(&view, p.width)}
 			p.isRawTerminal = false
@@ -342,7 +346,7 @@ func (p *PreviewPane) UpdateContent(instance *session.Instance) error {
 		// generic banner so ad-hoc SDK sessions can enter focus mode immediately.
 		p.isScrolling = false
 		p.viewport.SetContent("")
-		p.previewState = previewState{text: renderSDKPresentationWithComposer(nil, p.width, p.sdkComposerText, p.sdkComposerCursor, p.sdkComposerImages, p.sdkFocusMode, instance.Program, instance.SDKSpeedTier)}
+		p.previewState = previewState{text: renderSDKPresentationWithComposer(nil, p.width, p.sdkComposerText, p.sdkComposerCursor, p.sdkComposerImages, p.sdkFocusMode, instance.Program, instance.SDKSpeedTier, p.sdkComposerShellMode)}
 		p.isRawTerminal = false
 		return nil
 	}
@@ -463,11 +467,11 @@ const narrowPaneThreshold = 40
 // When width is under narrowPaneThreshold, turns are separated by a single
 // newline instead of a blank line.
 func renderSDKPresentation(turns []*sdk.PresentationTurn, width int) string {
-	return renderSDKPresentationWithComposer(turns, width, "", 0, nil, false, "", "")
+	return renderSDKPresentationWithComposer(turns, width, "", 0, nil, false, "", "", false)
 }
 
-func renderSDKPresentationWithComposer(turns []*sdk.PresentationTurn, width int, composer string, cursor int, images []string, focused bool, program string, speedTier string) string {
-	view := buildSDKPresentationView(turns, width, composer, cursor, images, focused, program, speedTier, time.Now())
+func renderSDKPresentationWithComposer(turns []*sdk.PresentationTurn, width int, composer string, cursor int, images []string, focused bool, program string, speedTier string, shellMode bool) string {
+	view := buildSDKPresentationView(turns, width, composer, cursor, images, focused, program, speedTier, time.Now(), shellMode)
 	return joinSDKView(&view, width)
 }
 
@@ -510,7 +514,7 @@ func joinSDKView(view *sdkPresentationView, width int) string {
 // Callers that need only the joined string should use joinSDKView; callers that
 // need to lay out the regions independently (e.g. String() for tail-slicing)
 // use the struct directly.
-func buildSDKPresentationView(turns []*sdk.PresentationTurn, width int, composer string, cursor int, images []string, focused bool, program, speedTier string, now time.Time) sdkPresentationView {
+func buildSDKPresentationView(turns []*sdk.PresentationTurn, width int, composer string, cursor int, images []string, focused bool, program, speedTier string, now time.Time, shellMode bool) sdkPresentationView {
 	if width <= 0 {
 		width = 80
 	}
@@ -554,7 +558,7 @@ func buildSDKPresentationView(turns []*sdk.PresentationTurn, width int, composer
 		}
 	}
 
-	footer := renderComposerFooter(width, composer, cursor, images, focused, program, speedTier)
+	footer := renderComposerFooter(width, composer, cursor, images, focused, program, speedTier, shellMode)
 
 	return sdkPresentationView{
 		body:   bodyBuilder.String(),
@@ -793,7 +797,7 @@ func renderResponseDivider(width int) string {
 
 // renderComposerFooter returns a quiet display-only footer appended below the
 // turn timeline. The send overlay is not plumbed into the pane in this plan.
-func renderComposerFooter(width int, composer string, cursor int, images []string, focused bool, program string, speedTier string) []string {
+func renderComposerFooter(width int, composer string, cursor int, images []string, focused bool, program string, speedTier string, shellMode bool) []string {
 	ruleStyle := lipgloss.NewStyle().Foreground(ColorMuted)
 	promptPrefixStyle := lipgloss.NewStyle().Foreground(ColorRose)
 	placeholderStyle := lipgloss.NewStyle().Foreground(ColorSubtle)
@@ -805,20 +809,38 @@ func renderComposerFooter(width int, composer string, cursor int, images []strin
 	newlineStyle := lipgloss.NewStyle().Foreground(ColorGold)
 	escapeStyle := lipgloss.NewStyle().Foreground(ColorRose)
 
+	if shellMode {
+		composerStyle = composerStyle.Foreground(ColorRose)
+	}
+
 	rule := ""
 	if width > 0 {
 		rule = ruleStyle.Render(strings.Repeat("─", width))
 	}
 	var prompt string
-	if composer != "" || focused {
-		cursorStyle := composerStyle.Reverse(true)
-		body := renderComposerPromptBody(composer, cursor, focused, composerStyle, cursorStyle)
-		prompt = promptPrefixStyle.Render(">") + " " + body
+	if shellMode {
+		if composer != "" || focused {
+			cursorStyle := composerStyle.Reverse(true)
+			body := renderComposerPromptBody(composer, cursor, focused, composerStyle, cursorStyle)
+			prompt = promptPrefixStyle.Render("!") + " " + body
+		} else {
+			prompt = sdk.RenderPromptLine("!", "run a shell command …", promptPrefixStyle, placeholderStyle)
+		}
 	} else {
-		prompt = sdk.RenderPromptLine(">", "send a message to the agent …", promptPrefixStyle, placeholderStyle)
+		if composer != "" || focused {
+			cursorStyle := composerStyle.Reverse(true)
+			body := renderComposerPromptBody(composer, cursor, focused, composerStyle, cursorStyle)
+			prompt = promptPrefixStyle.Render(">") + " " + body
+		} else {
+			prompt = sdk.RenderPromptLine(">", "send a message to the agent …", promptPrefixStyle, placeholderStyle)
+		}
+	}
+	sendLabel := "send"
+	if shellMode {
+		sendLabel = "run"
 	}
 	hints := enterStyle.Render("enter") +
-		hintStyle.Render(" send   ") +
+		hintStyle.Render(" "+sendLabel+"   ") +
 		newlineStyle.Render("shift+enter") +
 		hintStyle.Render(" newline   ") +
 		escapeStyle.Render("esc") +
@@ -1226,12 +1248,22 @@ func (p *PreviewPane) SDKComposerImages() []string {
 	return out
 }
 
-// ClearSDKComposerText clears the composer text, images, and cursor.
+// ClearSDKComposerText clears the composer text, images, cursor, and shell mode.
 func (p *PreviewPane) ClearSDKComposerText() {
 	p.sdkComposerText = ""
 	p.sdkComposerImages = nil
 	p.sdkComposerCursor = 0
+	p.sdkComposerShellMode = false
 }
+
+// SDKComposerShellMode reports whether the SDK composer is in shell-command mode.
+func (p *PreviewPane) SDKComposerShellMode() bool { return p.sdkComposerShellMode }
+
+// SetSDKComposerShellMode enables or disables shell-command mode on the SDK composer.
+func (p *PreviewPane) SetSDKComposerShellMode(on bool) { p.sdkComposerShellMode = on }
+
+// ClearSDKComposerShellMode exits shell-command mode on the SDK composer.
+func (p *PreviewPane) ClearSDKComposerShellMode() { p.sdkComposerShellMode = false }
 
 // wrapPreviewRows splits text into logical lines, then hard-wraps each line
 // to width using ANSI-aware wrapping. Empty input and non-positive widths
@@ -1374,7 +1406,7 @@ func (p *PreviewPane) scrollbackContent(instance *session.Instance) (string, err
 			if width <= 0 {
 				width = p.width
 			}
-			view := buildSDKPresentationView(turns, width, "", 0, nil, false, instance.Program, instance.SDKSpeedTier, time.Now())
+			view := buildSDKPresentationView(turns, width, "", 0, nil, false, instance.Program, instance.SDKSpeedTier, time.Now(), false)
 			p.sdkView = &view
 			return view.body, nil
 		}
