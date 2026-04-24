@@ -335,6 +335,47 @@ func TestAuditHomeEmit_AgentKilled(t *testing.T) {
 	assert.True(t, detail.BranchPreserved)
 }
 
+func TestAuditHomeEmit_CleanupInstanceRemovesAndEmitsCleanupDetail(t *testing.T) {
+	t.Parallel()
+	logger, err := auditlog.NewSQLiteLogger(":memory:")
+	require.NoError(t, err)
+	defer logger.Close()
+
+	h := newTestHome()
+	h.auditLogger = logger
+	h.taskStoreProject = "myproject"
+
+	inst, err := newTestInstance("retired-agent")
+	require.NoError(t, err)
+	inst.AgentType = session.AgentTypeCoder
+	_ = h.nav.AddInstance(inst)
+	h.nav.SelectInstance(inst)
+	h.allInstances = append(h.allInstances, inst)
+
+	_, _ = h.executeContextAction("cleanup_instance")
+	assert.Equal(t, 0, h.nav.TotalInstances(), "cleanup should dismiss retired instance from nav")
+	assert.Empty(t, h.allInstances, "cleanup should remove retired instance from persistence list")
+
+	events, err := logger.Query(auditlog.QueryFilter{
+		Project: "myproject",
+		Kinds:   []auditlog.EventKind{auditlog.EventAgentKilled},
+		Limit:   10,
+	})
+	require.NoError(t, err)
+	require.Len(t, events, 1)
+	assert.Equal(t, "retired-agent", events[0].InstanceTitle)
+
+	var detail struct {
+		Action          string `json:"action"`
+		Cleanup         bool   `json:"cleanup"`
+		BranchPreserved bool   `json:"branch_preserved"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(events[0].Detail), &detail))
+	assert.Equal(t, "kill_and_remove_instance", detail.Action)
+	assert.True(t, detail.Cleanup)
+	assert.False(t, detail.BranchPreserved)
+}
+
 // TestAuditHomeEmit_AgentKilled_KeybindCtrlK verifies that the ctrl+k keybind kill path
 // emits EventAgentKilled. Because session.Instance.Started() is not settable
 // from outside the session package without real tmux, we test the audit emission

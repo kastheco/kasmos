@@ -26,7 +26,20 @@ import (
 // executeContextAction performs the action selected from a context menu.
 func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 	switch action {
-	case "cleanup_instance", "kill_instance":
+	case "cleanup_instance":
+		selected := m.nav.GetSelectedInstance()
+		if selected != nil {
+			m.audit(auditlog.EventAgentKilled, "killed and removed instance",
+				auditlog.WithInstance(selected.Title),
+				auditlog.WithAgent(selected.AgentType),
+				auditlog.WithPlan(selected.TaskFile),
+				auditlog.WithKillDetails("kill_and_remove_instance", true, false),
+			)
+			return m, tea.Batch(softKillInstanceCmd(m, selected), m.dismissInstanceFromList(selected))
+		}
+		return m, nil
+
+	case "kill_instance":
 		selected := m.nav.GetSelectedInstance()
 		if selected != nil {
 			// Emit audit before attempting pause so the event is always recorded

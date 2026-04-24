@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -4183,6 +4184,8 @@ func (m *home) refreshAuditPane() {
 			TaskFile:      e.TaskFile,
 			InstanceTitle: e.InstanceTitle,
 			AgentType:     e.AgentType,
+			GroupKey:      auditEventGroupKey(e.Detail),
+			DetailJSON:    e.Detail,
 		})
 	}
 
@@ -4326,4 +4329,17 @@ func coalesceRestarts(displays []ui.AuditEventDisplay) []ui.AuditEventDisplay {
 		i++
 	}
 	return out
+}
+
+func auditEventGroupKey(detailJSON string) string {
+	if detailJSON == "" {
+		return ""
+	}
+	var detail struct {
+		GroupKey string `json:"group_key"`
+	}
+	if err := json.Unmarshal([]byte(detailJSON), &detail); err != nil {
+		return ""
+	}
+	return detail.GroupKey
 }

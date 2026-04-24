@@ -75,3 +75,30 @@ func TestRefreshAuditPane_TimestampInLocalTime(t *testing.T) {
 		"audit timestamp must be displayed in local time (got %q, UTC would be %q)",
 		events[0].Time, utcTimeStr)
 }
+
+func TestRefreshAuditPane_PreservesDetailJSONAndGroupKey(t *testing.T) {
+	t.Parallel()
+	logger, err := auditlog.NewSQLiteLogger(":memory:")
+	require.NoError(t, err)
+	defer logger.Close()
+
+	detail := `{"group_key":"agent_killed:coder-1","outcome":"wave_decision","retry_generation":2}`
+	logger.Emit(auditlog.Event{
+		Kind:          auditlog.EventWaveFailed,
+		Project:       "test",
+		Message:       "wave 2 needs a decision",
+		TaskFile:      "plan.md",
+		InstanceTitle: "coder-1",
+		Detail:        detail,
+	})
+
+	h := newTestHome()
+	h.auditLogger = logger
+	h.taskStoreProject = "test"
+	h.refreshAuditPane()
+
+	events := h.auditPane.Events()
+	require.Len(t, events, 1)
+	assert.Equal(t, detail, events[0].DetailJSON)
+	assert.Equal(t, "agent_killed:coder-1", events[0].GroupKey)
+}
