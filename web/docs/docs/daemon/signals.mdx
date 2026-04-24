@@ -168,6 +168,8 @@ the `Claim` operation is a serializable transaction: it updates the row to `proc
 
 > **architect completion:** the canonical internal event is `architect_finished`, but the persisted gateway signal wire name is `elaborator_finished` (a legacy alias preserved for compatibility). `kas signal emit architect_finished` is accepted and normalized to `elaborator_finished` transparently.
 
+> **parallel architect baseline:** the optional `architect baseline` session is not a lifecycle phase and emits no signal. When `[orchestration].parallel_planner_architect = true`, `plan_start` clears the advisory cache and can spawn the planner plus the baseline session; normal progress still flows through `planner_finished` and then `elaborator_finished`.
+
 > **deprecated aliases:** `readiness_approved` → `verify_approved`; `readiness_changes_requested` / `readiness-changes` / `readiness-changes-requested` / `master_approved` → `verify_failed`. these aliases are accepted at ingress and canonicalized — use `verify_approved` / `verify_failed` in new automation.
 
 Wave-processing outcomes are also emitted to the audit log and daemon event stream with structured detail. Successful all-complete waves report a success outcome, while blocked or failed waves report the blocking cause and any retry-generation metadata needed by operators.

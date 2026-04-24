@@ -2331,6 +2331,32 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.loadTaskState()
 		m.updateSidebarTasks()
 		return m, tea.Batch(tea.RequestWindowSize, m.instanceChanged())
+	case startOverCompletedMsg:
+		// The reset command does branch/FSM I/O only. Keep model mutations and
+		// replacement agent spawning on the Bubble Tea update path.
+		for _, inst := range append([]*session.Instance(nil), m.allInstances...) {
+			if inst.TaskFile != msg.planFile {
+				continue
+			}
+			m.nav.RemoveByTitle(inst.Title)
+			m.removeFromAllInstances(inst.Title)
+			delete(m.instanceFinalizers, inst)
+		}
+		if err := m.saveAllInstances(); err != nil {
+			return m, m.handleError(err)
+		}
+		m.loadTaskState()
+		m.updateSidebarTasks()
+		model, spawnCmd := m.spawnPlannerWithOptionalBaseline(
+			msg.planFile,
+			buildPlanningPrompt(msg.planFile, msg.planName, msg.description, m.taskStoreProject),
+			msg.description,
+		)
+		updated, ok := model.(*home)
+		if !ok {
+			return model, spawnCmd
+		}
+		return updated, tea.Batch(tea.RequestWindowSize, updated.instanceChanged(), spawnCmd)
 	case clickUpTaskFetchedMsg:
 		if msg.Err != nil {
 			m.toastManager.Error("clickup fetch failed: " + msg.Err.Error())
@@ -2920,6 +2946,14 @@ type taskStageConfirmedMsg struct {
 
 // taskRefreshMsg triggers a plan state reload and sidebar refresh in Update.
 type taskRefreshMsg struct{}
+
+// startOverCompletedMsg is emitted after the async start-over reset finishes.
+// Update removes old runtime rows and starts replacement planning agents.
+type startOverCompletedMsg struct {
+	planFile    string
+	planName    string
+	description string
+}
 
 // lifecycleActionRejectedMsg is sent when a lifecycle action is rejected because
 // the task's FSM state changed after the context menu was opened. This is expected

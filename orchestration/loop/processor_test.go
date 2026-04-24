@@ -187,7 +187,7 @@ func TestProcessor_ProcessFSMSignals_PlanStart_EmitsSpawnPlannerAction(t *testin
 	assert.Equal(t, taskstore.StatusPlanning, entry.Status)
 }
 
-func TestProcessor_ProcessFSMSignals_PlanStart_ParallelBaselineEmitsClearPlannerBaseline(t *testing.T) {
+func TestProcessor_ProcessFSMSignals_PlanStart_ParallelBaselineEmitsClearArchitectBaseline(t *testing.T) {
 	store := taskstore.NewTestStore(t)
 	require.NoError(t, store.Create("test", taskstore.TaskEntry{
 		Filename: "my-plan.md",
@@ -231,7 +231,7 @@ func TestProcessor_ProcessFSMSignals_PlanStart_PreAppliedRunsWhenAlreadyPlanning
 	assert.True(t, ok, "pre-applied plan_start must still emit SpawnPlannerAction, got %T", actions[0])
 }
 
-func TestProcessor_ProcessFSMSignals_PlanStart_PreAppliedParallelBaselineEmitsClearPlannerBaseline(t *testing.T) {
+func TestProcessor_ProcessFSMSignals_PlanStart_PreAppliedParallelBaselineEmitsClearArchitectBaseline(t *testing.T) {
 	store := taskstore.NewTestStore(t)
 	require.NoError(t, store.Create("test", taskstore.TaskEntry{
 		Filename: "my-plan.md",

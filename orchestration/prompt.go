@@ -197,6 +197,7 @@ func BuildElaborationPrompt(planFile, project string) string {
 // elaboration pass with optional parallel-baseline cache guidance.
 func BuildElaborationPromptWithOptions(planFile, project string, opts ArchitectPromptOptions) string {
 	baselineInstructions := ""
+	codebaseStep := 2
 	if opts.ParallelBaseline {
 		baselineInstructions = fmt.Sprintf(
 			"2. Read the advisory parallel architect baseline cache if present: `.kasmos/cache/%[1]s-architect-baseline.json`.\n"+
@@ -206,6 +207,7 @@ func BuildElaborationPromptWithOptions(planFile, project string, opts ArchitectP
 				"   - When valid, merge the planner draft plus cached baseline, choosing the best implementation path before rewriting the stored plan.\n",
 			planFile, project, opts.DescriptionHash,
 		)
+		codebaseStep = 3
 	}
 
 	return fmt.Sprintf(
@@ -222,30 +224,30 @@ func BuildElaborationPromptWithOptions(planFile, project string, opts ArchitectP
 			"## Instructions\n\n"+
 			"1. Retrieve the plan: prefer MCP `task_show` (filename: \"%[1]s\", project: \"%[2]s\"); fall back to `kas task show %[1]s`\n"+
 			baselineInstructions+
-			"2. Read the relevant codebase surfaces before editing the draft. Start with files listed in **Files:** sections, "+
+			"%[3]d. Read the relevant codebase surfaces before editing the draft. Start with files listed in **Files:** sections, "+
 			"then follow neighboring interfaces, function signatures, error handling, data flow, dependencies, and existing patterns.\n"+
-			"3. Create your independent solution baseline from the goal and codebase evidence before judging the planner draft:\n"+
+			"%[4]d. Create your independent solution baseline from the goal and codebase evidence before judging the planner draft:\n"+
 			"   - What implementation path would you choose if no planner task list existed?\n"+
 			"   - Which files, waves, dependencies, and integration surfaces does that path require?\n"+
 			"   - What hidden integration surfaces or non-obvious missing work must be represented for coders?\n"+
-			"4. Compare planner vs architect baseline and rewrite the plan by merging the best of both:\n"+
+			"%[5]d. Compare planner vs architect baseline and rewrite the plan by merging the best of both:\n"+
 			"   - Are the planner's listed files correct? Add missing ones, remove irrelevant ones.\n"+
 			"   - Is the planner's wave/task decomposition optimal? Merge, split, or reorder as needed.\n"+
 			"   - Did the planner miss a simpler approach, hidden dependency, or required integration surface?\n"+
 			"   - Did the planner include unnecessary work or conflict with existing patterns?\n"+
-			"5. Expand each task body with concrete implementation detail:\n"+
+			"%[6]d. Expand each task body with concrete implementation detail:\n"+
 			"   - Exact function signatures to create or modify\n"+
 			"   - Existing codebase patterns to follow (with file references)\n"+
 			"   - Edge cases and error handling requirements\n"+
 			"   - Import paths and dependencies\n"+
 			"   - Concrete code snippets where helpful\n"+
-			"6. Keep ## Wave headers and the plan header fields (Goal, Architecture, Tech Stack, Size). "+
+			"%[7]d. Keep ## Wave headers and the plan header fields (Goal, Architecture, Tech Stack, Size). "+
 			"Everything else — task count, task content, file lists, wave assignment — is yours to change.\n"+
-			"7. Write the updated plan: prefer MCP `task_update_content` (filename: \"%[1]s\", project: \"%[2]s\"); fall back to `kas task update-content %[1]s` (pipe content)\n"+
-			"8. Signal architect-pass completion: prefer MCP `signal_create` (signal_type: \"elaborator-finished\", plan_file: \"%[1]s\", project: \"%[2]s\")\n"+
+			"%[8]d. Write the updated plan: prefer MCP `task_update_content` (filename: \"%[1]s\", project: \"%[2]s\"); fall back to `kas task update-content %[1]s` (pipe content)\n"+
+			"%[9]d. Signal architect-pass completion: prefer MCP `signal_create` (signal_type: \"elaborator-finished\", plan_file: \"%[1]s\", project: \"%[2]s\")\n"+
 			"   - If MCP is unavailable, use `kas signal emit elaborator_finished %[1]s`; if CLI signaling is also unavailable, fallback: `touch .kasmos/signals/elaborator-finished-%[1]s`\n"+
 			"   - Keep the role wording as architect in your notes and output; only the completion signal name stays legacy.\n",
-		planFile, project,
+		planFile, project, codebaseStep, codebaseStep+1, codebaseStep+2, codebaseStep+3, codebaseStep+4, codebaseStep+5, codebaseStep+6,
 	)
 }
 

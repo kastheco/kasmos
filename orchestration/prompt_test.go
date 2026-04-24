@@ -292,6 +292,10 @@ func TestBuildElaborationPromptWithOptions_ParallelBaseline(t *testing.T) {
 	assert.Contains(t, prompt, "missing, corrupt, stale, or incomplete")
 	assert.Contains(t, prompt, "current inline independent baseline")
 	assert.Contains(t, prompt, "mention that fallback in the plan summary")
+	assert.Contains(t, prompt, "2. Read the advisory parallel architect baseline cache")
+	assert.Contains(t, prompt, "3. Read the relevant codebase surfaces")
+	assert.Contains(t, prompt, "4. Create your independent solution baseline")
+	assert.Contains(t, prompt, "9. Signal architect-pass completion")
 	assert.Contains(t, prompt, "task_update_content")
 	assert.Contains(t, prompt, "signal_create` (signal_type: \"elaborator-finished\", plan_file: \"my-feature\", project: \"myproject\")")
 }

@@ -490,6 +490,64 @@ func TestSpawnPlannerWithOptionalBaseline_EnabledSpawnsPlannerAndArchitectBaseli
 		"baseline spawn must not mutate task execution state")
 }
 
+func TestStartOverCompletedMsgSpawnsReplacementAgentsInUpdate(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	plansDir := filepath.Join(dir, "docs", "plans")
+	require.NoError(t, os.MkdirAll(plansDir, 0o755))
+	ps, err := newTestPlanState(t, plansDir)
+	require.NoError(t, err)
+	const planFile = "start-over-plan"
+	const description = "restart planning with a baseline"
+	require.NoError(t, ps.Register(planFile, "start over plan", "plan/start-over-plan", time.Now()))
+
+	oldInst := &session.Instance{
+		Title:     "old-planner",
+		TaskFile:  planFile,
+		AgentType: session.AgentTypePlanner,
+		Status:    session.Running,
+	}
+	sp := spinner.New(spinner.WithSpinner(spinner.Dot))
+	h := &home{
+		appConfig:          &config.Config{ParallelPlannerArchitect: true},
+		taskState:          ps,
+		activeRepoPath:     dir,
+		taskStoreProject:   "proj",
+		program:            "opencode",
+		nav:                ui.NewNavigationPanel(&sp),
+		menu:               ui.NewMenu(),
+		tabbedWindow:       ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewInfoPane()),
+		toastManager:       overlay.NewToastManager(&sp),
+		allInstances:       []*session.Instance{oldInst},
+		instanceFinalizers: make(map[*session.Instance]func()),
+	}
+	h.addInstanceFinalizer(oldInst, h.nav.AddInstance(oldInst))
+
+	model, cmd := h.Update(startOverCompletedMsg{
+		planFile:    planFile,
+		planName:    "start over plan",
+		description: description,
+	})
+	require.NotNil(t, cmd)
+	updated := model.(*home)
+
+	var planner, baseline *session.Instance
+	for _, inst := range updated.nav.GetInstances() {
+		assert.NotEqual(t, "old-planner", inst.Title)
+		switch inst.AgentType {
+		case session.AgentTypePlanner:
+			planner = inst
+		case session.AgentTypeArchitectBaseline:
+			baseline = inst
+		}
+	}
+	require.NotNil(t, planner)
+	require.NotNil(t, baseline)
+	assert.Equal(t, planFile, planner.TaskFile)
+	assert.Equal(t, planFile, baseline.TaskFile)
+	assert.Contains(t, baseline.QueuedPrompt, orchestration.ArchitectBaselineDescriptionHash(description))
+}
+
 func TestArchitectBaselineInstanceDoesNotOfferArchitectFinishedAction(t *testing.T) {
 	t.Parallel()
 	inst := &session.Instance{

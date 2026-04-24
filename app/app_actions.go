@@ -563,40 +563,69 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		planName := taskstate.DisplayName(planFile)
+		instancesToKill := make([]*session.Instance, 0)
+		for _, inst := range m.allInstances {
+			if inst.TaskFile == planFile {
+				instancesToKill = append(instancesToKill, inst)
+			}
+		}
 		startOverAction := func() tea.Msg {
 			// Re-validate with a fresh snapshot: the task may have changed while the
 			// confirmation overlay was open.
-			freshEntry, freshOk := m.refreshTaskEntry(planFile)
+			var freshEntry taskstate.TaskEntry
+			var freshOk bool
+			if m.taskStore != nil {
+				entry, err := m.taskStore.Get(m.taskStoreProject, planFile)
+				if err != nil {
+					return lifecycleActionRejectedMsg{message: "task not found; start over aborted"}
+				}
+				freshEntry = taskstate.TaskEntry{
+					Status:      taskstate.Status(entry.Status),
+					Description: entry.Description,
+					Branch:      entry.Branch,
+				}
+				freshOk = true
+			} else if m.taskState != nil {
+				freshEntry, freshOk = m.taskState.Entry(planFile)
+			}
 			if !freshOk {
 				return lifecycleActionRejectedMsg{message: "task not found; start over aborted"}
 			}
 			if freshEntry.Status == taskstate.StatusCancelled {
 				return lifecycleActionRejectedMsg{message: "task is cancelled; start over not available"}
 			}
-			// Kill all instances bound to this plan
-			for i := len(m.allInstances) - 1; i >= 0; i-- {
-				if m.allInstances[i].TaskFile == planFile {
-					_ = m.allInstances[i].Kill()
-					m.allInstances = append(m.allInstances[:i], m.allInstances[i+1:]...)
-				}
+			for _, inst := range instancesToKill {
+				_ = inst.Kill()
 			}
 			if err := gitpkg.ResetTaskBranch(m.activeRepoPath, freshEntry.Branch); err != nil {
 				return err
 			}
-			if err := m.fsmForceToPlanning(planFile); err != nil {
-				return err
+			switch taskfsm.Status(freshEntry.Status) {
+			case taskfsm.StatusPlanning:
+			case taskfsm.StatusCancelled:
+				if err := m.fsm.Transition(planFile, taskfsm.Reopen); err != nil {
+					return err
+				}
+			case taskfsm.StatusDone:
+				if err := m.fsm.Transition(planFile, taskfsm.StartOver); err != nil {
+					return err
+				}
+			default:
+				if err := m.fsm.Transition(planFile, taskfsm.Cancel); err != nil {
+					return err
+				}
+				if err := m.fsm.Transition(planFile, taskfsm.Reopen); err != nil {
+					return err
+				}
 			}
 			m.audit(auditlog.EventPlanTransition, string(freshEntry.Status)+" → planning (start over)",
 				auditlog.WithPlan(planFile),
 				auditlog.WithDetail("start over: branch reset"))
-			_ = m.saveAllInstances()
-			m.loadTaskState()
-			m.updateSidebarTasks()
-			_, cmd := m.spawnPlannerWithOptionalBaseline(planFile, buildPlanningPrompt(planFile, planName, freshEntry.Description, m.taskStoreProject), freshEntry.Description)
-			if cmd == nil {
-				return taskRefreshMsg{}
+			return startOverCompletedMsg{
+				planFile:    planFile,
+				planName:    planName,
+				description: freshEntry.Description,
 			}
-			return tea.Batch(func() tea.Msg { return taskRefreshMsg{} }, cmd)()
 		}
 		return m, m.confirmAction(fmt.Sprintf("start over task '%s'? this resets the branch.", planName), startOverAction)
 
@@ -1109,21 +1138,23 @@ func (m *home) spawnPlannerWithOptionalBaseline(planFile, prompt, description st
 		return updated, plannerCmd
 	}
 
-	var cmds []tea.Cmd
-	if clearCmd := updated.clearArchitectBaselineCmd(planFile); clearCmd != nil {
-		cmds = append(cmds, clearCmd)
-	}
+	clearCmd := updated.clearArchitectBaselineCmd(planFile)
+	var spawnCmds []tea.Cmd
 	if plannerCmd != nil {
-		cmds = append(cmds, plannerCmd)
+		spawnCmds = append(spawnCmds, plannerCmd)
 	}
 	baselineModel, baselineCmd := updated.spawnArchitectBaseline(planFile, description)
 	if baselineUpdated, ok := baselineModel.(*home); ok {
 		updated = baselineUpdated
 	}
 	if baselineCmd != nil {
-		cmds = append(cmds, baselineCmd)
+		spawnCmds = append(spawnCmds, baselineCmd)
 	}
-	return updated, tea.Batch(cmds...)
+	spawnCmd := tea.Batch(spawnCmds...)
+	if clearCmd != nil {
+		return updated, tea.Sequence(clearCmd, spawnCmd)
+	}
+	return updated, spawnCmd
 }
 
 // instanceSignalItems returns the promoted root-level items for an instance context
