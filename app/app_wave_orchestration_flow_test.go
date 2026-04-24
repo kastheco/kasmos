@@ -51,6 +51,7 @@ func waveFlowHome(t *testing.T, ps *taskstate.TaskState, plansDir string, orchMa
 // confirmation resets the orchestrator confirm latch so the next metadata tick
 // can display the prompt again (fixes deadlock).
 func TestWaveMonitor_CancelWaveAdvanceRePrompts(t *testing.T) {
+	t.Parallel()
 	plan := &taskparser.Plan{
 		Waves: []taskparser.Wave{
 			{Number: 1, Tasks: []taskparser.Task{{Number: 1, Title: "First", Body: "do first"}}},
@@ -93,6 +94,7 @@ func TestWaveMonitor_CancelWaveAdvanceRePrompts(t *testing.T) {
 // is treated as a failure in the wave monitor, causing the wave to complete (with
 // failure) and a failed-wave decision prompt to appear.
 func TestWaveMonitor_PausedTaskCountsAsFailed(t *testing.T) {
+	t.Parallel()
 	const planFile = "paused-task"
 
 	plan := &taskparser.Plan{
@@ -150,6 +152,7 @@ func TestWaveMonitor_PausedTaskCountsAsFailed(t *testing.T) {
 // TestWaveMonitor_MissingTaskCountsAsFailed verifies that a task with no matching
 // instance in the list is counted as failed, triggering the failed-wave decision prompt.
 func TestWaveMonitor_MissingTaskCountsAsFailed(t *testing.T) {
+	t.Parallel()
 	const planFile = "missing-task"
 
 	plan := &taskparser.Plan{
@@ -193,6 +196,7 @@ func TestWaveMonitor_MissingTaskCountsAsFailed(t *testing.T) {
 // recovery does not resurrect wave orchestration when a plan only has stale
 // paused/exited wave instances and no active task sessions.
 func TestRebuildOrphanedOrchestrators_SkipsPausedOrExitedOnlyPlans(t *testing.T) {
+	t.Parallel()
 	const planFile = "stale-wave"
 
 	dir := t.TempDir()
@@ -252,6 +256,7 @@ func TestRebuildOrphanedOrchestrators_SkipsPausedOrExitedOnlyPlans(t *testing.T)
 // restart recovery only rebuilds from persisted active wave-task sessions restored
 // via session.FromInstanceData; an architect-only session must not resurrect wave state.
 func TestRebuildOrphanedOrchestrators_IgnoresArchitectOnlyRestartState(t *testing.T) {
+	t.Parallel()
 	const planFile = "architect-only"
 
 	dir := t.TempDir()
@@ -296,6 +301,7 @@ func TestRebuildOrphanedOrchestrators_IgnoresArchitectOnlyRestartState(t *testin
 // supported restart path: session.FromInstanceData restores active wave instances,
 // then kasmos rebuilds the in-memory orchestrator from that persisted state.
 func TestRebuildOrphanedOrchestrators_RestoresPersistedActiveWaveInstances(t *testing.T) {
+	t.Parallel()
 	const planFile = "active-wave"
 
 	dir := t.TempDir()
@@ -359,6 +365,7 @@ func TestRebuildOrphanedOrchestrators_RestoresPersistedActiveWaveInstances(t *te
 // from persisted execution/subtask state so the next metadata tick can fail the wave and
 // present recovery actions instead of leaving the plan stuck in wave_running forever.
 func TestRebuildOrphanedOrchestrators_RestoresExitedWaveFromPersistedSubtasks(t *testing.T) {
+	t.Parallel()
 	const planFile = "exited-wave"
 
 	dir := t.TempDir()
@@ -432,6 +439,7 @@ func TestRebuildOrphanedOrchestrators_RestoresExitedWaveFromPersistedSubtasks(t 
 // recovery path: local repos should rebuild missing wave orchestration during the normal
 // metadata tick, not only after startup or in daemon-managed mode.
 func TestMetadataTick_RebuildsLocalOrphanedWaveFromPersistedSubtasks(t *testing.T) {
+	t.Parallel()
 	const planFile = "local-orphaned-wave"
 
 	dir := t.TempDir()
@@ -499,6 +507,7 @@ func TestMetadataTick_RebuildsLocalOrphanedWaveFromPersistedSubtasks(t *testing.
 // is NOT prematurely marked as failed. This prevents the "instant all-complete" bug
 // where the metadata tick fires before StartInSharedWorktree completes.
 func TestWaveMonitor_LoadingInstanceNotMarkedFailed(t *testing.T) {
+	t.Parallel()
 	const planFile = "loading-race"
 
 	plan := &taskparser.Plan{
@@ -569,6 +578,7 @@ func TestWaveMonitor_LoadingInstanceNotMarkedFailed(t *testing.T) {
 // TestWaveMonitor_AbortKeyDeletesOrchestrator verifies that pressing 'a' on the
 // failed-wave decision prompt removes the orchestrator and returns to default state.
 func TestWaveMonitor_AbortKeyDeletesOrchestrator(t *testing.T) {
+	t.Parallel()
 	const planFile = "abort-test"
 
 	plan := &taskparser.Plan{
@@ -625,6 +635,7 @@ func TestWaveMonitor_AbortKeyDeletesOrchestrator(t *testing.T) {
 // implement stage is triggered on a plan without ## Wave headers, the plan status
 // reverts to planning and a new planner session is spawned with a wave-annotation prompt.
 func TestTriggerPlanStage_ImplementNoWaves_RespawnsPlanner(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	plansDir := filepath.Join(dir, "docs", "plans")
 	require.NoError(t, os.MkdirAll(plansDir, 0o755))
@@ -687,6 +698,7 @@ func TestTriggerPlanStage_ImplementNoWaves_RespawnsPlanner(t *testing.T) {
 // final wave complete, the orchestrator is deleted and a confirmation dialog appears
 // asking the user to push and start review.
 func TestWaveMonitor_AllComplete_ShowsReviewPrompt(t *testing.T) {
+	t.Parallel()
 	const planFile = "all-complete"
 
 	// Single wave plan — completing its tasks triggers orchestration.WaveStateAllComplete directly.
@@ -752,6 +764,7 @@ func TestWaveMonitor_AllComplete_ShowsReviewPrompt(t *testing.T) {
 // TestWaveAllCompleteMsg_TransitionsToReviewing verifies that the waveAllCompleteMsg
 // handler transitions the plan FSM from implementing to reviewing.
 func TestWaveAllCompleteMsg_TransitionsToReviewing(t *testing.T) {
+	t.Parallel()
 	const planFile = "review-transition"
 
 	dir := t.TempDir()
@@ -783,6 +796,7 @@ func TestWaveAllCompleteMsg_TransitionsToReviewing(t *testing.T) {
 // TestWaveAllCompleteMsg_PushIsAsync verifies that waveAllCompleteMsg
 // returns an async command and that the plan transitions on wavePushCompleteMsg.
 func TestWaveAllCompleteMsg_PushIsAsync(t *testing.T) {
+	t.Parallel()
 	const planFile = "review-async"
 
 	dir := t.TempDir()
@@ -835,6 +849,7 @@ func TestWaveAllCompleteMsg_PushIsAsync(t *testing.T) {
 // user confirms the final all-waves-complete dialog, a metadata tick arriving
 // before the async push finishes does not re-show the same confirmation.
 func TestWaveAllCompleteMsg_DoesNotRepromptWhilePushInFlight(t *testing.T) {
+	t.Parallel()
 	const planFile = "review-in-flight"
 
 	planContent := "**Goal:** verify dedupe\n\n## Wave 1\n\n### Task 1: only\n\nDo it.\n"
@@ -913,6 +928,7 @@ func TestWaveAllCompleteMsg_DoesNotRepromptWhilePushInFlight(t *testing.T) {
 // review prompt does not steal focus from an active agent pane. Instead it
 // queues the prompt and shows a sticky toast until focus mode is left.
 func TestWaveMonitor_AllComplete_DefersWhileFocusModeActive(t *testing.T) {
+	t.Parallel()
 	const planFile = "focus-deferred-review"
 
 	planContent := "**Goal:** verify focus-mode deferral\n\n## Wave 1\n\n### Task 1: only\n\nDo it.\n"
@@ -1004,6 +1020,7 @@ func TestWaveMonitor_AllComplete_DefersWhileFocusModeActive(t *testing.T) {
 // TestWaveMonitor_AllComplete_MultiWave verifies the flow with a multi-wave plan
 // where all waves complete sequentially (wave 1 done → advance → wave 2 done → review prompt).
 func TestWaveMonitor_AllComplete_MultiWave(t *testing.T) {
+	t.Parallel()
 	const planFile = "multi-wave"
 
 	plan := &taskparser.Plan{
@@ -1068,6 +1085,7 @@ func TestWaveMonitor_AllComplete_MultiWave(t *testing.T) {
 // spawned. Without this cleanup, each retry leaves behind ghost instances that all get
 // marked ImplementationComplete when waves finish — producing duplicate entries.
 func TestRetryFailedWaveTasks_RemovesOldInstances(t *testing.T) {
+	t.Parallel()
 	const planFile = "retry-cleanup"
 
 	plan := &taskparser.Plan{
@@ -1184,6 +1202,7 @@ func TestRetryFailedWaveTasks_RemovesOldInstances(t *testing.T) {
 // in .signals/ is correctly picked up by ScanWaveSignals and parsed into a
 // WaveSignal with the correct WaveNumber and PlanFile fields, ready for TUI consumption.
 func TestWaveSignal_TriggersImplementation(t *testing.T) {
+	t.Parallel()
 	repoRoot := t.TempDir()
 	signalsDir := filepath.Join(repoRoot, ".kasmos", "signals")
 	require.NoError(t, os.MkdirAll(signalsDir, 0o755))
@@ -1217,6 +1236,7 @@ func TestWaveSignal_TriggersImplementation(t *testing.T) {
 // TestPlannerExit_CancelKillsInstanceAndMarksPrompted verifies that pressing "n"
 // on the planner-exit dialog kills the planner instance and marks plannerPrompted.
 func TestPlannerExit_CancelKillsInstanceAndMarksPrompted(t *testing.T) {
+	t.Parallel()
 	const planFile = "cancel-kill"
 
 	inst, err := session.NewInstance(session.InstanceOptions{
@@ -1278,6 +1298,7 @@ func TestPlannerExit_CancelKillsInstanceAndMarksPrompted(t *testing.T) {
 // showing the wave-complete confirmation auto-selects a task instance for
 // that plan so the agent output is visible behind the overlay.
 func TestWaveMonitor_FocusesTaskInstance_WhenWaveCompleteShown(t *testing.T) {
+	t.Parallel()
 	const planFile = "focus-wave"
 
 	plan := &taskparser.Plan{
@@ -1347,6 +1368,7 @@ func TestWaveMonitor_FocusesTaskInstance_WhenWaveCompleteShown(t *testing.T) {
 // store's SubtaskStatusComplete and mark the task complete — not flip it into
 // the failed-wave overlay just because the instance is gone from nav.
 func TestWaveMonitor_DismissedInstance_WithPersistedCompleteDoesNotFail(t *testing.T) {
+	t.Parallel()
 	const planFile = "dismiss-completed"
 	const content = `# Plan
 
@@ -1410,6 +1432,7 @@ do the second task
 // not a failure — otherwise a stuck orchestrator would flip long-completed
 // wave rows into the failed-wave overlay.
 func TestWaveMonitor_PausedInstance_WithHasWorkedCountsAsComplete(t *testing.T) {
+	t.Parallel()
 	const planFile = "paused-has-worked"
 
 	plan := &taskparser.Plan{
@@ -1464,6 +1487,7 @@ func TestWaveMonitor_PausedInstance_WithHasWorkedCountsAsComplete(t *testing.T) 
 // TestWaveMonitor_FocusesTaskInstance_WhenFailedWaveShown verifies that the
 // failed-wave decision dialog auto-focuses a task instance for the plan.
 func TestWaveMonitor_FocusesTaskInstance_WhenFailedWaveShown(t *testing.T) {
+	t.Parallel()
 	const planFile = "focus-failed"
 
 	plan := &taskparser.Plan{
@@ -1525,6 +1549,7 @@ func TestWaveMonitor_FocusesTaskInstance_WhenFailedWaveShown(t *testing.T) {
 // PlannerFinished signal is processed, the planner instance is auto-focused
 // so its output is visible behind the overlay.
 func TestPlannerExit_FocusesPlannerInstance_BeforeConfirm(t *testing.T) {
+	t.Parallel()
 	const planFile = "focus-planner"
 
 	dir := t.TempDir()
@@ -1585,6 +1610,7 @@ func TestPlannerExit_FocusesPlannerInstance_BeforeConfirm(t *testing.T) {
 // context menu or confirmation dialog), the wave-advance dialog is deferred
 // and shown on the next tick when the overlay clears — not swallowed.
 func TestWaveMonitor_WaveComplete_DeferredWhenOverlayActive(t *testing.T) {
+	t.Parallel()
 	const planFile = "deferred-wave"
 
 	plan := &taskparser.Plan{
@@ -1672,6 +1698,7 @@ func TestWaveMonitor_WaveComplete_DeferredWhenOverlayActive(t *testing.T) {
 // waves complete while the user is in an overlay (e.g. confirmation dialog),
 // the review prompt is deferred and shown on the next tick when the overlay clears.
 func TestWaveMonitor_AllComplete_DeferredWhenOverlayActive(t *testing.T) {
+	t.Parallel()
 	const planFile = "deferred-complete"
 
 	plan := &taskparser.Plan{
@@ -1748,6 +1775,7 @@ func TestWaveMonitor_AllComplete_DeferredWhenOverlayActive(t *testing.T) {
 // true and a wave completes with zero failures, the model is configured to auto-advance
 // without showing a confirmation dialog.
 func TestAutoAdvanceWaves_SkipsConfirmOnSuccess(t *testing.T) {
+	t.Parallel()
 	// Build a plan with 2 waves
 	plan := &taskparser.Plan{
 		Waves: []taskparser.Wave{
@@ -1779,6 +1807,7 @@ func TestAutoAdvanceWaves_SkipsConfirmOnSuccess(t *testing.T) {
 // TestAutoAdvanceWaves_ShowsConfirmOnFailure verifies that even when AutoAdvanceWaves
 // is true, a wave with failures still shows the decision dialog.
 func TestAutoAdvanceWaves_ShowsConfirmOnFailure(t *testing.T) {
+	t.Parallel()
 	const planFile = "auto-advance-failure"
 
 	plan := &taskparser.Plan{
@@ -1858,6 +1887,7 @@ func TestAutoAdvanceWaves_ShowsConfirmOnFailure(t *testing.T) {
 // is true and a wave completes with zero failures, the Update handler emits a
 // waveAdvanceMsg directly (no confirmation dialog shown).
 func TestAutoAdvanceWaves_EmitsAdvanceMsgOnSuccess(t *testing.T) {
+	t.Parallel()
 	const planFile = "auto-advance-success"
 
 	plan := &taskparser.Plan{
@@ -1918,6 +1948,7 @@ func TestAutoAdvanceWaves_EmitsAdvanceMsgOnSuccess(t *testing.T) {
 // wave task returning to prompt after doing real work completes the current
 // one-task wave and shows the next-wave confirmation UI.
 func TestWaveTaskCompletion_PromptDetectedCompletesOneTaskWave(t *testing.T) {
+	t.Parallel()
 	const planFile = "prompt-detected-complete"
 
 	plan := &taskparser.Plan{Waves: []taskparser.Wave{
@@ -1984,6 +2015,7 @@ func TestWaveTaskCompletion_PromptDetectedCompletesOneTaskWave(t *testing.T) {
 // When HasWorked is true, the task auto-completes on the next metadata tick
 // without waiting for a signal.
 func TestWaveTaskCompletion_RequiresHasWorked(t *testing.T) {
+	t.Parallel()
 	const planFile = "has-worked-guard"
 
 	plan := &taskparser.Plan{Waves: []taskparser.Wave{{
@@ -2054,6 +2086,7 @@ func TestWaveTaskCompletion_RequiresHasWorked(t *testing.T) {
 // not marked complete when metadata shows an update while already at prompt
 // (prompt-echo / startup noise). Completion must wait for non-prompt output.
 func TestWaveTaskCompletion_IgnoresPromptEchoUpdates(t *testing.T) {
+	t.Parallel()
 	const planFile = "prompt-echo-guard"
 
 	plan := &taskparser.Plan{Waves: []taskparser.Wave{{
@@ -2123,6 +2156,7 @@ func TestWaveTaskCompletion_IgnoresPromptEchoUpdates(t *testing.T) {
 // TestWaveTaskCompletion_TmuxExitDependsOnHasWorked verifies that a dead tmux
 // session is treated as completion only after the task has produced real work.
 func TestWaveTaskCompletion_TmuxExitDependsOnHasWorked(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name             string
 		hasWorked        bool
@@ -2287,6 +2321,7 @@ func (th *waveElabTestHarness) executeTaskStage(planFile, stage string) (tea.Mod
 // TestImplementTriggersElaborationBeforeWave1 verifies that triggering "implement"
 // creates a wave orchestrator in the elaborating state and spawns the architect pass.
 func TestImplementTriggersElaborationBeforeWave1(t *testing.T) {
+	t.Parallel()
 	h := newWaveElabTestHarness(t)
 
 	const planFile = "elab-test"
@@ -2318,6 +2353,7 @@ func TestImplementTriggersElaborationBeforeWave1(t *testing.T) {
 }
 
 func TestElaborationSignal_RefreshesWavePlanAndTaskStateBeforeWave1Starts(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	plansDir := filepath.Join(dir, "docs", "plans")
 	require.NoError(t, os.MkdirAll(plansDir, 0o755))
@@ -2376,6 +2412,7 @@ func TestElaborationSignal_RefreshesWavePlanAndTaskStateBeforeWave1Starts(t *tes
 // TestImplementDirectlySkipsElaboration verifies that "implement_direct" creates an
 // orchestrator in the running state without spawning the architect pass.
 func TestImplementDirectlySkipsElaboration(t *testing.T) {
+	t.Parallel()
 	h := newWaveElabTestHarness(t)
 
 	const planFile = "direct-test"
@@ -2396,6 +2433,7 @@ func TestImplementDirectlySkipsElaboration(t *testing.T) {
 // coder finishes (tmux dies) and the "push branch?" dialog shows, the coder
 // instance is auto-focused so its output is visible behind the overlay.
 func TestCoderExit_FocusesCoderInstance_BeforePushConfirm(t *testing.T) {
+	t.Parallel()
 	const planFile = "focus-coder"
 
 	dir := t.TempDir()

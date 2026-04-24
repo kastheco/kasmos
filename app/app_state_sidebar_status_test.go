@@ -22,6 +22,7 @@ func newSidebarStatusTestInstance(t *testing.T, planFile string) *session.Instan
 }
 
 func TestMergeTopicStatus(t *testing.T) {
+	t.Parallel()
 	inst := newSidebarStatusTestInstance(t, "")
 
 	running := mergeTopicStatus(ui.TopicStatus{}, inst, true)
@@ -43,6 +44,7 @@ func TestMergeTopicStatus(t *testing.T) {
 }
 
 func TestMergePlanStatus(t *testing.T) {
+	t.Parallel()
 	reviewer := newSidebarStatusTestInstance(t, "plan")
 	reviewer.IsReviewer = true
 	reviewer.Notified = true
@@ -77,6 +79,7 @@ func TestMergePlanStatus(t *testing.T) {
 }
 
 func TestComputeStatusBarData_Baseline(t *testing.T) {
+	t.Parallel()
 	h := &home{
 		activeRepoPath: "/home/user/repos/kasmos",
 	}
@@ -87,6 +90,7 @@ func TestComputeStatusBarData_Baseline(t *testing.T) {
 }
 
 func TestComputeStatusBarData_IncludesVersion(t *testing.T) {
+	t.Parallel()
 	h := &home{activeRepoPath: "/home/user/repos/kasmos", version: "v2.0.0-beta-abc1234"}
 	h.nav = ui.NewNavigationPanel(&h.spinner)
 	data := h.computeStatusBarData()

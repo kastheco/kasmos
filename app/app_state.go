@@ -42,7 +42,7 @@ import (
 
 var restoreInstanceFromData = session.FromInstanceData
 
-const (
+var (
 	plannerInstancePollInterval      = 50 * time.Millisecond
 	plannerInstanceWaitTimeout       = 5 * time.Second
 	quickLaunchTitleSyncInitialDelay = 500 * time.Millisecond

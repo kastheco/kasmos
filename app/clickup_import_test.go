@@ -11,6 +11,7 @@ import (
 )
 
 func TestImportClickUpTask_WritesScaffold(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	plansDir := filepath.Join(dir, "docs", "plans")
 	require.NoError(t, os.MkdirAll(plansDir, 0o755))
@@ -43,6 +44,7 @@ func TestImportClickUpTask_WritesScaffold(t *testing.T) {
 }
 
 func TestScaffoldFilename_Dedup(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	base := clickup.ScaffoldFilename("Test Task")
 

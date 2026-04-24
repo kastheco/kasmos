@@ -20,6 +20,7 @@ func (o *submittedOverlay) View() string                             { return ""
 func (o *submittedOverlay) SetSize(_, _ int)                         {}
 
 func TestRenameInstance_SubmitPreservesStableTitle(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	h.nav.SetSize(80, 20)
 

@@ -84,6 +84,10 @@ func (a claudeAdapter) SendPermissionResponse(session *TmuxSession, choice Permi
 	return nil
 }
 
+// permissionResponseSettleDelay is the pause between selecting a permission
+// option and confirming the dialog. Exposed as a var so tests can zero it out.
+var permissionResponseSettleDelay = 300 * time.Millisecond
+
 // SendPermissionResponse sends OpenCode's menu-navigation key sequence,
 // waits for the confirmation dialog, then confirms it with a second Enter.
 func (a opencodeAdapter) SendPermissionResponse(session *TmuxSession, choice PermissionChoice) error {
@@ -105,7 +109,7 @@ func (a opencodeAdapter) SendPermissionResponse(session *TmuxSession, choice Per
 		return fmt.Errorf("SendPermissionResponse: confirm selection: %w", err)
 	}
 
-	time.Sleep(300 * time.Millisecond)
+	time.Sleep(permissionResponseSettleDelay)
 
 	if err := session.TapEnter(); err != nil {
 		return fmt.Errorf("SendPermissionResponse: confirm dialog: %w", err)

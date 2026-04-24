@@ -266,9 +266,24 @@ update: build install restart-services scaffold
 # Alias for kas
 kms: kas
 
-# Run tests
-test:
+# Run tests (warm-cache path — default)
+test: test-fast
+
+# Warm-cache suite: fast, uses go's test cache
+test-fast:
     go test ./...
+
+# Cold-path suite: forces a real run, bypasses cache
+test-full:
+    go test -count=1 ./...
+
+# Race detector on the two hottest packages
+test-race:
+    go test -race ./app ./session/tmux
+
+# Reproducible benchmark: cold, warm, and per-package timings
+bench-tests:
+    ./scripts/bench_tests.sh
 
 # Run linter
 lint:

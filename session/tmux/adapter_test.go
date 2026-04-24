@@ -33,11 +33,13 @@ func newPermissionCommandCaptureSession(program, paneContent string, captureErr 
 }
 
 func TestClaudeAdapter_ReadyString(t *testing.T) {
+	t.Parallel()
 	a := claudeAdapter{}
 	assert.Equal(t, "Do you trust the files in this folder?", a.ReadyString())
 }
 
 func TestClaudeAdapter_DetectPrompt(t *testing.T) {
+	t.Parallel()
 	a := claudeAdapter{}
 	tests := []struct {
 		name    string
@@ -149,18 +151,22 @@ func TestClaudeAdapter_DetectPrompt(t *testing.T) {
 	}
 
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			assert.Equal(t, tt.want, a.DetectPrompt(tt.content))
 		})
 	}
 }
 
 func TestClaudeAdapter_ReadyTap(t *testing.T) {
+	t.Parallel()
 	a := claudeAdapter{}
 	assert.True(t, a.NeedsTrustTap())
 }
 
 func TestClaudeHasStarted(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		content string
@@ -190,18 +196,22 @@ func TestClaudeHasStarted(t *testing.T) {
 	}
 
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			assert.Equal(t, tt.want, claudeHasStarted(tt.content))
 		})
 	}
 }
 
 func TestOpenCodeAdapter_ReadyString(t *testing.T) {
+	t.Parallel()
 	a := opencodeAdapter{}
 	assert.Equal(t, "Ask anything", a.ReadyString())
 }
 
 func TestOpenCodeAdapter_DetectPrompt(t *testing.T) {
+	t.Parallel()
 	a := opencodeAdapter{}
 	// opencode idle = no "esc interrupt" shown
 	assert.True(t, a.DetectPrompt("some content without interrupt"))
@@ -209,11 +219,13 @@ func TestOpenCodeAdapter_DetectPrompt(t *testing.T) {
 }
 
 func TestOpenCodeAdapter_ReadyTap(t *testing.T) {
+	t.Parallel()
 	a := opencodeAdapter{}
 	assert.False(t, a.NeedsTrustTap())
 }
 
 func TestAdapterFor_Claude(t *testing.T) {
+	t.Parallel()
 	tests := []string{
 		"claude",
 		"claude --model opus",
@@ -221,7 +233,9 @@ func TestAdapterFor_Claude(t *testing.T) {
 	}
 
 	for _, program := range tests {
+		program := program
 		t.Run(program, func(t *testing.T) {
+			t.Parallel()
 			a := AdapterFor(program)
 			assert.NotNil(t, a)
 			assert.Equal(t, "Do you trust the files in this folder?", a.ReadyString())
@@ -230,6 +244,7 @@ func TestAdapterFor_Claude(t *testing.T) {
 }
 
 func TestAdapterFor_OpenCode(t *testing.T) {
+	t.Parallel()
 	tests := []string{
 		"opencode",
 		"opencode --agent reviewer",
@@ -237,7 +252,9 @@ func TestAdapterFor_OpenCode(t *testing.T) {
 	}
 
 	for _, program := range tests {
+		program := program
 		t.Run(program, func(t *testing.T) {
+			t.Parallel()
 			a := AdapterFor(program)
 			assert.NotNil(t, a)
 			assert.Equal(t, "Ask anything", a.ReadyString())
@@ -246,6 +263,7 @@ func TestAdapterFor_OpenCode(t *testing.T) {
 }
 
 func TestAdapterFor_Codex(t *testing.T) {
+	t.Parallel()
 	tests := []string{
 		"codex",
 		"/usr/local/bin/codex",
@@ -253,7 +271,9 @@ func TestAdapterFor_Codex(t *testing.T) {
 	}
 
 	for _, program := range tests {
+		program := program
 		t.Run(program, func(t *testing.T) {
+			t.Parallel()
 			a := AdapterFor(program)
 			assert.NotNil(t, a)
 			_, ok := a.(codexAdapter)
@@ -263,26 +283,31 @@ func TestAdapterFor_Codex(t *testing.T) {
 }
 
 func TestAdapterFor_Unknown(t *testing.T) {
+	t.Parallel()
 	a := AdapterFor("vim")
 	assert.Nil(t, a)
 }
 
 func TestAdapterFor_AiderAndGeminiUnchanged(t *testing.T) {
+	t.Parallel()
 	assert.Nil(t, AdapterFor("aider"))
 	assert.Nil(t, AdapterFor("gemini"))
 }
 
 func TestCodexAdapter_ReadyString(t *testing.T) {
+	t.Parallel()
 	a := codexAdapter{}
 	assert.Equal(t, "", a.ReadyString(), "codex has no confirmed stable startup banner yet")
 }
 
 func TestCodexAdapter_NeedsTrustTap(t *testing.T) {
+	t.Parallel()
 	a := codexAdapter{}
 	assert.False(t, a.NeedsTrustTap())
 }
 
 func TestCodexAdapter_DetectPrompt(t *testing.T) {
+	t.Parallel()
 	a := codexAdapter{}
 	// Conservative: no reliable idle marker confirmed yet — always false.
 	assert.False(t, a.DetectPrompt(""))
@@ -291,6 +316,7 @@ func TestCodexAdapter_DetectPrompt(t *testing.T) {
 }
 
 func TestCodexAdapter_BuildPromptArg_Short(t *testing.T) {
+	t.Parallel()
 	a := codexAdapter{}
 	var written string
 	writeFile := func(p string) string {
@@ -304,6 +330,7 @@ func TestCodexAdapter_BuildPromptArg_Short(t *testing.T) {
 }
 
 func TestCodexAdapter_BuildPromptArg_Long(t *testing.T) {
+	t.Parallel()
 	a := codexAdapter{}
 	long := strings.Repeat("x", MaxInlinePromptLen+1)
 	absPath := "/workdir/.kasmos/prompt-abc.md"
@@ -320,6 +347,7 @@ func TestCodexAdapter_BuildPromptArg_Long(t *testing.T) {
 }
 
 func TestCodexAdapter_BuildPromptArg_LongWriteFileFails(t *testing.T) {
+	t.Parallel()
 	a := codexAdapter{}
 	long := strings.Repeat("x", MaxInlinePromptLen+1)
 
@@ -345,9 +373,11 @@ const sandboxPaneContent = `Allow sandbox network access?
 enter to submit`
 
 func TestCodexAdapter_SendPermissionResponse(t *testing.T) {
+	t.Parallel()
 	adapter := codexAdapter{}
 
 	t.Run("MCP shape - allow once sends 1 + enter", func(t *testing.T) {
+		t.Parallel()
 		session, ranCmds := newPermissionCommandCaptureSession("codex", mcpPaneContent, nil)
 		require.NoError(t, adapter.SendPermissionResponse(session, PermissionAllowOnce))
 		assert.Equal(t, []string{
@@ -357,6 +387,7 @@ func TestCodexAdapter_SendPermissionResponse(t *testing.T) {
 	})
 
 	t.Run("MCP shape - allow always sends 3 + enter", func(t *testing.T) {
+		t.Parallel()
 		session, ranCmds := newPermissionCommandCaptureSession("codex", mcpPaneContent, nil)
 		require.NoError(t, adapter.SendPermissionResponse(session, PermissionAllowAlways))
 		assert.Equal(t, []string{
@@ -366,6 +397,7 @@ func TestCodexAdapter_SendPermissionResponse(t *testing.T) {
 	})
 
 	t.Run("MCP shape - reject sends escape", func(t *testing.T) {
+		t.Parallel()
 		session, ranCmds := newPermissionCommandCaptureSession("codex", mcpPaneContent, nil)
 		require.NoError(t, adapter.SendPermissionResponse(session, PermissionReject))
 		assert.Equal(t, []string{
@@ -374,6 +406,7 @@ func TestCodexAdapter_SendPermissionResponse(t *testing.T) {
 	})
 
 	t.Run("MCP shape - invalid choice sends escape", func(t *testing.T) {
+		t.Parallel()
 		session, ranCmds := newPermissionCommandCaptureSession("codex", mcpPaneContent, nil)
 		require.NoError(t, adapter.SendPermissionResponse(session, PermissionChoice(99)))
 		assert.Equal(t, []string{
@@ -382,6 +415,7 @@ func TestCodexAdapter_SendPermissionResponse(t *testing.T) {
 	})
 
 	t.Run("sandbox shape - allow once sends 1 + enter", func(t *testing.T) {
+		t.Parallel()
 		session, ranCmds := newPermissionCommandCaptureSession("codex", sandboxPaneContent, nil)
 		require.NoError(t, adapter.SendPermissionResponse(session, PermissionAllowOnce))
 		assert.Equal(t, []string{
@@ -391,6 +425,7 @@ func TestCodexAdapter_SendPermissionResponse(t *testing.T) {
 	})
 
 	t.Run("sandbox shape - allow always sends 2 + enter", func(t *testing.T) {
+		t.Parallel()
 		session, ranCmds := newPermissionCommandCaptureSession("codex", sandboxPaneContent, nil)
 		require.NoError(t, adapter.SendPermissionResponse(session, PermissionAllowAlways))
 		assert.Equal(t, []string{
@@ -400,6 +435,7 @@ func TestCodexAdapter_SendPermissionResponse(t *testing.T) {
 	})
 
 	t.Run("sandbox shape - reject sends 3 + enter", func(t *testing.T) {
+		t.Parallel()
 		session, ranCmds := newPermissionCommandCaptureSession("codex", sandboxPaneContent, nil)
 		require.NoError(t, adapter.SendPermissionResponse(session, PermissionReject))
 		assert.Equal(t, []string{
@@ -409,6 +445,7 @@ func TestCodexAdapter_SendPermissionResponse(t *testing.T) {
 	})
 
 	t.Run("sandbox shape - invalid choice sends escape", func(t *testing.T) {
+		t.Parallel()
 		session, ranCmds := newPermissionCommandCaptureSession("codex", sandboxPaneContent, nil)
 		require.NoError(t, adapter.SendPermissionResponse(session, PermissionChoice(99)))
 		assert.Equal(t, []string{
@@ -417,6 +454,7 @@ func TestCodexAdapter_SendPermissionResponse(t *testing.T) {
 	})
 
 	t.Run("unknown shape fallback sends escape", func(t *testing.T) {
+		t.Parallel()
 		// Pane content that doesn't match either codex shape.
 		session, ranCmds := newPermissionCommandCaptureSession("codex", "working on it...", nil)
 		require.NoError(t, adapter.SendPermissionResponse(session, PermissionAllowOnce))
@@ -426,6 +464,7 @@ func TestCodexAdapter_SendPermissionResponse(t *testing.T) {
 	})
 
 	t.Run("capture failure returns error", func(t *testing.T) {
+		t.Parallel()
 		session, ranCmds := newPermissionCommandCaptureSession("codex", "", errors.New("tmux: no pane"))
 		err := adapter.SendPermissionResponse(session, PermissionAllowOnce)
 		require.Error(t, err)
@@ -436,11 +475,13 @@ func TestCodexAdapter_SendPermissionResponse(t *testing.T) {
 }
 
 func TestCodexAdapter_SupportsCliPrompt(t *testing.T) {
+	t.Parallel()
 	a := codexAdapter{}
 	assert.True(t, a.SupportsCliPrompt())
 }
 
 func TestClaudeAdapter_SendPermissionResponse(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		choice   PermissionChoice
@@ -473,7 +514,9 @@ func TestClaudeAdapter_SendPermissionResponse(t *testing.T) {
 
 	adapter := claudeAdapter{}
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			session, ranCmds := newPermissionCommandCaptureSession("claude", "", nil)
 			err := adapter.SendPermissionResponse(session, tt.choice)
 			require.NoError(t, err)
@@ -483,6 +526,7 @@ func TestClaudeAdapter_SendPermissionResponse(t *testing.T) {
 }
 
 func TestOpenCodeAdapter_SendPermissionResponse(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		choice   PermissionChoice
@@ -519,7 +563,9 @@ func TestOpenCodeAdapter_SendPermissionResponse(t *testing.T) {
 
 	adapter := opencodeAdapter{}
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			session, ranCmds := newPermissionCommandCaptureSession("opencode", "", nil)
 			err := adapter.SendPermissionResponse(session, tt.choice)
 			require.NoError(t, err)

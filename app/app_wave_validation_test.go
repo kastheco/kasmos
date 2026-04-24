@@ -7,6 +7,7 @@ import (
 )
 
 func TestValidatePlanContent_WithWaves(t *testing.T) {
+	t.Parallel()
 	content := `# Plan
 
 **Goal:** Test
@@ -21,6 +22,7 @@ Do it.
 }
 
 func TestValidatePlanContent_NoWaves(t *testing.T) {
+	t.Parallel()
 	content := `# Plan
 
 **Goal:** Test

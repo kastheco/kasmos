@@ -21,6 +21,7 @@ import (
 // TestSoloAgent_NoAutomaticPushPromptOnExit verifies that when a solo agent's
 // tmux session exits, the automatic push-then-review flow does NOT trigger.
 func TestSoloAgent_NoAutomaticPushPromptOnExit(t *testing.T) {
+	t.Parallel()
 	const planFile = "solo-test.md"
 
 	dir := t.TempDir()

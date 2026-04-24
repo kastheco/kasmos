@@ -36,6 +36,7 @@ func setEmbeddedTerminalPTYForTest(t *testing.T, term *session.EmbeddedTerminal,
 }
 
 func TestHandleKeyPress_NumberShortcutPassthroughWhenPreviewActive(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	inst := newTestShortcutInstance(t, session.Running, true)
 
@@ -54,6 +55,7 @@ func TestHandleKeyPress_NumberShortcutPassthroughWhenPreviewActive(t *testing.T)
 }
 
 func TestHandleKeyPress_NumberShortcutNoOpWithoutPreviewTerminal(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	inst := newTestShortcutInstance(t, session.Running, true)
 
@@ -69,6 +71,7 @@ func TestHandleKeyPress_NumberShortcutNoOpWithoutPreviewTerminal(t *testing.T) {
 }
 
 func TestHandleKeyPress_NumberShortcutNoOpWithoutSelectedInstance(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	h.previewTerminal = session.NewDummyTerminal()
 
@@ -82,6 +85,7 @@ func TestHandleKeyPress_NumberShortcutNoOpWithoutSelectedInstance(t *testing.T) 
 }
 
 func TestHandleKeyPress_NumberShortcutNoOpWhenInstanceNotStarted(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	inst := newTestShortcutInstance(t, session.Running, false)
 
@@ -100,6 +104,7 @@ func TestHandleKeyPress_NumberShortcutNoOpWhenInstanceNotStarted(t *testing.T) {
 }
 
 func TestHandleKeyPress_NumberShortcutNoOpWhenInstancePaused(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	inst := newTestShortcutInstance(t, session.Paused, true)
 
@@ -117,6 +122,7 @@ func TestHandleKeyPress_NumberShortcutNoOpWhenInstancePaused(t *testing.T) {
 }
 
 func TestHandleKeyPress_NumberShortcutHandlesSendKeyError(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	inst := newTestShortcutInstance(t, session.Running, true)
 
@@ -140,6 +146,7 @@ func TestHandleKeyPress_NumberShortcutHandlesSendKeyError(t *testing.T) {
 }
 
 func TestHandleKeyPress_NumberShortcutPassthroughDigits(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name  string
 		digit string
@@ -172,6 +179,7 @@ func TestHandleKeyPress_NumberShortcutPassthroughDigits(t *testing.T) {
 }
 
 func TestHandleKeyPress_CtrlOPassesThroughToPTY(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	inst := newTestShortcutInstance(t, session.Running, true)
 
@@ -190,6 +198,7 @@ func TestHandleKeyPress_CtrlOPassesThroughToPTY(t *testing.T) {
 }
 
 func TestHandleKeyPress_CtrlONoOpWithoutPreviewTerminal(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	inst := newTestShortcutInstance(t, session.Running, true)
 

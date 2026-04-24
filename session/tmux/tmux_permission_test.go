@@ -11,6 +11,8 @@ import (
 )
 
 func TestSendPermissionResponse_AllowAlways(t *testing.T) {
+	// serial: mutates tmux timing globals
+	withFastTmuxTimings(t)
 	var ranCmds []string
 	exec := cmd_test.MockCmdExec{
 		RunFunc: func(cmd *exec.Cmd) error {
@@ -34,6 +36,8 @@ func TestSendPermissionResponse_AllowAlways(t *testing.T) {
 }
 
 func TestSendPermissionResponse_AllowOnce(t *testing.T) {
+	// serial: mutates tmux timing globals
+	withFastTmuxTimings(t)
 	var ranCmds []string
 	exec := cmd_test.MockCmdExec{
 		RunFunc: func(cmd *exec.Cmd) error {
@@ -56,6 +60,8 @@ func TestSendPermissionResponse_AllowOnce(t *testing.T) {
 }
 
 func TestSendPermissionResponse_Reject(t *testing.T) {
+	// serial: mutates tmux timing globals
+	withFastTmuxTimings(t)
 	var ranCmds []string
 	exec := cmd_test.MockCmdExec{
 		RunFunc: func(cmd *exec.Cmd) error {

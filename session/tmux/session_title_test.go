@@ -8,6 +8,7 @@ import (
 )
 
 func TestTmuxSession_SessionTitle(t *testing.T) {
+	t.Parallel()
 	ts := &TmuxSession{}
 
 	// Default: no title, no callback
@@ -37,6 +38,7 @@ func TestTmuxSession_SessionTitle(t *testing.T) {
 }
 
 func TestTmuxSession_SessionTitle_SkippedWhenEmpty(t *testing.T) {
+	t.Parallel()
 	ts := &TmuxSession{}
 	// No title set — titleFunc should not be called even if set
 	called := false

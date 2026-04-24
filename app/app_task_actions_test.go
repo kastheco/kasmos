@@ -31,6 +31,7 @@ import (
 )
 
 func TestBuildPlanPrompt(t *testing.T) {
+	t.Parallel()
 	prompt := buildPlanningPrompt("auth-refactor", "Auth Refactor", "Refactor JWT auth", "myproject")
 	if !strings.Contains(prompt, "Plan Auth Refactor") {
 		t.Fatalf("prompt missing title")
@@ -48,6 +49,7 @@ func TestBuildPlanPrompt(t *testing.T) {
 }
 
 func TestBuildWaveAnnotationPrompt(t *testing.T) {
+	t.Parallel()
 	prompt := orchestration.BuildWaveAnnotationPrompt("my-feature", "myproject")
 	assert.Contains(t, prompt, "task_show", "prompt must reference MCP task_show")
 	assert.Contains(t, prompt, "## Wave", "prompt must mention ## Wave header format")
@@ -58,12 +60,14 @@ func TestBuildWaveAnnotationPrompt(t *testing.T) {
 }
 
 func TestBuildWaveAnnotationPrompt_SingleWaveFallback(t *testing.T) {
+	t.Parallel()
 	prompt := orchestration.BuildWaveAnnotationPrompt("trivial", "myproject")
 	// Even trivial plans must be wrapped in at least ## Wave 1
 	assert.Contains(t, prompt, "## Wave 1", "prompt must specify ## Wave 1 as the minimum structure")
 }
 
 func TestBuildImplementPrompt(t *testing.T) {
+	t.Parallel()
 	prompt := buildImplementPrompt("auth-refactor", "myproject")
 	assert.Contains(t, prompt, "kas task show auth-refactor")
 	assert.Contains(t, prompt, `project: "myproject"`)
@@ -72,12 +76,14 @@ func TestBuildImplementPrompt(t *testing.T) {
 }
 
 func TestSoloAgentPrompt_ContainsTestScopingRule(t *testing.T) {
+	t.Parallel()
 	prompt := buildSoloPrompt("auth-refactor", "Refactor JWT auth", "auth-refactor", "myproject")
 	assert.Contains(t, prompt, "-run Test")
 	assert.Contains(t, prompt, "Do not load skills")
 }
 
 func TestBuildSoloPrompt_WithDescription(t *testing.T) {
+	t.Parallel()
 	prompt := buildSoloPrompt("auth-refactor", "Refactor JWT auth", "auth-refactor", "myproject")
 	assert.Contains(t, prompt, "kas task show auth-refactor")
 	assert.Contains(t, prompt, `project: "myproject"`)
@@ -85,12 +91,14 @@ func TestBuildSoloPrompt_WithDescription(t *testing.T) {
 }
 
 func TestBuildSoloPrompt_StubOnly(t *testing.T) {
+	t.Parallel()
 	prompt := buildSoloPrompt("quick-fix", "Fix the login bug", "", "myproject")
 	assert.NotContains(t, prompt, "kas task show")
 	assert.NotContains(t, prompt, "docs/plans/")
 }
 
 func TestAgentTypeForSubItem(t *testing.T) {
+	t.Parallel()
 	tests := map[string]string{
 		"plan":      session.AgentTypePlanner,
 		"implement": session.AgentTypeCoder,
@@ -109,6 +117,7 @@ func TestAgentTypeForSubItem(t *testing.T) {
 }
 
 func TestIsLocked_AllowsSoloStage(t *testing.T) {
+	t.Parallel()
 	assert.False(t, isLocked(taskstate.StatusReady, "solo"),
 		"solo stage should be triggerable like implement/review")
 }
@@ -121,6 +130,7 @@ func TestIsLocked_AllowsSoloStage(t *testing.T) {
 // This is a regression test for the bug where spawnTaskAgent set AgentType but
 // not IsReviewer, causing sidebar-spawned reviewers to never trigger plan completion.
 func TestSpawnPlanAgent_ReviewerSetsIsReviewer(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 
 	// Set up a minimal git repo so shared.Setup() can open it.
@@ -179,6 +189,7 @@ func TestSpawnPlanAgent_ReviewerSetsIsReviewer(t *testing.T) {
 // "plan" action does NOT create a git worktree — the planner runs on main and
 // commits plan files there directly.
 func TestSpawnPlanAgent_PlannerUsesMainBranch(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 
 	for _, cmd := range [][]string{
@@ -238,6 +249,7 @@ func TestSpawnPlanAgent_PlannerUsesMainBranch(t *testing.T) {
 // applied to the SHARED WORKTREE path — not the main repo — so the agent running inside
 // the worktree reads the correct model/temperature/effort from its own opencode.jsonc.
 func TestSpawnTaskAgent_PatchesSharedWorktreeOpencodeConfig(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 
 	// Build a git repo with root opencode.jsonc committed so the worktree
@@ -316,6 +328,7 @@ func TestSpawnTaskAgent_PatchesSharedWorktreeOpencodeConfig(t *testing.T) {
 }
 
 func TestSpawnTaskAgent_PlanUsesDaemonWhenRepoManaged(t *testing.T) {
+	// serial: modifies repoManagedByDaemon
 	oldManaged := repoManagedByDaemon
 	oldSpawner := spawnPlannerWithDaemon
 	t.Cleanup(func() {
@@ -395,6 +408,8 @@ func TestSpawnTaskAgent_PlanUsesDaemonWhenRepoManaged(t *testing.T) {
 }
 
 func TestWaitForDaemonPlannerInstance_SkipsExitedPlaceholder(t *testing.T) {
+	// serial: modifies restoreInstanceFromData and timing vars via withFastAppTimings
+	withFastAppTimings(t)
 	oldRestore := restoreInstanceFromData
 	t.Cleanup(func() {
 		restoreInstanceFromData = oldRestore
@@ -439,6 +454,8 @@ func TestWaitForDaemonPlannerInstance_SkipsExitedPlaceholder(t *testing.T) {
 }
 
 func TestWaitForDaemonPlannerInstance_ToleratesSlowStartup(t *testing.T) {
+	// serial: modifies restoreInstanceFromData and timing vars via withFastAppTimings
+	withFastAppTimings(t)
 	oldRestore := restoreInstanceFromData
 	t.Cleanup(func() {
 		restoreInstanceFromData = oldRestore
@@ -483,6 +500,7 @@ func TestWaitForDaemonPlannerInstance_ToleratesSlowStartup(t *testing.T) {
 }
 
 func TestWaitForDaemonPlannerInstance_UsesDaemonLoadingPlaceholder(t *testing.T) {
+	// serial: modifies restoreInstanceFromData and listDaemonInstances
 	oldRestore := restoreInstanceFromData
 	oldListInstances := listDaemonInstances
 	t.Cleanup(func() {
@@ -527,6 +545,7 @@ func TestWaitForDaemonPlannerInstance_UsesDaemonLoadingPlaceholder(t *testing.T)
 // The final resolved mode is always the actual process host so UI and livepreview state
 // are consistent.
 func TestSpawnWaveTasks_SDKProfileFallsBackToTmuxForUnsupportedProgram(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	for _, cmd := range [][]string{
 		{"git", "init", dir},
@@ -602,6 +621,7 @@ func TestSpawnWaveTasks_SDKProfileFallsBackToTmuxForUnsupportedProgram(t *testin
 // patches the SHARED WORKTREE's opencode.jsonc, not the main repo's, so coder agents
 // spawned by wave orchestration read the correct config from their worktree.
 func TestSpawnWaveTasks_PatchesSharedWorktreeOpencodeConfig(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 
 	configPath := filepath.Join(dir, "opencode.jsonc")
@@ -687,6 +707,7 @@ func TestSpawnWaveTasks_PatchesSharedWorktreeOpencodeConfig(t *testing.T) {
 }
 
 func TestExecuteContextAction_MergePlanPreflightStopsBeforeKillingInstances(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	runGit := func(args ...string) {
 		t.Helper()
@@ -761,6 +782,7 @@ func TestExecuteContextAction_MergePlanPreflightStopsBeforeKillingInstances(t *t
 // TestFSM_PlanLifecycleStages verifies that the FSM produces the correct status for
 // each stage in the plan lifecycle (plan→implement→review→done).
 func TestFSM_PlanLifecycleStages(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	plansDir := filepath.Join(dir, "docs", "plans")
 	if err := os.MkdirAll(plansDir, 0o755); err != nil {
@@ -806,6 +828,7 @@ func TestFSM_PlanLifecycleStages(t *testing.T) {
 }
 
 func TestSpawnPlanAgent_SoloSetsSoloAgentFlag(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 
 	for _, cmd := range [][]string{
@@ -848,6 +871,7 @@ func TestSpawnPlanAgent_SoloSetsSoloAgentFlag(t *testing.T) {
 }
 
 func TestSpawnPlanAgent_SoloTitlesArePlanScoped(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 
 	for _, cmd := range [][]string{
@@ -938,6 +962,7 @@ func setupTopicConflictHome(t *testing.T) (*home, string) {
 }
 
 func TestTriggerPlanStage_SoloRespectsTopicConcurrencyGate(t *testing.T) {
+	t.Parallel()
 	h, targetPlan := setupTopicConflictHome(t)
 
 	model, _ := h.triggerTaskStage(targetPlan, "solo")
@@ -955,6 +980,7 @@ func TestTriggerPlanStage_SoloRespectsTopicConcurrencyGate(t *testing.T) {
 // confirming the topic-concurrency dialog returns a taskStageConfirmedMsg
 // (not just a taskRefreshMsg), so the actual stage execution is triggered.
 func TestTopicConcurrencyConfirm_ReturnsPlanStageConfirmedMsg(t *testing.T) {
+	t.Parallel()
 	for _, stage := range []string{"solo", "implement"} {
 		t.Run(stage, func(t *testing.T) {
 			h, targetPlan := setupTopicConflictHome(t)
@@ -981,6 +1007,7 @@ func TestTopicConcurrencyConfirm_ReturnsPlanStageConfirmedMsg(t *testing.T) {
 }
 
 func TestExecuteContextAction_SetStatusForceOverridesWithoutFSM(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	plansDir := filepath.Join(dir, "docs", "plans")
 	require.NoError(t, os.MkdirAll(plansDir, 0o755))
@@ -1016,6 +1043,7 @@ func TestExecuteContextAction_SetStatusForceOverridesWithoutFSM(t *testing.T) {
 }
 
 func TestHandleKeyPress_SetStatusPlannedCreatesPlannedReadyForDaemonManagedRepo(t *testing.T) {
+	// serial: modifies repoManagedByDaemon
 	dir := t.TempDir()
 	plansDir := filepath.Join(dir, "docs", "plans")
 	require.NoError(t, os.MkdirAll(plansDir, 0o755))
@@ -1069,6 +1097,7 @@ func TestHandleKeyPress_SetStatusPlannedCreatesPlannedReadyForDaemonManagedRepo(
 }
 
 func TestExecuteTaskStage_BlocksWhenDaemonUnavailable(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	plansDir := filepath.Join(dir, "docs", "plans")
 	require.NoError(t, os.MkdirAll(plansDir, 0o755))
@@ -1112,6 +1141,7 @@ func TestExecuteTaskStage_BlocksWhenDaemonUnavailable(t *testing.T) {
 }
 
 func TestSpawnAdHocAgent_BlocksWhenDaemonUnavailable(t *testing.T) {
+	t.Parallel()
 	spin := spinner.New(spinner.WithSpinner(spinner.Dot))
 	h := &home{
 		ctx:            context.Background(),
@@ -1143,6 +1173,7 @@ func TestSpawnAdHocAgent_BlocksWhenDaemonUnavailable(t *testing.T) {
 }
 
 func TestMergeInstance_UsesSelectedInstanceTask(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	runGit := func(args ...string) {
 		t.Helper()
@@ -1217,6 +1248,7 @@ func TestMergeInstance_UsesSelectedInstanceTask(t *testing.T) {
 }
 
 func TestToggleAutoAdvanceWaves(t *testing.T) {
+	t.Parallel()
 	m := &home{
 		appConfig: &config.Config{AutoAdvanceWaves: false},
 	}
@@ -1232,6 +1264,7 @@ func TestToggleAutoAdvanceWaves(t *testing.T) {
 }
 
 func TestExecuteContextAction_ToggleAutoAdvancePlanner(t *testing.T) {
+	t.Parallel()
 	var sp spinner.Model
 	m := &home{
 		appConfig:    &config.Config{AutoAdvance: false, AutoAdvanceWaves: true},
@@ -1248,6 +1281,7 @@ func TestExecuteContextAction_ToggleAutoAdvancePlanner(t *testing.T) {
 }
 
 func TestExecuteContextAction_ToggleAutoAdvance_LegacyAliasTargetsWaves(t *testing.T) {
+	t.Parallel()
 	var sp spinner.Model
 	m := &home{
 		appConfig:    &config.Config{AutoAdvance: false, AutoAdvanceWaves: false},
@@ -1264,6 +1298,7 @@ func TestExecuteContextAction_ToggleAutoAdvance_LegacyAliasTargetsWaves(t *testi
 }
 
 func TestToggleAutoReviewFix(t *testing.T) {
+	t.Parallel()
 	m := &home{
 		appConfig: &config.Config{AutoReviewFix: false},
 	}
@@ -1277,6 +1312,7 @@ func TestToggleAutoReviewFix(t *testing.T) {
 }
 
 func TestEnsureProcessor_RefreshesReviewFixConfig(t *testing.T) {
+	t.Parallel()
 	store := taskstore.NewTestSQLiteStore(t)
 	require.NoError(t, store.Create("proj", taskstore.TaskEntry{
 		Filename: "disabled.md",
@@ -1329,6 +1365,7 @@ func TestEnsureProcessor_RefreshesReviewFixConfig(t *testing.T) {
 }
 
 func TestStartFixer_UsesPersistedLatestReviewFeedback(t *testing.T) {
+	t.Parallel()
 	store := taskstore.NewTestSQLiteStore(t)
 	const planFile = "feature"
 	const feedback = "Round 4 — changes required\n\n- [app/app.go:1603] keep the re-review loop stateful"
@@ -1380,6 +1417,7 @@ func TestStartFixer_UsesPersistedLatestReviewFeedback(t *testing.T) {
 }
 
 func TestAdvanceReviewCycle_CapturesFeedbackForDaemonManagedRepo(t *testing.T) {
+	// serial: modifies repoManagedByDaemon
 	dir := t.TempDir()
 	plansDir := filepath.Join(dir, "docs", "plans")
 	require.NoError(t, os.MkdirAll(plansDir, 0o755))
@@ -1425,6 +1463,7 @@ func TestAdvanceReviewCycle_CapturesFeedbackForDaemonManagedRepo(t *testing.T) {
 }
 
 func TestManualRecovery_NoSelectionNoOp(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	h.taskStoreProject = "test"
 
@@ -1435,6 +1474,7 @@ func TestManualRecovery_NoSelectionNoOp(t *testing.T) {
 }
 
 func TestEmitSelectedInstanceSignal_QueuesExpectedGatewayRows(t *testing.T) {
+	// serial: subtests call t.Setenv and t.Chdir; a parallel parent disallows this in Go 1.21+
 	tests := []struct {
 		name                  string
 		status                taskstate.Status
@@ -1566,6 +1606,7 @@ func TestEmitSelectedInstanceSignal_QueuesExpectedGatewayRows(t *testing.T) {
 }
 
 func TestEmitSelectedInstanceSignal_RejectsPlannerFinishedWithoutWaveHeaders(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	plansDir := filepath.Join(dir, "docs", "plans")
 	require.NoError(t, os.MkdirAll(plansDir, 0o755))
@@ -1615,6 +1656,7 @@ func decodeSignalPayloadBody(t *testing.T, payload string) string {
 }
 
 func TestMarkReviewChangesRequested_QueuesGatewaySignal(t *testing.T) {
+	// serial: calls t.Setenv and t.Chdir
 	t.Setenv("HOME", t.TempDir())
 	dir := t.TempDir()
 	t.Chdir(dir)
@@ -1653,6 +1695,7 @@ func TestMarkReviewChangesRequested_QueuesGatewaySignal(t *testing.T) {
 }
 
 func TestViewSelectedPlan_ReadsFromStore(t *testing.T) {
+	t.Parallel()
 	store := taskstore.NewTestSQLiteStore(t)
 	planFile := "test.md"
 	content := "# My Plan\n\n## Wave 1\n\n### Task 1: Do thing\n"
@@ -1690,6 +1733,7 @@ func TestViewSelectedPlan_ReadsFromStore(t *testing.T) {
 }
 
 func TestLoadTaskState_InvalidatesCachedRenderedPlan(t *testing.T) {
+	t.Parallel()
 	store := taskstore.NewTestSQLiteStore(t)
 	planFile := "test.md"
 	content := "# Draft\n\nInitial body\n"
@@ -1745,6 +1789,7 @@ func TestLoadTaskState_InvalidatesCachedRenderedPlan(t *testing.T) {
 // any .md file on disk. A non-nil WaveOrchestrator in the home model after
 // executeTaskStage proves that the plan was read from the DB and parsed successfully.
 func TestImplementActionReadsFromStore(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	plansDir := filepath.Join(dir, "docs", "plans")
 	require.NoError(t, os.MkdirAll(plansDir, 0o755))
@@ -1802,6 +1847,7 @@ func TestImplementActionReadsFromStore(t *testing.T) {
 // content in the DB without writing any .md file. When the prompt contains
 // "kas task show <planFile>", it proves the store check (not os.Stat) was used.
 func TestSoloActionChecksStoreNotDisk(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	plansDir := filepath.Join(dir, "docs", "plans")
 	require.NoError(t, os.MkdirAll(plansDir, 0o755))
@@ -1858,6 +1904,7 @@ func TestSoloActionChecksStoreNotDisk(t *testing.T) {
 }
 
 func TestExecuteContextAction_MarkPlanDoneFromReadyTransitionsToDone(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	plansDir := filepath.Join(dir, "docs", "plans")
 	require.NoError(t, os.MkdirAll(plansDir, 0o755))
@@ -1897,6 +1944,7 @@ func TestExecuteContextAction_MarkPlanDoneFromReadyTransitionsToDone(t *testing.
 }
 
 func TestExecuteTaskStage_Implement_ReusesPersistedArchitectingState(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	plansDir := filepath.Join(dir, "docs", "plans")
 	require.NoError(t, os.MkdirAll(plansDir, 0o755))
@@ -1952,6 +2000,7 @@ func TestExecuteTaskStage_Implement_ReusesPersistedArchitectingState(t *testing.
 // ── readiness review TUI wiring ──────────────────────────────────────────────
 
 func TestEnsureProcessor_RefreshesReadinessReviewConfig(t *testing.T) {
+	t.Parallel()
 	store := taskstore.NewTestSQLiteStore(t)
 	require.NoError(t, store.Create("proj", taskstore.TaskEntry{
 		Filename: "feature.md",
@@ -2009,6 +2058,7 @@ func findAction[T loop.Action](actions []loop.Action) (T, bool) {
 }
 
 func TestTaskLifecycleItems_StartReviewAvailableDuringReviewing(t *testing.T) {
+	t.Parallel()
 	// In the new FSM, StatusReviewing tasks always offer "start_review".
 	// Verification is tracked by StatusVerifying (a separate FSM status).
 	reviewingEntry := taskstate.TaskEntry{
@@ -2028,6 +2078,7 @@ func TestTaskLifecycleItems_StartReviewAvailableDuringReviewing(t *testing.T) {
 }
 
 func TestInstanceSignalItems_MasterAgent_HasReadinessSignals(t *testing.T) {
+	t.Parallel()
 	inst := &session.Instance{
 		Title:     "my-plan-verify-1",
 		TaskFile:  "my-plan.md",
@@ -2046,6 +2097,7 @@ func TestInstanceSignalItems_MasterAgent_HasReadinessSignals(t *testing.T) {
 }
 
 func TestExecuteContextAction_MarkReadinessApproved(t *testing.T) {
+	// serial: calls t.Setenv and t.Chdir
 	t.Setenv("HOME", t.TempDir())
 	dir := t.TempDir()
 	t.Chdir(dir)
@@ -2089,6 +2141,7 @@ func TestExecuteContextAction_MarkReadinessApproved(t *testing.T) {
 }
 
 func TestExecuteContextAction_MarkReadinessChangesRequested(t *testing.T) {
+	// serial: calls t.Setenv and t.Chdir
 	t.Setenv("HOME", t.TempDir())
 	dir := t.TempDir()
 	t.Chdir(dir)
@@ -2140,6 +2193,7 @@ func TestExecuteContextAction_MarkReadinessChangesRequested(t *testing.T) {
 // StatusImplementing (e.g. a manual intervention).  The stale guard must
 // detect this and cancel the signal without writing a gateway row.
 func TestEmitSelectedInstanceSignal_RejectsStaleLifecycleState(t *testing.T) {
+	// serial: calls t.Setenv and t.Chdir
 	t.Setenv("HOME", t.TempDir())
 	dir := t.TempDir()
 	t.Chdir(dir)
@@ -2200,6 +2254,7 @@ func TestEmitSelectedInstanceSignal_RejectsStaleLifecycleState(t *testing.T) {
 // and fsmSetReviewing fails because Done→implementing is not an allowed
 // transition, so no agent is ever created.
 func TestExecuteContextAction_StartReviewRejectsStaleState(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	plansDir := filepath.Join(dir, "docs", "plans")
 	require.NoError(t, os.MkdirAll(plansDir, 0o755))
@@ -2278,6 +2333,7 @@ func TestExecuteContextAction_StartReviewRejectsStaleState(t *testing.T) {
 // start_fixer returns a lifecycleActionRejectedMsg and does not spawn a fixer
 // agent when the task has advanced to Done between menu-open and execution.
 func TestExecuteContextAction_StartFixerRejectsStaleState(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	plansDir := filepath.Join(dir, "docs", "plans")
 	require.NoError(t, os.MkdirAll(plansDir, 0o755))
@@ -2356,6 +2412,7 @@ func TestExecuteContextAction_StartFixerRejectsStaleState(t *testing.T) {
 // stale state and surface a lifecycleActionRejectedMsg rather than
 // erroneously cancelling an already-done task.
 func TestExecuteContextAction_CancelPlanRevalidatesOnConfirm(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	plansDir := filepath.Join(dir, "docs", "plans")
 	require.NoError(t, os.MkdirAll(plansDir, 0o755))
@@ -2436,6 +2493,7 @@ func TestExecuteContextAction_CancelPlanRevalidatesOnConfirm(t *testing.T) {
 // same FSM-gating rules — so stale menus can never offer actions the action
 // handler would reject.
 func TestInstanceSignalItems_ReviewerAgent_WhenVerifying_NoSignals(t *testing.T) {
+	t.Parallel()
 	inst := &session.Instance{
 		Title:     "stale-reviewer-1",
 		TaskFile:  "my-plan.md",
@@ -2463,6 +2521,7 @@ func TestInstanceSignalItems_ReviewerAgent_WhenVerifying_NoSignals(t *testing.T)
 //   - registers a master instance synchronously (before the cmd fires)
 //   - emits at least one EventPlanTransition audit entry mentioning "verifying"
 func TestExecuteContextAction_StartVerify_TransitionsAndSpawnsMaster(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name          string
 		initialStatus taskstore.Status
@@ -2579,6 +2638,7 @@ func TestExecuteContextAction_StartVerify_TransitionsAndSpawnsMaster(t *testing.
 //   - still registers a master instance when no live verifier exists
 //   - leaves the store state as verifying
 func TestExecuteContextAction_StartVerify_FromVerifyingSpawnsMasterWithoutTransitionAudit(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	plansDir := filepath.Join(dir, "docs", "plans")
 	require.NoError(t, os.MkdirAll(plansDir, 0o755))
@@ -2670,6 +2730,7 @@ func TestExecuteContextAction_StartVerify_FromVerifyingSpawnsMasterWithoutTransi
 // returns a lifecycleActionRejectedMsg and does not spawn a master agent when the
 // task has advanced to Done between menu-open and execution.
 func TestExecuteContextAction_StartVerifyRejectsStaleState(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	plansDir := filepath.Join(dir, "docs", "plans")
 	require.NoError(t, os.MkdirAll(plansDir, 0o755))
@@ -2760,6 +2821,7 @@ func TestExecuteContextAction_StartVerifyRejectsStaleState(t *testing.T) {
 // manual verify would leave reviewer findings attached to work that has already
 // been approved.
 func TestExecuteContextAction_StartVerify_ClearsLatestReviewFeedback(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	plansDir := filepath.Join(dir, "docs", "plans")
 	require.NoError(t, os.MkdirAll(plansDir, 0o755))
@@ -2842,6 +2904,7 @@ func TestExecuteContextAction_StartVerify_ClearsLatestReviewFeedback(t *testing.
 // without explicit preemption a coder or fixer would keep writing to the same
 // shared worktree while the readiness pass runs.
 func TestExecuteContextAction_StartVerify_PreemptsLiveCoderAndFixer(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name      string
 		agentType string
@@ -2957,6 +3020,7 @@ func TestExecuteContextAction_StartVerify_PreemptsLiveCoderAndFixer(t *testing.T
 // the repo is managed by the daemon and the instance uses SDK mode, spawnAdHocAgent
 // delegates to the spawnSoloWithDaemon seam instead of calling inst.StartOnMainBranch.
 func TestSpawnAdHocAgent_SDKRoutesThroughDaemonWhenManaged(t *testing.T) {
+	// serial: modifies repoManagedByDaemon
 	oldManaged := repoManagedByDaemon
 	oldSpawner := spawnSoloWithDaemon
 	t.Cleanup(func() {
@@ -3025,6 +3089,7 @@ func TestSpawnAdHocAgent_SDKRoutesThroughDaemonWhenManaged(t *testing.T) {
 // the solo action uses SDK mode and the repo is daemon-managed, the spawn is
 // routed through spawnSoloWithDaemon with SoloAgent=true.
 func TestSpawnTaskAgent_SoloSDKRoutesThroughDaemonWhenManaged(t *testing.T) {
+	// serial: modifies repoManagedByDaemon
 	oldManaged := repoManagedByDaemon
 	oldSpawner := spawnSoloWithDaemon
 	t.Cleanup(func() {

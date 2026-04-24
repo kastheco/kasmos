@@ -92,6 +92,7 @@ func navPlanDisplayForTest(t *testing.T, nav *ui.NavigationPanel, planFile strin
 }
 
 func TestDaemonSync_MetadataTickReflectsDaemonTaskStateInSidebar(t *testing.T) {
+	// serial: subtests modify repoManagedByDaemon and listDaemonInstances
 	tests := []struct {
 		name                string
 		status              taskstate.Status
@@ -215,6 +216,7 @@ func TestDaemonSync_MetadataTickReflectsDaemonTaskStateInSidebar(t *testing.T) {
 }
 
 func TestDaemonSync_MetadataTickRebuildsWaveOrchestratorForDaemonWaveTask(t *testing.T) {
+	t.Parallel()
 	const planFile = "feature"
 
 	h, _ := newDaemonSyncTestHome(t, planFile)
@@ -270,6 +272,7 @@ func TestDaemonSync_MetadataTickRebuildsWaveOrchestratorForDaemonWaveTask(t *tes
 }
 
 func TestDaemonSync_MetadataResultShowsAllLoadingWaveTasksImmediately(t *testing.T) {
+	t.Parallel()
 	const planFile = "feature"
 
 	h, _ := newDaemonSyncTestHome(t, planFile)
@@ -315,6 +318,7 @@ func TestDaemonSync_MetadataResultShowsAllLoadingWaveTasksImmediately(t *testing
 }
 
 func TestDaemonSync_TickSkipsInactiveMissingInstances(t *testing.T) {
+	// serial: modifies repoManagedByDaemon and listDaemonInstances
 	const planFile = "feature"
 
 	h, dir := newDaemonSyncTestHome(t, planFile)
@@ -350,6 +354,7 @@ func TestDaemonSync_TickSkipsInactiveMissingInstances(t *testing.T) {
 }
 
 func TestDaemonSync_TickUpgradesLoadingPlaceholderWhenSessionAppears(t *testing.T) {
+	// serial: modifies repoManagedByDaemon, listDaemonInstances, and restoreInstanceFromData
 	const planFile = "feature"
 
 	h, dir := newDaemonSyncTestHome(t, planFile)
@@ -441,6 +446,7 @@ func TestDaemonSync_TickUpgradesLoadingPlaceholderWhenSessionAppears(t *testing.
 }
 
 func TestDaemonSync_WaveTaskIndexAndCountPropagatedFromDaemonStatus(t *testing.T) {
+	// serial: modifies repoManagedByDaemon, listDaemonInstances, and restoreInstanceFromData
 	const planFile = "feature"
 
 	h, dir := newDaemonSyncTestHome(t, planFile)
@@ -543,6 +549,7 @@ func TestDaemonSync_WaveTaskIndexAndCountPropagatedFromDaemonStatus(t *testing.T
 }
 
 func TestDaemonSync_SDKPlaceholderCachesPresentationFromDaemon(t *testing.T) {
+	// serial: modifies repoManagedByDaemon and listDaemonInstances
 	const planFile = "feature"
 	h, dir := newDaemonSyncTestHome(t, planFile)
 
@@ -622,6 +629,7 @@ func TestDaemonSync_SDKPlaceholderCachesPresentationFromDaemon(t *testing.T) {
 }
 
 func TestDaemonSync_TUIStartedLoadingInstanceNotExpired(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	h.activeRepoPath = t.TempDir()
 
@@ -652,6 +660,7 @@ func TestDaemonSync_TUIStartedLoadingInstanceNotExpired(t *testing.T) {
 }
 
 func TestDaemonSync_DeleteDismissedDeadInstanceDoesNotReappear(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	h.nav.SetTopicsAndPlans(nil, []ui.PlanDisplay{{Filename: "feature", Status: string(taskstate.StatusPlanning)}}, nil)
 	inst, err := session.NewInstance(session.InstanceOptions{
@@ -691,6 +700,7 @@ func TestDaemonSync_DeleteDismissedDeadInstanceDoesNotReappear(t *testing.T) {
 // fields after SetCachedPresentation() and that later reads via
 // CapturePresentation() do not alias the cached copy.
 func TestDaemonSync_SDKPresentation_PreservesNestedFieldsAfterSync(t *testing.T) {
+	// serial: modifies repoManagedByDaemon and listDaemonInstances
 	const planFile = "feature"
 	h, dir := newDaemonSyncTestHome(t, planFile)
 
@@ -823,6 +833,7 @@ func TestDaemonSync_SDKPresentation_PreservesNestedFieldsAfterSync(t *testing.T)
 // preserved on the constructed placeholder so TUI restore shows the correct
 // nav label and fast-tier info-pane row.
 func TestNewDaemonSDKInstance_CopiesSoloAgentAndSpeedTier(t *testing.T) {
+	t.Parallel()
 	status := api.InstanceStatus{
 		Title:         "my-solo",
 		Program:       "codex",
@@ -841,6 +852,7 @@ func TestNewDaemonSDKInstance_CopiesSoloAgentAndSpeedTier(t *testing.T) {
 // SoloAgent flag and SDKSpeedTier are preserved in the InstanceData returned
 // by daemonInstanceData so that restoreInstanceFromData produces matching fields.
 func TestDaemonInstanceData_CopiesSoloAgentAndSpeedTier(t *testing.T) {
+	t.Parallel()
 	status := api.InstanceStatus{
 		Title:         "my-solo",
 		Program:       "codex",

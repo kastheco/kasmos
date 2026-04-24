@@ -25,6 +25,7 @@ import (
 )
 
 func TestExecuteTaskStage_BlueprintSkipSmallPlan(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	for _, cmd := range [][]string{
 		{"git", "init", dir},
@@ -107,6 +108,7 @@ func TestExecuteTaskStage_BlueprintSkipSmallPlan(t *testing.T) {
 }
 
 func TestExecuteTaskStage_BlueprintSkipDirectClearsStaleOrchestrator(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	for _, cmd := range [][]string{
 		{"git", "init", dir},
@@ -187,6 +189,7 @@ func TestExecuteTaskStage_BlueprintSkipDirectClearsStaleOrchestrator(t *testing.
 }
 
 func TestExecuteTaskStage_BlueprintSkipDirectClearsProcessorWaveState(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	for _, cmd := range [][]string{
 		{"git", "init", dir},
@@ -263,6 +266,7 @@ func TestExecuteTaskStage_BlueprintSkipDirectClearsProcessorWaveState(t *testing
 }
 
 func TestExecuteTaskStage_BlueprintSkipImplementDoesNotDuplicateCoder(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	for _, cmd := range [][]string{
 		{"git", "init", dir},

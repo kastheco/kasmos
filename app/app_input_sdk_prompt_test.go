@@ -49,6 +49,7 @@ func (r *recordingExecutionSession) SetTitleFunc(func(string, time.Time, string)
 func (r *recordingExecutionSession) SetSDKSpeedTier(string)                       {}
 
 func TestHandleKeyPress_SendPrompt_SDKEntersFocusMode(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	inst, err := session.NewInstance(session.InstanceOptions{
 		Title:         "sdk-architect",
@@ -72,6 +73,7 @@ func TestHandleKeyPress_SendPrompt_SDKEntersFocusMode(t *testing.T) {
 }
 
 func TestHandleKeyPress_SendPrompt_TmuxStillEntersFocusMode(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	inst, err := session.NewInstance(session.InstanceOptions{
 		Title:   "tmux-agent",
@@ -96,6 +98,7 @@ func TestHandleKeyPress_SendPrompt_TmuxStillEntersFocusMode(t *testing.T) {
 }
 
 func TestEnterFocusMode_AllowsSDKPlaceholder(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	inst, err := session.NewInstance(session.InstanceOptions{
 		Title:         "sdk-placeholder",
@@ -115,6 +118,7 @@ func TestEnterFocusMode_AllowsSDKPlaceholder(t *testing.T) {
 }
 
 func TestHandleKeyPress_SDKFocusMode_TypesInlineWithoutOverlay(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	inst, err := session.NewInstance(session.InstanceOptions{
 		Title:         "sdk-inline",
@@ -139,6 +143,7 @@ func TestHandleKeyPress_SDKFocusMode_TypesInlineWithoutOverlay(t *testing.T) {
 }
 
 func TestHandleKeyPress_SDKFocusMode_CtrlVPastesClipboardText(t *testing.T) {
+	// serial: overrides readClipboardText and captureClipboardImage seams
 	origRead := readClipboardText
 	readClipboardText = func() (string, error) { return "pasted text", nil }
 	t.Cleanup(func() { readClipboardText = origRead })
@@ -172,6 +177,7 @@ func TestHandleKeyPress_SDKFocusMode_CtrlVPastesClipboardText(t *testing.T) {
 }
 
 func TestHandleKeyPress_SDKFocusMode_CtrlVPrefersClipboardImageWhenAvailable(t *testing.T) {
+	// serial: overrides readClipboardText and captureClipboardImage seams
 	origRead := readClipboardText
 	readClipboardText = func() (string, error) { return "text fallback", nil }
 	t.Cleanup(func() { readClipboardText = origRead })
@@ -206,6 +212,7 @@ func TestHandleKeyPress_SDKFocusMode_CtrlVPrefersClipboardImageWhenAvailable(t *
 }
 
 func TestHandleKeyPress_SDKFocusMode_CtrlShiftVPastesClipboardText(t *testing.T) {
+	// serial: overrides readClipboardText and captureClipboardImage seams
 	origRead := readClipboardText
 	readClipboardText = func() (string, error) { return "pasted text", nil }
 	t.Cleanup(func() { readClipboardText = origRead })
@@ -239,11 +246,13 @@ func TestHandleKeyPress_SDKFocusMode_CtrlShiftVPastesClipboardText(t *testing.T)
 }
 
 func TestPasteContentLooksBinary_DetectsPNGSignature(t *testing.T) {
+	t.Parallel()
 	assert.True(t, pasteContentLooksBinary("\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"))
 	assert.False(t, pasteContentLooksBinary("plain pasted text"))
 }
 
 func TestHandleKeyPress_SDKFocusMode_CtrlShiftVPrefersClipboardImage(t *testing.T) {
+	// serial: overrides readClipboardText and captureClipboardImage seams
 	origRead := readClipboardText
 	readClipboardText = func() (string, error) { return "text fallback", nil }
 	t.Cleanup(func() { readClipboardText = origRead })
@@ -278,6 +287,7 @@ func TestHandleKeyPress_SDKFocusMode_CtrlShiftVPrefersClipboardImage(t *testing.
 }
 
 func TestHandleKeyPress_SDKFocusMode_CtrlVWithRawPNGPrefersClipboardImage(t *testing.T) {
+	// serial: overrides readClipboardText and captureClipboardImage seams
 	origRead := readClipboardText
 	readClipboardText = func() (string, error) { return "\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR", nil }
 	t.Cleanup(func() { readClipboardText = origRead })
@@ -312,6 +322,7 @@ func TestHandleKeyPress_SDKFocusMode_CtrlVWithRawPNGPrefersClipboardImage(t *tes
 }
 
 func TestHandleKeyPress_SDKFocusMode_CtrlCClearsComposer(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	inst, err := session.NewInstance(session.InstanceOptions{
 		Title:         "sdk-inline",
@@ -338,6 +349,7 @@ func TestHandleKeyPress_SDKFocusMode_CtrlCClearsComposer(t *testing.T) {
 }
 
 func TestHandleKeyPress_SDKFocusMode_EscapeSendsStopRequest(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	inst, err := session.NewInstance(session.InstanceOptions{
 		Title:         "sdk-inline",
@@ -365,6 +377,7 @@ func TestHandleKeyPress_SDKFocusMode_EscapeSendsStopRequest(t *testing.T) {
 }
 
 func TestHandleKeyPress_SDKFocusMode_EscapeKeepsPlaceholderFocused(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	inst, err := session.NewInstance(session.InstanceOptions{
 		Title:         "sdk-placeholder",
@@ -388,6 +401,7 @@ func TestHandleKeyPress_SDKFocusMode_EscapeKeepsPlaceholderFocused(t *testing.T)
 }
 
 func TestHandleKeyPress_TmuxCodexFocusMode_ShiftEnterUsesLiteralTmuxInjection(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	inst, err := session.NewInstance(session.InstanceOptions{
 		Title:   "codex-tmux",

@@ -7,6 +7,7 @@ import (
 )
 
 func TestStatusMonitor_DetectsChange(t *testing.T) {
+	t.Parallel()
 	m := NewStatusMonitor()
 	assert.True(t, m.RecordContent("hello"))
 	// Same content is still within the debounce window — reports updated.
@@ -14,6 +15,7 @@ func TestStatusMonitor_DetectsChange(t *testing.T) {
 }
 
 func TestStatusMonitor_DebounceThreshold(t *testing.T) {
+	t.Parallel()
 	m := NewStatusMonitor()
 	m.RecordContent("stable")
 	// First 14 unchanged ticks still report "updated" (debouncing)
@@ -25,6 +27,7 @@ func TestStatusMonitor_DebounceThreshold(t *testing.T) {
 }
 
 func TestStatusMonitor_ResetOnChange(t *testing.T) {
+	t.Parallel()
 	m := NewStatusMonitor()
 	m.RecordContent("a")
 	for i := 0; i < 20; i++ {

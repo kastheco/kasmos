@@ -17,9 +17,26 @@ on:
       - '.github/workflows/build.yml'
 
 jobs:
-  build:
-    name: Build Binary and Test
+  test:
+    name: Test
     runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version-file: 'go.mod'
+        cache: true
+
+    - name: Run tests
+      run: go test ./...
+
+  build:
+    name: Build Binary
+    runs-on: ubuntu-latest
+    needs: test
     strategy:
       matrix:
         goos: [linux, darwin]
@@ -33,9 +50,6 @@ jobs:
       with:
         go-version-file: 'go.mod'
         cache: true
-
-    - name: Run tests
-      run: go test -v ./...
 
     - name: Build
       env:

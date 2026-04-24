@@ -62,6 +62,7 @@ func newStartedInstanceWithMockTmux(t *testing.T) *session.Instance {
 // Regression for: second+ attach via Enter silently failing because pendingAttachInstance
 // was set but never consumed when showHelpScreen skipped the overlay.
 func TestEnterKey_AttachHelpAlreadySeen_ExecsDirectly(t *testing.T) {
+	t.Parallel()
 	spin := spinner.New(spinner.WithSpinner(spinner.Dot))
 
 	// helpTypeInstanceAttach.mask() == 1 << 2 == 4; pre-seed it as "already seen".
@@ -99,6 +100,7 @@ func TestEnterKey_AttachHelpAlreadySeen_ExecsDirectly(t *testing.T) {
 // still attaches even when the instance belongs to a plan. Regression for grouped
 // task menus stealing Enter because instance rows also carry TaskFile metadata.
 func TestEnterKey_PlanAttachedInstance_Attaches(t *testing.T) {
+	t.Parallel()
 	spin := spinner.New(spinner.WithSpinner(spinner.Dot))
 	state := &mockAppState{seen: 1 << 2}
 

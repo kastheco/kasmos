@@ -9,6 +9,8 @@ import (
 )
 
 func TestQuickLaunch_TitleSyncCmdReturnsConversationTitle(t *testing.T) {
+	// serial: mutates app timing globals
+	withFastAppTimings(t)
 	h := newTestHome()
 
 	inst, err := session.NewInstance(session.InstanceOptions{

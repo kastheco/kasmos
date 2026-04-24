@@ -34,6 +34,7 @@ func captureTimeout(t *testing.T) (func() doubleTapTimeoutMsg, func()) {
 // Note: KeyKill is a direct async kill (no confirmation dialog); KeyAbort uses a
 // confirm overlay. Only the presence of a non-nil cmd confirms routing succeeded.
 func TestHandleKeyPressDoubleTap_KK_DispatchesKill(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	h.state = stateDefault
 	inst, err := newTestInstance("agent-1")
@@ -60,6 +61,7 @@ func TestHandleKeyPressDoubleTap_KK_DispatchesKill(t *testing.T) {
 
 // TestHandleKeyPressDoubleTap_SingleK_IsNoOp verifies a lone k press does nothing.
 func TestHandleKeyPressDoubleTap_SingleK_IsNoOp(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	h.state = stateDefault
 	inst, err := newTestInstance("agent-1")
@@ -77,6 +79,7 @@ func TestHandleKeyPressDoubleTap_SingleK_IsNoOp(t *testing.T) {
 
 // TestHandleKeyPressDoubleTap_KK_Abort verifies K+K triggers the abort confirmation.
 func TestHandleKeyPressDoubleTap_KK_Abort(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	h.state = stateDefault
 	inst, err := newTestInstance("agent-1")
@@ -100,6 +103,7 @@ func TestHandleKeyPressDoubleTap_KK_Abort(t *testing.T) {
 // TestHandleKeyPressDoubleTap_UU_HalfPageUp verifies u+u routes through KeyHalfPageUp
 // without panicking (scroll with no content is a safe no-op).
 func TestHandleKeyPressDoubleTap_UU_HalfPageUp(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	h.state = stateDefault
 
@@ -117,6 +121,7 @@ func TestHandleKeyPressDoubleTap_UU_HalfPageUp(t *testing.T) {
 // TestHandleKeyPressDoubleTap_DD_HalfPageDown verifies d+d routes through
 // KeyHalfPageDown without panicking.
 func TestHandleKeyPressDoubleTap_DD_HalfPageDown(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	h.state = stateDefault
 
@@ -135,6 +140,7 @@ func TestHandleKeyPressDoubleTap_DD_HalfPageDown(t *testing.T) {
 // pressing an unrelated key between two k presses resets the conflict-free tracker
 // so the third k does not accidentally trigger kill.
 func TestHandleKeyPressDoubleTap_DifferentKeyBetweenK_NoFalsePositive(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	h.state = stateDefault
 	inst, err := newTestInstance("agent-1")
@@ -166,6 +172,7 @@ func TestHandleKeyPressDoubleTap_DifferentKeyBetweenK_NoFalsePositive(t *testing
 // TestHandleKeyPressDoubleTap_SS_DispatchesSidebarToggle verifies that s+s dispatches
 // KeyToggleSidebar (m.sidebarHidden toggles) and suppresses quick-launch.
 func TestHandleKeyPressDoubleTap_SS_DispatchesSidebarToggle(t *testing.T) {
+	// serial: overrides scheduleDoubleTapTimeout package-level seam
 	_, restore := captureTimeout(t)
 	defer restore()
 
@@ -190,6 +197,7 @@ func TestHandleKeyPressDoubleTap_SS_DispatchesSidebarToggle(t *testing.T) {
 // TestHandleKeyPressDoubleTap_SS_SuppressesQuickLaunch verifies s+s does not create
 // a new instance (quick-launch is suppressed in favour of sidebar toggle).
 func TestHandleKeyPressDoubleTap_SS_SuppressesQuickLaunch(t *testing.T) {
+	// serial: overrides scheduleDoubleTapTimeout package-level seam
 	_, restore := captureTimeout(t)
 	defer restore()
 
@@ -213,6 +221,7 @@ func TestHandleKeyPressDoubleTap_SS_SuppressesQuickLaunch(t *testing.T) {
 // s press followed by the debounce timeout dispatches KeyQuickLaunch (creates an
 // instance) and clears the pending state.
 func TestHandleKeyPressDoubleTap_S_TimeoutDispatchesQuickLaunch(t *testing.T) {
+	// serial: overrides scheduleDoubleTapTimeout package-level seam
 	getTimeout, restore := captureTimeout(t)
 	defer restore()
 
@@ -238,6 +247,7 @@ func TestHandleKeyPressDoubleTap_S_TimeoutDispatchesQuickLaunch(t *testing.T) {
 // handleMenuHighlighting resend path to ensure the re-sent 's' does NOT
 // count as a second tap and accidentally trigger the sidebar toggle.
 func TestHandleKeyPressDoubleTap_S_ResendDoesNotFalseTrigger(t *testing.T) {
+	// serial: overrides scheduleDoubleTapTimeout package-level seam
 	_, restore := captureTimeout(t)
 	defer restore()
 
@@ -264,6 +274,7 @@ func TestHandleKeyPressDoubleTap_S_ResendDoesNotFalseTrigger(t *testing.T) {
 // stateDefault dispatches the same KeyExitFocus handler path as ctrl+space.
 // With no running instance the handler is a no-op, but the route is verified.
 func TestHandleKeyPressDoubleTap_SpaceSpace_DispatchesExitFocus(t *testing.T) {
+	// serial: overrides scheduleDoubleTapTimeout package-level seam
 	_, restore := captureTimeout(t)
 	defer restore()
 
@@ -289,6 +300,7 @@ func TestHandleKeyPressDoubleTap_SpaceSpace_DispatchesExitFocus(t *testing.T) {
 // plain space in stateFocusAgent is forwarded to the PTY path and never touches
 // the double-tap pending state (the stateFocusAgent block returns early).
 func TestHandleKeyPressDoubleTap_SpaceSpace_FocusAgentStateUnaffected(t *testing.T) {
+	// serial: overrides scheduleDoubleTapTimeout package-level seam
 	_, restore := captureTimeout(t)
 	defer restore()
 
@@ -313,6 +325,7 @@ func TestHandleKeyPressDoubleTap_SpaceSpace_FocusAgentStateUnaffected(t *testing
 // TestHandleKeyPressDoubleTap_StaleTimeout_WrongSeqIgnored verifies a timeout whose
 // sequence number does not match the current pending seq is silently dropped.
 func TestHandleKeyPressDoubleTap_StaleTimeout_WrongSeqIgnored(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	h.state = stateDefault
 	h.pendingDoubleTapKey = "s"
@@ -329,6 +342,7 @@ func TestHandleKeyPressDoubleTap_StaleTimeout_WrongSeqIgnored(t *testing.T) {
 // TestHandleKeyPressDoubleTap_StaleTimeout_WrongKeyIgnored verifies a timeout for a
 // different key than the one currently pending is silently dropped.
 func TestHandleKeyPressDoubleTap_StaleTimeout_WrongKeyIgnored(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	h.state = stateDefault
 	h.pendingDoubleTapKey = "s"
@@ -345,6 +359,7 @@ func TestHandleKeyPressDoubleTap_StaleTimeout_WrongKeyIgnored(t *testing.T) {
 // TestHandleKeyPressDoubleTap_StaleTimeout_EmptyPendingIgnored verifies a timeout
 // arriving with no pending state is silently dropped.
 func TestHandleKeyPressDoubleTap_StaleTimeout_EmptyPendingIgnored(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	h.state = stateDefault
 	// No pending state.
@@ -360,6 +375,7 @@ func TestHandleKeyPressDoubleTap_StaleTimeout_EmptyPendingIgnored(t *testing.T) 
 // that a timeout arriving while the model is not in stateDefault clears the
 // pending state so it doesn't linger and fire unexpectedly on the next key press.
 func TestHandleKeyPressDoubleTap_StaleTimeout_NonDefaultStateClearsPending(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	h.state = stateConfirm // not stateDefault
 	h.pendingDoubleTapKey = "s"
@@ -379,6 +395,7 @@ func TestHandleKeyPressDoubleTap_StaleTimeout_NonDefaultStateClearsPending(t *te
 // TestHandleKeyPressTripleTap_KKK_KillsAndRemoves verifies that k+k+k dispatches
 // KeyKillAndRemove, removing the selected instance from the nav and allInstances.
 func TestHandleKeyPressTripleTap_KKK_KillsAndRemoves(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	h.state = stateDefault
 	inst, err := newTestInstance("agent-kkk")
@@ -416,6 +433,7 @@ func TestHandleKeyPressTripleTap_KKK_KillsAndRemoves(t *testing.T) {
 // unrelated key resets the tracker so the sequence k,k,a,k does not trigger
 // KeyKillAndRemove.
 func TestHandleKeyPressTripleTap_KKaK_DoesNotEscalate(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	h.state = stateDefault
 	inst, err := newTestInstance("agent-kkak")
@@ -454,6 +472,7 @@ func TestHandleKeyPressTripleTap_KKaK_DoesNotEscalate(t *testing.T) {
 // handleKeyPress, the tracker's firedKey/firedAt from k+k survives an unrelated
 // arrow key and the third k would escalate to kill-and-remove.
 func TestHandleKeyPressTripleTap_KKupK_DoesNotEscalate(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	h.state = stateDefault
 	inst, err := newTestInstance("agent-kkupk")
@@ -497,6 +516,7 @@ func TestHandleKeyPressTripleTap_KKupK_DoesNotEscalate(t *testing.T) {
 // of the pending `s` may still call quickLaunchAgent, but that must not
 // dismiss the original instance.
 func TestHandleKeyPressTripleTap_KKsK_DoesNotEscalate(t *testing.T) {
+	// serial: overrides scheduleDoubleTapTimeout package-level seam
 	_, restore := captureTimeout(t)
 	defer restore()
 
@@ -549,6 +569,7 @@ func TestHandleKeyPressTripleTap_KKsK_DoesNotEscalate(t *testing.T) {
 // interruptor (space) clears the conflict-free triple-tap window so the sequence
 // k,k,space,k does not trigger KeyKillAndRemove.
 func TestHandleKeyPressTripleTap_KKspaceK_DoesNotEscalate(t *testing.T) {
+	// serial: overrides scheduleDoubleTapTimeout package-level seam
 	_, restore := captureTimeout(t)
 	defer restore()
 
@@ -587,6 +608,7 @@ func TestHandleKeyPressTripleTap_KKspaceK_DoesNotEscalate(t *testing.T) {
 // TestHandleKeyPressTripleTap_NoSelectedInstance_NoOp verifies that three k taps
 // with no selected instance neither panic nor mutate state.
 func TestHandleKeyPressTripleTap_NoSelectedInstance_NoOp(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	h.state = stateDefault
 	// No instances added — nav is empty.
@@ -605,6 +627,7 @@ func TestHandleKeyPressTripleTap_NoSelectedInstance_NoOp(t *testing.T) {
 // the uppercase K path goes through abort-confirmation (stateConfirm), not
 // KeyKillAndRemove, even when a third K is pressed after K+K.
 func TestHandleKeyPressTripleTap_CapitalK_DoesNotTriggerKillAndRemove(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	h.state = stateDefault
 	inst, err := newTestInstance("agent-KKK")
@@ -643,6 +666,7 @@ func TestHandleKeyPressTripleTap_CapitalK_DoesNotTriggerKillAndRemove(t *testing
 // actually boots the session. Dropping that cmd leaves an orphan Loading
 // instance in nav that never transitions out of Loading.
 func TestHandleKeyPressDoubleTap_SK_FlushPreservesQuickLaunchCmd(t *testing.T) {
+	// serial: overrides scheduleDoubleTapTimeout package-level seam
 	_, restore := captureTimeout(t)
 	defer restore()
 
@@ -679,6 +703,7 @@ func TestHandleKeyPressDoubleTap_SK_FlushPreservesQuickLaunchCmd(t *testing.T) {
 // selection is a no-op, so the flushCmd is nil here — this test's job is to
 // prove the flush path itself does not bleed state.
 func TestHandleKeyPressDoubleTap_SpaceK_NoStateBleed(t *testing.T) {
+	// serial: overrides scheduleDoubleTapTimeout package-level seam
 	_, restore := captureTimeout(t)
 	defer restore()
 
@@ -706,6 +731,7 @@ func TestHandleKeyPressDoubleTap_SpaceK_NoStateBleed(t *testing.T) {
 // -- Helper: canonicalDoubleTapKey ---------------------------------------------------
 
 func TestCanonicalDoubleTapKey(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name string
 		msg  tea.KeyPressMsg

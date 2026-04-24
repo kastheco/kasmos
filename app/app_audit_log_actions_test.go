@@ -12,6 +12,7 @@ import (
 // TestAuditLineActions_WaveFailed verifies that a wave_failed event with a plan
 // file produces "send to fixer agent" and "retry wave" actions.
 func TestAuditLineActions_WaveFailed(t *testing.T) {
+	t.Parallel()
 	e := ui.AuditEventDisplay{
 		Kind:     "wave_failed",
 		Message:  "wave 2 failed: task 3 exited non-zero",
@@ -29,6 +30,7 @@ func TestAuditLineActions_WaveFailed(t *testing.T) {
 
 // TestAuditLineActions_WaveFailedNoTaskFile ensures no actions when plan is unknown.
 func TestAuditLineActions_WaveFailedNoTaskFile(t *testing.T) {
+	t.Parallel()
 	e := ui.AuditEventDisplay{
 		Kind:    "wave_failed",
 		Message: "wave 1 failed",
@@ -41,6 +43,7 @@ func TestAuditLineActions_WaveFailedNoTaskFile(t *testing.T) {
 // TestAuditLineActions_MergeConflict verifies that a message containing
 // "merge conflict" adds a fixer action regardless of event kind.
 func TestAuditLineActions_MergeConflict(t *testing.T) {
+	t.Parallel()
 	e := ui.AuditEventDisplay{
 		Kind:     "error",
 		Message:  "git: merge conflict in main.go",
@@ -54,6 +57,7 @@ func TestAuditLineActions_MergeConflict(t *testing.T) {
 // TestAuditLineActions_AgentKilled verifies that a killed agent event with a
 // title produces a restart action.
 func TestAuditLineActions_AgentKilled(t *testing.T) {
+	t.Parallel()
 	e := ui.AuditEventDisplay{
 		Kind:          "agent_killed",
 		Message:       "agent stopped",
@@ -66,6 +70,7 @@ func TestAuditLineActions_AgentKilled(t *testing.T) {
 
 // TestAuditLineActions_AgentKilledNoTitle ensures no actions when title is unknown.
 func TestAuditLineActions_AgentKilledNoTitle(t *testing.T) {
+	t.Parallel()
 	e := ui.AuditEventDisplay{
 		Kind:    "agent_killed",
 		Message: "agent stopped",
@@ -76,6 +81,7 @@ func TestAuditLineActions_AgentKilledNoTitle(t *testing.T) {
 
 // TestAuditLineActions_ErrorWithPlan verifies fixer action on generic error.
 func TestAuditLineActions_ErrorWithPlan(t *testing.T) {
+	t.Parallel()
 	e := ui.AuditEventDisplay{
 		Kind:     "error",
 		Message:  "unexpected exit",
@@ -89,6 +95,7 @@ func TestAuditLineActions_ErrorWithPlan(t *testing.T) {
 // TestAuditLineActions_InertEvent verifies that an event with no applicable
 // actions (e.g. plan_created) returns an empty slice.
 func TestAuditLineActions_InertEvent(t *testing.T) {
+	t.Parallel()
 	e := ui.AuditEventDisplay{
 		Kind:     "plan_created",
 		Message:  "new plan created",
@@ -100,6 +107,7 @@ func TestAuditLineActions_InertEvent(t *testing.T) {
 
 // TestAuditPane_CursorCycling verifies that cursor navigates through events.
 func TestAuditPane_CursorCycling(t *testing.T) {
+	t.Parallel()
 	p := ui.NewAuditPane()
 	events := []ui.AuditEventDisplay{
 		{Kind: "wave_failed", Message: "wave 1 failed", TaskFile: "a.md", Time: "10:00"},
@@ -142,6 +150,7 @@ func TestAuditPane_CursorCycling(t *testing.T) {
 
 // TestAuditPane_CursorDeactivate verifies cursor is cleared on deactivation.
 func TestAuditPane_CursorDeactivate(t *testing.T) {
+	t.Parallel()
 	p := ui.NewAuditPane()
 	p.SetEvents([]ui.AuditEventDisplay{
 		{Kind: "wave_failed", Message: "wave 1 failed", TaskFile: "a.md", Time: "10:00"},
@@ -159,6 +168,7 @@ func TestAuditPane_CursorDeactivate(t *testing.T) {
 
 // TestEnterAuditCursorMode_SetsState verifies that pressing A activates the audit cursor.
 func TestEnterAuditCursorMode_SetsState(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	h.auditPane.SetEvents([]ui.AuditEventDisplay{
 		{Kind: "wave_failed", Message: "wave 1 failed", TaskFile: "a.md", Time: "10:00"},
@@ -175,6 +185,7 @@ func TestEnterAuditCursorMode_SetsState(t *testing.T) {
 
 // TestHandleAuditCursorKey_EscExits verifies Esc exits audit cursor mode.
 func TestHandleAuditCursorKey_EscExits(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	h.auditPane.SetEvents([]ui.AuditEventDisplay{
 		{Kind: "wave_failed", Message: "wave 1 failed", TaskFile: "a.md", Time: "10:00"},
@@ -191,6 +202,7 @@ func TestHandleAuditCursorKey_EscExits(t *testing.T) {
 // TestHandleAuditCursorKey_EnterOpensMenu verifies Enter on an actionable event
 // transitions to stateContextMenu.
 func TestHandleAuditCursorKey_EnterOpensMenu(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	h.auditPane.SetEvents([]ui.AuditEventDisplay{
 		{Kind: "wave_failed", Message: "wave 1 failed", TaskFile: "a.md", Time: "10:00"},
@@ -209,6 +221,7 @@ func TestHandleAuditCursorKey_EnterOpensMenu(t *testing.T) {
 
 // TestHandleAuditCursorKey_EnterNoActions shows toast when no actions available.
 func TestHandleAuditCursorKey_EnterNoActions(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	h.auditPane.SetEvents([]ui.AuditEventDisplay{
 		{Kind: "plan_created", Message: "new plan", TaskFile: "a.md", Time: "10:00"},

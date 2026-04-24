@@ -11,6 +11,7 @@ import (
 )
 
 func TestPreviewTick_BridgesEmbeddedClipboardRequest(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	h.previewTerminal = session.NewDummyTerminal()
 	h.previewTerminal.EnqueueClipboardRequest(ansi.PrimaryClipboard)
@@ -24,6 +25,7 @@ func TestPreviewTick_BridgesEmbeddedClipboardRequest(t *testing.T) {
 }
 
 func TestClipboardMsg_ForwardsResponseToEmbeddedTerminal(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	term := session.NewDummyTerminal()
 	h.previewTerminal = term
@@ -43,6 +45,7 @@ func TestClipboardMsg_ForwardsResponseToEmbeddedTerminal(t *testing.T) {
 }
 
 func TestPasteMsg_ForwardsBracketedPasteToEmbeddedTerminal(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	term := session.NewDummyTerminal()
 	h.previewTerminal = term
@@ -60,6 +63,7 @@ func TestPasteMsg_ForwardsBracketedPasteToEmbeddedTerminal(t *testing.T) {
 }
 
 func TestPasteMsg_EmptyContentForwardsCtrlVToEmbeddedTerminal(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	term := session.NewDummyTerminal()
 	h.previewTerminal = term
@@ -77,6 +81,7 @@ func TestPasteMsg_EmptyContentForwardsCtrlVToEmbeddedTerminal(t *testing.T) {
 }
 
 func TestPasteMsg_RawPNGContentForwardsCtrlVToEmbeddedTerminal(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	term := session.NewDummyTerminal()
 	h.previewTerminal = term
@@ -95,6 +100,7 @@ func TestPasteMsg_RawPNGContentForwardsCtrlVToEmbeddedTerminal(t *testing.T) {
 }
 
 func TestPasteMsg_RawPNGContentForCodexTmuxUsesBracketedPaste(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 	term := session.NewDummyTerminal()
 	h.previewTerminal = term
@@ -124,6 +130,7 @@ func TestPasteMsg_RawPNGContentForCodexTmuxUsesBracketedPaste(t *testing.T) {
 }
 
 func TestPasteMsg_EmptyContentAttachesClipboardImageForSDKFocusMode(t *testing.T) {
+	// serial: overrides captureClipboardImage package-level seam
 	origCapture := captureClipboardImage
 	captureClipboardImage = func(_ context.Context) (string, error) {
 		return "/tmp/clipboard.png", nil
@@ -153,6 +160,7 @@ func TestPasteMsg_EmptyContentAttachesClipboardImageForSDKFocusMode(t *testing.T
 }
 
 func TestPasteMsg_RawPNGContentAttachesClipboardImageForSDKFocusMode(t *testing.T) {
+	// serial: overrides captureClipboardImage package-level seam
 	origCapture := captureClipboardImage
 	captureClipboardImage = func(_ context.Context) (string, error) {
 		return "/tmp/clipboard.png", nil
@@ -184,6 +192,7 @@ func TestPasteMsg_RawPNGContentAttachesClipboardImageForSDKFocusMode(t *testing.
 }
 
 func TestHandleKeyPress_TmuxFocusMode_CtrlVPastesClipboardText(t *testing.T) {
+	// serial: overrides readClipboardText package-level seam
 	origRead := readClipboardText
 	readClipboardText = func() (string, error) { return "hello", nil }
 	t.Cleanup(func() { readClipboardText = origRead })
@@ -205,6 +214,7 @@ func TestHandleKeyPress_TmuxFocusMode_CtrlVPastesClipboardText(t *testing.T) {
 }
 
 func TestHandleKeyPress_TmuxFocusMode_CtrlShiftVPastesClipboardText(t *testing.T) {
+	// serial: overrides readClipboardText package-level seam
 	origRead := readClipboardText
 	readClipboardText = func() (string, error) { return "hello", nil }
 	t.Cleanup(func() { readClipboardText = origRead })
@@ -226,6 +236,7 @@ func TestHandleKeyPress_TmuxFocusMode_CtrlShiftVPastesClipboardText(t *testing.T
 }
 
 func TestHandleKeyPress_TmuxFocusMode_CtrlVFallsBackToRawCtrlVWhenClipboardTextUnavailable(t *testing.T) {
+	// serial: overrides readClipboardText package-level seam
 	origRead := readClipboardText
 	readClipboardText = func() (string, error) { return "", nil }
 	t.Cleanup(func() { readClipboardText = origRead })
@@ -247,6 +258,7 @@ func TestHandleKeyPress_TmuxFocusMode_CtrlVFallsBackToRawCtrlVWhenClipboardTextU
 }
 
 func TestHandleKeyPress_TmuxFocusMode_CtrlVWithRawPNGClipboardFallsBackToRawCtrlV(t *testing.T) {
+	// serial: overrides readClipboardText package-level seam
 	origRead := readClipboardText
 	readClipboardText = func() (string, error) { return "\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR", nil }
 	t.Cleanup(func() { readClipboardText = origRead })
@@ -268,6 +280,7 @@ func TestHandleKeyPress_TmuxFocusMode_CtrlVWithRawPNGClipboardFallsBackToRawCtrl
 }
 
 func TestHandleKeyPress_TmuxCodexFocusMode_CtrlVWithRawPNGClipboardUsesBracketedPaste(t *testing.T) {
+	// serial: overrides readClipboardText package-level seam
 	origRead := readClipboardText
 	rawPNG := "\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"
 	readClipboardText = func() (string, error) { return rawPNG, nil }

@@ -14,6 +14,7 @@ import (
 // TestRightOnInstance_OpensContextMenu verifies that pressing right on an
 // instance row opens the instance context menu (regardless of active tab).
 func TestRightOnInstance_OpensContextMenu(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 
 	// Add a solo instance so the selected row is an instance row.
@@ -33,6 +34,7 @@ func TestRightOnInstance_OpensContextMenu(t *testing.T) {
 // TestRightOnInstance_PreviewTab_OpensContextMenu verifies that pressing right
 // on an instance while on the preview tab also opens the context menu.
 func TestRightOnInstance_PreviewTab_OpensContextMenu(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 
 	inst := &session.Instance{Title: "test-agent"}
@@ -48,6 +50,7 @@ func TestRightOnInstance_PreviewTab_OpensContextMenu(t *testing.T) {
 }
 
 func TestSpaceOnInstance_OpensContextMenu(t *testing.T) {
+	// serial: overrides scheduleDoubleTapTimeout package-level seam
 	// Space is now debounced: the first tap schedules a timeout and KeySpace fires
 	// only when the timeout message arrives (no second space within the window).
 	var capturedTimeout doubleTapTimeoutMsg
@@ -82,6 +85,7 @@ func TestSpaceOnInstance_OpensContextMenu(t *testing.T) {
 // on a non-instance row (e.g. a topic header with no plan) does not open the
 // context menu or switch tabs.
 func TestRightOnNonInstanceRow_DoesNotOpenContextMenu(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 
 	// Set up with no instance selected and no plan selected (empty nav).
@@ -99,6 +103,7 @@ func TestRightOnNonInstanceRow_DoesNotOpenContextMenu(t *testing.T) {
 // TestRightOnPlanRow_ViewsPlan verifies that pressing right on a plan header
 // row triggers plan view behavior rather than context menu or expand/collapse.
 func TestRightOnPlanRow_ViewsPlan(t *testing.T) {
+	t.Parallel()
 	h := newTestHome()
 
 	// Set up a plan row so GetSelectedPlanFile() returns a non-empty string.

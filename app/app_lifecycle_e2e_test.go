@@ -94,6 +94,7 @@ func lifecycleEntryForTest(t *testing.T, store taskstore.Store, plansDir, planFi
 }
 
 func TestLifecycleE2E_DaemonManagedHappyPath(t *testing.T) {
+	// serial: modifies repoManagedByDaemon via withDaemonManagedRepo
 	const planFile = "daemon-managed-happy-path"
 
 	dir := t.TempDir()
@@ -163,6 +164,7 @@ func TestLifecycleE2E_DaemonManagedHappyPath(t *testing.T) {
 }
 
 func TestLifecycleE2E_DaemonManagedReviewFixLoop(t *testing.T) {
+	// serial: modifies repoManagedByDaemon via withDaemonManagedRepo
 	const planFile = "daemon-managed-review-fix-loop"
 	const feedback = "please persist the latest review feedback before respawning the fixer"
 
