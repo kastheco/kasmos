@@ -81,6 +81,8 @@ kas daemon status
 
 Connects to the daemon control socket and calls `GET /v1/status`. Prints `daemon not running` if the socket is unreachable.
 
+The daemon also serves instance metadata to the tui and live-preview bridge on `GET /v1/repos/{project}/instances`. Daemon-spawned rows include `execution_mode`, `sdk_speed_tier`, and `skip_permissions` so clients can resume or display sdk/tmux sessions using the same resolved profile defaults the daemon used when spawning them. Older daemons omit `skip_permissions`; newer clients treat that omission as the legacy daemon default (`true`, bypass permissions).
+
 ---
 
 ### add

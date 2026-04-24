@@ -18,6 +18,7 @@ An **agent profile** (`config.AgentProfile` in `config/profile.go`) defines how 
 | `effort` | string | — | effort level (e.g. `low`, `medium`, `high`), if the agent supports it |
 | `tier` | string | `""` | Codex SDK only: session speed tier (accepts `"fast"`, `"flex"`, or `"default"`). Claude SDK and tmux sessions ignore this field. |
 | `execution_mode` | string | `"tmux"` | how the agent process is launched: `"tmux"` or `"sdk"` |
+| `permission_default` | string | `""` | tri-state permission default: `"prompt"` forces an interactive permission overlay, `"bypass"` launches with the harness bypass flag, `""` / `"inherit"` preserves the spawn-source default (daemon: bypass; local TUI: prompt). |
 
 ### `execution_mode`
 
@@ -54,6 +55,55 @@ Sets the Codex SDK speed tier for any session spawned into this role by orchestr
 
 - The info pane shows a `speed tier: fast` row (`ui/info_pane.go`).
 - The spawn audit log records a `speed_tier` entry in `Event.Detail` (`config/auditlog/logger.go`).
+
+### `permission_default`
+
+Sets the profile-level default for whether kasmos should prompt for permission approval or launch the harness with its bypass behavior.
+
+**Accepted values**
+
+| value | result after normalization |
+|-------|---------------------------|
+| `""` (unset) | `""` — inherit the spawn-source default |
+| `"inherit"` | `""` — same as omitted |
+| `"prompt"` | `"prompt"` |
+| `"bypass"` | `"bypass"` |
+| anything else (e.g. `"auto"`) | `"prompt"` — unrecognized values ask the operator |
+
+**Normalization** is handled by `config.NormalizePermissionDefault` in `config/profile.go`. The match is case-insensitive, leading/trailing whitespace is trimmed, `"inherit"` is mapped to `""`, and any unrecognized value collapses to `"prompt"`.
+
+**Spawn-source defaults** — when the normalized value is `""`, the launcher keeps the source's existing behavior:
+
+- Daemon and unattended orchestration spawns default to bypass.
+- Local interactive TUI spawns default to prompt.
+
+**Per-session override** — raw `flags` still reach the harness. For example, `flags = ["--permission-mode", "bypassPermissions"]` still makes Claude launch in bypass mode even when `permission_default = "prompt"`. `permission_default` controls the resolved kasmos `SkipPermissions` value; explicit harness flags remain lower-level command arguments.
+
+**Unattended coder**
+
+```toml
+[agents.coder]
+enabled            = true
+program            = "claude"
+model              = "claude-sonnet-4-5"
+execution_mode     = "sdk"
+permission_default = "bypass"
+```
+
+This makes orchestration-spawned coder sessions use bypass permissions for unattended automation.
+
+**Operator-approved reviewer**
+
+```toml
+[agents.reviewer]
+enabled            = true
+program            = "claude"
+model              = "claude-opus-4-5"
+execution_mode     = "sdk"
+permission_default = "prompt"
+```
+
+This makes reviewer sessions wait for operator approval of tool calls even when the daemon starts them.
 
 ### `BuildCommand()`
 

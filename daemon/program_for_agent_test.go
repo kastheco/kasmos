@@ -334,3 +334,38 @@ func TestSDKSpeedTierForAgent(t *testing.T) {
 	assert.Equal(t, "flex", sdkSpeedTierForAgent(repoDir, session.AgentTypeElaborator))
 	assert.Empty(t, sdkSpeedTierForAgent(repoDir, session.AgentTypeReviewer))
 }
+
+func TestSkipPermissionsForAgent(t *testing.T) {
+	repoDir := t.TempDir()
+	kasmosDir := filepath.Join(repoDir, ".kasmos")
+	require.NoError(t, os.MkdirAll(kasmosDir, 0o755))
+
+	configContent := `
+[phases]
+  implementing = "prompt_coder"
+  quality_review = "bypass_reviewer"
+  fixer = "inherit_fixer"
+
+[agents]
+  [agents.prompt_coder]
+    enabled = true
+    program = "codex"
+    permission_default = "prompt"
+  [agents.bypass_reviewer]
+    enabled = true
+    program = "codex"
+    permission_default = "bypass"
+  [agents.inherit_fixer]
+    enabled = true
+    program = "codex"
+`
+	require.NoError(t, os.WriteFile(
+		filepath.Join(kasmosDir, "config.toml"),
+		[]byte(configContent),
+		0o644,
+	))
+
+	assert.False(t, skipPermissionsForAgent(repoDir, session.AgentTypeCoder))
+	assert.True(t, skipPermissionsForAgent(repoDir, session.AgentTypeReviewer))
+	assert.True(t, skipPermissionsForAgent(repoDir, session.AgentTypeFixer))
+}

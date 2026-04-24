@@ -1,8 +1,11 @@
 package wizard
 
 import (
+	"bytes"
+	"strings"
 	"testing"
 
+	"github.com/BurntSushi/toml"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -12,7 +15,7 @@ func TestStateToTOMLConfig(t *testing.T) {
 	state := &State{
 		Agents: []AgentState{
 			{Role: "coder", Harness: "opencode", Model: "anthropic/claude-sonnet-4-6",
-				Temperature: temp, Effort: "high", Enabled: true},
+				Temperature: temp, Effort: "high", Enabled: true, PermissionDefault: "bypass"},
 			{Role: "reviewer", Harness: "claude", Model: "claude-opus-4-6",
 				Temperature: "", Effort: "high", Enabled: true},
 			{Role: "planner", Harness: "codex", Model: "gpt-5-codex",
@@ -42,6 +45,7 @@ func TestStateToTOMLConfig(t *testing.T) {
 	assert.NotNil(t, coder.Temperature)
 	assert.InDelta(t, 0.7, *coder.Temperature, 0.001)
 	assert.True(t, coder.Enabled)
+	assert.Equal(t, "bypass", coder.PermissionDefault)
 
 	// Verify disabled agent
 	planner := tc.Agents["planner"]
@@ -56,6 +60,12 @@ func TestStateToTOMLConfig(t *testing.T) {
 	// Verify nil temperature when empty
 	reviewer := tc.Agents["reviewer"]
 	assert.Nil(t, reviewer.Temperature)
+	assert.Empty(t, reviewer.PermissionDefault)
+
+	var buf bytes.Buffer
+	require.NoError(t, toml.NewEncoder(&buf).Encode(tc))
+	assert.Contains(t, buf.String(), `permission_default = "bypass"`)
+	assert.Equal(t, 1, strings.Count(buf.String(), "permission_default"))
 }
 
 func TestStateToTOMLConfig_ReadinessReviewOptOut(t *testing.T) {

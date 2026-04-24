@@ -157,14 +157,15 @@ func (d *Daemon) respawnWaveTaskCandidate(ctx context.Context, e RepoEntry, task
 	}
 
 	return spawnWaveTask(ctx, loop.SpawnOpts{
-		PlanFile:      task.Filename,
-		RepoPath:      e.Path,
-		Project:       e.Project,
-		Branch:        task.Branch,
-		Program:       programForAgent(e.Path, session.AgentTypeCoder),
-		Wave:          candidate.WaveNumber,
-		ExecutionMode: executionModeForAgent(e.Path, session.AgentTypeCoder),
-		SDKSpeedTier:  sdkSpeedTierForAgent(e.Path, session.AgentTypeCoder),
+		PlanFile:        task.Filename,
+		RepoPath:        e.Path,
+		Project:         e.Project,
+		Branch:          task.Branch,
+		Program:         programForAgent(e.Path, session.AgentTypeCoder),
+		Wave:            candidate.WaveNumber,
+		ExecutionMode:   executionModeForAgent(e.Path, session.AgentTypeCoder),
+		SDKSpeedTier:    sdkSpeedTierForAgent(e.Path, session.AgentTypeCoder),
+		SkipPermissions: skipPermissionsForAgent(e.Path, session.AgentTypeCoder),
 	}, waveTask, prompt, waveTaskIndex, peerCount)
 }
 

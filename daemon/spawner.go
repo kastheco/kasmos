@@ -57,6 +57,9 @@ type SpawnSoloOpts struct {
 	Branch       string
 	WorkPath     string
 	SDKSpeedTier string
+	// SkipPermissions is resolved by the caller. Daemon.SpawnSolo handles
+	// nullable SpawnSoloRequest.SkipPermissions before creating these opts.
+	SkipPermissions bool
 }
 
 // TmuxSpawner implements loop.AgentSpawner using tmux-backed sessions managed
@@ -675,7 +678,7 @@ func (s *TmuxSpawner) spawnOnMainBranch(_ context.Context, opts loop.SpawnOpts, 
 		SDKSpeedTier:    opts.SDKSpeedTier,
 		AgentType:       agentType,
 		TaskFile:        opts.PlanFile,
-		SkipPermissions: true,
+		SkipPermissions: opts.SkipPermissions,
 	})
 	if err != nil {
 		s.releaseReservation(key)
@@ -837,7 +840,7 @@ func (s *TmuxSpawner) SpawnWaveTask(_ context.Context, opts loop.SpawnOpts, task
 		PeerCount:       peerCount,
 		WaveTaskIndex:   waveTaskIndex,
 		WaveTaskCount:   peerCount,
-		SkipPermissions: true,
+		SkipPermissions: opts.SkipPermissions,
 	})
 	if err != nil {
 		s.releaseReservation(key)
@@ -912,7 +915,7 @@ func (s *TmuxSpawner) spawnInSharedWorktreeReserved(_ context.Context, opts loop
 		AgentType:       agentType,
 		TaskFile:        opts.PlanFile,
 		ReviewCycle:     opts.ReviewCycle,
-		SkipPermissions: true,
+		SkipPermissions: opts.SkipPermissions,
 	})
 	if err != nil {
 		s.releaseReservation(key)
@@ -988,7 +991,7 @@ func (s *TmuxSpawner) SpawnSolo(ctx context.Context, opts SpawnSoloOpts) error {
 		TaskFile:        opts.TaskFile,
 		AgentType:       agentType,
 		SDKSpeedTier:    opts.SDKSpeedTier,
-		SkipPermissions: true,
+		SkipPermissions: opts.SkipPermissions,
 	})
 	if err != nil {
 		s.releaseReservation(key)

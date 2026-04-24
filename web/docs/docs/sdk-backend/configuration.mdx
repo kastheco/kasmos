@@ -97,6 +97,22 @@ execution_mode  = "tmux"
 
 this configuration runs the coder agent via the claude app-server protocol while keeping the reviewer in tmux for interactive attach capability.
 
+## permission defaults
+
+`permission_default` controls the resolved `SkipPermissions` bool passed to the session runtime before the SDK transport starts:
+
+```toml
+[agents.coder]
+enabled            = true
+program            = "claude"
+execution_mode     = "sdk"
+permission_default = "bypass"
+```
+
+Accepted values are `"inherit"` or omitted, `"prompt"`, and `"bypass"`; see [agent profiles: permission_default](../configuration/agent-profiles.mdx#permission_default) for the normalization table and spawn-source defaults. Claude SDK and Codex SDK both receive the same final `SkipPermissions` bool. The SDK backends do not expose a finer-grained permission policy today.
+
+Raw harness flags are still appended to the command where applicable, so `flags = ["--permission-mode", "bypassPermissions"]` can still force Claude's bypass mode even if `permission_default = "prompt"`.
+
 ## speed tier: profile default + per-spawn override
 
 `execution_mode` accepts exactly two stable values: `"tmux"` and `"sdk"` (plus the legacy alias `"headless"`). there is no `"sdk-fast"` value for `execution_mode` — the speed tier is a separate concern from the execution mode.

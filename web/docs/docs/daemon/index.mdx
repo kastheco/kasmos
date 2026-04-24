@@ -19,6 +19,8 @@ for agents, the primary way to emit signals is mcp `signal_create`, which writes
 
 the daemon exposes a unix domain socket control api so `kas daemon status`, `add`, and `remove` can reach it without restart.
 
+when the daemon spawns an agent, it resolves that role's `[agents.<role>].permission_default` from the repo-local `.kasmos/config.toml` before building `loop.SpawnOpts`. unset or `"inherit"` keeps the daemon's historical unattended default (`SkipPermissions=true`); `"prompt"` forces permission prompts, and `"bypass"` forces the harness bypass behavior. the resolved value is also surfaced through daemon instance status so tui and live-preview clients do not re-derive it.
+
 ## when do you need the daemon?
 
 **interactive tui usage** — you don't need the daemon. the tui drives agent spawn/kill directly.

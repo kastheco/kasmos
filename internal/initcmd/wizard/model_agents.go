@@ -55,6 +55,7 @@ func initAgentsFromExisting(harnesses []string, existing *config.TOMLConfigResul
 				as.Model = profile.Model
 				as.Effort = profile.Effort
 				as.Enabled = profile.Enabled
+				as.PermissionDefault = profile.PermissionDefault
 				as.Temperature = ""
 				if profile.Temperature != nil {
 					as.Temperature = fmt.Sprintf("%g", *profile.Temperature)

@@ -32,6 +32,7 @@ func TestDaemon_RecoverSessions_RespawnsMissingSDKArchitect(t *testing.T) {
     enabled = true
     program = "codex"
     execution_mode = "sdk"
+    permission_default = "prompt"
 `)
 
 	project := filepath.Base(repoDir)
@@ -85,6 +86,7 @@ func TestDaemon_RecoverSessions_RespawnsMissingSDKArchitect(t *testing.T) {
 	assert.Equal(t, "feature", spawned.PlanFile)
 	assert.Equal(t, "codex", spawned.Program)
 	assert.Equal(t, config.ExecutionModeSDK, spawned.ExecutionMode)
+	assert.False(t, spawned.SkipPermissions)
 }
 
 func TestDaemon_RecoverSessions_RespawnsMissingSDKWaveTasks(t *testing.T) {
@@ -100,6 +102,7 @@ func TestDaemon_RecoverSessions_RespawnsMissingSDKWaveTasks(t *testing.T) {
     enabled = true
     program = "codex"
     execution_mode = "sdk"
+    permission_default = "prompt"
 `)
 
 	project := filepath.Base(repoDir)
@@ -161,12 +164,14 @@ func TestDaemon_RecoverSessions_RespawnsMissingSDKWaveTasks(t *testing.T) {
 	assert.Equal(t, 2, spawned[0].task.Number)
 	assert.Equal(t, config.ExecutionModeSDK, spawned[0].opts.ExecutionMode)
 	assert.Equal(t, "codex", spawned[0].opts.Program)
+	assert.False(t, spawned[0].opts.SkipPermissions)
 	assert.Equal(t, 2, spawned[0].opts.Wave)
 	assert.Equal(t, 1, spawned[0].waveTaskIndex)
 	assert.Equal(t, 2, spawned[0].peerCount)
 	assert.Contains(t, spawned[0].prompt, "Implement Task 2: Second")
 
 	assert.Equal(t, 3, spawned[1].task.Number)
+	assert.False(t, spawned[1].opts.SkipPermissions)
 	assert.Equal(t, 2, spawned[1].waveTaskIndex)
 	assert.Equal(t, 2, spawned[1].peerCount)
 	assert.Contains(t, spawned[1].prompt, "Implement Task 3: Third")

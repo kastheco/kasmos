@@ -60,6 +60,8 @@ execution_mode = "tmux"
 effort         = "high"
 ```
 
+`permission_default` can be set per profile to `"prompt"` or `"bypass"`, or left unset to inherit the spawn-source default. `"inherit"` is accepted as an alias for unset, but normalized configs usually omit it; see [agent profiles: permission_default](./agent-profiles.mdx#permission_default) for resolution details.
+
 ## `[ui]` — UI behavior
 
 | field | type | default | description |

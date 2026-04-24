@@ -192,6 +192,25 @@ func TestAgentStepPrePopulatesFromExisting(t *testing.T) {
 	assert.Equal(t, "0.2", reviewer.Temperature)
 }
 
+func TestInitAgentsFromExisting_PreservesPermissionDefault(t *testing.T) {
+	existing := &config.TOMLConfigResult{
+		Profiles: map[string]config.AgentProfile{
+			"coder": {
+				Program:           "claude",
+				Model:             "claude-sonnet-4-6",
+				Effort:            "medium",
+				Enabled:           true,
+				PermissionDefault: "prompt",
+			},
+		},
+	}
+
+	agents := initAgentsFromExisting([]string{"claude", "opencode"}, existing)
+
+	coder := agentByRole(t, agents, "coder")
+	assert.Equal(t, "prompt", coder.PermissionDefault)
+}
+
 func TestInitAgentsFromExisting_UsesPreferredHarnessWhenSelected(t *testing.T) {
 	agents := initAgentsFromExisting([]string{"claude", "opencode"}, nil)
 

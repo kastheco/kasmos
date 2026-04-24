@@ -28,12 +28,13 @@ type State struct {
 
 // AgentState holds the wizard form values for one agent role.
 type AgentState struct {
-	Role        string
-	Harness     string
-	Model       string
-	Temperature string // "" means default; parsed to *float64 on save
-	Effort      string // "" means default
-	Enabled     bool
+	Role              string
+	Harness           string
+	Model             string
+	Temperature       string // "" means default; parsed to *float64 on save
+	Effort            string // "" means default
+	Enabled           bool
+	PermissionDefault string // "", "prompt", or "bypass"; empty means inherit
 }
 
 // DefaultAgentRoles returns the built-in agent role names.
@@ -188,7 +189,7 @@ func (s *State) ToTOMLConfig() *config.TOMLConfig {
 	}
 
 	for _, a := range s.Agents {
-		tc.Agents[a.Role] = config.TOMLAgent{
+		agent := config.TOMLAgent{
 			Enabled:     a.Enabled,
 			Program:     a.Harness,
 			Model:       a.Model,
@@ -196,6 +197,10 @@ func (s *State) ToTOMLConfig() *config.TOMLConfig {
 			Temperature: parseTemperature(a.Temperature),
 			Flags:       []string{},
 		}
+		if a.PermissionDefault != "" {
+			agent.PermissionDefault = a.PermissionDefault
+		}
+		tc.Agents[a.Role] = agent
 	}
 
 	return tc

@@ -8,6 +8,10 @@ description: Use when you need orientation on kasmos plan lifecycle, signal mech
 Meta-skill. Covers plan lifecycle FSM, signal gateway mechanics, legacy sentinel compatibility, and mode detection only.
 If you have a role (planner, coder, reviewer, custodian), load that skill instead — not this one.
 
+## looking up kasmos behavior
+
+when you need to confirm how kasmos handles something (signal names, config keys, lifecycle states, cli flags), prefer `mcp__kasmos__docs_search` over guessing or re-reading source files. follow up with `mcp__kasmos__docs_read` for full context. the wiki at https://kasmos.kasthe.co/docs/ is the source of truth; the mcp tools serve it offline when the repo is checked out.
+
 ## Plan Lifecycle
 
 Plans move through a fixed set of states. Only the transitions listed below are valid.

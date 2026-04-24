@@ -1915,6 +1915,7 @@ func (m *home) spawnReviewer(planFile string) tea.Cmd {
 		Program:         m.programForAgent(session.AgentTypeReviewer),
 		ExecutionMode:   m.executionModeForAgent(session.AgentTypeReviewer),
 		SDKSpeedTier:    m.sdkSpeedTierForAgent(session.AgentTypeReviewer),
+		SkipPermissions: m.skipPermissionsForAgent(session.AgentTypeReviewer),
 		TaskFile:        planFile,
 		AgentType:       session.AgentTypeReviewer,
 		ReviewCycle:     spec.ReviewCycle,
@@ -1998,6 +1999,7 @@ func (m *home) spawnMaster(planFile string) tea.Cmd {
 		Program:         m.programForAgent(session.AgentTypeMaster),
 		ExecutionMode:   m.executionModeForAgent(session.AgentTypeMaster),
 		SDKSpeedTier:    m.sdkSpeedTierForAgent(session.AgentTypeMaster),
+		SkipPermissions: m.skipPermissionsForAgent(session.AgentTypeMaster),
 		TaskFile:        planFile,
 		AgentType:       session.AgentTypeMaster,
 		ClaudeNoFlicker: m.claudeNoFlicker(),
@@ -2142,6 +2144,16 @@ func (m *home) programForAgent(agentType string) string {
 
 func (m *home) executionModeForAgent(agentType string) session.ExecutionMode {
 	return session.ExecutionMode(config.NormalizeExecutionMode(m.profileForAgent(agentType).ExecutionMode))
+}
+
+// skipPermissionsForAgent resolves the configured permission default for a
+// given agent type. Local/ad-hoc spawns default to false (prompt) when
+// the profile inherits, matching the TUI's current behaviour where
+// non-daemon spawns always prompted. daemon-backed requests convert this
+// via the SpawnSoloRequest.SkipPermissions pointer (see daemon_gate
+// spawn paths).
+func (m *home) skipPermissionsForAgent(agentType string) bool {
+	return m.profileForAgent(agentType).ResolveSkipPermissions(false)
 }
 
 func (m *home) sdkSpeedTierForAgent(agentType string) string {
@@ -2460,6 +2472,7 @@ func (m *home) spawnFixerWithFeedback(planFile, feedback string) tea.Cmd {
 		Program:         m.programForAgent(session.AgentTypeFixer),
 		ExecutionMode:   m.executionModeForAgent(session.AgentTypeFixer),
 		SDKSpeedTier:    m.sdkSpeedTierForAgent(session.AgentTypeFixer),
+		SkipPermissions: m.skipPermissionsForAgent(session.AgentTypeFixer),
 		TaskFile:        planFile,
 		AgentType:       session.AgentTypeFixer,
 		ReviewCycle:     spec.ReviewCycle,
@@ -2527,6 +2540,7 @@ func (m *home) spawnElaborator(planFile string) (tea.Model, tea.Cmd) {
 		Program:         m.programForAgent(session.AgentTypeElaborator),
 		ExecutionMode:   m.executionModeForAgent(session.AgentTypeElaborator),
 		SDKSpeedTier:    m.sdkSpeedTierForAgent(session.AgentTypeElaborator),
+		SkipPermissions: m.skipPermissionsForAgent(session.AgentTypeElaborator),
 		TaskFile:        planFile,
 		AgentType:       session.AgentTypeElaborator,
 		ClaudeNoFlicker: m.claudeNoFlicker(),
@@ -3094,6 +3108,7 @@ func (m *home) quickLaunchAgent() (tea.Model, tea.Cmd) {
 		Program:         fixerProgram,
 		ExecutionMode:   requestedMode,
 		SDKSpeedTier:    m.sdkSpeedTierForAgent(session.AgentTypeFixer),
+		SkipPermissions: m.skipPermissionsForAgent(session.AgentTypeFixer),
 		AgentType:       session.AgentTypeFixer,
 		ClaudeNoFlicker: m.claudeNoFlicker(),
 	})
@@ -3116,11 +3131,13 @@ func (m *home) quickLaunchAgent() (tea.Model, tea.Cmd) {
 		capturedInst := inst
 		capturedProject := m.taskStoreProject
 		startCmd = func() tea.Msg {
+			skip := capturedInst.SkipPermissions
 			req := api.SpawnSoloRequest{
-				Title:        capturedInst.Title,
-				Program:      capturedInst.Program,
-				AgentType:    capturedInst.AgentType,
-				SDKSpeedTier: capturedInst.SDKSpeedTier,
+				Title:           capturedInst.Title,
+				Program:         capturedInst.Program,
+				AgentType:       capturedInst.AgentType,
+				SDKSpeedTier:    capturedInst.SDKSpeedTier,
+				SkipPermissions: &skip,
 			}
 			return instanceStartedMsg{instance: capturedInst, err: spawnSoloWithDaemon(capturedProject, req)}
 		}
@@ -3335,6 +3352,7 @@ func (m *home) newNamedAgentInstance(title, path, program string, requestedMode 
 		Program:         p,
 		ExecutionMode:   requestedMode,
 		SDKSpeedTier:    speedTier,
+		SkipPermissions: m.skipPermissionsForAgent(session.AgentTypeMaster),
 		AgentType:       session.AgentTypeMaster,
 		ClaudeNoFlicker: m.claudeNoFlicker(),
 	})
@@ -3375,13 +3393,15 @@ func (m *home) spawnAdHocAgent(name, branch, workPath, program string, requested
 		capturedBranch := branch
 		capturedWorkPath := workPath
 		startCmd = func() tea.Msg {
+			skip := capturedInst.SkipPermissions
 			req := api.SpawnSoloRequest{
-				Title:        capturedInst.Title,
-				Program:      capturedInst.Program,
-				AgentType:    capturedInst.AgentType,
-				Branch:       capturedBranch,
-				WorkPath:     capturedWorkPath,
-				SDKSpeedTier: capturedInst.SDKSpeedTier,
+				Title:           capturedInst.Title,
+				Program:         capturedInst.Program,
+				AgentType:       capturedInst.AgentType,
+				Branch:          capturedBranch,
+				WorkPath:        capturedWorkPath,
+				SDKSpeedTier:    capturedInst.SDKSpeedTier,
+				SkipPermissions: &skip,
 			}
 			return instanceStartedMsg{instance: capturedInst, err: spawnSoloWithDaemon(capturedProject, req)}
 		}
@@ -3464,6 +3484,7 @@ func (m *home) spawnTaskAgent(planFile, action, prompt string) (tea.Model, tea.C
 		Program:         m.programForAgent(agentType),
 		ExecutionMode:   m.executionModeForAgent(agentType),
 		SDKSpeedTier:    m.sdkSpeedTierForAgent(agentType),
+		SkipPermissions: m.skipPermissionsForAgent(agentType),
 		TaskFile:        planFile,
 		AgentType:       agentType,
 		ClaudeNoFlicker: m.claudeNoFlicker(),
@@ -3513,14 +3534,16 @@ func (m *home) spawnTaskAgent(planFile, action, prompt string) (tea.Model, tea.C
 			capturedPlanFile := planFile
 			capturedAgentType := agentType
 			startCmd = func() tea.Msg {
+				skip := capturedInst.SkipPermissions
 				req := api.SpawnSoloRequest{
-					Title:        capturedInst.Title,
-					Program:      capturedInst.Program,
-					Prompt:       capturedInst.QueuedPrompt,
-					TaskFile:     capturedPlanFile,
-					AgentType:    capturedAgentType,
-					SoloAgent:    true,
-					SDKSpeedTier: capturedInst.SDKSpeedTier,
+					Title:           capturedInst.Title,
+					Program:         capturedInst.Program,
+					Prompt:          capturedInst.QueuedPrompt,
+					TaskFile:        capturedPlanFile,
+					AgentType:       capturedAgentType,
+					SoloAgent:       true,
+					SDKSpeedTier:    capturedInst.SDKSpeedTier,
+					SkipPermissions: &skip,
 				}
 				return instanceStartedMsg{instance: capturedInst, err: spawnSoloWithDaemon(capturedProject, req)}
 			}
@@ -3809,18 +3832,19 @@ func (m *home) spawnWaveTasks(orch *orchestration.WaveOrchestrator, tasks []task
 		prompt := orch.BuildTaskPrompt(task, len(tasks))
 
 		inst, err := session.NewInstance(session.InstanceOptions{
-			Title:         title,
-			Path:          m.activeRepoPath,
-			Program:       m.programForAgent(session.AgentTypeCoder),
-			ExecutionMode: m.executionModeForAgent(session.AgentTypeCoder),
-			SDKSpeedTier:  m.sdkSpeedTierForAgent(session.AgentTypeCoder),
-			TaskFile:      planFile,
-			AgentType:     session.AgentTypeCoder,
-			TaskNumber:    task.Number,
-			WaveNumber:    orch.CurrentWaveNumber(),
-			PeerCount:     len(tasks),
-			WaveTaskIndex: waveTaskPos[task.Number], // 0 (unknown) if task not in current wave — safe, never happens in practice
-			WaveTaskCount: waveTaskCount,
+			Title:           title,
+			Path:            m.activeRepoPath,
+			Program:         m.programForAgent(session.AgentTypeCoder),
+			ExecutionMode:   m.executionModeForAgent(session.AgentTypeCoder),
+			SDKSpeedTier:    m.sdkSpeedTierForAgent(session.AgentTypeCoder),
+			SkipPermissions: m.skipPermissionsForAgent(session.AgentTypeCoder),
+			TaskFile:        planFile,
+			AgentType:       session.AgentTypeCoder,
+			TaskNumber:      task.Number,
+			WaveNumber:      orch.CurrentWaveNumber(),
+			PeerCount:       len(tasks),
+			WaveTaskIndex:   waveTaskPos[task.Number], // 0 (unknown) if task not in current wave — safe, never happens in practice
+			WaveTaskCount:   waveTaskCount,
 		})
 		if err != nil {
 			return m, m.handleError(err)
@@ -3978,6 +4002,7 @@ func (m *home) spawnChatAboutTask(planFile, question string) (tea.Model, tea.Cmd
 		Program:         m.programForAgent(session.AgentTypeFixer),
 		ExecutionMode:   m.executionModeForAgent(session.AgentTypeFixer),
 		SDKSpeedTier:    m.sdkSpeedTierForAgent(session.AgentTypeFixer),
+		SkipPermissions: m.skipPermissionsForAgent(session.AgentTypeFixer),
 		TaskFile:        planFile,
 		AgentType:       session.AgentTypeFixer,
 		ClaudeNoFlicker: m.claudeNoFlicker(),
@@ -4060,6 +4085,7 @@ func (m *home) adoptOrphanSession(item overlay.TmuxBrowserItem) (tea.Model, tea.
 		Title:           item.Title,
 		Path:            m.activeRepoPath,
 		Program:         program,
+		SkipPermissions: m.skipPermissionsForAgent(candidate.AgentType),
 		TaskFile:        candidate.TaskFile,
 		AgentType:       candidate.AgentType,
 		TaskNumber:      candidate.TaskNumber,

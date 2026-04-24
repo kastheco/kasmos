@@ -250,6 +250,13 @@ type SpawnOpts struct {
 	ExecutionMode string
 	// SDKSpeedTier carries the optional Codex SDK service tier for SDK sessions.
 	SDKSpeedTier string
+	// SkipPermissions instructs the spawner to launch the session with the
+	// harness-specific bypass flag set (Claude: --permission-mode
+	// bypassPermissions; Codex: --dangerously-bypass-approvals-and-sandbox).
+	// The caller is responsible for resolving tri-state profile config against
+	// the spawn-source default before populating this field - the spawner sees
+	// only a final bool.
+	SkipPermissions bool
 }
 
 // AgentSpawner abstracts tmux session management so the daemon and TUI can

@@ -600,9 +600,10 @@ func TestSpawnWaveTasks_SDKProfileFallsBackToTmuxForUnsupportedProgram(t *testin
 			PhaseRoles: map[string]string{"implementing": "coder"},
 			Profiles: map[string]config.AgentProfile{
 				"coder": {
-					Program:       "opencode",
-					Enabled:       true,
-					ExecutionMode: config.ExecutionModeSDK,
+					Program:           "opencode",
+					Enabled:           true,
+					ExecutionMode:     config.ExecutionModeSDK,
+					PermissionDefault: config.PermissionDefaultBypass,
 				},
 			},
 		},
@@ -615,6 +616,7 @@ func TestSpawnWaveTasks_SDKProfileFallsBackToTmuxForUnsupportedProgram(t *testin
 	require.Len(t, instances, 1)
 	// opencode does not support SDK transport; the resolved mode falls back to tmux.
 	assert.Equal(t, session.ExecutionModeTmux, instances[0].ExecutionMode)
+	assert.True(t, instances[0].SkipPermissions, "wave task spawn must use the coder profile permission default")
 }
 
 // TestSpawnWaveTasks_PatchesSharedWorktreeOpencodeConfig verifies that spawnWaveTasks
@@ -3043,8 +3045,14 @@ func TestSpawnAdHocAgent_SDKRoutesThroughDaemonWhenManaged(t *testing.T) {
 		state:            stateDefault,
 		taskStoreProject: "myproject",
 		appConfig: &config.Config{
+			PhaseRoles: map[string]string{"readiness_review": "master"},
 			Profiles: map[string]config.AgentProfile{
-				"master": {Program: "claude", Enabled: true, ExecutionMode: config.ExecutionModeSDK},
+				"master": {
+					Program:           "claude",
+					Enabled:           true,
+					ExecutionMode:     config.ExecutionModeSDK,
+					PermissionDefault: config.PermissionDefaultBypass,
+				},
 			},
 		},
 		nav:            ui.NewNavigationPanel(&spin),
@@ -3082,6 +3090,9 @@ func TestSpawnAdHocAgent_SDKRoutesThroughDaemonWhenManaged(t *testing.T) {
 	assert.Equal(t, "myproject", capturedProject)
 	assert.Equal(t, "solo-agent", capturedReq.Title)
 	assert.Equal(t, "claude", capturedReq.Program)
+	require.NotNil(t, capturedReq.SkipPermissions, "daemon request must carry the local resolved permission default")
+	assert.True(t, *capturedReq.SkipPermissions)
+	assert.True(t, started.instance.SkipPermissions, "local placeholder must keep the resolved permission default")
 	assert.False(t, started.instance.Started(), "daemon SDK placeholder must not be started locally")
 }
 
@@ -3122,7 +3133,12 @@ func TestSpawnTaskAgent_SoloSDKRoutesThroughDaemonWhenManaged(t *testing.T) {
 		appConfig: &config.Config{
 			PhaseRoles: map[string]string{"implementing": "coder"},
 			Profiles: map[string]config.AgentProfile{
-				"coder": {Program: "claude", Enabled: true, ExecutionMode: config.ExecutionModeSDK},
+				"coder": {
+					Program:           "claude",
+					Enabled:           true,
+					ExecutionMode:     config.ExecutionModeSDK,
+					PermissionDefault: config.PermissionDefaultBypass,
+				},
 			},
 		},
 		nav:          ui.NewNavigationPanel(&spin),
@@ -3158,5 +3174,8 @@ func TestSpawnTaskAgent_SoloSDKRoutesThroughDaemonWhenManaged(t *testing.T) {
 	assert.True(t, capturedReq.SoloAgent, "SoloAgent must be set on the daemon request")
 	assert.Equal(t, "solo prompt", capturedReq.Prompt, "solo prompt must be forwarded to daemon request")
 	assert.Equal(t, planFile, capturedReq.TaskFile, "TaskFile must be forwarded to daemon request")
+	require.NotNil(t, capturedReq.SkipPermissions, "daemon solo request must carry the local resolved permission default")
+	assert.True(t, *capturedReq.SkipPermissions)
+	assert.True(t, started.instance.SkipPermissions, "local placeholder must keep the resolved permission default")
 	assert.True(t, started.instance.SoloAgent, "local placeholder must keep SoloAgent=true")
 }

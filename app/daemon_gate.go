@@ -148,6 +148,10 @@ func registerRepoWithDaemon(repoPath string) error {
 	return daemonpkg.NewSocketClient(taskstore.ResolvedDaemonSocketPath()).AddRepo(canonicalRepoPath(repoPath))
 }
 
+func daemonStatusSkipPermissions(status api.InstanceStatus) bool {
+	return status.ResolvedSkipPermissions()
+}
+
 func daemonInstanceData(repoPath string, status api.InstanceStatus) session.InstanceData {
 	program := status.Program
 	if program == "" {
@@ -166,22 +170,23 @@ func daemonInstanceData(repoPath string, status api.InstanceStatus) session.Inst
 	// sidebar despite the daemon tracking it fine.
 	mode := session.NormalizeExecutionMode(session.ExecutionMode(status.ExecutionMode))
 	data := session.InstanceData{
-		Title:         status.Title,
-		Path:          repoPath,
-		Branch:        status.Branch,
-		Status:        instStatus,
-		Program:       program,
-		ExecutionMode: mode,
-		AutoYes:       true,
-		TaskFile:      status.Plan,
-		AgentType:     status.Role,
-		TaskNumber:    status.TaskNumber,
-		WaveNumber:    status.WaveNumber,
-		ReviewCycle:   status.ReviewCycle,
-		WaveTaskIndex: status.WaveTaskIndex,
-		WaveTaskCount: status.WaveTaskCount,
-		SoloAgent:     status.SoloAgent,
-		SDKSpeedTier:  status.SDKSpeedTier,
+		Title:           status.Title,
+		Path:            repoPath,
+		Branch:          status.Branch,
+		Status:          instStatus,
+		Program:         program,
+		ExecutionMode:   mode,
+		AutoYes:         true,
+		SkipPermissions: daemonStatusSkipPermissions(status),
+		TaskFile:        status.Plan,
+		AgentType:       status.Role,
+		TaskNumber:      status.TaskNumber,
+		WaveNumber:      status.WaveNumber,
+		ReviewCycle:     status.ReviewCycle,
+		WaveTaskIndex:   status.WaveTaskIndex,
+		WaveTaskCount:   status.WaveTaskCount,
+		SoloAgent:       status.SoloAgent,
+		SDKSpeedTier:    status.SDKSpeedTier,
 	}
 	if status.Branch != "" {
 		shared := gitpkg.NewSharedTaskWorktree(repoPath, status.Branch)
@@ -218,19 +223,20 @@ func newDaemonSDKInstance(repoPath string, status api.InstanceStatus) (*session.
 		program = "opencode"
 	}
 	inst, err := session.NewInstance(session.InstanceOptions{
-		Title:         status.Title,
-		Path:          repoPath,
-		Program:       program,
-		ExecutionMode: session.ExecutionModeSDK,
-		AutoYes:       true,
-		TaskFile:      status.Plan,
-		AgentType:     status.Role,
-		TaskNumber:    status.TaskNumber,
-		WaveNumber:    status.WaveNumber,
-		ReviewCycle:   status.ReviewCycle,
-		WaveTaskIndex: status.WaveTaskIndex,
-		WaveTaskCount: status.WaveTaskCount,
-		SDKSpeedTier:  status.SDKSpeedTier,
+		Title:           status.Title,
+		Path:            repoPath,
+		Program:         program,
+		ExecutionMode:   session.ExecutionModeSDK,
+		AutoYes:         true,
+		SkipPermissions: daemonStatusSkipPermissions(status),
+		TaskFile:        status.Plan,
+		AgentType:       status.Role,
+		TaskNumber:      status.TaskNumber,
+		WaveNumber:      status.WaveNumber,
+		ReviewCycle:     status.ReviewCycle,
+		WaveTaskIndex:   status.WaveTaskIndex,
+		WaveTaskCount:   status.WaveTaskCount,
+		SDKSpeedTier:    status.SDKSpeedTier,
 	})
 	if err != nil {
 		return nil, err
@@ -259,18 +265,19 @@ func newDaemonLoadingInstance(repoPath string, status api.InstanceStatus) (*sess
 		program = "opencode"
 	}
 	inst, err := session.NewInstance(session.InstanceOptions{
-		Title:         status.Title,
-		Path:          repoPath,
-		Program:       program,
-		ExecutionMode: session.ExecutionModeTmux,
-		AutoYes:       true,
-		TaskFile:      status.Plan,
-		AgentType:     status.Role,
-		TaskNumber:    status.TaskNumber,
-		WaveNumber:    status.WaveNumber,
-		ReviewCycle:   status.ReviewCycle,
-		WaveTaskIndex: status.WaveTaskIndex,
-		WaveTaskCount: status.WaveTaskCount,
+		Title:           status.Title,
+		Path:            repoPath,
+		Program:         program,
+		ExecutionMode:   session.ExecutionModeTmux,
+		AutoYes:         true,
+		SkipPermissions: daemonStatusSkipPermissions(status),
+		TaskFile:        status.Plan,
+		AgentType:       status.Role,
+		TaskNumber:      status.TaskNumber,
+		WaveNumber:      status.WaveNumber,
+		ReviewCycle:     status.ReviewCycle,
+		WaveTaskIndex:   status.WaveTaskIndex,
+		WaveTaskCount:   status.WaveTaskCount,
 	})
 	if err != nil {
 		return nil, err

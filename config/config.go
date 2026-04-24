@@ -482,13 +482,14 @@ func configToTOML(cfg *Config) *TOMLConfig {
 	agents := make(map[string]TOMLAgent, len(cfg.Profiles))
 	for name, p := range cfg.Profiles {
 		agents[name] = TOMLAgent{
-			Enabled:       p.Enabled,
-			Program:       p.Program,
-			Model:         p.Model,
-			Temperature:   p.Temperature,
-			Effort:        p.Effort,
-			ExecutionMode: NormalizeExecutionMode(p.ExecutionMode),
-			Flags:         p.Flags,
+			Enabled:           p.Enabled,
+			Program:           p.Program,
+			Model:             p.Model,
+			Temperature:       p.Temperature,
+			Effort:            p.Effort,
+			ExecutionMode:     NormalizeExecutionMode(p.ExecutionMode),
+			Flags:             p.Flags,
+			PermissionDefault: NormalizePermissionDefault(p.PermissionDefault),
 		}
 	}
 	out := &TOMLConfig{

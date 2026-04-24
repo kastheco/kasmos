@@ -508,6 +508,55 @@ func TestProfileForAgent_MasterUsesReadinessReviewProfile(t *testing.T) {
 		"master agent must resolve via the readiness_review phase profile")
 }
 
+func TestHome_SkipPermissionsForAgent_UsesProfileResolver(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name              string
+		agentType         string
+		phase             string
+		profileName       string
+		permissionDefault string
+		want              bool
+	}{
+		{"coder inherits prompt default", session.AgentTypeCoder, "implementing", "coder", "", false},
+		{"coder prompts", session.AgentTypeCoder, "implementing", "coder", "prompt", false},
+		{"coder bypasses", session.AgentTypeCoder, "implementing", "coder", "bypass", true},
+		{"reviewer inherits prompt default", session.AgentTypeReviewer, "quality_review", "reviewer", "", false},
+		{"reviewer prompts", session.AgentTypeReviewer, "quality_review", "reviewer", "prompt", false},
+		{"reviewer bypasses", session.AgentTypeReviewer, "quality_review", "reviewer", "bypass", true},
+		{"chat inherits prompt default", "", "", "chat", "", false},
+		{"chat prompts", "", "", "chat", "prompt", false},
+		{"chat bypasses", "", "", "chat", "bypass", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			phaseRoles := map[string]string{}
+			if tt.phase != "" {
+				phaseRoles[tt.phase] = tt.profileName
+			}
+			m := &home{
+				program: "opencode",
+				appConfig: &config.Config{
+					PhaseRoles: phaseRoles,
+					Profiles: map[string]config.AgentProfile{
+						tt.profileName: {
+							Program:           "opencode",
+							Enabled:           true,
+							PermissionDefault: tt.permissionDefault,
+						},
+					},
+				},
+			}
+
+			assert.Equal(t, tt.want, m.skipPermissionsForAgent(tt.agentType))
+		})
+	}
+}
+
 func newPausedMasterInstance(t *testing.T, planFile string) *session.Instance {
 	t.Helper()
 	inst, err := session.FromInstanceData(session.InstanceData{

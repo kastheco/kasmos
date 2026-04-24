@@ -1052,11 +1052,13 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 				capturedInst := instance
 				capturedProject := m.taskStoreProject
 				startCmd = func() tea.Msg {
+					skip := capturedInst.SkipPermissions
 					req := api.SpawnSoloRequest{
-						Title:        capturedInst.Title,
-						Program:      capturedInst.Program,
-						AgentType:    capturedInst.AgentType,
-						SDKSpeedTier: capturedInst.SDKSpeedTier,
+						Title:           capturedInst.Title,
+						Program:         capturedInst.Program,
+						AgentType:       capturedInst.AgentType,
+						SDKSpeedTier:    capturedInst.SDKSpeedTier,
+						SkipPermissions: &skip,
 					}
 					return instanceStartedMsg{instance: capturedInst, err: spawnSoloWithDaemon(capturedProject, req)}
 				}
@@ -2356,11 +2358,12 @@ func (m *home) handleResolvedKey(name keys.KeyName) (tea.Model, tea.Cmd) {
 			return m, m.handleError(err)
 		}
 		instance, err := session.NewInstance(session.InstanceOptions{
-			Title:         "",
-			Path:          m.activeRepoPath,
-			Program:       promptProgram,
-			ExecutionMode: requestedMode,
-			SDKSpeedTier:  m.sdkSpeedTierForAgent(""),
+			Title:           "",
+			Path:            m.activeRepoPath,
+			Program:         promptProgram,
+			ExecutionMode:   requestedMode,
+			SDKSpeedTier:    m.sdkSpeedTierForAgent(""),
+			SkipPermissions: m.skipPermissionsForAgent(""),
 		})
 		if err != nil {
 			return m, m.handleError(err)
