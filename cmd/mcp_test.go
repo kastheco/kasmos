@@ -100,6 +100,24 @@ func makeTempGitRepo(t *testing.T, name string) string {
 
 func mcpToolsList(t *testing.T, h http.Handler) []string {
 	t.Helper()
+	tools := mcpToolsListDetails(t, h)
+	names := make([]string, 0, len(tools))
+	for _, tool := range tools {
+		names = append(names, tool.Name)
+	}
+	return names
+}
+
+type mcpToolDescriptor struct {
+	Name        string `json:"name"`
+	InputSchema struct {
+		Properties map[string]any `json:"properties"`
+		Required   []string       `json:"required"`
+	} `json:"inputSchema"`
+}
+
+func mcpToolsListDetails(t *testing.T, h http.Handler) []mcpToolDescriptor {
+	t.Helper()
 	initBody, err := json.Marshal(map[string]any{
 		"jsonrpc": "2.0",
 		"id":      1,
@@ -132,17 +150,11 @@ func mcpToolsList(t *testing.T, h http.Handler) []string {
 
 	var resp struct {
 		Result struct {
-			Tools []struct {
-				Name string `json:"name"`
-			} `json:"tools"`
+			Tools []mcpToolDescriptor `json:"tools"`
 		} `json:"result"`
 	}
 	decodeMCPPayload(t, listRec, &resp)
-	names := make([]string, 0, len(resp.Result.Tools))
-	for _, tool := range resp.Result.Tools {
-		names = append(names, tool.Name)
-	}
-	return names
+	return resp.Result.Tools
 }
 
 func TestNewConfiguredMCPServer_MultiRoot_ConstructsAndCloses(t *testing.T) {
@@ -168,6 +180,25 @@ func TestNewConfiguredMCPServer_MultiRoot_RegistersExpectedTools(t *testing.T) {
 	assert.Contains(t, names, "read_file")
 	assert.Contains(t, names, "task_list")
 	assert.Contains(t, names, "signal_create")
+}
+
+func TestNewConfiguredMCPServer_SymbolsToolDescriptorExposesProject(t *testing.T) {
+	srv, err := newConfiguredMCPServer(nil, nil, nil, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, srv.Close()) })
+
+	tools := mcpToolsListDetails(t, srv.Handler())
+	for _, tool := range tools {
+		if tool.Name != "symbols" {
+			continue
+		}
+		assert.Contains(t, tool.InputSchema.Properties, "path")
+		assert.Contains(t, tool.InputSchema.Properties, "project")
+		assert.Contains(t, tool.InputSchema.Required, "path")
+		assert.NotContains(t, tool.InputSchema.Required, "project")
+		return
+	}
+	t.Fatal("symbols tool not registered")
 }
 
 // mcpToolsCall performs an MCP initialize handshake followed by a tools/call

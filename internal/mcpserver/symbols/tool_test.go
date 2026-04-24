@@ -199,3 +199,121 @@ func TestMakeSymbolsHandler_LoadOnMissNotCalledForCachedEmpty(t *testing.T) {
 	assert.Equal(t, int32(0), loadOnMissCalls.Load(),
 		"cached-empty entries must be served from the store, not re-primed on every call")
 }
+
+func TestMakeSymbolsHandlerMulti_ResolvesRelativePathThroughProject(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "daemon", "daemon.go")
+	require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
+	require.NoError(t, os.WriteFile(path, []byte("package daemon\n"), 0o644))
+
+	store := NewStore()
+	expected := []Symbol{{Name: "Run", Kind: "function", Line: 12}}
+	store.Update(path, expected)
+
+	handler := makeSymbolsHandlerMulti(nil, map[string]PerProject{
+		"kasmos": {
+			Validator: func(raw string) (string, error) {
+				if !filepath.IsAbs(raw) {
+					raw = filepath.Join(root, raw)
+				}
+				return raw, nil
+			},
+		},
+	}, store, func() bool { return true }, nil, nil)
+
+	result, err := handler(context.Background(), mcp.CallToolRequest{Params: mcp.CallToolParams{Arguments: map[string]any{
+		"path":    "daemon/daemon.go",
+		"project": "kasmos",
+	}}})
+	require.NoError(t, err)
+	require.False(t, result.IsError)
+
+	var payload toolResult
+	require.NoError(t, json.Unmarshal([]byte(result.Content[0].(mcp.TextContent).Text), &payload))
+	assert.Equal(t, expected, payload.Symbols)
+}
+
+func TestMakeSymbolsHandlerMulti_RejectsAmbiguousRelativePathWithoutProject(t *testing.T) {
+	handler := makeSymbolsHandlerMulti(nil, map[string]PerProject{
+		"alpha": {},
+		"beta":  {},
+	}, NewStore(), func() bool { return true }, nil, nil)
+
+	result, err := handler(context.Background(), mcp.CallToolRequest{Params: mcp.CallToolParams{Arguments: map[string]any{"path": "daemon/daemon.go"}}})
+	require.NoError(t, err)
+	require.True(t, result.IsError)
+	text := result.Content[0].(mcp.TextContent).Text
+	assert.Contains(t, text, "project argument required")
+	assert.Contains(t, text, "alpha")
+	assert.Contains(t, text, "beta")
+}
+
+func TestMakeSymbolsHandlerMulti_SingleRootRelativePathStillWorksWithoutProject(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "sample.go")
+	require.NoError(t, os.WriteFile(path, []byte("package sample\n"), 0o644))
+
+	store := NewStore()
+	expected := []Symbol{{Name: "Sample", Kind: "type", Line: 3}}
+	store.Update(path, expected)
+	handler := makeSymbolsHandler(func(raw string) (string, error) {
+		if !filepath.IsAbs(raw) {
+			raw = filepath.Join(root, raw)
+		}
+		return raw, nil
+	}, store, func() bool { return true }, nil, nil)
+
+	result, err := handler(context.Background(), mcp.CallToolRequest{Params: mcp.CallToolParams{Arguments: map[string]any{"path": "sample.go"}}})
+	require.NoError(t, err)
+	require.False(t, result.IsError)
+
+	var payload toolResult
+	require.NoError(t, json.Unmarshal([]byte(result.Content[0].(mcp.TextContent).Text), &payload))
+	assert.Equal(t, expected, payload.Symbols)
+}
+
+func TestMakeSymbolsHandlerMulti_AbsolutePathIgnoresProject(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "absolute.go")
+	require.NoError(t, os.WriteFile(path, []byte("package absolute\n"), 0o644))
+
+	store := NewStore()
+	expected := []Symbol{{Name: "Absolute", Kind: "function", Line: 2}}
+	store.Update(path, expected)
+	handler := makeSymbolsHandlerMulti(func(raw string) (string, error) { return raw, nil }, map[string]PerProject{
+		"other": {
+			Validator: func(string) (string, error) {
+				return "", errors.New("project validator should not be used for absolute paths")
+			},
+		},
+	}, store, func() bool { return true }, nil, nil)
+
+	result, err := handler(context.Background(), mcp.CallToolRequest{Params: mcp.CallToolParams{Arguments: map[string]any{
+		"path":    path,
+		"project": "other",
+	}}})
+	require.NoError(t, err)
+	require.False(t, result.IsError)
+
+	var payload toolResult
+	require.NoError(t, json.Unmarshal([]byte(result.Content[0].(mcp.TextContent).Text), &payload))
+	assert.Equal(t, expected, payload.Symbols)
+}
+
+func TestMakeSymbolsHandlerMulti_UnknownProjectListsRegisteredProjects(t *testing.T) {
+	handler := makeSymbolsHandlerMulti(nil, map[string]PerProject{
+		"alpha": {},
+		"beta":  {},
+	}, NewStore(), func() bool { return true }, nil, nil)
+
+	result, err := handler(context.Background(), mcp.CallToolRequest{Params: mcp.CallToolParams{Arguments: map[string]any{
+		"path":    "daemon/daemon.go",
+		"project": "missing",
+	}}})
+	require.NoError(t, err)
+	require.True(t, result.IsError)
+	text := result.Content[0].(mcp.TextContent).Text
+	assert.Contains(t, text, "unknown project")
+	assert.Contains(t, text, "alpha")
+	assert.Contains(t, text, "beta")
+}
