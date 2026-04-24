@@ -298,14 +298,10 @@ func newProjectListHandler(sharedDB *sql.DB, validProjects map[string]struct{}) 
 // previewAPI serves live-preview instance routes, configAPI serves project
 // config and scaffold-sync routes, and architectAuditAPI serves cached architect
 // decisions; all are registered before the generic taskstore prefix.
-func newServeAPIRootMux(sharedDB *sql.DB, repoRegs serveRepoRegistration, taskAPI, auditAPI, actionsAPI, previewAPI, configAPI http.Handler, architectAuditAPIs ...http.Handler) *http.ServeMux {
+func newServeAPIRootMux(sharedDB *sql.DB, repoRegs serveRepoRegistration, taskAPI, auditAPI, actionsAPI, previewAPI, configAPI, architectAuditAPI http.Handler) *http.ServeMux {
 	rootMux := http.NewServeMux()
 	rootMux.Handle("/v1/ping", taskAPI)
 	rootMux.Handle("GET /v1/projects", newProjectListHandler(sharedDB, repoRegs.valid))
-	architectAuditAPI := http.NotFoundHandler()
-	if len(architectAuditAPIs) > 0 && architectAuditAPIs[0] != nil {
-		architectAuditAPI = architectAuditAPIs[0]
-	}
 
 	// Task-action routes registered first — more-specific than the taskAPI prefix.
 	rootMux.Handle("GET /v1/projects/{project}/tasks/{filename}/available-actions", actionsAPI)
