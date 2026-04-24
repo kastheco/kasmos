@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"charm.land/bubbles/v2/spinner"
+	tea "charm.land/bubbletea/v2"
 	"github.com/kastheco/kasmos/config"
 	"github.com/kastheco/kasmos/config/taskfsm"
 	"github.com/kastheco/kasmos/config/taskstate"
@@ -91,6 +92,63 @@ func lifecycleEntryForTest(t *testing.T, store taskstore.Store, plansDir, planFi
 	entry, ok := reloaded.Entry(planFile)
 	require.True(t, ok)
 	return entry
+}
+
+func TestLifecycleE2E_DaemonManagedPlanningDelegatesWithoutLocalBaseline(t *testing.T) {
+	// serial: modifies repoManagedByDaemon and spawnPlannerWithDaemon
+	const planFile = "daemon-managed-parallel-plan"
+
+	dir := t.TempDir()
+	initLifecycleE2ERepo(t, dir)
+	plansDir := filepath.Join(dir, "docs", "plans")
+	require.NoError(t, os.MkdirAll(plansDir, 0o755))
+	withDaemonManagedRepo(t, dir)
+
+	oldSpawner := spawnPlannerWithDaemon
+	t.Cleanup(func() { spawnPlannerWithDaemon = oldSpawner })
+	spawnPlannerWithDaemon = func(repoPath, project, file, title, prompt, program string) (*session.Instance, error) {
+		inst, err := session.NewInstance(session.InstanceOptions{
+			Title:     title,
+			Path:      repoPath,
+			Program:   program,
+			TaskFile:  file,
+			AgentType: session.AgentTypePlanner,
+		})
+		require.NoError(t, err)
+		inst.MarkStartedForTest()
+		return inst, nil
+	}
+
+	store, ps, fsm := newSharedStoreForTest(t, plansDir)
+	require.NoError(t, ps.Create(planFile, "daemon managed parallel plan", "plan/daemon-managed-parallel-plan", "", time.Now()))
+	h := newLifecycleE2EHome(t, dir, plansDir, store, ps, fsm)
+	h.appConfig.ParallelPlannerArchitect = true
+
+	model, cmd := h.executeTaskStage(planFile, "plan")
+	updated := model.(*home)
+	require.NotNil(t, cmd)
+	assert.Empty(t, updated.nav.GetInstances(),
+		"daemon-managed StartPlan path must not add a local architect-baseline row")
+
+	msg := cmd()
+	var started daemonPlannerStartedMsg
+	if batch, ok := msg.(tea.BatchMsg); ok {
+		for _, sub := range batch {
+			if dm, ok := sub().(daemonPlannerStartedMsg); ok {
+				started = dm
+				break
+			}
+		}
+	} else if dm, ok := msg.(daemonPlannerStartedMsg); ok {
+		started = dm
+	}
+	require.NotNil(t, started.instance)
+
+	model, _ = updated.Update(started)
+	updated = model.(*home)
+	instances := updated.nav.GetInstances()
+	require.Len(t, instances, 1)
+	assert.Equal(t, session.AgentTypePlanner, instances[0].AgentType)
 }
 
 func TestLifecycleE2E_DaemonManagedHappyPath(t *testing.T) {

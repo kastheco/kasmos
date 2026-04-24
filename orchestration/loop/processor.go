@@ -78,6 +78,9 @@ type ProcessorConfig struct {
 	// When true, a reviewer approval (non-master origin) is intercepted and converted
 	// into a SpawnMasterAction instead of flowing directly to ReviewApprovedAction.
 	AutoReadinessReview bool
+	// ParallelPlannerArchitect starts an advisory architect-baseline session
+	// alongside planner work for plan_start signals.
+	ParallelPlannerArchitect bool
 	// MaxReviewFixCycles is the maximum number of review-fix cycles allowed
 	// before emitting ReviewCycleLimitAction instead of SpawnCoderAction.
 	// Zero or negative means unlimited.
@@ -405,6 +408,14 @@ func (p *Processor) ProcessFSMSignals(signals []taskfsm.Signal) []Action {
 			}
 
 		case taskfsm.PlanStart:
+			if p.config.ParallelPlannerArchitect {
+				actions = append(actions,
+					ClearArchitectBaselineAction{PlanFile: sig.TaskFile},
+					SpawnPlannerAction{PlanFile: sig.TaskFile},
+					SpawnArchitectBaselineAction{PlanFile: sig.TaskFile},
+				)
+				break
+			}
 			actions = append(actions, SpawnPlannerAction{PlanFile: sig.TaskFile})
 		}
 	}

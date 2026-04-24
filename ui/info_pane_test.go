@@ -72,6 +72,28 @@ func TestInfoPane_PlanBoundInstance(t *testing.T) {
 	assert.Contains(t, output, "coder")
 }
 
+func TestInfoPane_ArchitectBaselineInstanceUsesLowercaseRole(t *testing.T) {
+	p := NewInfoPane()
+	p.SetSize(80, 24)
+	p.SetData(InfoData{
+		HasInstance: true,
+		HasPlan:     true,
+		Title:       "parallel-planner-baseline",
+		Status:      "running",
+		PlanName:    "parallel-planner-architect",
+		AgentType:   "architect-baseline",
+	})
+
+	output := p.String()
+	plain := stripANSI(output)
+	assert.Contains(t, plain, "instance")
+	assert.Contains(t, plain, "role")
+	assert.Contains(t, plain, "architect baseline")
+	assert.NotContains(t, plain, "architect-baseline")
+	assert.NotContains(t, plain, "creating blueprint")
+	assert.NotContains(t, plain, "architecting")
+}
+
 func TestInfoPane_WaveProgress(t *testing.T) {
 	p := NewInfoPane()
 	p.SetSize(80, 24)

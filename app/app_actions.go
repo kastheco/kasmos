@@ -546,12 +546,16 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 		if planFile == "" {
 			return m, nil
 		}
+		entry, ok := m.taskState.Entry(planFile)
+		if !ok {
+			return m, m.handleError(fmt.Errorf("task not found: %s", planFile))
+		}
 		if err := m.fsm.Transition(planFile, taskfsm.PlanStart); err != nil {
 			return m, m.handleError(err)
 		}
 		m.loadTaskState()
 		m.updateSidebarTasks()
-		return m.spawnTaskAgent(planFile, "plan", buildModifyTaskPrompt(planFile, m.taskStoreProject))
+		return m.spawnPlannerWithOptionalBaseline(planFile, buildModifyTaskPrompt(planFile, m.taskStoreProject), entry.Description)
 
 	case "start_over_plan":
 		planFile := m.nav.GetSelectedPlanFile()
@@ -559,36 +563,65 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		planName := taskstate.DisplayName(planFile)
+		instancesToKill := make([]*session.Instance, 0)
+		for _, inst := range m.allInstances {
+			if inst.TaskFile == planFile {
+				instancesToKill = append(instancesToKill, inst)
+			}
+		}
 		startOverAction := func() tea.Msg {
 			// Re-validate with a fresh snapshot: the task may have changed while the
 			// confirmation overlay was open.
-			freshEntry, freshOk := m.refreshTaskEntry(planFile)
+			var freshEntry taskstate.TaskEntry
+			var freshOk bool
+			if m.taskStore != nil {
+				entry, err := m.taskStore.Get(m.taskStoreProject, planFile)
+				if err != nil {
+					return lifecycleActionRejectedMsg{message: "task not found; start over aborted"}
+				}
+				freshEntry = taskstate.TaskEntry{
+					Status:      taskstate.Status(entry.Status),
+					Description: entry.Description,
+					Branch:      entry.Branch,
+				}
+				freshOk = true
+			} else if m.taskState != nil {
+				freshEntry, freshOk = m.taskState.Entry(planFile)
+			}
 			if !freshOk {
 				return lifecycleActionRejectedMsg{message: "task not found; start over aborted"}
 			}
 			if freshEntry.Status == taskstate.StatusCancelled {
 				return lifecycleActionRejectedMsg{message: "task is cancelled; start over not available"}
 			}
-			// Kill all instances bound to this plan
-			for i := len(m.allInstances) - 1; i >= 0; i-- {
-				if m.allInstances[i].TaskFile == planFile {
-					_ = m.allInstances[i].Kill()
-					m.allInstances = append(m.allInstances[:i], m.allInstances[i+1:]...)
-				}
+			for _, inst := range instancesToKill {
+				_ = inst.Kill()
 			}
 			if err := gitpkg.ResetTaskBranch(m.activeRepoPath, freshEntry.Branch); err != nil {
 				return err
 			}
-			if err := m.fsmForceToPlanning(planFile); err != nil {
-				return err
+			switch taskfsm.Status(freshEntry.Status) {
+			case taskfsm.StatusPlanning:
+			case taskfsm.StatusDone:
+				if err := m.fsm.Transition(planFile, taskfsm.StartOver); err != nil {
+					return err
+				}
+			default:
+				if err := m.fsm.Transition(planFile, taskfsm.Cancel); err != nil {
+					return err
+				}
+				if err := m.fsm.Transition(planFile, taskfsm.Reopen); err != nil {
+					return err
+				}
 			}
 			m.audit(auditlog.EventPlanTransition, string(freshEntry.Status)+" → planning (start over)",
 				auditlog.WithPlan(planFile),
 				auditlog.WithDetail("start over: branch reset"))
-			_ = m.saveAllInstances()
-			m.loadTaskState()
-			m.updateSidebarTasks()
-			return taskRefreshMsg{}
+			return startOverCompletedMsg{
+				planFile:    planFile,
+				planName:    planName,
+				description: freshEntry.Description,
+			}
 		}
 		return m, m.confirmAction(fmt.Sprintf("start over task '%s'? this resets the branch.", planName), startOverAction)
 
@@ -1089,6 +1122,35 @@ func lifecycleActionRejected(message string) tea.Cmd {
 	return func() tea.Msg {
 		return lifecycleActionRejectedMsg{message: message}
 	}
+}
+
+func (m *home) spawnPlannerWithOptionalBaseline(planFile, prompt, description string) (tea.Model, tea.Cmd) {
+	model, plannerCmd := m.spawnTaskAgent(planFile, "plan", prompt)
+	updated, ok := model.(*home)
+	if !ok {
+		return model, plannerCmd
+	}
+	if !updated.parallelPlannerArchitectEnabled() || repoManagedByDaemon(updated.activeRepoPath) {
+		return updated, plannerCmd
+	}
+
+	clearCmd := updated.clearArchitectBaselineCmd(planFile)
+	var spawnCmds []tea.Cmd
+	if plannerCmd != nil {
+		spawnCmds = append(spawnCmds, plannerCmd)
+	}
+	baselineModel, baselineCmd := updated.spawnArchitectBaseline(planFile, description)
+	if baselineUpdated, ok := baselineModel.(*home); ok {
+		updated = baselineUpdated
+	}
+	if baselineCmd != nil {
+		spawnCmds = append(spawnCmds, baselineCmd)
+	}
+	spawnCmd := tea.Batch(spawnCmds...)
+	if clearCmd != nil {
+		return updated, tea.Sequence(clearCmd, spawnCmd)
+	}
+	return updated, spawnCmd
 }
 
 // instanceSignalItems returns the promoted root-level items for an instance context
@@ -1650,7 +1712,7 @@ func (m *home) executeTaskStage(planFile, stage string) (tea.Model, tea.Cmd) {
 			auditlog.WithPlan(planFile))
 		m.loadTaskState()
 		m.updateSidebarTasks()
-		return m.spawnTaskAgent(planFile, "plan", buildPlanningPrompt(planFile, taskstate.DisplayName(planFile), entry.Description, m.taskStoreProject))
+		return m.spawnPlannerWithOptionalBaseline(planFile, buildPlanningPrompt(planFile, taskstate.DisplayName(planFile), entry.Description, m.taskStoreProject), entry.Description)
 	case "solo":
 		// Check store content before fsmSetImplementing — the FSM transition calls
 		// store.Update which overwrites the content field with an empty string.
@@ -1703,7 +1765,7 @@ func (m *home) executeTaskStage(planFile, stage string) (tea.Model, tea.Cmd) {
 			m.loadTaskState()
 			m.updateSidebarTasks()
 			m.toastManager.Info("plan content missing — respawning planner to write plan content.")
-			_, spawnCmd := m.spawnTaskAgent(planFile, "plan", buildPlanningPrompt(planFile, taskstate.DisplayName(planFile), entry.Description, m.taskStoreProject))
+			_, spawnCmd := m.spawnPlannerWithOptionalBaseline(planFile, buildPlanningPrompt(planFile, taskstate.DisplayName(planFile), entry.Description, m.taskStoreProject), entry.Description)
 			return m, tea.Batch(m.toastTickCmd(), func() tea.Msg { return taskRefreshMsg{} }, spawnCmd)
 		}
 		plan, err := taskparser.Parse(rawContent)
@@ -1716,7 +1778,7 @@ func (m *home) executeTaskStage(planFile, stage string) (tea.Model, tea.Cmd) {
 			m.loadTaskState()
 			m.updateSidebarTasks()
 			m.toastManager.Info("task needs ## Wave headers — respawning planner to annotate.")
-			_, spawnCmd := m.spawnTaskAgent(planFile, "plan", orchestration.BuildWaveAnnotationPrompt(planFile, m.taskStoreProject))
+			_, spawnCmd := m.spawnPlannerWithOptionalBaseline(planFile, orchestration.BuildWaveAnnotationPrompt(planFile, m.taskStoreProject), entry.Description)
 			return m, tea.Batch(m.toastTickCmd(), func() tea.Msg { return taskRefreshMsg{} }, spawnCmd)
 		}
 
@@ -1782,7 +1844,7 @@ func (m *home) executeTaskStage(planFile, stage string) (tea.Model, tea.Cmd) {
 			m.loadTaskState()
 			m.updateSidebarTasks()
 			m.toastManager.Info("plan content missing — respawning planner to write plan content.")
-			_, spawnCmd := m.spawnTaskAgent(planFile, "plan", buildPlanningPrompt(planFile, taskstate.DisplayName(planFile), entry.Description, m.taskStoreProject))
+			_, spawnCmd := m.spawnPlannerWithOptionalBaseline(planFile, buildPlanningPrompt(planFile, taskstate.DisplayName(planFile), entry.Description, m.taskStoreProject), entry.Description)
 			return m, tea.Batch(m.toastTickCmd(), func() tea.Msg { return taskRefreshMsg{} }, spawnCmd)
 		}
 		plan, err := taskparser.Parse(rawContent)
@@ -1794,7 +1856,7 @@ func (m *home) executeTaskStage(planFile, stage string) (tea.Model, tea.Cmd) {
 			m.loadTaskState()
 			m.updateSidebarTasks()
 			m.toastManager.Info("task needs ## Wave headers — respawning planner to annotate.")
-			_, spawnCmd := m.spawnTaskAgent(planFile, "plan", orchestration.BuildWaveAnnotationPrompt(planFile, m.taskStoreProject))
+			_, spawnCmd := m.spawnPlannerWithOptionalBaseline(planFile, orchestration.BuildWaveAnnotationPrompt(planFile, m.taskStoreProject), entry.Description)
 			return m, tea.Batch(m.toastTickCmd(), func() tea.Msg { return taskRefreshMsg{} }, spawnCmd)
 		}
 

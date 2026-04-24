@@ -314,3 +314,37 @@ Complete the last implementation task and transition into review.
 	assert.ElementsMatch(t, []string{"spawn:wave-1:task-1", "spawn:wave-1:task-2"}, events[3:5])
 	assert.Equal(t, []string{"kill:wave-1", "spawn:wave-2:task-3", "kill:wave-2", "spawn:reviewer", "create:pr"}, events[5:])
 }
+
+func TestDaemon_LifecycleE2E_ParallelBaselineDoesNotGatePlannerCompletion(t *testing.T) {
+	store := taskstore.NewTestStore(t)
+	project := "test-project"
+	planFile := "parallel-plan.md"
+	require.NoError(t, store.Create(project, taskstore.TaskEntry{
+		Filename:    planFile,
+		Status:      taskstore.StatusReady,
+		Description: "ship parallel planning",
+	}))
+
+	proc := loop.NewProcessor(loop.ProcessorConfig{
+		Store:                    store,
+		Project:                  project,
+		AutoAdvance:              true,
+		ParallelPlannerArchitect: true,
+	})
+
+	planStartActions := proc.ProcessFSMSignals([]taskfsm.Signal{{TaskFile: planFile, Event: taskfsm.PlanStart}})
+	require.Len(t, planStartActions, 3)
+	assert.Equal(t, "clear_architect_baseline", planStartActions[0].Kind())
+	assert.Equal(t, "spawn_planner", planStartActions[1].Kind())
+	assert.Equal(t, "spawn_architect_baseline", planStartActions[2].Kind())
+
+	entry, err := store.Get(project, planFile)
+	require.NoError(t, err)
+	assert.Equal(t, taskstore.StatusPlanning, entry.Status)
+	assert.Equal(t, taskstore.ExecutionState{}, entry.ExecutionState)
+
+	plannerFinishedActions := proc.ProcessFSMSignals([]taskfsm.Signal{{TaskFile: planFile, Event: taskfsm.PlannerFinished}})
+	require.Len(t, plannerFinishedActions, 2)
+	assert.Equal(t, "planner_complete", plannerFinishedActions[0].Kind())
+	assert.Equal(t, "auto_implement", plannerFinishedActions[1].Kind())
+}

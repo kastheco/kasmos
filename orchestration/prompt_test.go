@@ -240,6 +240,64 @@ func TestBuildElaborationPrompt(t *testing.T) {
 	assert.Contains(t, prompt, "plan header fields")
 	// Must reference reading the codebase
 	assert.Contains(t, prompt, "codebase")
+	assert.NotContains(t, prompt, "architect-baseline.json")
+}
+
+func TestBuildArchitectBaselinePrompt(t *testing.T) {
+	description := "build the parallel planner architect baseline"
+	descriptionHash := ArchitectBaselineDescriptionHash(description)
+
+	prompt := BuildArchitectBaselinePrompt("my-feature", "myproject", description)
+
+	assert.Contains(t, prompt, "kasmos-architect")
+	assert.Contains(t, prompt, "cli-tools")
+	assert.Contains(t, prompt, "Inspect the live codebase independently from planner output")
+	assert.Contains(t, prompt, "goal")
+	assert.Contains(t, prompt, "surfaces")
+	assert.Contains(t, prompt, "dependencies")
+	assert.Contains(t, prompt, "patterns")
+	assert.Contains(t, prompt, ".kasmos/cache/my-feature-architect-baseline.json")
+	assert.Contains(t, prompt, `"schema_version": 1`)
+	assert.Contains(t, prompt, `"plan_file": "my-feature"`)
+	assert.Contains(t, prompt, `"project": "myproject"`)
+	assert.Contains(t, prompt, `"description_hash": "`+descriptionHash+`"`)
+	assert.Contains(t, prompt, `"baseline_markdown":`)
+	assert.Contains(t, prompt, "Stop after the cache write")
+	assert.Contains(t, prompt, "Do not edit any file except `.kasmos/cache/my-feature-architect-baseline.json`")
+	assert.Contains(t, prompt, "Forbidden: MCP `task_update_content`")
+	assert.Contains(t, prompt, "task status transitions")
+	assert.Contains(t, prompt, "planner-finished")
+	assert.Contains(t, prompt, "architect-finished")
+	assert.Contains(t, prompt, "elaborator-finished")
+	assert.Contains(t, prompt, "Do not mutate task content, task status, or orchestration state")
+	assert.NotContains(t, prompt, "use MCP `task_update_content`")
+	assert.NotContains(t, prompt, "signal_create")
+}
+
+func TestBuildElaborationPromptWithOptions_ParallelBaseline(t *testing.T) {
+	prompt := BuildElaborationPromptWithOptions("my-feature", "myproject", ArchitectPromptOptions{
+		ParallelBaseline: true,
+		DescriptionHash:  "abc123",
+	})
+
+	assert.Contains(t, prompt, "task_show")
+	assert.Contains(t, prompt, ".kasmos/cache/my-feature-architect-baseline.json")
+	assert.Contains(t, prompt, "`plan_file` equals \"my-feature\"")
+	assert.Contains(t, prompt, "`project` equals \"myproject\"")
+	assert.Contains(t, prompt, "`description_hash` equals \"abc123\"")
+	assert.Contains(t, prompt, "`schema_version` equals 1")
+	assert.Contains(t, prompt, "`baseline_markdown` is non-empty")
+	assert.Contains(t, prompt, "advisory input, not authoritative implementation state")
+	assert.Contains(t, prompt, "merge the planner draft plus cached baseline")
+	assert.Contains(t, prompt, "missing, corrupt, stale, or incomplete")
+	assert.Contains(t, prompt, "current inline independent baseline")
+	assert.Contains(t, prompt, "mention that fallback in the plan summary")
+	assert.Contains(t, prompt, "2. Read the advisory parallel architect baseline cache")
+	assert.Contains(t, prompt, "3. Read the relevant codebase surfaces")
+	assert.Contains(t, prompt, "4. Create your independent solution baseline")
+	assert.Contains(t, prompt, "9. Signal architect-pass completion")
+	assert.Contains(t, prompt, "task_update_content")
+	assert.Contains(t, prompt, "signal_create` (signal_type: \"elaborator-finished\", plan_file: \"my-feature\", project: \"myproject\")")
 }
 
 func TestBuildArchitectPrompt(t *testing.T) {

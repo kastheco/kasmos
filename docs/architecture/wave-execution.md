@@ -21,7 +21,7 @@ flowchart LR
     SK --> R
 
     B -- "normal path" --> C[spawn architect agent\nSetElaborating]
-    C --> D[architect reads codebase\nenriches task bodies\nwrites updated plan to store\nwrites .kasmos/cache/&lt;planSlug&gt;-architect.json]
+    C --> D[architect reads planner draft\nplus optional baseline cache\nenriches task bodies\nwrites updated plan to store\nwrites .kasmos/cache/&lt;planSlug&gt;-architect.json]
     D --> E[elaborator_finished signal\nreceived by daemon]
 
     E --> F[UpdatePlan called\norchestrator → Idle\nwave 1 starts\nStartNextWave → WaveStateRunning]
@@ -49,6 +49,31 @@ skipped entirely; the rest of the lifecycle (review → verify → done) is
 identical. See `orchestration/engine.go:ShouldBlueprintSkip` and
 `orchestration/prompt.go:BuildBlueprintSkipPrompt`.
 
+When `[orchestration].parallel_planner_architect` is left at its default
+`false`, the planner-first behavior is unchanged: the planner finishes, then the
+normal architect pass starts and derives its own inline baseline before merging
+that with the planner draft.
+
+When `parallel_planner_architect = true`, plan start adds an advisory baseline
+session beside the planner:
+
+1. plan start clears stale `.kasmos/cache/<planSlug>-architect-baseline.json`
+2. the planner starts normally
+3. an `architect-baseline` runtime session starts separately and writes only the
+   baseline cache artifact
+4. the planner writes the draft and emits the existing `planner-finished` signal
+5. the final architect pass reads the planner draft plus a valid cached
+   baseline; if the cache is missing, corrupt, or for a different planner input,
+   it falls back to the existing inline self-baseline behavior
+6. coder waves proceed normally
+
+The baseline cache is advisory. It is safe to delete, is not task-store state,
+and never drives lifecycle status by itself. The baseline session emits no
+lifecycle signals; signal names stay unchanged (`planner-finished`,
+`elaborator_finished`, `implement_task_finished`, and the existing review/verify
+signals). Blueprint-skip still runs before the final architect pass, so a small
+planner draft may produce a baseline cache that is never consumed.
+
 ---
 
 ## 2. Concrete two-wave example
@@ -59,6 +84,7 @@ The sequence below shows a plan with Wave 1 (tasks 1–3) and Wave 2 (tasks 4–
 sequenceDiagram
     actor User
     participant D as Daemon / Processor
+    participant B as Architect baseline
     participant A as Architect agent
     participant C1 as Coder W1-T1
     participant C2 as Coder W1-T2
@@ -69,10 +95,16 @@ sequenceDiagram
     participant Ver as Master/Verifier
 
     User->>D: implement_start signal
-    Note over D: FSM to implementing, ExecutionPhase = architecting, SetElaborating() called
+    Note over D: FSM to implementing, optional stale baseline cache cleared
+
+    opt parallel_planner_architect enabled during plan start
+        D->>B: spawn architect-baseline session
+        Note over B: writes .kasmos/cache/&lt;planSlug&gt;-architect-baseline.json only; emits no lifecycle signal
+    end
 
     D->>A: spawn architect agent (BuildElaborationPrompt)
-    Note over A: reads codebase, enriches task bodies, assigns preferred_model per task
+    Note over A: reads codebase, planner draft, and valid baseline cache if present; falls back inline if missing
+    Note over A: enriches task bodies, assigns preferred_model per task
     A->>D: writes enriched plan to store
     A->>D: writes .kasmos/cache/&lt;planSlug&gt;-architect.json (SaveArchitectMeta)
     A->>D: elaborator_finished signal

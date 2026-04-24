@@ -33,6 +33,15 @@ func TestNavInstanceTitle_ElaboratorUsesCreatingBlueprint(t *testing.T) {
 	assert.Equal(t, "creating blueprint", navInstanceTitle(instance))
 }
 
+func TestNavInstanceTitle_ArchitectBaselineUsesLowercaseLabel(t *testing.T) {
+	instance := &session.Instance{
+		AgentType: session.AgentTypeArchitectBaseline,
+		TaskFile:  "parallel-planner-architect",
+	}
+
+	assert.Equal(t, "architect baseline", navInstanceTitle(instance))
+}
+
 func TestNavInstanceTitle_AdhocInstanceFallsBackToTitle(t *testing.T) {
 	instance := &session.Instance{Title: "adhoc-instance", TaskFile: ""}
 
@@ -918,6 +927,26 @@ func TestString_BasicOutput(t *testing.T) {
 	output := n.String()
 	assert.Contains(t, output, "my-plan")
 	assert.Contains(t, output, "worker")
+}
+
+func TestString_ArchitectBaselineInstanceShowsLowercaseLabel(t *testing.T) {
+	n := newTestPanel()
+	n.SetSize(60, 30)
+	plans := []PlanDisplay{{Filename: "parallel-planner-architect"}}
+	instances := []*session.Instance{{
+		Title:     "parallel-planner-architect-architect-baseline",
+		TaskFile:  "parallel-planner-architect",
+		Status:    session.Running,
+		AgentType: session.AgentTypeArchitectBaseline,
+	}}
+	statuses := map[string]TopicStatus{"parallel-planner-architect": {HasRunning: true}}
+	n.SetData(plans, instances, nil, nil, statuses)
+
+	output := n.String()
+	assert.Contains(t, output, "architect baseline")
+	assert.NotContains(t, output, "architect-baseline")
+	assert.NotContains(t, output, "creating blueprint")
+	assert.NotContains(t, output, "architecting")
 }
 
 func TestString_EmptyPanel(t *testing.T) {

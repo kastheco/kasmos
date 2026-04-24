@@ -46,6 +46,24 @@ type SpawnPlannerAction struct {
 func (SpawnPlannerAction) Kind() string  { return "spawn_planner" }
 func (SpawnPlannerAction) sealedAction() {}
 
+// ClearArchitectBaselineAction instructs the caller to clear any stale advisory
+// architect-baseline cache before planner/baseline work starts.
+type ClearArchitectBaselineAction struct {
+	PlanFile string
+}
+
+func (ClearArchitectBaselineAction) Kind() string  { return "clear_architect_baseline" }
+func (ClearArchitectBaselineAction) sealedAction() {}
+
+// SpawnArchitectBaselineAction instructs the caller to launch the cache-only
+// architect baseline agent alongside planner work.
+type SpawnArchitectBaselineAction struct {
+	PlanFile string
+}
+
+func (SpawnArchitectBaselineAction) Kind() string  { return "spawn_architect_baseline" }
+func (SpawnArchitectBaselineAction) sealedAction() {}
+
 // ReviewChangesAction signals a validated review-changes transition and carries
 // the reviewer feedback so callers can perform side effects only after the FSM
 // accepted the signal.
@@ -237,6 +255,9 @@ type SpawnOpts struct {
 	Branch string
 	// Prompt is the initial prompt delivered to the agent on startup.
 	Prompt string
+	// Description is the task's source description. It is used by cache-only
+	// baseline agents to build their own prompt/spec without reading task state.
+	Description string
 	// Program is the agent executable command (e.g. "opencode", "claude").
 	Program string
 	// Feedback is forwarded to coder agents as review feedback (may be empty).
@@ -265,6 +286,9 @@ type SpawnOpts struct {
 type AgentSpawner interface {
 	// SpawnPlanner launches a planner agent for the given plan on the main branch.
 	SpawnPlanner(ctx context.Context, opts SpawnOpts) error
+	// SpawnArchitectBaseline launches a cache-only architect baseline agent
+	// for the given plan on the main branch.
+	SpawnArchitectBaseline(ctx context.Context, opts SpawnOpts) error
 	// SpawnReviewer launches a reviewer agent for the given plan.
 	SpawnReviewer(ctx context.Context, opts SpawnOpts) error
 	// SpawnCoder launches a coder agent for the given plan.

@@ -180,10 +180,36 @@ func BuildPlannerPrompt(planFile, planName, description, project string) string 
 	)
 }
 
+// ArchitectPromptOptions controls optional behavior for the final architect pass.
+type ArchitectPromptOptions struct {
+	ParallelBaseline bool
+	DescriptionHash  string
+}
+
 // BuildElaborationPrompt returns the prompt for the architect-led elaboration pass.
 // The architect reads the plan, deeply reads the codebase for each task's files,
 // and expands task bodies with detailed implementation instructions.
 func BuildElaborationPrompt(planFile, project string) string {
+	return BuildElaborationPromptWithOptions(planFile, project, ArchitectPromptOptions{})
+}
+
+// BuildElaborationPromptWithOptions returns the prompt for the architect-led
+// elaboration pass with optional parallel-baseline cache guidance.
+func BuildElaborationPromptWithOptions(planFile, project string, opts ArchitectPromptOptions) string {
+	baselineInstructions := ""
+	codebaseStep := 2
+	if opts.ParallelBaseline {
+		baselineInstructions = fmt.Sprintf(
+			"2. Read the advisory parallel architect baseline cache if present: `.kasmos/cache/%[1]s-architect-baseline.json`.\n"+
+				"   - Validate `plan_file` equals \"%[1]s\", `project` equals \"%[2]s\", `description_hash` equals \"%[3]s\", `schema_version` equals 1, and `baseline_markdown` is non-empty.\n"+
+				"   - Treat this cache as advisory input, not authoritative implementation state.\n"+
+				"   - If the cache is missing, corrupt, stale, or incomplete, continue with the current inline independent baseline from codebase evidence and mention that fallback in the plan summary.\n"+
+				"   - When valid, merge the planner draft plus cached baseline, choosing the best implementation path before rewriting the stored plan.\n",
+			planFile, project, opts.DescriptionHash,
+		)
+		codebaseStep = 3
+	}
+
 	return fmt.Sprintf(
 		"You are the architect agent. You turn a planner's high-level design into a "+
 			"concrete, coder-ready implementation plan. The planner focuses on *what* to build; "+
@@ -197,30 +223,68 @@ func BuildElaborationPrompt(planFile, project string) string {
 			"Load the `kasmos-architect` skill before starting. Also load `cli-tools`.\n\n"+
 			"## Instructions\n\n"+
 			"1. Retrieve the plan: prefer MCP `task_show` (filename: \"%[1]s\", project: \"%[2]s\"); fall back to `kas task show %[1]s`\n"+
-			"2. Read the relevant codebase surfaces before editing the draft. Start with files listed in **Files:** sections, "+
+			baselineInstructions+
+			"%[3]d. Read the relevant codebase surfaces before editing the draft. Start with files listed in **Files:** sections, "+
 			"then follow neighboring interfaces, function signatures, error handling, data flow, dependencies, and existing patterns.\n"+
-			"3. Create your independent solution baseline from the goal and codebase evidence before judging the planner draft:\n"+
+			"%[4]d. Create your independent solution baseline from the goal and codebase evidence before judging the planner draft:\n"+
 			"   - What implementation path would you choose if no planner task list existed?\n"+
 			"   - Which files, waves, dependencies, and integration surfaces does that path require?\n"+
 			"   - What hidden integration surfaces or non-obvious missing work must be represented for coders?\n"+
-			"4. Compare planner vs architect baseline and rewrite the plan by merging the best of both:\n"+
+			"%[5]d. Compare planner vs architect baseline and rewrite the plan by merging the best of both:\n"+
 			"   - Are the planner's listed files correct? Add missing ones, remove irrelevant ones.\n"+
 			"   - Is the planner's wave/task decomposition optimal? Merge, split, or reorder as needed.\n"+
 			"   - Did the planner miss a simpler approach, hidden dependency, or required integration surface?\n"+
 			"   - Did the planner include unnecessary work or conflict with existing patterns?\n"+
-			"5. Expand each task body with concrete implementation detail:\n"+
+			"%[6]d. Expand each task body with concrete implementation detail:\n"+
 			"   - Exact function signatures to create or modify\n"+
 			"   - Existing codebase patterns to follow (with file references)\n"+
 			"   - Edge cases and error handling requirements\n"+
 			"   - Import paths and dependencies\n"+
 			"   - Concrete code snippets where helpful\n"+
-			"6. Keep ## Wave headers and the plan header fields (Goal, Architecture, Tech Stack, Size). "+
+			"%[7]d. Keep ## Wave headers and the plan header fields (Goal, Architecture, Tech Stack, Size). "+
 			"Everything else — task count, task content, file lists, wave assignment — is yours to change.\n"+
-			"7. Write the updated plan: prefer MCP `task_update_content` (filename: \"%[1]s\", project: \"%[2]s\"); fall back to `kas task update-content %[1]s` (pipe content)\n"+
-			"8. Signal architect-pass completion: prefer MCP `signal_create` (signal_type: \"elaborator-finished\", plan_file: \"%[1]s\", project: \"%[2]s\")\n"+
+			"%[8]d. Write the updated plan: prefer MCP `task_update_content` (filename: \"%[1]s\", project: \"%[2]s\"); fall back to `kas task update-content %[1]s` (pipe content)\n"+
+			"%[9]d. Signal architect-pass completion: prefer MCP `signal_create` (signal_type: \"elaborator-finished\", plan_file: \"%[1]s\", project: \"%[2]s\")\n"+
 			"   - If MCP is unavailable, use `kas signal emit elaborator_finished %[1]s`; if CLI signaling is also unavailable, fallback: `touch .kasmos/signals/elaborator-finished-%[1]s`\n"+
 			"   - Keep the role wording as architect in your notes and output; only the completion signal name stays legacy.\n",
-		planFile, project,
+		planFile, project, codebaseStep, codebaseStep+1, codebaseStep+2, codebaseStep+3, codebaseStep+4, codebaseStep+5, codebaseStep+6,
+	)
+}
+
+// BuildArchitectBaselinePrompt returns the cache-only prompt for a parallel
+// architect baseline session. The session must not mutate task lifecycle state.
+func BuildArchitectBaselinePrompt(planFile, project, description string) string {
+	descriptionHash := ArchitectBaselineDescriptionHash(description)
+	return fmt.Sprintf(
+		"You are the architect baseline agent for plan %[1]q in project %[2]q. "+
+			"Your job is to independently derive an implementation baseline while the planner works. "+
+			"Load the `kasmos-architect` skill and `cli-tools` before starting.\n\n"+
+			"## Goal\n\n%[3]s\n\n"+
+			"## Instructions\n\n"+
+			"1. Inspect the live codebase independently from planner output. Do not wait for, read, or rely on the planner draft.\n"+
+			"2. Derive the implementation baseline from the goal, product/runtime surfaces, dependencies, state transitions, prompts, config, tests, scaffold mirrors, and existing code patterns.\n"+
+			"3. Write exactly one artifact: `.kasmos/cache/%[1]s-architect-baseline.json`.\n"+
+			"4. Use this JSON schema and expected identity values:\n\n"+
+			"```json\n"+
+			"{\n"+
+			"  \"schema_version\": 1,\n"+
+			"  \"plan_file\": \"%[1]s\",\n"+
+			"  \"project\": \"%[2]s\",\n"+
+			"  \"description_hash\": \"%[4]s\",\n"+
+			"  \"created_at\": \"<rfc3339 timestamp>\",\n"+
+			"  \"baseline_markdown\": \"<non-empty markdown baseline>\",\n"+
+			"  \"surfaces\": [\"<paths or subsystems>\"],\n"+
+			"  \"risks\": [\"<implementation risks>\"],\n"+
+			"  \"notes\": [\"<optional notes>\"]\n"+
+			"}\n"+
+			"```\n\n"+
+			"5. Stop after the cache write.\n\n"+
+			"## Cache-only constraints\n\n"+
+			"- Do not edit any file except `.kasmos/cache/%[1]s-architect-baseline.json`.\n"+
+			"- Forbidden: MCP `task_update_content`, `kas task update-content`, task status transitions, or any lifecycle signal.\n"+
+			"- Forbidden lifecycle signals include `planner-finished`, `architect-finished`, and `elaborator-finished`.\n"+
+			"- Do not mutate task content, task status, or orchestration state.\n",
+		planFile, project, description, descriptionHash,
 	)
 }
 

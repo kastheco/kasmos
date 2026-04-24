@@ -187,3 +187,32 @@ func TestRepoManager_MigratesRepoLocalTasks(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, taskstore.StatusReady, entry.Status)
 }
+
+func TestRepoManager_ParallelPlannerArchitectConfig(t *testing.T) {
+	t.Run("defaults false without project config", func(t *testing.T) {
+		repoDir := t.TempDir()
+		rm := newTestRepoManager(t)
+
+		require.NoError(t, rm.Add(repoDir))
+		repos := rm.List()
+		require.Len(t, repos, 1)
+		assert.False(t, repos[0].ParallelPlannerArchitect)
+	})
+
+	t.Run("follows project config", func(t *testing.T) {
+		repoDir := t.TempDir()
+		kasmosDir := filepath.Join(repoDir, ".kasmos")
+		require.NoError(t, os.MkdirAll(kasmosDir, 0o755))
+		content := `
+[orchestration]
+parallel_planner_architect = true
+`
+		require.NoError(t, os.WriteFile(filepath.Join(kasmosDir, "config.toml"), []byte(content), 0o644))
+
+		rm := newTestRepoManager(t)
+		require.NoError(t, rm.Add(repoDir))
+		repos := rm.List()
+		require.Len(t, repos, 1)
+		assert.True(t, repos[0].ParallelPlannerArchitect)
+	})
+}

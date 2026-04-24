@@ -103,13 +103,30 @@ enabled = false
 | field | type | default | description |
 |-------|------|---------|-------------|
 | `blueprint_skip_threshold` | int? | `2` | when a plan has ≤ this many tasks, kasmos skips elaboration and wave orchestration and runs a single-agent "blueprint" mode instead |
+| `parallel_planner_architect` | bool | `false` | when `true`, plan start launches a cache-only architect baseline session beside the planner so the later architect pass can compare the planner draft with an independent baseline |
 
 ```toml
 [orchestration]
 blueprint_skip_threshold = 2
+parallel_planner_architect = true
 ```
 
 Setting this to `0` forces multi-agent wave orchestration for every plan, including single-task ones. Setting it higher causes more plans to run in single-agent mode.
+
+`parallel_planner_architect` is opt-in. The default `false` preserves the current planner-first behavior: the planner writes the draft, emits `planner-finished`, and the architect pass starts afterward.
+
+When enabled, the runtime sequence is:
+
+1. plan start clears stale `.kasmos/cache/<planSlug>-architect-baseline.json`
+2. the planner starts
+3. an `architect-baseline` runtime session starts separately
+4. the planner writes the draft and emits `planner-finished`
+5. the final architect reads the planner draft plus a valid cached baseline, or falls back to its inline self-baseline when the cache is absent or invalid
+6. coder waves proceed normally
+
+The baseline cache is advisory, safe to delete, and not task-store state. The baseline session writes the cache artifact only; it does not mutate task content, change lifecycle status, or emit lifecycle signals. Signal names are unchanged.
+
+Blueprint skip still applies after the planner draft is available. A small planner draft can skip the final architect pass, so a baseline cache may be produced but unused.
 
 ## `[[hooks]]` — FSM transition hooks
 
@@ -222,6 +239,7 @@ enabled = true
 
 [orchestration]
 blueprint_skip_threshold = 2
+parallel_planner_architect = false
 
 [[hooks]]
 type   = "webhook"

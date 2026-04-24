@@ -187,6 +187,30 @@ func TestProcessor_ProcessFSMSignals_PlanStart_EmitsSpawnPlannerAction(t *testin
 	assert.Equal(t, taskstore.StatusPlanning, entry.Status)
 }
 
+func TestProcessor_ProcessFSMSignals_PlanStart_ParallelBaselineEmitsClearArchitectBaseline(t *testing.T) {
+	store := taskstore.NewTestStore(t)
+	require.NoError(t, store.Create("test", taskstore.TaskEntry{
+		Filename: "my-plan.md",
+		Status:   taskstore.StatusReady,
+	}))
+
+	p := NewProcessor(ProcessorConfig{Store: store, Project: "test", ParallelPlannerArchitect: true})
+	actions := p.ProcessFSMSignals([]taskfsm.Signal{
+		{Event: taskfsm.PlanStart, TaskFile: "my-plan.md"},
+	})
+
+	require.Len(t, actions, 3)
+	clear, ok := actions[0].(ClearArchitectBaselineAction)
+	require.True(t, ok, "expected ClearArchitectBaselineAction first, got %T", actions[0])
+	assert.Equal(t, "my-plan.md", clear.PlanFile)
+	spawnPlanner, ok := actions[1].(SpawnPlannerAction)
+	require.True(t, ok, "expected SpawnPlannerAction second, got %T", actions[1])
+	assert.Equal(t, "my-plan.md", spawnPlanner.PlanFile)
+	spawnBaseline, ok := actions[2].(SpawnArchitectBaselineAction)
+	require.True(t, ok, "expected SpawnArchitectBaselineAction third, got %T", actions[2])
+	assert.Equal(t, "my-plan.md", spawnBaseline.PlanFile)
+}
+
 func TestProcessor_ProcessFSMSignals_PlanStart_PreAppliedRunsWhenAlreadyPlanning(t *testing.T) {
 	store := taskstore.NewTestStore(t)
 	require.NoError(t, store.Create("test", taskstore.TaskEntry{
@@ -205,6 +229,24 @@ func TestProcessor_ProcessFSMSignals_PlanStart_PreAppliedRunsWhenAlreadyPlanning
 	require.Len(t, actions, 1)
 	_, ok := actions[0].(SpawnPlannerAction)
 	assert.True(t, ok, "pre-applied plan_start must still emit SpawnPlannerAction, got %T", actions[0])
+}
+
+func TestProcessor_ProcessFSMSignals_PlanStart_PreAppliedParallelBaselineEmitsClearArchitectBaseline(t *testing.T) {
+	store := taskstore.NewTestStore(t)
+	require.NoError(t, store.Create("test", taskstore.TaskEntry{
+		Filename: "my-plan.md",
+		Status:   taskstore.StatusPlanning,
+	}))
+
+	p := NewProcessor(ProcessorConfig{Store: store, Project: "test", ParallelPlannerArchitect: true})
+	actions := p.ProcessFSMSignals([]taskfsm.Signal{
+		{Event: taskfsm.PlanStart, TaskFile: "my-plan.md", PreApplied: true},
+	})
+
+	require.Len(t, actions, 3)
+	assert.IsType(t, ClearArchitectBaselineAction{}, actions[0])
+	assert.IsType(t, SpawnPlannerAction{}, actions[1])
+	assert.IsType(t, SpawnArchitectBaselineAction{}, actions[2])
 }
 
 func TestProcessor_ProcessFSMSignals_PlannerFinished(t *testing.T) {

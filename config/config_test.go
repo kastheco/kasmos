@@ -739,3 +739,36 @@ func TestConfigFromTOML_DoubleTapThreshold(t *testing.T) {
 		assert.Equal(t, 300*time.Millisecond, cfg.DoubleTapThreshold())
 	})
 }
+
+func TestParallelPlannerArchitectConfig(t *testing.T) {
+	t.Run("absent defaults false", func(t *testing.T) {
+		cfg := configFromTOML(&TOMLConfigResult{
+			Profiles:   map[string]AgentProfile{},
+			PhaseRoles: map[string]string{},
+		})
+
+		assert.False(t, cfg.ParallelPlannerArchitect)
+	})
+
+	t.Run("configFromTOML preserves true", func(t *testing.T) {
+		cfg := configFromTOML(&TOMLConfigResult{
+			Profiles:                 map[string]AgentProfile{},
+			PhaseRoles:               map[string]string{},
+			ParallelPlannerArchitect: true,
+		})
+
+		assert.True(t, cfg.ParallelPlannerArchitect)
+	})
+
+	t.Run("configToTOML preserves true", func(t *testing.T) {
+		tc := configToTOML(&Config{ParallelPlannerArchitect: true})
+
+		assert.True(t, tc.Orchestration.ParallelPlannerArchitect)
+	})
+
+	t.Run("configToTOML preserves false", func(t *testing.T) {
+		tc := configToTOML(&Config{})
+
+		assert.False(t, tc.Orchestration.ParallelPlannerArchitect)
+	})
+}

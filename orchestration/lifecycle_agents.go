@@ -89,9 +89,24 @@ func BuildFixerAgentSpec(planFile, project string, storedReviewCycle int, feedba
 // BuildArchitectAgentSpec returns the shared prompt/title metadata for the
 // architect pass that elaborates a plan before wave execution begins.
 func BuildArchitectAgentSpec(planFile, project string) LifecycleAgentSpec {
+	return BuildArchitectAgentSpecWithOptions(planFile, project, ArchitectPromptOptions{})
+}
+
+// BuildArchitectAgentSpecWithOptions returns the shared prompt/title metadata
+// for the architect pass with optional prompt behavior.
+func BuildArchitectAgentSpecWithOptions(planFile, project string, opts ArchitectPromptOptions) LifecycleAgentSpec {
 	return LifecycleAgentSpec{
 		Title:  BuildLifecycleAgentTitle(planFile, session.AgentTypeElaborator, 0),
-		Prompt: BuildElaborationPrompt(planFile, project),
+		Prompt: BuildElaborationPromptWithOptions(planFile, project, opts),
+	}
+}
+
+// BuildArchitectBaselineAgentSpec returns the prompt/title metadata for the
+// cache-only parallel architect baseline session.
+func BuildArchitectBaselineAgentSpec(planFile, project, description string) LifecycleAgentSpec {
+	return LifecycleAgentSpec{
+		Title:  fmt.Sprintf("%s-architect-baseline", planFile),
+		Prompt: BuildArchitectBaselinePrompt(planFile, project, description),
 	}
 }
 

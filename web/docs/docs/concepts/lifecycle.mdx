@@ -68,6 +68,8 @@ events trigger transitions. some events are **user-only** (can only be fired fro
 
 > **verifying signals:** `verify_approved` and `verify_failed` are the canonical signal names emitted by the master agent. deprecated aliases are accepted at ingress and canonicalized: `readiness_approved` → `verify_approved`; `readiness_changes_requested` / `readiness-changes` / `readiness-changes-requested` / `master_approved` → `verify_failed`.
 
+> **parallel architect baseline:** `[orchestration].parallel_planner_architect = true` does not add a status, execution phase, or event. During `plan_start`, kasmos may clear `.kasmos/cache/<plan-file>-architect-baseline.json` and start a separate `architect baseline` runtime session beside the planner. That cache is advisory input for the later architect pass; lifecycle transitions still depend on the existing `planner_finished` and `elaborator_finished` signals.
+
 ## state diagram
 
 the following diagram shows all valid task status transitions:

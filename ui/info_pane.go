@@ -243,6 +243,8 @@ func infoAgentLabel(agent string) string {
 	switch strings.TrimSpace(agent) {
 	case "", "-":
 		return ""
+	case "architect-baseline":
+		return "architect baseline"
 	case "elaborator":
 		return "architect"
 	default:
@@ -505,8 +507,8 @@ func (p *InfoPane) renderInstanceSection() string {
 	if p.data.Title != "" {
 		rows = append(rows, p.renderRow("title", p.data.Title))
 	}
-	if p.data.AgentType != "" {
-		rows = append(rows, p.renderRow("role", p.data.AgentType))
+	if agent := infoAgentLabel(p.data.AgentType); agent != "" {
+		rows = append(rows, p.renderRow("role", agent))
 	}
 	if p.data.Program != "" {
 		rows = append(rows, p.renderRow("program", p.data.Program))
