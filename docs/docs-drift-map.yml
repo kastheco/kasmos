@@ -1,0 +1,13 @@
+# each entry: a code path glob -> list of web/docs doc paths likely to need updates
+- code_paths: ["cmd/task.go", "cmd/kas/main.go"]
+  docs_paths: ["web/docs/docs/cli-reference/task.mdx", "web/docs/docs/cli-reference/index.mdx"]
+- code_paths: ["cmd/setup.go", "internal/initcmd/**/*.go"]
+  docs_paths: ["web/docs/docs/cli-reference/setup.mdx", "web/docs/docs/getting-started/setup-wizard.mdx"]
+- code_paths: ["cmd/daemon.go", "daemon/**/*.go"]
+  docs_paths: ["web/docs/docs/cli-reference/daemon.mdx", "web/docs/docs/daemon/**"]
+- code_paths: ["cmd/serve.go", "internal/mcpserver/**/*.go"]
+  docs_paths: ["web/docs/docs/cli-reference/serve.mdx"]
+- code_paths: ["cmd/signal.go", "orchestration/**/*.go", "config/taskstore/**/*.go"]
+  docs_paths: ["web/docs/docs/cli-reference/signal.mdx", "web/docs/docs/daemon/signals.mdx", "web/docs/docs/concepts/lifecycle.mdx"]
+- code_paths: ["config/**/*.go"]
+  docs_paths: ["web/docs/docs/configuration/**"]

@@ -50,6 +50,17 @@ jobs:
 
           echo "✅ Tag version matches cmd/kas/main.go version: $VERSION"
 
+          # Parity guard: the *previous* release must already be snapshotted in versions.json.
+          # The goal is to fail loud if the auto-version job was disabled on a prior release
+          # and the docs fell behind the go binary.
+          PREV_TAG=$(git describe --tags --abbrev=0 "${TAG_NAME}^" 2>/dev/null || echo "")
+          PREV_VERSION=${PREV_TAG#v}
+          if [ -n "$PREV_VERSION" ] && ! jq -e --arg v "$PREV_VERSION" 'index($v) != null' web/docs/versions.json >/dev/null; then
+            echo "ERROR: previous release ${PREV_VERSION} is missing from web/docs/versions.json"
+            echo "Run scripts/cut-docs-version.sh ${PREV_VERSION} on main before releasing"
+            exit 1
+          fi
+
       - name: Set tag ref for workflow_dispatch
         if: github.event_name == 'workflow_dispatch'
         run: echo "GITHUB_REF=refs/tags/${{ github.event.inputs.tag }}" >> $GITHUB_ENV
@@ -68,3 +79,41 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_PAT: ${{ secrets.GH_PAT }}
+
+  docs-version:
+    permissions: write-all
+    name: Cut docs version snapshot
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GH_PAT }}  # allow push back to main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: web/docs/package-lock.json
+      - name: Determine tag version
+        id: tag
+        run: |
+          if [ -n "${{ github.event.inputs.tag }}" ]; then
+            TAG_NAME="${{ github.event.inputs.tag }}"
+          else
+            TAG_NAME=${GITHUB_REF#refs/tags/}
+          fi
+          echo "version=${TAG_NAME#v}" >> "$GITHUB_OUTPUT"
+      - name: Cut docs version snapshot
+        run: scripts/cut-docs-version.sh "${{ steps.tag.outputs.version }}"
+      - name: Commit + push
+        run: |
+          # No-op if the helper already found the version present.
+          if git diff --cached --quiet; then
+            echo "no docs snapshot changes to commit"
+            exit 0
+          fi
+          git config user.name "kasmos-release-bot"
+          git config user.email "release-bot@users.noreply.github.com"
+          git commit -m "docs: cut version ${{ steps.tag.outputs.version }}"
+          git push origin HEAD:main

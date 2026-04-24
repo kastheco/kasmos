@@ -136,6 +136,10 @@ High-value directories:
 
 ## Coding patterns and conventions
 
+### Docs research
+
+When you need to confirm kasmos behavior (signal names, config keys, cli flags, lifecycle states), prefer `mcp__kasmos__docs_search` and `mcp__kasmos__docs_read` over grepping source. The published wiki is https://kasmos.kasthe.co/docs/; the MCP tools serve it offline inside this repo.
+
 ### Go style
 
 Observed patterns across `cmd/`, `config/`, `session/`, and `ui/`:

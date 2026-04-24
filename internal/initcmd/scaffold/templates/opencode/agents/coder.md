@@ -7,6 +7,13 @@ Your task prompt already includes all rules needed; do not load additional skill
 
 Use MCP lifecycle tools when a workflow explicitly requires signaling or state changes; do not shell out to `kas signal` or touch sentinel files when MCP is available.
 
+## docs research
+
+before guessing at kasmos behavior, signal semantics, config keys, or cli flags, call `mcp__kasmos__docs_search` first.
+use `mcp__kasmos__docs_read` to fetch full docs when a match looks relevant.
+the canonical wiki is https://kasmos.kasthe.co/docs/ — the mcp tools serve the same content and work offline inside the kasmos repo.
+look up config keys and signal types in the wiki before hardcoding strings.
+
 ## Commit Policy (CRITICAL)
 
 **ALWAYS commit your work.** After implementing changes, run tests, then immediately commit.
