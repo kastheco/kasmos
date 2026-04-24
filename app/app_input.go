@@ -274,6 +274,20 @@ func (m *home) appendSDKComposerImage(selected *session.Instance, path string) (
 	return m, tea.RequestWindowSize
 }
 
+func (m *home) mutateSDKComposer(selected *session.Instance, mutate func()) (tea.Model, tea.Cmd) {
+	if selected == nil || mutate == nil {
+		return m, nil
+	}
+	if err := m.tabbedWindow.UpdatePreview(selected); err != nil {
+		return m, m.handleError(err)
+	}
+	mutate()
+	if err := m.tabbedWindow.UpdatePreview(selected); err != nil {
+		return m, m.handleError(err)
+	}
+	return m, tea.RequestWindowSize
+}
+
 func (m *home) handleSDKComposerPaste(selected *session.Instance, content string) (tea.Model, tea.Cmd) {
 	if content != "" && !pasteContentLooksBinary(content) {
 		return m.appendSDKComposerText(selected, content)
@@ -1344,7 +1358,7 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 
 		selected := m.nav.GetSelectedInstance()
 
-		// SDK sessions have no PTY — handle key events without forwarding bytes.
+		// SDK sessions have no PTY; handle key events in the local cursor-aware composer.
 		if selected != nil && session.NormalizeExecutionMode(selected.ExecutionMode) == session.ExecutionModeSDK {
 			switch {
 			case msg.String() == "ctrl+c":
@@ -1368,15 +1382,30 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 					return m, m.handleError(err)
 				}
 				return m, tea.RequestWindowSize
-			case msg.Code == tea.KeyBackspace || msg.Code == tea.KeyDelete:
-				if err := m.tabbedWindow.UpdatePreview(selected); err != nil {
-					return m, m.handleError(err)
-				}
-				m.tabbedWindow.DeleteSDKComposerBackward()
-				if err := m.tabbedWindow.UpdatePreview(selected); err != nil {
-					return m, m.handleError(err)
-				}
-				return m, tea.RequestWindowSize
+			case msg.Code == tea.KeyBackspace && msg.Mod.Contains(tea.ModCtrl):
+				return m.mutateSDKComposer(selected, m.tabbedWindow.DeleteSDKComposerWordBackward)
+			case msg.Code == tea.KeyDelete && msg.Mod.Contains(tea.ModCtrl):
+				return m.mutateSDKComposer(selected, m.tabbedWindow.DeleteSDKComposerWordForward)
+			case msg.Code == tea.KeyBackspace:
+				return m.mutateSDKComposer(selected, m.tabbedWindow.DeleteSDKComposerBackward)
+			case msg.Code == tea.KeyDelete:
+				return m.mutateSDKComposer(selected, m.tabbedWindow.DeleteSDKComposerForward)
+			case msg.Code == tea.KeyLeft && msg.Mod.Contains(tea.ModCtrl):
+				return m.mutateSDKComposer(selected, m.tabbedWindow.MoveSDKComposerCursorWordLeft)
+			case msg.Code == tea.KeyRight && msg.Mod.Contains(tea.ModCtrl):
+				return m.mutateSDKComposer(selected, m.tabbedWindow.MoveSDKComposerCursorWordRight)
+			case msg.Code == tea.KeyLeft:
+				return m.mutateSDKComposer(selected, m.tabbedWindow.MoveSDKComposerCursorLeft)
+			case msg.Code == tea.KeyRight:
+				return m.mutateSDKComposer(selected, m.tabbedWindow.MoveSDKComposerCursorRight)
+			case msg.Code == tea.KeyUp:
+				return m.mutateSDKComposer(selected, m.tabbedWindow.MoveSDKComposerCursorUp)
+			case msg.Code == tea.KeyDown:
+				return m.mutateSDKComposer(selected, m.tabbedWindow.MoveSDKComposerCursorDown)
+			case msg.Code == tea.KeyHome:
+				return m.mutateSDKComposer(selected, m.tabbedWindow.MoveSDKComposerCursorLineStart)
+			case msg.Code == tea.KeyEnd:
+				return m.mutateSDKComposer(selected, m.tabbedWindow.MoveSDKComposerCursorLineEnd)
 			case msg.Code == tea.KeyEnter:
 				value := strings.TrimSpace(m.tabbedWindow.SDKComposerText())
 				images := m.tabbedWindow.SDKComposerImages()

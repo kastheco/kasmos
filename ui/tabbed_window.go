@@ -154,6 +154,25 @@ func (w *TabbedWindow) DeleteSDKComposerBackward() {
 	w.preview.DeleteSDKComposerBackward()
 }
 
+func (w *TabbedWindow) DeleteSDKComposerForward() { w.preview.DeleteSDKComposerForward() }
+func (w *TabbedWindow) DeleteSDKComposerWordBackward() {
+	w.preview.DeleteSDKComposerWordBackward()
+}
+func (w *TabbedWindow) DeleteSDKComposerWordForward()  { w.preview.DeleteSDKComposerWordForward() }
+func (w *TabbedWindow) MoveSDKComposerCursorLeft()     { w.preview.MoveSDKComposerCursorLeft() }
+func (w *TabbedWindow) MoveSDKComposerCursorRight()    { w.preview.MoveSDKComposerCursorRight() }
+func (w *TabbedWindow) MoveSDKComposerCursorWordLeft() { w.preview.MoveSDKComposerCursorWordLeft() }
+func (w *TabbedWindow) MoveSDKComposerCursorWordRight() {
+	w.preview.MoveSDKComposerCursorWordRight()
+}
+func (w *TabbedWindow) MoveSDKComposerCursorLineStart() {
+	w.preview.MoveSDKComposerCursorLineStart()
+}
+func (w *TabbedWindow) MoveSDKComposerCursorLineEnd() { w.preview.MoveSDKComposerCursorLineEnd() }
+func (w *TabbedWindow) MoveSDKComposerCursorUp()      { w.preview.MoveSDKComposerCursorUp() }
+func (w *TabbedWindow) MoveSDKComposerCursorDown()    { w.preview.MoveSDKComposerCursorDown() }
+func (w *TabbedWindow) SDKComposerCursor() int        { return w.preview.SDKComposerCursor() }
+
 func (w *TabbedWindow) SDKComposerText() string {
 	return w.preview.SDKComposerText()
 }
