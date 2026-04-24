@@ -112,12 +112,6 @@ func isPlainShiftEnter(msg tea.KeyPressMsg) bool {
 		!msg.Mod.Contains(tea.ModMeta)
 }
 
-func allowsBinaryClipboardPaste(selected *session.Instance) bool {
-	return selected != nil &&
-		session.NormalizeExecutionMode(selected.ExecutionMode) == session.ExecutionModeTmux &&
-		common.DetectProgramKind(selected.Program) == common.ProgramCodex
-}
-
 func (m *home) applyPendingSetStatus(picked string) (tea.Model, tea.Cmd) {
 	status, state, err := taskstate.ResolveManualOverride(picked)
 	if err != nil {
@@ -1516,7 +1510,7 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 		}
 		if isPasteShortcut(msg) {
 			if text, err := readClipboardText(); err == nil && text != "" &&
-				(!pasteContentLooksBinary(text) || allowsBinaryClipboardPaste(selected)) {
+				!pasteContentLooksBinary(text) {
 				data := []byte("\x1b[200~" + text + "\x1b[201~")
 				if err := m.previewTerminal.SendKey(data); err != nil {
 					return m, m.handleError(err)

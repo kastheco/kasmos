@@ -42,6 +42,48 @@ func TestNavInstanceTitle_ArchitectBaselineUsesLowercaseLabel(t *testing.T) {
 	assert.Equal(t, "architect baseline", navInstanceTitle(instance))
 }
 
+func TestNavInstanceStatusIcon_PlannerCompleteAfterPlanning(t *testing.T) {
+	n := newTestPanel()
+	instance := &session.Instance{
+		AgentType: session.AgentTypePlanner,
+		TaskFile:  "parallel-planner-architect",
+		Status:    session.Running,
+	}
+	row := navRow{
+		PlanStatus: string(taskstate.StatusImplementing),
+		PlanPhase:  "architecting",
+	}
+
+	assert.Equal(t, "✓", stripANSI(n.navInstanceStatusIcon(instance, row)))
+}
+
+func TestNavInstanceStatusIcon_ArchitectBaselineCompleteWhenArchitecting(t *testing.T) {
+	n := newTestPanel()
+	instance := &session.Instance{
+		AgentType: session.AgentTypeArchitectBaseline,
+		TaskFile:  "parallel-planner-architect",
+		Status:    session.Running,
+	}
+	row := navRow{
+		PlanStatus: string(taskstate.StatusImplementing),
+		PlanPhase:  "architecting",
+	}
+
+	assert.Equal(t, "✓", stripANSI(n.navInstanceStatusIcon(instance, row)))
+}
+
+func TestNavInstanceStatusIcon_ArchitectBaselineRunningWhilePlanning(t *testing.T) {
+	n := newTestPanel()
+	instance := &session.Instance{
+		AgentType: session.AgentTypeArchitectBaseline,
+		TaskFile:  "parallel-planner-architect",
+		Status:    session.Running,
+	}
+	row := navRow{PlanStatus: string(taskstate.StatusPlanning)}
+
+	assert.NotEqual(t, "✓", stripANSI(n.navInstanceStatusIcon(instance, row)))
+}
+
 func TestNavInstanceTitle_AdhocInstanceFallsBackToTitle(t *testing.T) {
 	instance := &session.Instance{Title: "adhoc-instance", TaskFile: ""}
 

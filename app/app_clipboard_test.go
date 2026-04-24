@@ -99,7 +99,7 @@ func TestPasteMsg_RawPNGContentForwardsCtrlVToEmbeddedTerminal(t *testing.T) {
 	require.Equal(t, []byte{0x16}, sent[0])
 }
 
-func TestPasteMsg_RawPNGContentForCodexTmuxUsesBracketedPaste(t *testing.T) {
+func TestPasteMsg_RawPNGContentForCodexTmuxForwardsCtrlV(t *testing.T) {
 	t.Parallel()
 	h := newTestHome()
 	term := session.NewDummyTerminal()
@@ -126,7 +126,7 @@ func TestPasteMsg_RawPNGContentForCodexTmuxUsesBracketedPaste(t *testing.T) {
 
 	sent := term.SentKeys()
 	require.Len(t, sent, 1)
-	require.Equal(t, []byte("\x1b[200~"+rawPNG+"\x1b[201~"), sent[0])
+	require.Equal(t, []byte{0x16}, sent[0])
 }
 
 func TestPasteMsg_EmptyContentAttachesClipboardImageForSDKFocusMode(t *testing.T) {
@@ -279,7 +279,7 @@ func TestHandleKeyPress_TmuxFocusMode_CtrlVWithRawPNGClipboardFallsBackToRawCtrl
 	require.Equal(t, []byte{0x16}, sent[0])
 }
 
-func TestHandleKeyPress_TmuxCodexFocusMode_CtrlVWithRawPNGClipboardUsesBracketedPaste(t *testing.T) {
+func TestHandleKeyPress_TmuxCodexFocusMode_CtrlVWithRawPNGClipboardForwardsCtrlV(t *testing.T) {
 	// serial: overrides readClipboardText package-level seam
 	origRead := readClipboardText
 	rawPNG := "\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"
@@ -310,5 +310,5 @@ func TestHandleKeyPress_TmuxCodexFocusMode_CtrlVWithRawPNGClipboardUsesBracketed
 
 	sent := term.SentKeys()
 	require.Len(t, sent, 1)
-	require.Equal(t, []byte("\x1b[200~"+rawPNG+"\x1b[201~"), sent[0])
+	require.Equal(t, []byte{0x16}, sent[0])
 }

@@ -417,12 +417,15 @@ func (n *NavigationPanel) rebuildRows() {
 		if !collapsed {
 			for _, inst := range insts {
 				rows = append(rows, navRow{
-					Kind:     navRowInstance,
-					ID:       navInstanceRowID(inst),
-					Label:    inst.DisplayName(),
-					TaskFile: inst.TaskFile,
-					Instance: inst,
-					Indent:   indent,
+					Kind:            navRowInstance,
+					ID:              navInstanceRowID(inst),
+					Label:           inst.DisplayName(),
+					TaskFile:        inst.TaskFile,
+					PlanStatus:      p.Status,
+					PlanPhase:       p.Phase,
+					ActiveAgentType: p.AgentType,
+					Instance:        inst,
+					Indent:          indent,
 				})
 			}
 		}
@@ -1333,11 +1336,33 @@ func navInstanceTitle(inst *session.Instance) string {
 }
 
 // navInstanceStatusIcon returns a styled status glyph for an instance row.
-func (n *NavigationPanel) navInstanceStatusIcon(inst *session.Instance) string {
+func navInstanceLifecycleComplete(inst *session.Instance, row navRow) bool {
+	if inst == nil {
+		return false
+	}
+	phase := strings.TrimSpace(row.PlanPhase)
+	status := strings.TrimSpace(row.PlanStatus)
+	switch inst.AgentType {
+	case session.AgentTypePlanner:
+		return status != "" && status != "planning"
+	case session.AgentTypeArchitectBaseline:
+		switch phase {
+		case "architecting", "wave_running", "wave_waiting", "fixing", "single_agent_implementing", "reviewing", "readiness_reviewing":
+			return true
+		}
+		switch status {
+		case "implementing", "reviewing", "verifying", "done":
+			return true
+		}
+	}
+	return false
+}
+
+func (n *NavigationPanel) navInstanceStatusIcon(inst *session.Instance, row navRow) string {
 	if inst.Exited {
 		return navCancelledLblStyle.Render("✕")
 	}
-	if inst.ImplementationComplete {
+	if inst.ImplementationComplete || navInstanceLifecycleComplete(inst, row) {
 		return navCompletedIconStyle.Render("✓")
 	}
 	switch inst.Status {
@@ -1454,7 +1479,7 @@ func (n *NavigationPanel) renderNavRow(row navRow, contentWidth int) string {
 		}
 
 		title := navInstanceTitle(inst)
-		statusIcon := n.navInstanceStatusIcon(inst)
+		statusIcon := n.navInstanceStatusIcon(inst, row)
 		statusW := lipgloss.Width(statusIcon)
 
 		indentW := row.Indent + 4
