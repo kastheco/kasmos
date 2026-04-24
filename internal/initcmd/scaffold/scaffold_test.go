@@ -602,6 +602,9 @@ func TestWriteProjectSkills(t *testing.T) {
 	assert.Equal(t, string(architectTemplate), string(architectSkill))
 	assert.Contains(t, string(architectSkill), "compatibility note: emit `elaborator-finished` exactly as written until the gateway is renamed")
 	assert.Contains(t, string(architectSkill), "signal shim, not an active elaborator role")
+	assert.Contains(t, string(architectSkill), "## parallel baseline mode")
+	assert.Contains(t, string(architectSkill), ".kasmos/cache/<plan-file>-architect-baseline.json")
+	assert.Contains(t, string(architectSkill), "validate `plan_file`, `project`, `description_hash`, `schema_version`, and non-empty `baseline_markdown`")
 	assert.NotContains(t, string(architectSkill), "**elaborator** agent")
 
 	// cli-tools resource files included

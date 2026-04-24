@@ -30,6 +30,9 @@ func TestPromptTemplates_UseMCPFirstSignals(t *testing.T) {
 				"compatibility note: emit `elaborator-finished` exactly as written until the gateway is renamed; this is a signal shim, not an active elaborator role",
 				"use MCP `signal_create` (signal_type: \"elaborator-finished\", plan_file: \"<plan-file>\", project: \"$KASMOS_PROJECT\") after the round-trip check succeeds.",
 				"writing the compatibility `elaborator-finished` signal with wrong filename",
+				"## parallel baseline mode",
+				"validate `plan_file`, `project`, `description_hash`, `schema_version`, and non-empty `baseline_markdown`",
+				"The final architect pass still remains the only task content writer.",
 			},
 		},
 		{

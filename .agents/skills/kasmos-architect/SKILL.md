@@ -110,6 +110,21 @@ This baseline is private working context. Do not preserve the planner's file lis
 
 ---
 
+## parallel baseline mode
+
+When parallel baseline mode is enabled, another architect-baseline session may run alongside the planner and write `.kasmos/cache/<plan-file>-architect-baseline.json`.
+
+That cache is advisory input only:
+- first read the planner draft with MCP `task_show` as usual
+- then read the cache if it exists
+- validate `plan_file`, `project`, `description_hash`, `schema_version`, and non-empty `baseline_markdown`
+- merge the planner draft with the cached baseline when it is valid
+- if the cache is missing, corrupt, stale, or incomplete, continue with your own inline independent solution baseline and mention the fallback in the plan summary
+
+The final architect pass still remains the only task content writer. You must still create your own independent solution baseline before judging the planner draft, even when a cached baseline is present.
+
+---
+
 ## phase 3: compare planner vs architect baseline and merge
 
 Compare your baseline against the planner draft before rewriting the stored plan:
