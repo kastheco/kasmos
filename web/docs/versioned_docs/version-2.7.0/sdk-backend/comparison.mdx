@@ -1,0 +1,116 @@
+---
+title: "sdk vs tmux"
+---
+
+# sdk vs tmux
+
+both backends implement the `session.ExecutionSession` interface. this page documents where their behavior diverges.
+
+## interface method comparison
+
+| method | tmux | sdk |
+|--------|------|-----|
+| `Start(workDir string) error` | creates a tmux session and runs the program inside it | selects a transport, spawns the agent subprocess via `exec.Cmd`, performs the app-server handshake |
+| `Restore() error` | reconnects to an existing detached tmux session | no-op — always returns `nil`; a fresh `Session` after restart fails `DoesSessionExist()` |
+| `Close() error` | kills the tmux session | cancels the transport context and kills the child process; safe to call multiple times |
+| `DoesSessionExist() bool` | calls `tmux has-session` | returns `s.alive`; flips to `false` when the events channel closes (subprocess exited) |
+| `CapturePaneContent() (string, error)` | runs `tmux capture-pane` | calls `renderer.Capture()` — returns all accumulated structured events joined by newlines |
+| `CapturePaneContentWithOptions(start, end string) (string, error)` | captures a scrollback range | calls `renderer.CaptureRange(start, end)` — supports the same tmux `-S`/`-E` range semantics |
+| `HasUpdated() (bool, bool)` | checks content hash; detects tmux prompts | compares renderer snapshot against `lastContent`; `hasPrompt` set from `EventPermission` / `EventTurnStarted` events |
+| `HasUpdatedWithContent() (bool, bool, string, bool)` | full poll with content and prompt detection | same as tmux; `captured` is always `true` |
+| `GetPanePID() (int, error)` | returns the tmux pane PID | returns `transport.PID()` |
+| `GetSanitizedName() string` | returns sanitized tmux session name | returns sanitized log file stem |
+| `SetAgentType(string)` | stored and used for tmux session title | stored; forwarded to `LaunchConfig.AgentType` at `Start` |
+| `SetInitialPrompt(string)` | sent to the pane after start | delivered via `transport.SendPrompt` after startup handshake |
+| `SetTaskEnv(task, wave, peers int)` | env vars injected at `Start` | env vars injected at `Start` via `buildEnv` (identical behavior) |
+| `SetSessionTitle(string)` | updates tmux window title | stored; used for log file path construction |
+| `SetTitleFunc(fn)` | callback invoked on session start | stored; not called (no title lifecycle events in sdk mode) |
+
+## interactive operations
+
+the following operations require a live PTY. sdk sessions return `ErrInteractiveOnly` for all three:
+
+```go
+func (s *Session) Attach() (chan struct{}, error)        { return nil, ErrInteractiveOnly }
+func (s *Session) DetachSafely() error                  { return ErrInteractiveOnly }
+func (s *Session) SetDetachedSize(_, _ int) error       { return ErrInteractiveOnly }
+```
+
+| operation | tmux behavior | sdk behavior |
+|-----------|--------------|-------------|
+| `Attach()` | attaches the caller's terminal to the tmux session | **`ErrInteractiveOnly`** |
+| `DetachSafely()` | detaches gracefully | **`ErrInteractiveOnly`** |
+| `SetDetachedSize(width, height int)` | resizes the detached pane | **`ErrInteractiveOnly`** |
+
+## text input is supported
+
+unlike the removed `session/headless` backend, sdk sessions **do** support text input:
+
+| operation | tmux behavior | sdk behavior |
+|-----------|--------------|-------------|
+| `SendKeys(keys string)` | sends key sequence to the pane | buffers text; `"\x03"` (ctrl-C) triggers `transport.Interrupt` instead |
+| `TapEnter()` | sends a carriage return | drains the buffer and calls `transport.SendPrompt(ctx, bufferedText)` |
+| `SendPermissionResponse(choice)` | sends the permission dialog response key | calls `transport.RespondPermission(ctx, choice)` with a 10-second timeout |
+
+**text entry is buffered and submitted.** `SendKeys` accumulates text in `promptBuf`; `TapEnter` flushes it as a single `SendPrompt` call. this matches the orchestration layer's existing call pattern without any changes.
+
+## capture range semantics
+
+`CapturePaneContentWithOptions(start, end string)` behaves differently from the removed headless backend:
+
+| | tmux | sdk | old headless (removed) |
+|--|------|-----|----------------------|
+| `start`/`end` params | used as `-S`/`-E` scrollback range | forwarded to `Renderer.CaptureRange` — same semantics | **ignored** — always returned full buffer |
+
+`Renderer.CaptureRange` resolves range strings exactly as tmux does:
+- `""` or `"-"` → beginning (start) or end (end) of buffer
+- non-negative integer → 0-based line index
+- negative integer → offset from the last line
+
+## permission prompt detection
+
+tmux sessions detect permission prompts by scanning pane output for known patterns. sdk sessions receive structured `EventPermission` notifications from the transport instead. `hasPrompt` is set when `EventPermission` arrives and cleared when `EventTurnStarted` arrives.
+
+**consequence:** sdk sessions handle permission responses more reliably than tmux — the transport delivers a typed permission event with a stable `permission_id` rather than requiring pattern matching on terminal output.
+
+## embedded terminal
+
+the TUI's embedded terminal feature requires a tmux PTY:
+
+```go
+// session/instance_session.go
+func (i *Instance) NewEmbeddedTerminalForInstance(cols, rows int) (*EmbeddedTerminal, error) {
+    if i.ExecutionMode == ExecutionModeSDK {
+        return nil, ErrInteractiveOnly
+    }
+    // ...
+}
+```
+
+sdk instances display rendered structured output in the preview pane. focus mode (the embedded interactive terminal) is only available for tmux-backed instances.
+
+## choosing the right backend
+
+```
+program is claude or codex?         → sdk is available
+program is opencode, gemini, amp?   → tmux only (sdk silently falls back anyway)
+need to attach interactively?       → tmux
+running in a CI pipeline?           → sdk (claude/codex) or tmux (everything else)
+running parallel wave agents?       → sdk preferred for claude/codex (lower overhead)
+need kas monitor live attach?       → tmux
+```
+
+you can mix modes within a single plan:
+
+```toml
+[agents.coder]
+enabled        = true
+program        = "claude"
+flags          = ["--permission-mode bypassPermissions"]
+execution_mode = "sdk"
+
+[agents.reviewer]
+enabled        = true
+program        = "claude"
+execution_mode = "tmux"
+```

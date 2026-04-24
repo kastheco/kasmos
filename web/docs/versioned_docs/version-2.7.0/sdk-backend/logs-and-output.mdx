@@ -1,0 +1,131 @@
+---
+title: "logs and output"
+---
+
+# logs and output
+
+sdk sessions accumulate agent output from structured transport events in two places simultaneously: an in-process `Renderer` for real-time polling, and a log file (stderr of the agent subprocess) for persistence.
+
+## the renderer
+
+the `Renderer` in `session/sdk/renderer.go` converts the transport's `Event` stream into a line buffer that callers read via the standard `CapturePaneContent` / `CapturePaneContentWithOptions` surface.
+
+events are rendered as follows:
+
+| event kind | text representation |
+|-----------|-------------------|
+| `EventTextDelta` | raw text appended inline; newlines split into completed lines |
+| `EventToolCall` | `[tool: <name> <input>]` |
+| `EventToolResult` | `[result: <result>]` |
+| `EventPermission` | `[permission: <description>]` |
+| `EventSystem` | `[system: <text>]` |
+| `EventTurnCompleted` | flushes any pending partial line |
+| `EventTurnInterrupted` | flushes partial line, appends `[interrupted]` |
+| `EventTurnStarted` | no visible marker |
+
+the buffer grows continuously and is never truncated or rotated. concurrent reads are safe — all mutations are serialized under the renderer's `sync.Mutex`.
+
+## reading output
+
+four methods expose the renderer to callers:
+
+### CapturePaneContent
+
+```go
+func (s *Session) CapturePaneContent() (string, error)
+```
+
+returns all accumulated events joined by newlines. this is the method the TUI preview pane calls for sdk instances.
+
+### CapturePaneContentWithOptions
+
+```go
+func (s *Session) CapturePaneContentWithOptions(start, end string) (string, error)
+```
+
+returns a slice of the line buffer using tmux-compatible range semantics via `Renderer.CaptureRange(start, end)`:
+
+- `""` or `"-"` → beginning (for start) or end (for end) of buffer
+- non-negative integer → 0-based line index from the top
+- negative integer → offset from the last line (`-1` = last line, `-2` = second-to-last)
+
+```go
+// Renderer.CaptureRange resolves start/end and returns the joined slice
+func (r *Renderer) CaptureRange(start, end string) string
+```
+
+**note:** the old `session/headless` backend ignored the `start`/`end` arguments and always returned the full buffer. sdk sessions pass them through to `CaptureRange` and honor the range.
+
+### HasUpdated
+
+```go
+func (s *Session) HasUpdated() (updated bool, hasPrompt bool)
+```
+
+reports whether the renderer produced new content since the last call. `hasPrompt` reflects whether the agent is currently waiting for input — set on `EventPermission`, cleared on `EventTurnStarted`.
+
+### HasUpdatedWithContent
+
+```go
+func (s *Session) HasUpdatedWithContent() (updated bool, hasPrompt bool, content string, captured bool)
+```
+
+the full poll variant used by `CollectMetadata`. returns:
+
+- `updated` — whether content changed since the last call
+- `hasPrompt` — whether the agent is awaiting input
+- `content` — the full renderer output
+- `captured` — always `true` for sdk sessions
+
+## the log file
+
+the agent's stderr is redirected to a log file at:
+
+```
+<workDir>/.kasmos/logs/<sanitizedName>.log
+```
+
+the file is opened in append mode at `Start()` time and closed when the child process exits. you can follow it live:
+
+```bash
+tail -f .kasmos/logs/<sanitized-name>.log
+```
+
+### log file naming
+
+`sanitizedName` is derived from the session `name` via `common.SanitizeSessionName`:
+- whitespace is removed
+- dots are replaced with underscores
+
+examples:
+```
+"coder agent 1"   → "coderagent1.log"
+"task 3.coder"    → "task3_coder.log"
+"my-agent"        → "my-agent.log"
+```
+
+### reading logs after a run
+
+```bash
+# follow a running sdk session
+tail -f .kasmos/logs/<sanitized-name>.log
+
+# list all session logs
+ls -lh .kasmos/logs/
+
+# search across all logs
+rg "error" .kasmos/logs/
+```
+
+### log rotation
+
+kasmos does not rotate log files. each `Start()` call appends to the existing file if it already exists from a prior run. for long-running automated pipelines, manage rotation externally with `logrotate` or similar tools.
+
+## what does not work
+
+interactive operations require a live PTY and are not available in sdk mode:
+
+- `Attach()` → `ErrInteractiveOnly` — you cannot attach to an sdk session
+- `NewEmbeddedTerminalForInstance()` → `ErrInteractiveOnly` — embedded terminal requires a tmux PTY
+
+the preview pane and audit log work normally for sdk instances — `CapturePaneContent` returns rendered output from the structured event stream just as tmux's pane capture would.
