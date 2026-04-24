@@ -587,6 +587,32 @@ describe("AgentPreview", () => {
     expect(document.querySelector("script")).toBeNull();
   });
 
+  it("renders code_block rows as literal text", async () => {
+    const turn = makeTurn({
+      rows: [
+        makeRow({
+          kind: "code_block",
+          text: '*literal*\n<script>alert("xss")</script>',
+        }),
+      ],
+    });
+    (api.getInstancePresentation as Mock).mockResolvedValue(
+      makePresentation({ turns: [turn] }),
+    );
+
+    const { container } = render(<AgentPreview project="my-project" title="agent-1" />);
+
+    await waitFor(() => {
+      const codeBlock = container.querySelector("[data-kind='code_block']");
+      expect(codeBlock?.textContent).toContain("*literal*");
+      expect(codeBlock?.textContent).toContain('<script>alert("xss")</script>');
+    });
+
+    const codeBlock = container.querySelector("[data-kind='code_block']");
+    expect(codeBlock?.querySelector("em")).toBeNull();
+    expect(document.querySelector("script")).toBeNull();
+  });
+
   // -------------------------------------------------------------------------
   // Permission card integration
   // -------------------------------------------------------------------------

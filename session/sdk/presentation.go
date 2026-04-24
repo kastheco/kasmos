@@ -30,7 +30,7 @@ func maybeInjectThinking(turn *PresentationTurn, now time.Time) {
 	// Do not inject when the turn already has substantive content.
 	for _, row := range turn.Rows {
 		switch row.Kind {
-		case RowTool, RowResult, RowProse, RowPermission, RowWarning, RowSystem:
+		case RowTool, RowResult, RowProse, RowCodeBlock, RowPermission, RowWarning, RowSystem:
 			return
 		}
 	}
@@ -70,6 +70,8 @@ const (
 	RowResponse PresentationRowKind = "response"
 	// RowProse holds one logical line of assistant prose text.
 	RowProse PresentationRowKind = "prose"
+	// RowCodeBlock holds one logical line inside a fenced assistant code block.
+	RowCodeBlock PresentationRowKind = "code_block"
 	// RowStatus carries lifecycle annotations such as "[interrupted]".
 	RowStatus PresentationRowKind = "status"
 )
@@ -456,7 +458,7 @@ func deriveTurnActivity(turn *PresentationTurn, now time.Time) *TurnActivity {
 	hasSubstantive := false
 	for _, row := range turn.Rows {
 		switch row.Kind {
-		case RowTool, RowResult, RowProse, RowPermission, RowWarning, RowSystem:
+		case RowTool, RowResult, RowProse, RowCodeBlock, RowPermission, RowWarning, RowSystem:
 			hasSubstantive = true
 		}
 	}

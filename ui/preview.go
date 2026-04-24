@@ -652,6 +652,18 @@ func renderSDKTurn(turn *sdk.PresentationTurn, width int) []string {
 	diffRemovedStyle := lipgloss.NewStyle().Foreground(ColorLove)
 	diffContextStyle := lipgloss.NewStyle().Foreground(ColorSubtle)
 	previewStyle := lipgloss.NewStyle().Foreground(ColorSubtle)
+	codeGutterStyle := lipgloss.NewStyle().Foreground(ColorMuted)
+	codeStyle := lipgloss.NewStyle().Foreground(ColorFoam)
+	mdStyles := sdk.MarkdownLineStyles{
+		Base:         proseStyle,
+		Bold:         proseStyle.Bold(true),
+		Italic:       proseStyle.Italic(true),
+		Code:         codeStyle,
+		Heading:      lipgloss.NewStyle().Foreground(ColorGold).Bold(true),
+		BulletPrefix: lipgloss.NewStyle().Foreground(ColorRose),
+		NumberPrefix: lipgloss.NewStyle().Foreground(ColorFoam),
+		QuotePrefix:  lipgloss.NewStyle().Foreground(ColorMuted),
+	}
 
 	prevKind := sdk.PresentationRowKind("")
 	for i, row := range turn.Rows {
@@ -726,7 +738,19 @@ func renderSDKTurn(turn *sdk.PresentationTurn, width int) []string {
 				rows = append(rows, renderResponseDivider(width))
 			}
 		case sdk.RowProse:
-			rows = append(rows, sdk.RenderTextLineWithTimestamp(row.Text, row.Timestamp, width, proseStyle, timestampStyle))
+			line := sdk.RenderMarkdownProseLine(row.Text, mdStyles)
+			if sdkResponseTextKind(prevKind) {
+				rows = append(rows, line)
+			} else {
+				rows = append(rows, sdk.RenderStyledLineWithTimestamp(line, row.Timestamp, width, timestampStyle))
+			}
+		case sdk.RowCodeBlock:
+			line := sdk.ToolCallIndent + sdk.RenderStructuredChildLine("│ "+row.Text, codeGutterStyle, codeStyle)
+			if sdkResponseTextKind(prevKind) {
+				rows = append(rows, line)
+			} else {
+				rows = append(rows, sdk.RenderStyledLineWithTimestamp(line, row.Timestamp, width, timestampStyle))
+			}
 		case sdk.RowStatus:
 			rows = append(rows, statusStyle.Render(row.Text))
 		case sdk.RowThinking:
@@ -735,6 +759,10 @@ func renderSDKTurn(turn *sdk.PresentationTurn, width int) []string {
 		prevKind = row.Kind
 	}
 	return rows
+}
+
+func sdkResponseTextKind(kind sdk.PresentationRowKind) bool {
+	return kind == sdk.RowProse || kind == sdk.RowCodeBlock
 }
 
 func sdkComposerOwnerKey(instance *session.Instance) string {

@@ -668,6 +668,13 @@ const presentationPayload = {
           tool_name: "bash",
           is_error: false,
         },
+        {
+          kind: "code_block",
+          text: 'fmt.Println("hi")',
+          timestamp: "2026-04-17T10:00:03Z",
+          tool_name: "go",
+          is_error: true,
+        },
       ],
     },
   ],
@@ -698,13 +705,25 @@ if (!(turn.started_at instanceof Date)) {
 assertEqual(turn.id, "turn-1", "turn id");
 assertEqual(turn.number, 1, "turn number");
 assertEqual(turn.tool_count, 2, "turn tool_count");
-assertEqual(turn.rows.length, 2, "turn row count");
+assertEqual(turn.rows.length, 3, "turn row count");
 assertEqual(turn.rows[0].kind, "prose", "row[0] kind");
 if (!(turn.rows[0].timestamp instanceof Date)) {
   throw new Error("row[0] timestamp must be a Date");
 }
 assertEqual(turn.rows[1].tool_name, "bash", "row[1] tool_name");
 assertEqual(turn.rows[1].timestamp, null, "row[1] null timestamp");
+assertEqual(turn.rows[2].kind, "code_block", "row[2] kind");
+assertEqual(turn.rows[2].text, 'fmt.Println("hi")', "row[2] text");
+if (!(turn.rows[2].timestamp instanceof Date)) {
+  throw new Error("row[2] timestamp must be a Date");
+}
+assertEqual(
+  turn.rows[2].timestamp.toISOString(),
+  "2026-04-17T10:00:03.000Z",
+  "row[2] timestamp parsed",
+);
+assertEqual(turn.rows[2].tool_name, "go", "row[2] tool_name");
+assertEqual(turn.rows[2].is_error, true, "row[2] is_error");
 
 // Running turn: Go zero-value timestamps should normalize to null so the UI
 // keeps unfinished turns in the running state.

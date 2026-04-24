@@ -31,6 +31,15 @@ func localPreviewTime(hour, minute int) time.Time {
 	return time.Date(2026, time.April, 22, hour, minute, 0, 0, time.Local)
 }
 
+func rightAlignedPreviewTimestampLine(text string, ts time.Time, width int) string {
+	label := ts.Local().Format("15:04")
+	spaces := width - len(text) - len(label)
+	if spaces < 1 {
+		spaces = 1
+	}
+	return text + strings.Repeat(" ", spaces) + label
+}
+
 // setupTestEnvironment creates a common test environment with git repo and instance
 func setupTestEnvironment(t *testing.T, cmdExec cmd_test.MockCmdExec) *testSetup {
 	t.Helper()
@@ -954,10 +963,155 @@ func TestPreviewPane_SDKPresentation_ProseRowsShowRightAlignedTimestamp(t *testi
 	}})
 	require.NoError(t, pane.UpdateContent(inst))
 
+	plain := stripPreviewANSI(pane.previewState.text)
 	require.Contains(t, pane.previewState.text,
-		sdk.RenderTextLineWithTimestamp("assistant text", now, 24,
-			lipgloss.NewStyle().Foreground(ColorText),
+		sdk.RenderStyledLineWithTimestamp(lipgloss.NewStyle().Foreground(ColorText).Render("assistant text"), now, 24,
 			lipgloss.NewStyle().Foreground(ColorSubtle)))
+	require.Contains(t, plain, rightAlignedPreviewTimestampLine("assistant text", now, 24))
+	require.Equal(t, 1, strings.Count(plain, now.Local().Format("15:04")))
+}
+
+func TestPreviewPane_SDKPresentation_ProseBlockOnlyTimestampsFirstRow(t *testing.T) {
+	pane := NewPreviewPane()
+	pane.SetSize(36, 24)
+
+	now := localPreviewTime(9, 43)
+	inst := newSDKInstanceWithTurns(t, []*sdk.PresentationTurn{{
+		ID:          "t1",
+		Number:      1,
+		StartedAt:   now,
+		CompletedAt: now,
+		Rows: []sdk.PresentationRow{
+			{Kind: sdk.RowResponse, Timestamp: now},
+			{Kind: sdk.RowProse, Text: "first line", Timestamp: now},
+			{Kind: sdk.RowProse, Text: "second line", Timestamp: now},
+		},
+	}})
+	require.NoError(t, pane.UpdateContent(inst))
+
+	plain := stripPreviewANSI(pane.previewState.text)
+	require.Contains(t, plain, rightAlignedPreviewTimestampLine("first line", now, 36))
+	require.Contains(t, plain, "\nsecond line\n")
+	require.Equal(t, 1, strings.Count(plain, now.Local().Format("15:04")))
+}
+
+func TestPreviewPane_SDKPresentation_ProseTimestampResetsAfterToolResultRows(t *testing.T) {
+	pane := NewPreviewPane()
+	pane.SetSize(44, 24)
+
+	now := localPreviewTime(9, 44)
+	inst := newSDKInstanceWithTurns(t, []*sdk.PresentationTurn{{
+		ID:          "t1",
+		Number:      1,
+		StartedAt:   now,
+		CompletedAt: now,
+		Rows: []sdk.PresentationRow{
+			{Kind: sdk.RowResponse, Timestamp: now},
+			{Kind: sdk.RowProse, Text: "first response", Timestamp: now},
+			{Kind: sdk.RowTool, Text: "• bash go test", ToolName: "bash", Timestamp: now},
+			{Kind: sdk.RowResult, Text: "✗ tests failed", IsError: true, Timestamp: now},
+			{Kind: sdk.RowProse, Text: "second response", Timestamp: now},
+		},
+	}})
+	require.NoError(t, pane.UpdateContent(inst))
+
+	plain := stripPreviewANSI(pane.previewState.text)
+	require.Contains(t, plain, rightAlignedPreviewTimestampLine("first response", now, 44))
+	require.Contains(t, plain, rightAlignedPreviewTimestampLine("second response", now, 44))
+	require.Equal(t, 2, strings.Count(plain, now.Local().Format("15:04")))
+}
+
+func TestPreviewPane_SDKPresentation_ProseRendersInlineMarkdown(t *testing.T) {
+	pane := NewPreviewPane()
+	pane.SetSize(80, 24)
+
+	now := localPreviewTime(9, 45)
+	inst := newSDKInstanceWithTurns(t, []*sdk.PresentationTurn{{
+		ID:          "t1",
+		Number:      1,
+		StartedAt:   now,
+		CompletedAt: now,
+		Rows: []sdk.PresentationRow{
+			{Kind: sdk.RowResponse, Timestamp: now},
+			{Kind: sdk.RowProse, Text: "make **bold** *italic* `code`", Timestamp: now},
+		},
+	}})
+	require.NoError(t, pane.UpdateContent(inst))
+
+	rendered := pane.previewState.text
+	plain := stripPreviewANSI(rendered)
+	require.Contains(t, plain, "make bold italic code")
+	require.NotContains(t, plain, "**bold**")
+	require.NotContains(t, plain, "*italic*")
+	require.NotContains(t, plain, "`code`")
+	require.Contains(t, rendered, lipgloss.NewStyle().Foreground(ColorText).Bold(true).Render("bold"))
+	require.Contains(t, rendered, lipgloss.NewStyle().Foreground(ColorText).Italic(true).Render("italic"))
+	require.Contains(t, rendered, lipgloss.NewStyle().Foreground(ColorFoam).Render("code"))
+}
+
+func TestPreviewPane_SDKPresentation_ProseRendersLineMarkdown(t *testing.T) {
+	pane := NewPreviewPane()
+	pane.SetSize(80, 24)
+
+	now := localPreviewTime(9, 46)
+	inst := newSDKInstanceWithTurns(t, []*sdk.PresentationTurn{{
+		ID:          "t1",
+		Number:      1,
+		StartedAt:   now,
+		CompletedAt: now,
+		Rows: []sdk.PresentationRow{
+			{Kind: sdk.RowResponse, Timestamp: now},
+			{Kind: sdk.RowProse, Text: "# heading", Timestamp: now},
+			{Kind: sdk.RowProse, Text: "- bullet", Timestamp: now},
+			{Kind: sdk.RowProse, Text: "12. numbered", Timestamp: now},
+			{Kind: sdk.RowProse, Text: "> quoted `code`", Timestamp: now},
+		},
+	}})
+	require.NoError(t, pane.UpdateContent(inst))
+
+	rendered := pane.previewState.text
+	plain := stripPreviewANSI(rendered)
+	require.Contains(t, plain, "heading")
+	require.Contains(t, plain, "• bullet")
+	require.Contains(t, plain, "12. numbered")
+	require.Contains(t, plain, "│ quoted code")
+	require.NotContains(t, plain, "# heading")
+	require.NotContains(t, plain, "- bullet")
+	require.NotContains(t, plain, "> quoted")
+	require.Contains(t, rendered, lipgloss.NewStyle().Foreground(ColorGold).Bold(true).Render("heading"))
+	require.Contains(t, rendered, lipgloss.NewStyle().Foreground(ColorRose).Render("• "))
+	require.Contains(t, rendered, lipgloss.NewStyle().Foreground(ColorFoam).Render("12. "))
+	require.Contains(t, rendered, lipgloss.NewStyle().Foreground(ColorMuted).Render("│ "))
+}
+
+func TestPreviewPane_SDKPresentation_CodeBlockRowsRenderLiteralMarkdown(t *testing.T) {
+	pane := NewPreviewPane()
+	pane.SetSize(44, 24)
+
+	now := localPreviewTime(9, 47)
+	inst := newSDKInstanceWithTurns(t, []*sdk.PresentationTurn{{
+		ID:          "t1",
+		Number:      1,
+		StartedAt:   now,
+		CompletedAt: now,
+		Rows: []sdk.PresentationRow{
+			{Kind: sdk.RowResponse, Timestamp: now},
+			{Kind: sdk.RowCodeBlock, Text: "**bold** and `code`", Timestamp: now},
+			{Kind: sdk.RowCodeBlock, Text: "fmt.Println(\"hi\")", Timestamp: now},
+		},
+	}})
+	require.NoError(t, pane.UpdateContent(inst))
+
+	rendered := pane.previewState.text
+	plain := stripPreviewANSI(rendered)
+	require.Contains(t, plain, "  │ **bold** and `code`")
+	require.Contains(t, plain, "\n  │ fmt.Println(\"hi\")\n")
+	require.Contains(t, rendered,
+		sdk.ToolCallIndent+
+			lipgloss.NewStyle().Foreground(ColorMuted).Render("│ ")+
+			lipgloss.NewStyle().Foreground(ColorFoam).Render("**bold** and `code`"))
+	require.NotContains(t, rendered, lipgloss.NewStyle().Foreground(ColorText).Bold(true).Render("bold"))
+	require.Equal(t, 1, strings.Count(plain, now.Local().Format("15:04")))
 }
 
 func TestPreviewPane_SDKPresentation_ShowsFooterMetadataBeforeHints(t *testing.T) {
@@ -1155,6 +1309,31 @@ func TestPreviewPane_SDKPresentation_NarrowPane_NoDoubleSpacer(t *testing.T) {
 	between := rendered[idxFirst:idxSecond]
 	require.NotContains(t, between, "\n\n",
 		"narrow mode must use single-newline separators between turns")
+}
+
+func TestPreviewPane_SDKPresentation_NarrowPane_MarkdownKeepsSingleHeaderDivider(t *testing.T) {
+	now := localPreviewTime(9, 48)
+	turn := &sdk.PresentationTurn{
+		ID:          "t1",
+		Number:      7,
+		StartedAt:   now,
+		CompletedAt: now,
+		Rows: []sdk.PresentationRow{
+			{Kind: sdk.RowResponse, Timestamp: now},
+			{Kind: sdk.RowProse, Text: "# heading", Timestamp: now},
+			{Kind: sdk.RowCodeBlock, Text: "**literal**", Timestamp: now},
+		},
+	}
+
+	rows := renderSDKTurn(turn, 30)
+	plain := stripPreviewANSI(strings.Join(rows, "\n"))
+
+	require.Len(t, rows, 4)
+	require.Equal(t, 1, strings.Count(plain, "turn 7"))
+	require.Equal(t, 1, strings.Count(plain, strings.Repeat("─", 30)))
+	require.NotContains(t, plain, "\n\n")
+	require.Contains(t, plain, "heading")
+	require.Contains(t, plain, "  │ **literal**")
 }
 
 // TestPreviewPane_SDKPresentation_NormalPane_DoubleSpacerPreserved verifies

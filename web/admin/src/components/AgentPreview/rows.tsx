@@ -74,6 +74,15 @@ function ProseRow({ row }: RowProps) {
   );
 }
 
+function CodeBlockRow({ row }: RowProps) {
+  return (
+    <div className={`${styles.row} ${styles.kindCodeBlock}`} data-kind="code_block">
+      <span className={styles.codeBlockGutter}>│</span>
+      <span className={styles.codeBlockText}>{row.text}</span>
+    </div>
+  );
+}
+
 function DiffRow({ row }: RowProps) {
   const payload = row.tool_diff;
   if (!payload) return null;
@@ -140,6 +149,7 @@ function PreviewRow({ row }: RowProps) {
  * Maps a single `PresentationRow` to its React node.
  * `response` rows always become `ResponseDivider` — never generic text.
  * `prose` rows render as react-markdown (remark-gfm, no raw HTML passthrough).
+ * `code_block` rows render as literal pre-wrapped monospace text.
  * `tool_diff` rows render as a structured inline diff with gutter and colors.
  * `tool_preview` rows render as a whitespace-preserving text preview.
  * All other rows are monospace text rows with a dimmed kind prefix.
@@ -150,6 +160,8 @@ export function renderRow(row: PresentationRow, index: number): ReactNode {
       return <ResponseDivider key={index} />;
     case "prose":
       return <ProseRow key={index} row={row} />;
+    case "code_block":
+      return <CodeBlockRow key={index} row={row} />;
     case "tool_diff":
       return <DiffRow key={index} row={row} />;
     case "tool_preview":

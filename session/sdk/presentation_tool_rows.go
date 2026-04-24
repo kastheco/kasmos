@@ -85,7 +85,7 @@ func ToolCallSuccessMarker(rows []PresentationRow, toolIdx int) string {
 	for i := toolIdx + 1; i < len(rows); i++ {
 		row := rows[i]
 		switch row.Kind {
-		case RowTool, RowResponse, RowProse, RowUser:
+		case RowTool, RowResponse, RowProse, RowCodeBlock, RowUser:
 			return ""
 		case RowResult:
 			if row.IsError {
@@ -117,7 +117,7 @@ scanPrevious:
 		case RowTool:
 			hasInlineMarker = ToolCallSuccessMarker(rows, i) != ""
 			break scanPrevious
-		case RowResponse, RowProse, RowUser:
+		case RowResponse, RowProse, RowCodeBlock, RowUser:
 			break scanPrevious
 		}
 	}
@@ -150,6 +150,12 @@ func RenderPromptLineWithTimestamp(prefix, text string, ts time.Time, width int,
 // subtle timestamp aligned to the right edge when width allows.
 func RenderTextLineWithTimestamp(text string, ts time.Time, width int, textStyle, timestampStyle lipgloss.Style) string {
 	return renderLineWithTimestamp(textStyle.Render(text), ts, width, timestampStyle)
+}
+
+// RenderStyledLineWithTimestamp renders an ANSI-styled transcript row with an
+// optional subtle timestamp aligned to the right edge when width allows.
+func RenderStyledLineWithTimestamp(base string, ts time.Time, width int, timestampStyle lipgloss.Style) string {
+	return renderLineWithTimestamp(base, ts, width, timestampStyle)
 }
 
 // RenderStructuredChildLine renders rows that begin with the standard "│ "
