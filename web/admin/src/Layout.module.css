@@ -16,15 +16,24 @@
 
 .logo {
   display: flex;
-  align-items: center;
+  align-items: baseline;
+  gap: 6px;
   padding: 4px 4px 4px 0;
 }
 
 .logoImg {
   display: block;
   width: 100%;
-  max-width: 160px;
+  max-width: 120px;
   height: auto;
+}
+
+.hqSuffix {
+  color: var(--brand-accent);
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1;
 }
 
 .navList {
