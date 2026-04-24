@@ -187,31 +187,37 @@ func BuildElaborationPrompt(planFile, project string) string {
 	return fmt.Sprintf(
 		"You are the architect agent. You turn a planner's high-level design into a "+
 			"concrete, coder-ready implementation plan. The planner focuses on *what* to build; "+
-			"you decide *how* to build it. Verify the planner's approach against the actual codebase — "+
-			"if you discover a better implementation path, missing edge cases, incorrect file references, "+
-			"or tasks that should be split, merged, or reordered, change the plan. "+
-			"Preserve the planner's intended outcome but not necessarily its implementation strategy.\n\n"+
+			"you decide *how* to build it. Before validating the planner draft, derive an independent "+
+			"implementation baseline from the goal, codebase surfaces, dependencies, and existing patterns. "+
+			"Then compare that architect baseline against the planner's proposed tasks, files, and waves. "+
+			"Rewrite the stored plan by merging the best result from both: keep planner intent where sound, "+
+			"use your baseline where it is simpler or more correct, and add hidden integration surfaces, "+
+			"non-obvious missing work, edge cases, incorrect file references, or task splits/merges/reordering "+
+			"that the codebase requires.\n\n"+
 			"Load the `kasmos-architect` skill before starting. Also load `cli-tools`.\n\n"+
 			"## Instructions\n\n"+
 			"1. Retrieve the plan: prefer MCP `task_show` (filename: \"%[1]s\", project: \"%[2]s\"); fall back to `kas task show %[1]s`\n"+
-			"2. For each task, read the codebase files listed in its **Files:** section. "+
-			"Study existing patterns, interfaces, function signatures, error handling, "+
-			"and data flow in those files and their neighbors.\n"+
-			"3. Critically evaluate the plan against the actual codebase:\n"+
-			"   - Are the listed files correct? Add missing ones, remove irrelevant ones.\n"+
-			"   - Is the wave/task decomposition optimal? Merge, split, or reorder as needed.\n"+
-			"   - Are there simpler approaches the planner missed?\n"+
-			"   - Would the proposed changes conflict with existing patterns?\n"+
-			"4. Expand each task body with concrete implementation detail:\n"+
+			"2. Read the relevant codebase surfaces before editing the draft. Start with files listed in **Files:** sections, "+
+			"then follow neighboring interfaces, function signatures, error handling, data flow, dependencies, and existing patterns.\n"+
+			"3. Create your independent solution baseline from the goal and codebase evidence before judging the planner draft:\n"+
+			"   - What implementation path would you choose if no planner task list existed?\n"+
+			"   - Which files, waves, dependencies, and integration surfaces does that path require?\n"+
+			"   - What hidden integration surfaces or non-obvious missing work must be represented for coders?\n"+
+			"4. Compare planner vs architect baseline and rewrite the plan by merging the best of both:\n"+
+			"   - Are the planner's listed files correct? Add missing ones, remove irrelevant ones.\n"+
+			"   - Is the planner's wave/task decomposition optimal? Merge, split, or reorder as needed.\n"+
+			"   - Did the planner miss a simpler approach, hidden dependency, or required integration surface?\n"+
+			"   - Did the planner include unnecessary work or conflict with existing patterns?\n"+
+			"5. Expand each task body with concrete implementation detail:\n"+
 			"   - Exact function signatures to create or modify\n"+
 			"   - Existing codebase patterns to follow (with file references)\n"+
 			"   - Edge cases and error handling requirements\n"+
 			"   - Import paths and dependencies\n"+
 			"   - Concrete code snippets where helpful\n"+
-			"5. Keep ## Wave headers and the plan header fields (Goal, Architecture, Tech Stack, Size). "+
+			"6. Keep ## Wave headers and the plan header fields (Goal, Architecture, Tech Stack, Size). "+
 			"Everything else — task count, task content, file lists, wave assignment — is yours to change.\n"+
-			"6. Write the updated plan: prefer MCP `task_update_content` (filename: \"%[1]s\", project: \"%[2]s\"); fall back to `kas task update-content %[1]s` (pipe content)\n"+
-			"7. Signal architect-pass completion: prefer MCP `signal_create` (signal_type: \"elaborator-finished\", plan_file: \"%[1]s\", project: \"%[2]s\")\n"+
+			"7. Write the updated plan: prefer MCP `task_update_content` (filename: \"%[1]s\", project: \"%[2]s\"); fall back to `kas task update-content %[1]s` (pipe content)\n"+
+			"8. Signal architect-pass completion: prefer MCP `signal_create` (signal_type: \"elaborator-finished\", plan_file: \"%[1]s\", project: \"%[2]s\")\n"+
 			"   - If MCP is unavailable, use `kas signal emit elaborator_finished %[1]s`; if CLI signaling is also unavailable, fallback: `touch .kasmos/signals/elaborator-finished-%[1]s`\n"+
 			"   - Keep the role wording as architect in your notes and output; only the completion signal name stays legacy.\n",
 		planFile, project,
@@ -223,16 +229,20 @@ func BuildElaborationPrompt(planFile, project string) string {
 // and orchestration decisions.
 func BuildArchitectPrompt(planFile, project string) string {
 	return fmt.Sprintf(
-		"You are the architect agent. Your job: analyze a plan, identify architectural dependencies, and emit compact metadata for downstream orchestration.\n\n"+
+		"You are the architect agent. Your job: analyze a plan, identify architectural dependencies, and emit compact metadata for downstream orchestration. "+
+			"Before validating the planner draft, derive an independent implementation baseline from the goal, codebase surfaces, dependencies, and existing patterns. "+
+			"Compare planner vs architect baseline, then rewrite the stored plan by merging the best path and adding hidden integration surfaces or non-obvious missing work the planner missed.\n\n"+
 			"Load the `kasmos-architect` and `cli-tools` skills before starting.\n\n"+
 			"## Instructions\n\n"+
 			"1. Retrieve the plan: prefer MCP `task_show` (filename: \"%[1]s\", project: \"%[2]s\"); fall back to `kas task show %[1]s`\n"+
-			"2. For each task, classify it as `parallel` when it has no file or execution dependency on other tasks in the same wave; otherwise classify it as serial.\n"+
-			"3. Estimate token budgets for each task, including required context depth and expected implementation footprint.\n"+
-			"4. Write the enriched plan back: prefer MCP `task_update_content` (filename: \"%[1]s\", project: \"%[2]s\"); fall back to `kas task update-content %[1]s` (pipe content)\n"+
-			"5. Write architect metadata to `.kasmos/cache/%[1]s-architect.json` using the schema example in `architect-v1.json`.\n"+
-			"6. Signal completion: prefer MCP `signal_create` (signal_type: \"architect-finished\", plan_file: \"%[1]s\", project: \"%[2]s\"); fall back to `touch .kasmos/signals/architect-finished-%[1]s`\n"+
-			"7. Note: app/FSM consumption of this new architect-finished signal is follow-up work and should be implemented separately.\n",
+			"2. Read the relevant codebase surfaces, then create an independent architect solution baseline before judging the planner's tasks/files/waves.\n"+
+			"3. Compare planner vs architect baseline and rewrite the plan by merging the best result, including missed dependencies, unnecessary planner work, wrong file assumptions, hidden integration surfaces, and non-obvious missing work.\n"+
+			"4. For each task, classify it as `parallel` when it has no file or execution dependency on other tasks in the same wave; otherwise classify it as serial.\n"+
+			"5. Estimate token budgets for each task, including required context depth and expected implementation footprint.\n"+
+			"6. Write the enriched plan back: prefer MCP `task_update_content` (filename: \"%[1]s\", project: \"%[2]s\"); fall back to `kas task update-content %[1]s` (pipe content)\n"+
+			"7. Write architect metadata to `.kasmos/cache/%[1]s-architect.json` using the schema example in `architect-v1.json`.\n"+
+			"8. Signal completion: prefer MCP `signal_create` (signal_type: \"architect-finished\", plan_file: \"%[1]s\", project: \"%[2]s\"); fall back to `touch .kasmos/signals/architect-finished-%[1]s`\n"+
+			"9. Note: app/FSM consumption of this new architect-finished signal is follow-up work and should be implemented separately.\n",
 		planFile, project,
 	)
 }
