@@ -26,7 +26,7 @@ import (
 // executeContextAction performs the action selected from a context menu.
 func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 	switch action {
-	case "kill_instance":
+	case "cleanup_instance", "kill_instance":
 		selected := m.nav.GetSelectedInstance()
 		if selected != nil {
 			// Emit audit before attempting pause so the event is always recorded
@@ -1029,15 +1029,21 @@ func instanceSignalItems(inst *session.Instance, entry taskstate.TaskEntry, hasE
 	var items []overlay.ContextMenuItem
 
 	isAttachable := inst.Started() && !inst.Paused() && inst.TmuxAlive()
+	isRetired := inst.Exited || (hasEntry && (entry.Status == taskstate.StatusDone || entry.Status == taskstate.StatusCancelled))
 	if inst.Paused() {
 		items = append(items, overlay.ContextMenuItem{Label: "resume", Action: "resume_instance"})
 	} else if isAttachable {
 		items = append(items, overlay.ContextMenuItem{Label: "open", Action: "open_instance"})
 	}
-	items = append(items,
-		overlay.ContextMenuItem{Label: "kill", Action: "kill_instance"},
-		overlay.ContextMenuItem{Label: "restart", Action: "restart_instance"},
-	)
+	if isRetired {
+		items = append(items, overlay.ContextMenuItem{Label: "cleanup", Action: "cleanup_instance"})
+		if hasEntry && entry.Status == taskstate.StatusReviewing {
+			items = append(items, overlay.ContextMenuItem{Label: "start review", Action: "start_review"})
+		}
+	} else {
+		items = append(items, overlay.ContextMenuItem{Label: "kill", Action: "kill_instance"})
+	}
+	items = append(items, overlay.ContextMenuItem{Label: "restart", Action: "restart_instance"})
 
 	// Task-owner lifecycle signal actions — only for the top-level task agent.
 	// Wave-task rows (TaskNumber > 0) are managed by subtask completion, not FSM signals.

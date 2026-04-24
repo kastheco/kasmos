@@ -60,6 +60,7 @@ const (
 	navRowDeadPlan
 	navRowHistoryToggle
 	navRowHistoryPlan
+	navRowRetiredHeader
 )
 
 // navRow holds the data for a single rendered row in the navigation panel.
@@ -75,6 +76,7 @@ type navRow struct {
 	ActiveRound     int
 	PlanSortKey     int
 	Instance        *session.Instance
+	Retired         bool
 	Collapsed       bool
 	HasRunning      bool
 	HasNotification bool
@@ -94,6 +96,7 @@ var (
 	navSectionDivStyle    = lipgloss.NewStyle().Foreground(ColorMuted).Padding(0, 1)
 	navPlanLabelStyle     = lipgloss.NewStyle().Foreground(ColorText).Bold(true)
 	navInstanceLabelStyle = lipgloss.NewStyle().Foreground(ColorSubtle)
+	navRetiredLabelStyle  = lipgloss.NewStyle().Foreground(ColorSubtle).Faint(true)
 	navRunningIconStyle   = lipgloss.NewStyle().Foreground(ColorFoam)
 	navReadyIconStyle     = lipgloss.NewStyle().Foreground(ColorFoam)
 	navNotifyIconStyle    = lipgloss.NewStyle().Foreground(ColorRose)
@@ -329,10 +332,29 @@ func (n *NavigationPanel) rebuildRows() {
 		prevID = n.rows[prevIdx].ID
 	}
 
-	// Partition instances into plan-attached and solo.
+	// Partition instances into plan-attached, solo, and retired. Retired is a
+	// presentation bucket only; instances remain selectable for cleanup.
 	byPlan := make(map[string][]*session.Instance)
 	var solo []*session.Instance
+	var retired []*session.Instance
+	statusByPlan := make(map[string]string, len(n.plans)+len(n.deadPlans)+len(n.historyPlans)+len(n.cancelled))
+	for _, p := range n.plans {
+		statusByPlan[p.Filename] = p.Status
+	}
+	for _, p := range n.deadPlans {
+		statusByPlan[p.Filename] = p.Status
+	}
+	for _, p := range n.historyPlans {
+		statusByPlan[p.Filename] = p.Status
+	}
+	for _, p := range n.cancelled {
+		statusByPlan[p.Filename] = p.Status
+	}
 	for _, inst := range n.instances {
+		if navInstanceRetired(inst, statusByPlan[inst.TaskFile]) {
+			retired = append(retired, inst)
+			continue
+		}
 		if inst.TaskFile == "" {
 			solo = append(solo, inst)
 		} else {
@@ -353,6 +375,7 @@ func (n *NavigationPanel) rebuildRows() {
 		sortInsts(list)
 	}
 	sortInsts(solo)
+	sortInsts(retired)
 
 	// Sort plans alphabetically ascending.
 	sorted := append([]PlanDisplay(nil), n.plans...)
@@ -517,6 +540,20 @@ func (n *NavigationPanel) rebuildRows() {
 		}
 	}
 
+	if len(retired) > 0 {
+		rows = append(rows, navRow{Kind: navRowRetiredHeader, ID: "__retired__", Label: fmt.Sprintf("retired · %d", len(retired))})
+		for _, inst := range retired {
+			rows = append(rows, navRow{
+				Kind:     navRowInstance,
+				ID:       navInstanceRowID(inst),
+				Label:    inst.DisplayName(),
+				TaskFile: inst.TaskFile,
+				Instance: inst,
+				Retired:  true,
+			})
+		}
+	}
+
 	// Idle plans: topic-grouped first, then ungrouped flat.
 	emitTopicGrouped(idlePlans, emitted)
 	emitPlanGroup(idlePlans, 0, emitted)
@@ -600,6 +637,16 @@ func navInstanceSortKey(inst *session.Instance) int {
 		return 1
 	}
 	return 3
+}
+
+func navInstanceRetired(inst *session.Instance, taskStatus string) bool {
+	if inst == nil {
+		return false
+	}
+	if inst.Exited {
+		return true
+	}
+	return taskStatus == string(taskstate.StatusDone) || taskStatus == string(taskstate.StatusCancelled)
 }
 
 // navPlanSortKey returns the sort priority for a plan based on lifecycle phase only.
@@ -1430,6 +1477,9 @@ func (n *NavigationPanel) renderNavRow(row navRow, contentWidth int) string {
 			indent = ""
 			lblStyle = navPlanLabelStyle
 		}
+		if row.Retired {
+			lblStyle = navRetiredLabelStyle
+		}
 		if inst.Exited {
 			lblStyle = navCancelledLblStyle
 			statusIcon = navCancelledLblStyle.Render("✕")
@@ -1444,6 +1494,9 @@ func (n *NavigationPanel) renderNavRow(row navRow, contentWidth int) string {
 
 	case navRowSoloHeader:
 		return navDividerLine("agents", contentWidth)
+
+	case navRowRetiredHeader:
+		return navDividerLine(row.Label, contentWidth)
 
 	case navRowTopicHeader:
 		chevron := "▸"

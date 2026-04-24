@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"charm.land/bubbles/v2/spinner"
+	"github.com/kastheco/kasmos/config/taskstate"
 	"github.com/kastheco/kasmos/session"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -815,6 +816,38 @@ func TestRemove_SelectedInstance(t *testing.T) {
 
 	n.Remove()
 	assert.Equal(t, 0, n.TotalInstances())
+}
+
+func TestNavigationPanel_RetiredInstancesRenderBelowActiveDimmed(t *testing.T) {
+	t.Parallel()
+
+	sp := spinner.New(spinner.WithSpinner(spinner.Dot))
+	n := NewNavigationPanel(&sp)
+	n.SetSize(60, 24)
+
+	activeA := makeInst("active-a", "active-plan", session.Running)
+	activeB := makeInst("active-b", "active-plan", session.Ready)
+	retired := makeInst("retired-a", "done-plan", session.Ready)
+	n.SetData(
+		[]PlanDisplay{{Filename: "active-plan", Status: string(taskstate.StatusImplementing)}},
+		[]*session.Instance{activeA, activeB, retired},
+		[]PlanDisplay{{Filename: "done-plan", Status: string(taskstate.StatusDone)}},
+		nil,
+		nil,
+	)
+
+	view := n.String()
+	assert.Contains(t, view, "retired · 1")
+	activeIdx := strings.Index(view, "active-plan")
+	retiredHeaderIdx := strings.Index(view, "retired · 1")
+	retiredRowIdx := strings.Index(view, "retired-a")
+	require.NotEqual(t, -1, activeIdx)
+	require.NotEqual(t, -1, retiredHeaderIdx)
+	require.NotEqual(t, -1, retiredRowIdx)
+	assert.Less(t, activeIdx, retiredHeaderIdx)
+	assert.Contains(t, view, "\x1b[2;38;2;144;140;170mretired-a", "retired instance label should be faint")
+	require.True(t, n.SelectInstance(retired))
+	assert.Equal(t, retired, n.GetSelectedInstance())
 }
 
 // ---------- search ----------

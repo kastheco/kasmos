@@ -3,6 +3,7 @@
 
 import {
   deslugify,
+  deriveAgentPresentation,
   groupAgentsByTaskStatus,
   toAgentCardModel,
 } from "./agentCardModel.ts";
@@ -43,6 +44,35 @@ assertEqual(
 );
 assertEqual(deslugify(""), "", "deslugify empty");
 assertEqual(deslugify(undefined), "", "deslugify undefined");
+
+// --- presentation derivation -------------------------------------------------
+
+{
+  const base: InstanceEntry = {
+    title: "agent",
+    status: "running",
+    branch: "",
+    program: "claude",
+    task_file: "feature",
+  };
+  const cases: Array<{
+    name: string;
+    inst: InstanceEntry;
+    taskStatus?: Status;
+    want: "active" | "retired" | "idle";
+  }> = [
+    { name: "running implementing", inst: base, taskStatus: "implementing", want: "active" },
+    { name: "done task", inst: base, taskStatus: "done", want: "retired" },
+    { name: "cancelled task", inst: base, taskStatus: "cancelled", want: "retired" },
+    { name: "paused ready", inst: { ...base, status: "paused" }, taskStatus: "ready", want: "idle" },
+    { name: "paused reviewing", inst: { ...base, status: "paused" }, taskStatus: "reviewing", want: "active" },
+    { name: "exited instance", inst: { ...base, status: "exited" as InstanceEntry["status"] }, taskStatus: "implementing", want: "retired" },
+  ];
+  for (const tc of cases) {
+    assertEqual(deriveAgentPresentation(tc.inst, tc.taskStatus), tc.want, tc.name);
+    assertEqual(toAgentCardModel(tc.inst, tc.taskStatus).presentation, tc.want, `${tc.name} card`);
+  }
+}
 
 // --- wave-task parsing from structured fields ------------------------------
 
@@ -236,6 +266,7 @@ assertEqual(deslugify(undefined), "", "deslugify undefined");
       taskFile: "alpha",
       waveNumber: 2,
       taskNumber: 1,
+      presentation: "active" as const,
       pills: [],
     },
     {
@@ -245,6 +276,7 @@ assertEqual(deslugify(undefined), "", "deslugify undefined");
       taskFile: "alpha",
       waveNumber: 1,
       taskNumber: 1,
+      presentation: "active" as const,
       pills: [],
     },
     // Agents for plan "beta" which is currently implementing.
@@ -255,6 +287,7 @@ assertEqual(deslugify(undefined), "", "deslugify undefined");
       taskFile: "beta",
       waveNumber: 1,
       taskNumber: 2,
+      presentation: "active" as const,
       pills: [],
     },
     {
@@ -264,6 +297,7 @@ assertEqual(deslugify(undefined), "", "deslugify undefined");
       taskFile: "beta",
       waveNumber: 1,
       taskNumber: 1,
+      presentation: "active" as const,
       pills: [],
     },
     // Solo agent (no task_file) — falls into the trailing "agents" group.
@@ -271,6 +305,7 @@ assertEqual(deslugify(undefined), "", "deslugify undefined");
       title: "adhoc",
       displayName: "adhoc",
       status: "running" as const,
+      presentation: "active" as const,
       pills: [],
     },
   ];
@@ -314,6 +349,7 @@ assertEqual(deslugify(undefined), "", "deslugify undefined");
       taskFile: "plan",
       waveNumber: 1,
       taskNumber: 1,
+      presentation: "active" as const,
       pills: [],
     },
   ];
@@ -341,6 +377,7 @@ assertEqual(deslugify(undefined), "", "deslugify undefined");
       displayName: "orphan",
       status: "running" as const,
       taskFile: "missing-plan",
+      presentation: "active" as const,
       pills: [],
     },
   ];

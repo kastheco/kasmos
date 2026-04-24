@@ -215,6 +215,42 @@ func TestDaemonSync_MetadataTickReflectsDaemonTaskStateInSidebar(t *testing.T) {
 	}
 }
 
+func TestDaemonSync_DoneTaskDoesNotDeleteInstanceRecord(t *testing.T) {
+	t.Parallel()
+	const planFile = "feature"
+
+	h, _ := newDaemonSyncTestHome(t, planFile)
+	inst := &session.Instance{
+		Title:     "feature-W1-T1",
+		TaskFile:  planFile,
+		AgentType: session.AgentTypeCoder,
+		Status:    session.Ready,
+	}
+	h.addInstanceFinalizer(inst, h.nav.AddInstance(inst))
+	h.allInstances = append(h.allInstances, inst)
+
+	require.NoError(t, h.taskState.ForceSetLifecycle(planFile, taskstate.StatusDone, taskstore.ExecutionState{}))
+	ps, err := taskstate.Load(h.taskStore, h.taskStoreProject, h.taskStateDir)
+	require.NoError(t, err)
+
+	model, _ := h.Update(metadataResultMsg{PlanState: ps})
+	updated := model.(*home)
+
+	var foundNav, foundAll bool
+	for _, got := range updated.nav.GetInstances() {
+		if got.Title == inst.Title {
+			foundNav = true
+		}
+	}
+	for _, got := range updated.allInstances {
+		if got.Title == inst.Title {
+			foundAll = true
+		}
+	}
+	assert.True(t, foundNav, "done-task daemon sync must retain nav instance")
+	assert.True(t, foundAll, "done-task daemon sync must retain stored instance")
+}
+
 func TestDaemonSync_MetadataTickRebuildsWaveOrchestratorForDaemonWaveTask(t *testing.T) {
 	t.Parallel()
 	const planFile = "feature"
