@@ -27,6 +27,9 @@ const config: Config = {
     ],
   ],
   markdown: { mermaid: true },
+  plugins: [
+    require.resolve("./plugins/llms-manifest"),
+  ],
   presets: [
     [
       "classic",

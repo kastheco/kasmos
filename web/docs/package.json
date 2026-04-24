@@ -10,7 +10,9 @@
     "clear": "docusaurus clear",
     "serve": "docusaurus serve",
     "write-translations": "docusaurus write-translations",
-    "write-heading-ids": "docusaurus write-heading-ids"
+    "write-heading-ids": "docusaurus write-heading-ids",
+    "emit:llms": "node scripts/emit-llms-manifest.mjs",
+    "test:llms": "node --test plugins/llms-manifest/emit.test.mjs"
   },
   "dependencies": {
     "@docusaurus/core": "^3.10.0",
@@ -19,6 +21,7 @@
     "@easyops-cn/docusaurus-search-local": "^0.47.0",
     "@mdx-js/react": "^3.0.0",
     "clsx": "^2.0.0",
+    "gray-matter": "^4.0.3",
     "prism-react-renderer": "^2.3.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
