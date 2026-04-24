@@ -14,45 +14,50 @@ daemon_poll_interval = 0
 [agents]
   [agents.architect]
     enabled = true
-    program = "codex"
-    model = "gpt-5.4"
-    execution_mode = "sdk"
-    sdk_speed_tier = "fast"
+    program = "claude"
+    model = "claude-opus-4-7"
+    execution_mode = "tmux"
+    flags = ["--permission-mode bypassPermissions"]
+    tier = "fast"
     temperature = 0.2
     effort = "xhigh"
   [agents.chat]
     enabled = true
-    program = "opencode"
-    model = "openai/gpt-5.4"
+    program = "codex"
+    model = "gpt-5.5"
+    execution_mode = "tmux"
+    tier = "fast"
     temperature = 0.3
     effort = "medium"
   [agents.coder]
     enabled = true
-    program = "claude"
-    model = "claude-sonnet-4-6"
     temperature = 0.1
-    effort = "medium"
-    flags = ["--permission-mode bypassPermissions"]
+    program = "codex"
+    model = "gpt-5.5"
+    tier = "fast"
+    effort = "low"
   [agents.fixer]
     enabled = true
-    program = "claude"
-    model = "claude-opus-4-6"
+    program = "codex"
+    model = "gpt-5.5"
     temperature = 0.1
     effort = "high"
-    flags = ["--permission-mode bypassPermissions"]
   [agents.master]
     enabled = true
     program = "codex"
-    model = "gpt-5.4"
+    model = "gpt-5.5"
+    execution_mode = "tmux"
+    tier = "fast"
     temperature = 0.2
     effort = "xhigh"
   [agents.planner]
     enabled = true
-    program = "claude"
-    model = "claude-opus-4-7"
+    program = "codex"
+    model = "gpt-5.5"
+    execution_mode = "tmux"
     temperature = 0.3
     effort = "xhigh"
-    flags = ["--permission-mode bypassPermissions"]
+    tier = "fast"
   [agents.reviewer]
     enabled = true
     program = "claude"
