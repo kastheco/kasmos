@@ -116,12 +116,13 @@ func WithSpeedTier(tier string) EventOption {
 
 // WithKillDetails records structured kill metadata in Event.Detail.
 // action is the operator intent ("kill_instance" or "kill_and_remove_instance").
-// cleanup is true when worktree/branch cleanup was requested alongside the kill.
-// branchPreserved mirrors the current "branch preserved" semantics used by the
-// context-menu kill path in app_actions.go so admin UIs can render a single
-// coalesced row without losing the stronger action. group_key is a stable
-// string "agent_killed:<instance>" used by display code to coalesce adjacent
-// rows.
+// cleanup is true when the killed instance should be dismissed from the list;
+// it does not imply worktree or branch removal, which is handled separately by
+// the abort path. branchPreserved mirrors the current "branch preserved"
+// semantics used by the context-menu kill path in app_actions.go so admin UIs
+// can render a single coalesced row without losing the stronger action.
+// group_key is a stable string "agent_killed:<instance>" used by display code
+// to coalesce adjacent rows.
 func WithKillDetails(action string, cleanup, branchPreserved bool) EventOption {
 	return func(e *Event) {
 		detail := map[string]any{}

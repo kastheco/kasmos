@@ -51,10 +51,10 @@ func AuditLineActions(e AuditEventDisplay) []overlay.ContextMenuItem {
 		}
 	case "agent_killed":
 		if hasInstance {
-			items = append(items, overlay.ContextMenuItem{Label: "restart agent", Action: "log_restart_agent"})
 			if killDetail, ok := parseKillDetail(e.DetailJSON); ok && killDetail.Cleanup {
-				items = append(items, overlay.ContextMenuItem{Label: "reopen worktree", Action: "log_reopen_worktree"})
+				return items
 			}
+			items = append(items, overlay.ContextMenuItem{Label: "restart agent", Action: "log_restart_agent"})
 		}
 	case "agent_finished":
 		if hasPlan {

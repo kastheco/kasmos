@@ -1,6 +1,7 @@
 package app
 
 import (
+	"encoding/json"
 	"fmt"
 	"os/exec"
 	"sort"
@@ -695,6 +696,10 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 		if m.pendingLogEvent == nil || m.pendingLogEvent.InstanceTitle == "" {
 			return m, nil
 		}
+		if auditLogCleanupKill(m.pendingLogEvent) {
+			m.pendingLogEvent = nil
+			return m, nil
+		}
 		title := m.pendingLogEvent.InstanceTitle
 		m.pendingLogEvent = nil
 		for _, inst := range m.allInstances {
@@ -722,6 +727,10 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 
 	case "log_reopen_worktree":
 		if m.pendingLogEvent == nil || m.pendingLogEvent.InstanceTitle == "" {
+			return m, nil
+		}
+		if auditLogCleanupKill(m.pendingLogEvent) {
+			m.pendingLogEvent = nil
 			return m, nil
 		}
 		title := m.pendingLogEvent.InstanceTitle
@@ -758,6 +767,19 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 	}
 
 	return m, nil
+}
+
+func auditLogCleanupKill(e *ui.AuditEventDisplay) bool {
+	if e == nil || e.Kind != "agent_killed" || e.DetailJSON == "" {
+		return false
+	}
+	var detail struct {
+		Cleanup bool `json:"cleanup"`
+	}
+	if err := json.Unmarshal([]byte(e.DetailJSON), &detail); err != nil {
+		return false
+	}
+	return detail.Cleanup
 }
 
 func (m *home) mergeTaskToMain(planFile string) (tea.Model, tea.Cmd) {

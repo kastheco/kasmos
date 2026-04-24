@@ -245,8 +245,11 @@ export default function InstancesPage() {
   // Flat list of displayed cards in visual order — used for auto-selection
   // and for looking up the card that matches selectedTitle.
   const flatCards = useMemo(
-    () => [...activeGroups.flatMap((g) => g.cards), ...retiredCards],
-    [activeGroups, retiredCards],
+    () => [
+      ...activeGroups.flatMap((g) => g.cards),
+      ...(retiredOpen ? retiredCards : []),
+    ],
+    [activeGroups, retiredCards, retiredOpen],
   );
 
   // Auto-select the first instance on first successful load; reassign when

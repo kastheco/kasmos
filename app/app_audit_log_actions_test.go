@@ -69,7 +69,7 @@ func TestAuditLineActions_AgentKilled(t *testing.T) {
 	assert.Equal(t, "log_restart_agent", items[0].Action)
 }
 
-func TestAuditLineActions_AgentKilledCleanupOffersReopenWorktree(t *testing.T) {
+func TestAuditLineActions_AgentKilledCleanupSuppressesRecoveryActions(t *testing.T) {
 	t.Parallel()
 	e := ui.AuditEventDisplay{
 		Kind:          "agent_killed",
@@ -78,13 +78,27 @@ func TestAuditLineActions_AgentKilledCleanupOffersReopenWorktree(t *testing.T) {
 		DetailJSON:    `{"action":"kill_and_remove_instance","cleanup":true,"branch_preserved":true}`,
 	}
 	items := ui.AuditLineActions(e)
-	require.NotEmpty(t, items, "agent_killed with cleanup detail should produce actions")
-	actions := make(map[string]bool)
-	for _, item := range items {
-		actions[item.Action] = true
+	assert.Empty(t, items, "cleanup kill rows dismiss the instance, so recovery actions cannot target it")
+}
+
+func TestExecuteContextAction_LogRecoveryCleanupKillNoops(t *testing.T) {
+	for _, action := range []string{"log_restart_agent", "log_reopen_worktree"} {
+		t.Run(action, func(t *testing.T) {
+			h := newTestHome()
+			h.pendingLogEvent = &ui.AuditEventDisplay{
+				Kind:          "agent_killed",
+				InstanceTitle: "auth-coder-1",
+				DetailJSON:    `{"action":"kill_and_remove_instance","cleanup":true,"branch_preserved":true}`,
+			}
+
+			model, cmd := h.executeContextAction(action)
+			updated := model.(*home)
+
+			require.Nil(t, cmd)
+			require.Nil(t, updated.pendingLogEvent)
+			assert.False(t, updated.toastManager.HasActiveToasts())
+		})
 	}
-	assert.True(t, actions["log_restart_agent"], "should include restart action")
-	assert.True(t, actions["log_reopen_worktree"], "should include reopen-worktree action")
 }
 
 // TestAuditLineActions_AgentKilledNoTitle ensures no actions when title is unknown.
@@ -322,7 +336,7 @@ func TestAuditPane_CursorUsesCoalescedRows(t *testing.T) {
 	selected, ok := p.SelectedEvent()
 	require.True(t, ok)
 	assert.Equal(t, "killed and removed instance", selected.Message)
-	assert.True(t, p.SelectedEventHasActions())
+	assert.False(t, p.SelectedEventHasActions())
 
 	raw := p.SelectedRawEvents()
 	require.Len(t, raw, 2)
