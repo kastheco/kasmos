@@ -71,6 +71,7 @@ export type PresentationRowKind =
   | "tool_diff"
   | "result"
   | "tool_preview"
+  | "code_block"
   | "system"
   | "permission"
   | "response"
