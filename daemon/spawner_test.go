@@ -276,127 +276,162 @@ func TestTmuxSpawner_SpawnCoder_MissingBranch(t *testing.T) {
 }
 
 func TestTmuxSpawner_SpawnWaveTask_TracksBeforeStartCompletes(t *testing.T) {
-	repoPath := t.TempDir()
-	runGit := func(args ...string) {
-		t.Helper()
-		cmd := exec.Command("git", append([]string{"-C", repoPath}, args...)...)
-		out, err := cmd.CombinedOutput()
-		require.NoErrorf(t, err, "git %v failed: %s", args, string(out))
+	tests := []struct {
+		name     string
+		optsSkip bool
+	}{
+		{name: "skip permissions", optsSkip: true},
+		{name: "prompt permissions", optsSkip: false},
 	}
 
-	runGit("init")
-	runGit("config", "user.email", "test@example.com")
-	runGit("config", "user.name", "Test User")
-	require.NoError(t, os.WriteFile(filepath.Join(repoPath, "tracked.txt"), []byte("base\n"), 0o644))
-	runGit("add", "tracked.txt")
-	runGit("commit", "-m", "init")
-	runGit("checkout", "-b", "plan/feature")
-	runGit("checkout", "-")
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			repoPath := t.TempDir()
+			runGit := func(args ...string) {
+				t.Helper()
+				cmd := exec.Command("git", append([]string{"-C", repoPath}, args...)...)
+				out, err := cmd.CombinedOutput()
+				require.NoErrorf(t, err, "git %v failed: %s", args, string(out))
+			}
 
-	s := NewTmuxSpawner()
-	started := make(chan *session.Instance, 1)
-	release := make(chan struct{})
-	s.startInShared = func(inst *session.Instance, _ *gitpkg.GitWorktree, _ string) error {
-		select {
-		case started <- inst:
-		default:
-		}
-		<-release
-		inst.MarkStartedForTest()
-		inst.SetStatus(session.Running)
-		return nil
+			runGit("init")
+			runGit("config", "user.email", "test@example.com")
+			runGit("config", "user.name", "Test User")
+			require.NoError(t, os.WriteFile(filepath.Join(repoPath, "tracked.txt"), []byte("base\n"), 0o644))
+			runGit("add", "tracked.txt")
+			runGit("commit", "-m", "init")
+			runGit("checkout", "-b", "plan/feature")
+			runGit("checkout", "-")
+
+			s := NewTmuxSpawner()
+			started := make(chan *session.Instance, 1)
+			release := make(chan struct{})
+			s.startInShared = func(inst *session.Instance, _ *gitpkg.GitWorktree, _ string) error {
+				select {
+				case started <- inst:
+				default:
+				}
+				<-release
+				inst.MarkStartedForTest()
+				inst.SetStatus(session.Running)
+				return nil
+			}
+
+			opts := loop.SpawnOpts{
+				RepoPath:        repoPath,
+				Project:         "proj",
+				PlanFile:        "feature.md",
+				Branch:          "plan/feature",
+				Program:         "true",
+				Wave:            1,
+				SkipPermissions: tc.optsSkip,
+			}
+			task := taskparser.Task{Number: 1, Title: "First", Body: "do first"}
+
+			errCh := make(chan error, 1)
+			go func() {
+				errCh <- s.SpawnWaveTask(context.Background(), opts, task, "implement it", 1, 3)
+			}()
+
+			var blockedInst *session.Instance
+			select {
+			case blockedInst = <-started:
+			case <-time.After(2 * time.Second):
+				t.Fatal("wave task start did not reach the injected starter")
+			}
+
+			tracked := s.InstancesForRepo(repoPath)
+			require.Len(t, tracked, 1, "loading wave task should be tracked before start completes")
+			assert.Same(t, blockedInst, tracked[0])
+			assert.Equal(t, session.Loading, tracked[0].Status)
+			assert.False(t, tracked[0].Started())
+			assert.Equal(t, tc.optsSkip, tracked[0].SkipPermissions)
+
+			d := &Daemon{repos: NewRepoManager(), spawner: s}
+			d.repos.repos = []RepoEntry{{Path: repoPath, Project: "proj"}}
+			statuses := (&daemonStateAdapter{d: d}).ListInstances("proj")
+			require.Len(t, statuses, 1, "loading tracked instance should be exposed to the app")
+			assert.True(t, statuses[0].Active)
+			assert.Equal(t, blockedInst.Title, statuses[0].Title)
+			assert.Equal(t, 1, statuses[0].TaskNumber)
+			assert.Equal(t, 1, statuses[0].WaveNumber)
+			assert.Equal(t, 1, statuses[0].WaveTaskIndex, "WaveTaskIndex must be 1 for first task in wave")
+			assert.Equal(t, 3, statuses[0].WaveTaskCount, "WaveTaskCount must equal peerCount")
+
+			close(release)
+			require.NoError(t, <-errCh)
+			assert.True(t, blockedInst.AwaitingWork, "wave task with a queued startup prompt must wait for real work before completion checks")
+		})
 	}
-
-	opts := loop.SpawnOpts{
-		RepoPath: repoPath,
-		Project:  "proj",
-		PlanFile: "feature.md",
-		Branch:   "plan/feature",
-		Program:  "true",
-		Wave:     1,
-	}
-	task := taskparser.Task{Number: 1, Title: "First", Body: "do first"}
-
-	errCh := make(chan error, 1)
-	go func() {
-		errCh <- s.SpawnWaveTask(context.Background(), opts, task, "implement it", 1, 3)
-	}()
-
-	var blockedInst *session.Instance
-	select {
-	case blockedInst = <-started:
-	case <-time.After(2 * time.Second):
-		t.Fatal("wave task start did not reach the injected starter")
-	}
-
-	tracked := s.InstancesForRepo(repoPath)
-	require.Len(t, tracked, 1, "loading wave task should be tracked before start completes")
-	assert.Same(t, blockedInst, tracked[0])
-	assert.Equal(t, session.Loading, tracked[0].Status)
-	assert.False(t, tracked[0].Started())
-	assert.True(t, tracked[0].SkipPermissions, "daemon-spawned wave task must skip permissions")
-
-	d := &Daemon{repos: NewRepoManager(), spawner: s}
-	d.repos.repos = []RepoEntry{{Path: repoPath, Project: "proj"}}
-	statuses := (&daemonStateAdapter{d: d}).ListInstances("proj")
-	require.Len(t, statuses, 1, "loading tracked instance should be exposed to the app")
-	assert.True(t, statuses[0].Active)
-	assert.Equal(t, blockedInst.Title, statuses[0].Title)
-	assert.Equal(t, 1, statuses[0].TaskNumber)
-	assert.Equal(t, 1, statuses[0].WaveNumber)
-	assert.Equal(t, 1, statuses[0].WaveTaskIndex, "WaveTaskIndex must be 1 for first task in wave")
-	assert.Equal(t, 3, statuses[0].WaveTaskCount, "WaveTaskCount must equal peerCount")
-
-	close(release)
-	require.NoError(t, <-errCh)
-	assert.True(t, blockedInst.AwaitingWork, "wave task with a queued startup prompt must wait for real work before completion checks")
 }
 
-// Daemon-spawned agents are unattended by definition, so their instances must
-// carry SkipPermissions=true. This lets tmux_session.go inject the harness-
-// specific bypass flag (e.g. codex's --dangerously-bypass-approvals-and-sandbox)
-// even when the profile doesn't pin it explicitly in .kasmos/config.toml.
-func TestTmuxSpawner_SpawnPlanner_SetsSkipPermissions(t *testing.T) {
-	s := NewTmuxSpawner()
-	var captured *session.Instance
-	s.startOnMain = func(inst *session.Instance) error {
-		captured = inst
-		inst.MarkStartedForTest()
-		inst.SetStatus(session.Running)
-		return nil
+func TestTmuxSpawner_SpawnPlanner_HonoursOptsSkipPermissions(t *testing.T) {
+	tests := []struct {
+		name     string
+		optsSkip bool
+	}{
+		{name: "skip permissions", optsSkip: true},
+		{name: "prompt permissions", optsSkip: false},
 	}
 
-	err := s.SpawnPlanner(context.Background(), loop.SpawnOpts{
-		PlanFile: "feature.md",
-		RepoPath: t.TempDir(),
-		Project:  "proj",
-		Program:  "true",
-		Prompt:   "plan this",
-	})
-	require.NoError(t, err)
-	require.NotNil(t, captured)
-	assert.True(t, captured.SkipPermissions, "daemon-spawned planner must skip permissions")
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			s := NewTmuxSpawner()
+			var captured *session.Instance
+			s.startOnMain = func(inst *session.Instance) error {
+				captured = inst
+				inst.MarkStartedForTest()
+				inst.SetStatus(session.Running)
+				return nil
+			}
+
+			err := s.SpawnPlanner(context.Background(), loop.SpawnOpts{
+				PlanFile:        "feature.md",
+				RepoPath:        t.TempDir(),
+				Project:         "proj",
+				Program:         "true",
+				Prompt:          "plan this",
+				SkipPermissions: tc.optsSkip,
+			})
+			require.NoError(t, err)
+			require.NotNil(t, captured)
+			assert.Equal(t, tc.optsSkip, captured.SkipPermissions)
+		})
+	}
 }
 
-func TestTmuxSpawner_SpawnElaborator_SetsSkipPermissions(t *testing.T) {
-	s := NewTmuxSpawner()
-	var captured *session.Instance
-	s.startOnMain = func(inst *session.Instance) error {
-		captured = inst
-		inst.MarkStartedForTest()
-		inst.SetStatus(session.Running)
-		return nil
+func TestTmuxSpawner_SpawnElaborator_HonoursOptsSkipPermissions(t *testing.T) {
+	tests := []struct {
+		name     string
+		optsSkip bool
+	}{
+		{name: "skip permissions", optsSkip: true},
+		{name: "prompt permissions", optsSkip: false},
 	}
 
-	err := s.SpawnElaborator(context.Background(), loop.SpawnOpts{
-		PlanFile: "feature.md",
-		RepoPath: t.TempDir(),
-		Project:  "proj",
-		Program:  "true",
-	})
-	require.NoError(t, err)
-	require.NotNil(t, captured)
-	assert.True(t, captured.SkipPermissions, "daemon-spawned architect must skip permissions")
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			s := NewTmuxSpawner()
+			var captured *session.Instance
+			s.startOnMain = func(inst *session.Instance) error {
+				captured = inst
+				inst.MarkStartedForTest()
+				inst.SetStatus(session.Running)
+				return nil
+			}
+
+			err := s.SpawnElaborator(context.Background(), loop.SpawnOpts{
+				PlanFile:        "feature.md",
+				RepoPath:        t.TempDir(),
+				Project:         "proj",
+				Program:         "true",
+				SkipPermissions: tc.optsSkip,
+			})
+			require.NoError(t, err)
+			require.NotNil(t, captured)
+			assert.Equal(t, tc.optsSkip, captured.SkipPermissions)
+		})
+	}
 }
 
 func TestTmuxSpawner_SpawnElaborator_StartFailureDiscardsTrackedInstance(t *testing.T) {

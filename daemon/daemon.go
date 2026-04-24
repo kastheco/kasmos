@@ -573,13 +573,14 @@ func (d *Daemon) startPlanAsync(entry RepoEntry, planFile, prompt, program strin
 		return
 	}
 	if err := spawnPlanner(context.Background(), loop.SpawnOpts{
-		PlanFile:      planFile,
-		RepoPath:      entry.Path,
-		Project:       entry.Project,
-		Prompt:        prompt,
-		Program:       program,
-		ExecutionMode: executionModeForAgent(entry.Path, session.AgentTypePlanner),
-		SDKSpeedTier:  sdkSpeedTierForAgent(entry.Path, session.AgentTypePlanner),
+		PlanFile:        planFile,
+		RepoPath:        entry.Path,
+		Project:         entry.Project,
+		Prompt:          prompt,
+		Program:         program,
+		ExecutionMode:   executionModeForAgent(entry.Path, session.AgentTypePlanner),
+		SDKSpeedTier:    sdkSpeedTierForAgent(entry.Path, session.AgentTypePlanner),
+		SkipPermissions: skipPermissionsForAgent(entry.Path, session.AgentTypePlanner),
 	}); err != nil {
 		d.logger.Error("spawn planner failed", "project", entry.Project, "plan", planFile, "err", err)
 		return
@@ -1474,13 +1475,14 @@ func (d *Daemon) executeAction(ctx context.Context, e RepoEntry, action loop.Act
 		entry := entryFor(a.PlanFile)
 		spec := orchestration.BuildPlannerAgentSpec(a.PlanFile, e.Project, entry.Description)
 		opts := loop.SpawnOpts{
-			PlanFile:      a.PlanFile,
-			RepoPath:      e.Path,
-			Project:       e.Project,
-			Program:       programForAgent(e.Path, session.AgentTypePlanner),
-			Prompt:        spec.Prompt,
-			ExecutionMode: executionModeForAgent(e.Path, session.AgentTypePlanner),
-			SDKSpeedTier:  sdkSpeedTierForAgent(e.Path, session.AgentTypePlanner),
+			PlanFile:        a.PlanFile,
+			RepoPath:        e.Path,
+			Project:         e.Project,
+			Program:         programForAgent(e.Path, session.AgentTypePlanner),
+			Prompt:          spec.Prompt,
+			ExecutionMode:   executionModeForAgent(e.Path, session.AgentTypePlanner),
+			SDKSpeedTier:    sdkSpeedTierForAgent(e.Path, session.AgentTypePlanner),
+			SkipPermissions: skipPermissionsForAgent(e.Path, session.AgentTypePlanner),
 		}
 		spawnPlanner := d.spawnPlanner
 		if spawnPlanner == nil {
@@ -1507,13 +1509,14 @@ func (d *Daemon) executeAction(ctx context.Context, e RepoEntry, action loop.Act
 		}
 		spec := orchestration.BuildArchitectAgentSpec(a.PlanFile, e.Project)
 		opts := loop.SpawnOpts{
-			PlanFile:      a.PlanFile,
-			RepoPath:      e.Path,
-			Project:       e.Project,
-			Program:       programForAgent(e.Path, session.AgentTypeElaborator),
-			Prompt:        spec.Prompt,
-			ExecutionMode: executionModeForAgent(e.Path, session.AgentTypeElaborator),
-			SDKSpeedTier:  sdkSpeedTierForAgent(e.Path, session.AgentTypeElaborator),
+			PlanFile:        a.PlanFile,
+			RepoPath:        e.Path,
+			Project:         e.Project,
+			Program:         programForAgent(e.Path, session.AgentTypeElaborator),
+			Prompt:          spec.Prompt,
+			ExecutionMode:   executionModeForAgent(e.Path, session.AgentTypeElaborator),
+			SDKSpeedTier:    sdkSpeedTierForAgent(e.Path, session.AgentTypeElaborator),
+			SkipPermissions: skipPermissionsForAgent(e.Path, session.AgentTypeElaborator),
 		}
 		spawnElaborator := d.spawnElaborator
 		if spawnElaborator == nil {
@@ -1813,14 +1816,15 @@ func (d *Daemon) startWaveTasks(ctx context.Context, e RepoEntry, planFile strin
 		waveTaskIndex := i + 1
 		prompt := orch.BuildTaskPrompt(task, peerCount)
 		opts := loop.SpawnOpts{
-			PlanFile:      planFile,
-			RepoPath:      e.Path,
-			Project:       e.Project,
-			Branch:        entry.Branch,
-			Program:       programForAgent(e.Path, session.AgentTypeCoder),
-			Wave:          waveNum,
-			ExecutionMode: executionModeForAgent(e.Path, session.AgentTypeCoder),
-			SDKSpeedTier:  sdkSpeedTierForAgent(e.Path, session.AgentTypeCoder),
+			PlanFile:        planFile,
+			RepoPath:        e.Path,
+			Project:         e.Project,
+			Branch:          entry.Branch,
+			Program:         programForAgent(e.Path, session.AgentTypeCoder),
+			Wave:            waveNum,
+			ExecutionMode:   executionModeForAgent(e.Path, session.AgentTypeCoder),
+			SDKSpeedTier:    sdkSpeedTierForAgent(e.Path, session.AgentTypeCoder),
+			SkipPermissions: skipPermissionsForAgent(e.Path, session.AgentTypeCoder),
 		}
 		wg.Add(1)
 		go func() {
@@ -2038,6 +2042,18 @@ func sdkSpeedTierForAgent(repoPath, agentType string) string {
 	return session.NormalizeSDKSpeedTier(profile.Tier)
 }
 
+// skipPermissionsForAgent resolves the configured permission default for a
+// given agent type by reading the repo's config.toml profiles. Daemon spawns
+// are unattended by definition so the inherited default is true; explicit
+// profile values "prompt" or "bypass" override.
+func skipPermissionsForAgent(repoPath, agentType string) bool {
+	profile, _, ok := resolvedProfileForAgent(repoPath, agentType)
+	if !ok {
+		return true // preserve legacy daemon default when no profile
+	}
+	return profile.ResolveSkipPermissions(true)
+}
+
 // programForAgent resolves the configured program command for a given agent
 // type by reading the repo's config.toml profiles. Returns an empty string
 // when no config exists or the profile is unconfigured, letting the spawner
@@ -2099,30 +2115,32 @@ func buildProgramCommand(profile config.AgentProfile, registry *harness.Registry
 
 func coderSpawnOpts(e RepoEntry, planFile, branch, feedback string) loop.SpawnOpts {
 	return loop.SpawnOpts{
-		PlanFile:      planFile,
-		RepoPath:      e.Path,
-		Project:       e.Project,
-		Branch:        branch,
-		Program:       programForAgent(e.Path, session.AgentTypeCoder),
-		Prompt:        feedback,
-		Feedback:      feedback,
-		ExecutionMode: executionModeForAgent(e.Path, session.AgentTypeCoder),
-		SDKSpeedTier:  sdkSpeedTierForAgent(e.Path, session.AgentTypeCoder),
+		PlanFile:        planFile,
+		RepoPath:        e.Path,
+		Project:         e.Project,
+		Branch:          branch,
+		Program:         programForAgent(e.Path, session.AgentTypeCoder),
+		Prompt:          feedback,
+		Feedback:        feedback,
+		ExecutionMode:   executionModeForAgent(e.Path, session.AgentTypeCoder),
+		SDKSpeedTier:    sdkSpeedTierForAgent(e.Path, session.AgentTypeCoder),
+		SkipPermissions: skipPermissionsForAgent(e.Path, session.AgentTypeCoder),
 	}
 }
 
 func reviewerSpawnOpts(e RepoEntry, entry taskstore.TaskEntry) loop.SpawnOpts {
 	spec := orchestration.BuildReviewerAgentSpec(entry.Filename, e.Project, entry.ReviewCycle, entry.LatestReviewFeedback)
 	return loop.SpawnOpts{
-		PlanFile:      entry.Filename,
-		RepoPath:      e.Path,
-		Project:       e.Project,
-		Branch:        entry.Branch,
-		Program:       programForAgent(e.Path, session.AgentTypeReviewer),
-		ReviewCycle:   spec.ReviewCycle,
-		Prompt:        spec.Prompt,
-		ExecutionMode: executionModeForAgent(e.Path, session.AgentTypeReviewer),
-		SDKSpeedTier:  sdkSpeedTierForAgent(e.Path, session.AgentTypeReviewer),
+		PlanFile:        entry.Filename,
+		RepoPath:        e.Path,
+		Project:         e.Project,
+		Branch:          entry.Branch,
+		Program:         programForAgent(e.Path, session.AgentTypeReviewer),
+		ReviewCycle:     spec.ReviewCycle,
+		Prompt:          spec.Prompt,
+		ExecutionMode:   executionModeForAgent(e.Path, session.AgentTypeReviewer),
+		SDKSpeedTier:    sdkSpeedTierForAgent(e.Path, session.AgentTypeReviewer),
+		SkipPermissions: skipPermissionsForAgent(e.Path, session.AgentTypeReviewer),
 	}
 }
 
@@ -2135,31 +2153,33 @@ func fixerSpawnOpts(e RepoEntry, planFile, branch, feedback string) loop.SpawnOp
 	}
 	spec := orchestration.BuildFixerAgentSpec(planFile, e.Project, reviewCycle, feedback)
 	return loop.SpawnOpts{
-		PlanFile:      planFile,
-		RepoPath:      e.Path,
-		Project:       e.Project,
-		Branch:        branch,
-		Program:       programForAgent(e.Path, session.AgentTypeFixer),
-		ReviewCycle:   spec.ReviewCycle,
-		Prompt:        spec.Prompt,
-		Feedback:      feedback,
-		ExecutionMode: executionModeForAgent(e.Path, session.AgentTypeFixer),
-		SDKSpeedTier:  sdkSpeedTierForAgent(e.Path, session.AgentTypeFixer),
+		PlanFile:        planFile,
+		RepoPath:        e.Path,
+		Project:         e.Project,
+		Branch:          branch,
+		Program:         programForAgent(e.Path, session.AgentTypeFixer),
+		ReviewCycle:     spec.ReviewCycle,
+		Prompt:          spec.Prompt,
+		Feedback:        feedback,
+		ExecutionMode:   executionModeForAgent(e.Path, session.AgentTypeFixer),
+		SDKSpeedTier:    sdkSpeedTierForAgent(e.Path, session.AgentTypeFixer),
+		SkipPermissions: skipPermissionsForAgent(e.Path, session.AgentTypeFixer),
 	}
 }
 
 func masterSpawnOpts(e RepoEntry, entry taskstore.TaskEntry) loop.SpawnOpts {
 	spec := orchestration.BuildMasterAgentSpecWithConfig(entry.Filename, e.Project, entry.ReviewCycle, e.ReadinessSelfFixMaxLines, e.ReadinessMaxVerifyCycles)
 	return loop.SpawnOpts{
-		PlanFile:      entry.Filename,
-		RepoPath:      e.Path,
-		Project:       e.Project,
-		Branch:        entry.Branch,
-		Program:       programForAgent(e.Path, session.AgentTypeMaster),
-		Prompt:        spec.Prompt,
-		ReviewCycle:   entry.ReviewCycle + 1,
-		ExecutionMode: executionModeForAgent(e.Path, session.AgentTypeMaster),
-		SDKSpeedTier:  sdkSpeedTierForAgent(e.Path, session.AgentTypeMaster),
+		PlanFile:        entry.Filename,
+		RepoPath:        e.Path,
+		Project:         e.Project,
+		Branch:          entry.Branch,
+		Program:         programForAgent(e.Path, session.AgentTypeMaster),
+		Prompt:          spec.Prompt,
+		ReviewCycle:     entry.ReviewCycle + 1,
+		ExecutionMode:   executionModeForAgent(e.Path, session.AgentTypeMaster),
+		SDKSpeedTier:    sdkSpeedTierForAgent(e.Path, session.AgentTypeMaster),
+		SkipPermissions: skipPermissionsForAgent(e.Path, session.AgentTypeMaster),
 	}
 }
 
