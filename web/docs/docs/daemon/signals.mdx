@@ -10,6 +10,8 @@ the **primary signal path is the db-backed gateway** — signals are rows in the
 
 > **prefer mcp `signal_create` for agents and `kas signal emit` for operators over writing sentinel files directly.** both routes go through the db gateway, giving you audit history, stuck-signal recovery, and proper error messages.
 
+signals do not carry permission policy. when a signal produces a spawn action, the daemon resolves the target role's profile at dispatch time and puts the final `SkipPermissions` value into `loop.SpawnOpts`. this keeps old signal payloads compatible while allowing repo config to choose prompt or bypass behavior per role.
+
 ```sh
 # emit a signal (db gateway path — cli/operator fallback)
 kas signal emit implement_finished my-plan

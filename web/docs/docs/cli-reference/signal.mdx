@@ -12,6 +12,8 @@ kas signal <subcommand> [flags]
 
 Alias: `kas sig`
 
+Signals describe lifecycle progress only. Permission behavior for any agent spawned as a result of a signal is resolved later by the daemon or tui from `[agents.<role>].permission_default`; the resolved boolean is passed to the session runtime as `SkipPermissions`.
+
 ## signal types
 
 | signal type | payload | description |

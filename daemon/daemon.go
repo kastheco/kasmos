@@ -219,6 +219,7 @@ func (a *daemonStateAdapter) ListInstances(project string) []api.InstanceStatus 
 			}
 			active := !inst.Paused() && !inst.Exited && (inst.Started() || inst.Status == session.Loading)
 			ready := active && inst.Status == session.Ready
+			skipPermissions := inst.SkipPermissions
 			out = append(out, api.InstanceStatus{
 				ID:              inst.Title,
 				Project:         project,
@@ -238,7 +239,7 @@ func (a *daemonStateAdapter) ListInstances(project string) []api.InstanceStatus 
 				ExecutionMode:   string(session.NormalizeExecutionMode(inst.ExecutionMode)),
 				SoloAgent:       inst.SoloAgent,
 				SDKSpeedTier:    inst.SDKSpeedTier,
-				SkipPermissions: inst.SkipPermissions,
+				SkipPermissions: &skipPermissions,
 			})
 		}
 		return out

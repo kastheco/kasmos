@@ -40,7 +40,7 @@ func TestDaemonInstanceLister_PausedRowsNotFiltered(t *testing.T) {
 	// so the web UI can restrict valid_actions to {restart, kill} — collapsing
 	// it into StatusRunning would violate the plan action matrix.
 	statuses := []api.InstanceStatus{
-		{Title: "active-agent", Active: true, Program: "opencode", SkipPermissions: true},
+		{Title: "active-agent", Active: true, Program: "opencode", SkipPermissions: daemonBoolPtr(true)},
 		{Title: "paused-agent", Active: false, Program: "claude"},
 		{Title: "ready-agent", Active: true, Ready: true, Program: "opencode"},
 	}
@@ -72,7 +72,12 @@ func TestDaemonInstanceLister_PausedRowsNotFiltered(t *testing.T) {
 	assert.Equal(t, livepreview.StatusRunning, byTitle["active-agent"].Status)
 	assert.True(t, byTitle["active-agent"].SkipPermissions)
 	assert.Equal(t, livepreview.StatusPaused, byTitle["paused-agent"].Status)
+	assert.True(t, byTitle["paused-agent"].SkipPermissions, "missing skip_permissions from legacy daemon status must preserve bypass default")
 	assert.Equal(t, livepreview.StatusReady, byTitle["ready-agent"].Status)
+}
+
+func daemonBoolPtr(v bool) *bool {
+	return &v
 }
 
 func TestDaemonInstanceLister_PostInstanceAction_EncodesPath(t *testing.T) {

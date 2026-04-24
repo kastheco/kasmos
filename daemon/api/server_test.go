@@ -761,6 +761,25 @@ func TestSpawnSoloRequest_NullableSkipPermissions(t *testing.T) {
 	}
 }
 
+func TestInstanceStatus_ResolvedSkipPermissions(t *testing.T) {
+	tests := []struct {
+		name string
+		in   *bool
+		want bool
+	}{
+		{name: "nil defaults to legacy daemon bypass", in: nil, want: true},
+		{name: "explicit false preserved", in: ptrBool(false), want: false},
+		{name: "explicit true preserved", in: ptrBool(true), want: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			status := InstanceStatus{SkipPermissions: tc.in}
+			assert.Equal(t, tc.want, status.ResolvedSkipPermissions())
+		})
+	}
+}
+
 func ptrBool(v bool) *bool {
 	return &v
 }

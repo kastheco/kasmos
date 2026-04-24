@@ -114,6 +114,8 @@ defined in `orchestration/loop/`. receives scanned signals and returns typed `Ac
 
 the processor is stateful — it holds a `WaveOrchestrator` per active plan so that inter-tick wave state is not lost.
 
+spawn actions are resolved at the daemon boundary before they reach the spawner. the daemon reads the repo's profile for the target role, resolves `permission_default` against the daemon default of bypassing permissions, and writes the final boolean into `loop.SpawnOpts.SkipPermissions`. the spawner and session transports only see that final value.
+
 ### `TmuxSpawner`
 
 defined in `daemon/spawner.go`. creates named tmux sessions for each agent role using a consistent naming convention (`<plan-name>-<role>`). tracks running instances in memory so the daemon can monitor prompt state, detect completion, and kill agents when needed.
@@ -128,6 +130,8 @@ key methods:
 - `DiscoverOrphanSessions()` — lists `kas_*` tmux sessions not tracked by this spawner (used during recovery)
 - `RestoreTrackedInstance(…)` — re-adopts an orphan session into the tracking map
 - `DrainAll(ctx)` — waits for all running sessions to exit before shutdown
+
+the same tracked instances are exposed over the control api as `api.InstanceStatus` rows. status rows include the resolved `skip_permissions` value when reported by a new daemon; clients treat a missing value from an older daemon as the legacy daemon default of bypassing permissions.
 
 ### `api.EventBroadcaster`
 

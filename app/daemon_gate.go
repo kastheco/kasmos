@@ -148,6 +148,10 @@ func registerRepoWithDaemon(repoPath string) error {
 	return daemonpkg.NewSocketClient(taskstore.ResolvedDaemonSocketPath()).AddRepo(canonicalRepoPath(repoPath))
 }
 
+func daemonStatusSkipPermissions(status api.InstanceStatus) bool {
+	return status.ResolvedSkipPermissions()
+}
+
 func daemonInstanceData(repoPath string, status api.InstanceStatus) session.InstanceData {
 	program := status.Program
 	if program == "" {
@@ -173,7 +177,7 @@ func daemonInstanceData(repoPath string, status api.InstanceStatus) session.Inst
 		Program:         program,
 		ExecutionMode:   mode,
 		AutoYes:         true,
-		SkipPermissions: status.SkipPermissions,
+		SkipPermissions: daemonStatusSkipPermissions(status),
 		TaskFile:        status.Plan,
 		AgentType:       status.Role,
 		TaskNumber:      status.TaskNumber,
@@ -224,7 +228,7 @@ func newDaemonSDKInstance(repoPath string, status api.InstanceStatus) (*session.
 		Program:         program,
 		ExecutionMode:   session.ExecutionModeSDK,
 		AutoYes:         true,
-		SkipPermissions: status.SkipPermissions,
+		SkipPermissions: daemonStatusSkipPermissions(status),
 		TaskFile:        status.Plan,
 		AgentType:       status.Role,
 		TaskNumber:      status.TaskNumber,
@@ -266,7 +270,7 @@ func newDaemonLoadingInstance(repoPath string, status api.InstanceStatus) (*sess
 		Program:         program,
 		ExecutionMode:   session.ExecutionModeTmux,
 		AutoYes:         true,
-		SkipPermissions: status.SkipPermissions,
+		SkipPermissions: daemonStatusSkipPermissions(status),
 		TaskFile:        status.Plan,
 		AgentType:       status.Role,
 		TaskNumber:      status.TaskNumber,
