@@ -32,12 +32,6 @@
   height: auto;
 }
 
-.orgName {
-  font-size: 18px;
-  font-weight: 600;
-  margin: 0;
-}
-
 .hint {
   color: var(--foreground-secondary);
   font-size: 13px;

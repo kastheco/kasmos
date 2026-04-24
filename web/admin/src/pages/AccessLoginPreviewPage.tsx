@@ -14,7 +14,6 @@ export default function AccessLoginPreviewPage() {
           alt={BRAND.wordmarkAlt}
           className={styles.logo}
         />
-        <h1 className={styles.orgName}>{BRAND.cloudflare.organizationName}</h1>
         <p className={styles.hint}>sign in with your identity provider</p>
         <button type="button" className={styles.idpButton} disabled>
           continue with identity provider (preview only)

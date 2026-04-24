@@ -32,7 +32,7 @@
   background: linear-gradient(180deg, #2dd4bf 0%, #67d6df 45%, #c4a7e7 100%);
   background-clip: text;
   color: transparent;
-  font-family: "Liberation Serif", "DejaVu Serif", Georgia, "Times New Roman", serif;
+  font-family: "Inter", "Roboto", "Noto Sans", "Liberation Sans", "DejaVu Sans", Arial, sans-serif;
   font-size: 22px;
   font-weight: 700;
   letter-spacing: 0.02em;
