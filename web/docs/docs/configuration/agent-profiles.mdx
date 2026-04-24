@@ -16,6 +16,7 @@ An **agent profile** (`config.AgentProfile` in `config/profile.go`) defines how 
 | `model` | string | — | model identifier passed to the agent (e.g. `claude-sonnet-4-5`) |
 | `temperature` | float? | — | sampling temperature, if the agent supports it |
 | `effort` | string | — | effort level (e.g. `low`, `medium`, `high`), if the agent supports it |
+| `tier` | string | `""` | Codex SDK only: session speed tier (accepts `"fast"`, `"flex"`, or `"default"`). Claude SDK and tmux sessions ignore this field. |
 | `execution_mode` | string | `"tmux"` | how the agent process is launched: `"tmux"` or `"sdk"` |
 
 ### `execution_mode`
@@ -25,6 +26,34 @@ An **agent profile** (`config.AgentProfile` in `config/profile.go`) defines how 
 - **`headless`**: legacy alias for `"sdk"` — accepted but `"sdk"` is preferred in new configs.
 
 The mode is normalized by `config.NormalizeExecutionMode()`: any unrecognized value (including empty string) falls back to `"tmux"`.
+
+### `tier`
+
+Sets the Codex SDK speed tier for any session spawned into this role by orchestration.
+
+**Accepted values**
+
+| value | result after normalization |
+|-------|---------------------------|
+| `""` (unset) | `""` — no tier forwarded |
+| `"fast"` | `"fast"` |
+| `"flex"` | `"flex"` |
+| `"default"` | `"flex"` (normalized to `"flex"`) |
+| anything else (e.g. `"priority"`) | `""` — unrecognized, ignored |
+
+**Normalization** is handled by `config.NormalizeTier` in `config/profile.go`. The match is case-insensitive, leading/trailing whitespace is trimmed, `"default"` is mapped to `"flex"`, and any other unrecognized string collapses to `""`.
+
+**Gating** — the normalized tier value is only forwarded when **both** conditions hold at session-start time:
+
+1. The resolved `execution_mode` is `"sdk"` (after `session.ResolveExecutionMode` has applied the program-compatibility downgrade check).
+2. The `program` is `codex`. The Claude SDK transport (`session/sdk/claude_transport.go`) silently ignores the field even when `execution_mode = "sdk"`.
+
+**Per-spawn override** — the `S` execution-mode picker offers an `sdk-fast` choice that overrides the profile default for that one spawn only. The override is stored as `SDKSpeedTier = "fast"` on the instance record; it is **not** written back to `config.toml`. See [speed tier: profile default + per-spawn override](../sdk-backend/configuration.mdx#speed-tier-profile-default--per-spawn-override) for full details.
+
+**Observed behavior** — when a tier is in effect:
+
+- The info pane shows a `speed tier: fast` row (`ui/info_pane.go`).
+- The spawn audit log records a `speed_tier` entry in `Event.Detail` (`config/auditlog/logger.go`).
 
 ### `BuildCommand()`
 
@@ -88,10 +117,11 @@ enabled        = true
 program        = "codex"
 model          = "o3"
 execution_mode = "sdk"
+tier           = "fast"   # forwarded as serviceTier: "fast" on thread/start
 flags          = ["--approval-mode", "full-auto"]
 ```
 
-Drives `codex --approval-mode full-auto` via the Codex App Server protocol with `model = "o3"`.
+Drives `codex --approval-mode full-auto` via the Codex App Server protocol with `model = "o3"`. Setting `tier = "fast"` requests the fast Codex speed tier for every orchestration-spawned session into this role.
 
 ### mixed setup (different agents per role)
 
