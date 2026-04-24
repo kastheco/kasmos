@@ -14,10 +14,10 @@ func init() { addRegistrar(registerDocsSearch) }
 // registerDocsSearch registers the docs_search tool with the MCP server.
 func registerDocsSearch(srv *server.MCPServer, _ *fstools.Sandbox, d *Dispatcher) {
 	tool := mcp.NewTool("docs_search",
-		mcp.WithDescription("Search kasmos documentation. Prefers local web/docs/ when available, falls back to https://kasmos.kasthe.co/docs/."),
+		mcp.WithDescription("Search kasmos documentation. Prefers local web/docs/ when available (regex via rg), falls back to https://kasmos.kasthe.co/docs/ (case-insensitive substring)."),
 		mcp.WithString("pattern",
 			mcp.Required(),
-			mcp.Description("Regex or literal pattern"),
+			mcp.Description("Search pattern; interpreted as a regex in local mode, case-insensitive substring in remote mode"),
 		),
 		mcp.WithString("version",
 			mcp.Description("Pin to a specific docs version (e.g. 2.6.0); default is current"),

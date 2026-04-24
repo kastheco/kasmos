@@ -45,7 +45,10 @@ func RegisterTools(srv *server.MCPServer, allowedDirs []string, opts RegisterOpt
 		opts.HTTPClient = &http.Client{Timeout: 5 * time.Second}
 	}
 	if opts.BaseURL == "" {
-		if env := os.Getenv("KASMOS_DOCS_BASE_URL"); env != "" {
+		if env, ok := os.LookupEnv("KASMOS_DOCS_BASE_URL"); ok {
+			// Explicit env var (even empty string) takes precedence. An empty
+			// value disables remote mode — fetchManifest returns an error when
+			// baseURL is "".
 			opts.BaseURL = env
 		} else {
 			opts.BaseURL = "https://kasmos.kasthe.co/docs/"

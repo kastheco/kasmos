@@ -2,7 +2,7 @@
 
 Two MCP tools expose the kasmos wiki to agents:
 
-- `mcp__kasmos__docs_search` - regex/literal search across all kasmos docs.
+- `mcp__kasmos__docs_search` - search across all kasmos docs (regex in local mode, case-insensitive substring in remote mode).
 - `mcp__kasmos__docs_read` - fetch a full doc by slug, path, or URL.
 
 ## when to use them
@@ -21,7 +21,7 @@ Pass `version: "2.6.0"` (or any entry in `web/docs/versions.json`) to restrict r
 
 ## opting out
 
-Set `KASMOS_DOCS_BASE_URL=""` to disable remote mode entirely. Local mode is always available when `web/docs/docs/` is on disk.
+Set `KASMOS_DOCS_BASE_URL=` (empty string) in the environment to disable remote mode. When the variable is explicitly set to empty, remote fetches return an error instead of silently falling back to the default URL. Local mode is unaffected and remains available whenever `web/docs/docs/` is on disk.
 
 ## troubleshooting
 

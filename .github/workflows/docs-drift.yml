@@ -37,6 +37,10 @@ jobs:
           sudo chmod +x /usr/local/bin/yq
 
       - id: drift
+        env:
+          # For pull_request events, compare against the PR base so only the
+          # PR's own changes are evaluated, not unrelated drift from earlier merges.
+          BASE_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || '' }}
         run: |
           set -euo pipefail
           REPORT=$(bash scripts/detect-docs-drift.sh)

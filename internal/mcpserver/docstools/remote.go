@@ -35,6 +35,9 @@ func (d *Dispatcher) manifestURL(version string) string {
 // to avoid redundant transfers. The host in the constructed URL must match
 // d.allowedHost; requests to other hosts are rejected.
 func (d *Dispatcher) fetchManifest(ctx context.Context, version string) (string, error) {
+	if d.baseURL == "" {
+		return "", fmt.Errorf("docs remote: remote mode is disabled (KASMOS_DOCS_BASE_URL is empty)")
+	}
 	manifestURL := d.manifestURL(version)
 
 	// Verify the URL host is on the allowlist.
@@ -68,11 +71,16 @@ func (d *Dispatcher) fetchManifest(ctx context.Context, version string) (string,
 
 	switch resp.StatusCode {
 	case http.StatusNotModified:
-		// Cache hit: return the previously stored body.
+		// Cache hit: return the previously stored body. If the cache entry is
+		// missing (e.g. eviction or unexpected server 304), return an error
+		// rather than silently returning an empty manifest.
 		d.cache.mu.Lock()
-		body := d.cache.entries[cacheKey].body
+		entry, ok := d.cache.entries[cacheKey]
 		d.cache.mu.Unlock()
-		return body, nil
+		if !ok || entry.body == "" {
+			return "", fmt.Errorf("docs remote: 304 received but no cached manifest for %s", manifestURL)
+		}
+		return entry.body, nil
 
 	case http.StatusOK:
 		bodyBytes, readErr := io.ReadAll(resp.Body)
