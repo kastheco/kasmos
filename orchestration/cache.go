@@ -7,9 +7,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
-const architectBaselineSchemaVersion = 1
+const (
+	architectBaselineSchemaVersion      = 1
+	architectDecisionAuditSchemaVersion = 1
+)
 
 func architectMetaFilename(planSlug string) string {
 	return planSlug + "-architect.json"
@@ -55,6 +59,35 @@ func LoadArchitectMeta(cacheDir, planSlug string) (*ArchitectMeta, error) {
 	}
 
 	return &meta, nil
+}
+
+// ValidateArchitectDecisionAudit confirms audit belongs to the requested task and
+// contains the minimum decision fields needed by hq.
+func ValidateArchitectDecisionAudit(a *ArchitectDecisionAudit, planFile, project string) error {
+	if a == nil {
+		return fmt.Errorf("architect decision audit is nil")
+	}
+	if a.SchemaVersion != architectDecisionAuditSchemaVersion {
+		return fmt.Errorf("unsupported architect decision audit schema version: %d", a.SchemaVersion)
+	}
+	if a.PlanFile != planFile {
+		return fmt.Errorf("architect decision audit plan file mismatch: got %q, want %q", a.PlanFile, planFile)
+	}
+	if a.Project != project {
+		return fmt.Errorf("architect decision audit project mismatch: got %q, want %q", a.Project, project)
+	}
+	if strings.TrimSpace(a.FinalDecision) == "" {
+		return fmt.Errorf("architect decision audit final decision is empty")
+	}
+	for i, diff := range a.Differences {
+		if strings.TrimSpace(diff.Area) == "" {
+			return fmt.Errorf("architect decision audit difference %d area is empty", i)
+		}
+		if strings.TrimSpace(diff.FinalDecision) == "" {
+			return fmt.Errorf("architect decision audit difference %d final decision is empty", i)
+		}
+	}
+	return nil
 }
 
 // ArchitectMetaExists reports whether the architect metadata file for planSlug exists in cacheDir.

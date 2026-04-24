@@ -41,6 +41,27 @@ func TestSaveAndLoadArchitectMeta(t *testing.T) {
 			},
 		}},
 		CachedSnippets: map[string]string{"snippet:one": "code"},
+		DecisionAudit: &ArchitectDecisionAudit{
+			SchemaVersion:   architectDecisionAuditSchemaVersion,
+			PlanFile:        "planner",
+			Project:         "kasmos",
+			CreatedAt:       time.Date(2026, 4, 24, 12, 30, 0, 0, time.UTC),
+			BaselineSource:  "architect-baseline-cache",
+			Summary:         "architect accepted the shape with one routing adjustment",
+			PlannerSummary:  "planner split metadata and hq API tasks",
+			BaselineSummary: "baseline kept metadata scoped to orchestration cache",
+			FinalDecision:   "store the decision audit inside architect metadata",
+			Differences: []ArchitectDecisionDifference{{
+				Area:              "metadata cache",
+				Scope:             "orchestration",
+				PlannerProposal:   "add an external planner snapshot",
+				ArchitectBaseline: "reuse existing architect cache",
+				FinalDecision:     "add an optional decision_audit object",
+				Rationale:         "keeps cache ownership in one artifact",
+				RelatedFiles:      []string{"orchestration/meta.go", "orchestration/cache.go"},
+				TaskNumbers:       []int{1, 2},
+			}},
+		},
 	}
 
 	require.NoError(t, SaveArchitectMeta(cacheDir, planSlug, original))
@@ -57,6 +78,26 @@ func TestSaveAndLoadArchitectMeta(t *testing.T) {
 
 	require.Len(t, loaded.Waves, 1)
 	assert.Equal(t, 1, loaded.Waves[0].Tasks[0].TaskNumber)
+}
+
+func TestLoadArchitectMeta_BackwardsCompatibleWithoutDecisionAudit(t *testing.T) {
+	tmp := t.TempDir()
+	cacheDir := filepath.Join(tmp, "cache")
+	planSlug := "planner"
+	require.NoError(t, os.MkdirAll(cacheDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(cacheDir, architectMetaFilename(planSlug)), []byte(`{
+  "plan_id": "plan-123",
+  "schema_version": 1,
+  "waves": [],
+  "cache_version": 3
+}
+`), 0o644))
+
+	loaded, err := LoadArchitectMeta(cacheDir, planSlug)
+	require.NoError(t, err)
+	require.NotNil(t, loaded)
+	assert.Nil(t, loaded.DecisionAudit)
+	assert.Equal(t, "plan-123", loaded.PlanID)
 }
 
 func TestLoadArchitectMeta_Missing(t *testing.T) {
@@ -109,6 +150,107 @@ func TestTaskMeta_LookupByNumber(t *testing.T) {
 
 	var nilMeta *ArchitectMeta
 	assert.Nil(t, nilMeta.TaskByNumber(1))
+}
+
+func TestValidateArchitectDecisionAudit(t *testing.T) {
+	const planFile = "planner"
+	const project = "kasmos"
+	valid := func() *ArchitectDecisionAudit {
+		return &ArchitectDecisionAudit{
+			SchemaVersion: architectDecisionAuditSchemaVersion,
+			PlanFile:      planFile,
+			Project:       project,
+			FinalDecision: "accept planner draft with metadata audit",
+			Summary:       "no task shape changes",
+			Differences: []ArchitectDecisionDifference{{
+				Area:          "orchestration cache",
+				FinalDecision: "add optional audit field",
+			}},
+		}
+	}
+
+	require.NoError(t, ValidateArchitectDecisionAudit(valid(), planFile, project))
+	require.NoError(t, ValidateArchitectDecisionAudit(&ArchitectDecisionAudit{
+		SchemaVersion: architectDecisionAuditSchemaVersion,
+		PlanFile:      planFile,
+		Project:       project,
+		FinalDecision: "accepted unchanged",
+		Summary:       "planner draft accepted unchanged",
+	}, planFile, project))
+
+	tests := []struct {
+		name      string
+		audit     *ArchitectDecisionAudit
+		errSubstr string
+	}{
+		{
+			name:      "nil audit",
+			audit:     nil,
+			errSubstr: "nil",
+		},
+		{
+			name: "schema mismatch",
+			audit: func() *ArchitectDecisionAudit {
+				a := valid()
+				a.SchemaVersion = 999
+				return a
+			}(),
+			errSubstr: "unsupported",
+		},
+		{
+			name: "wrong plan",
+			audit: func() *ArchitectDecisionAudit {
+				a := valid()
+				a.PlanFile = "other"
+				return a
+			}(),
+			errSubstr: "plan file mismatch",
+		},
+		{
+			name: "wrong project",
+			audit: func() *ArchitectDecisionAudit {
+				a := valid()
+				a.Project = "other"
+				return a
+			}(),
+			errSubstr: "project mismatch",
+		},
+		{
+			name: "empty final decision",
+			audit: func() *ArchitectDecisionAudit {
+				a := valid()
+				a.FinalDecision = "  "
+				return a
+			}(),
+			errSubstr: "final decision is empty",
+		},
+		{
+			name: "empty difference area",
+			audit: func() *ArchitectDecisionAudit {
+				a := valid()
+				a.Differences[0].Area = " "
+				return a
+			}(),
+			errSubstr: "area is empty",
+		},
+		{
+			name: "empty difference final decision",
+			audit: func() *ArchitectDecisionAudit {
+				a := valid()
+				a.Differences[0].FinalDecision = " "
+				return a
+			}(),
+			errSubstr: "difference 0 final decision is empty",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateArchitectDecisionAudit(tt.audit, planFile, project)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.errSubstr)
+		})
+	}
 }
 
 func TestSaveAndLoadArchitectBaseline(t *testing.T) {
