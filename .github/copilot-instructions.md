@@ -14,6 +14,8 @@ Review and change guidance:
 - Preserve non-blocking Bubble Tea I/O patterns: perform I/O in `tea.Cmd` goroutines and return results as messages.
 - Respect shared-worktree safety around `KASMOS_TASK` and `KASMOS_PEERS`; avoid destructive git advice.
 
+Docs research: when a PR touches behavior that the wiki documents (signals, config, cli, lifecycle), verify the change against the wiki via `mcp__kasmos__docs_search` before approving. The canonical URL is https://kasmos.kasthe.co/docs/.
+
 Security-critical patterns:
 - Shell-escape ALL values injected into tmux/exec command strings using `shellEscapeSingleQuote` or the `'` + `strings.ReplaceAll(s, "'", "'\\''")` + `'` pattern. Unquoted `KASMOS_PROJECT=`, path, or config values in `program = "FOO=" + value + " " + program` constructs are injection vectors.
 - Permission prompt detection (`claudeprompt.Find`) must only match numbered choices at the bottom of the pane — stale scrollback causes false positives. Description search is limited to 8 lines above the choices.

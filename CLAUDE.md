@@ -51,6 +51,8 @@ Always prefer kasmos MCP tools over built-in Claude Code equivalents — they ar
 | lifecycle signals | `mcp__kasmos__signal_create` | Bash `touch .kasmos/signals/` |
 | instance management | `mcp__kasmos__instance_list/pause/resume/send` | Bash `kas instance` |
 | daemon status | `mcp__kasmos__daemon_status` | Bash `kas daemon` |
+| search kasmos docs | `mcp__kasmos__docs_search` | WebFetch + grep |
+| read kasmos doc    | `mcp__kasmos__docs_read`   | WebFetch        |
 
 Built-in tools (Read, Grep, Glob, Bash) are fallback only — use when MCP is unavailable or for operations with no MCP equivalent (e.g., Edit, Write).
 
