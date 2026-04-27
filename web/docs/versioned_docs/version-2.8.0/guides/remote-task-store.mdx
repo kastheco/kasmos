@@ -1,0 +1,176 @@
+---
+title: "remote task store"
+---
+
+# remote task store
+
+by default, kasmos uses a local sqlite database at `~/.config/kasmos/taskstore.db`. for multi-machine setups — such as agents running on a remote server while you monitor from a laptop — you can run the task store as a standalone http server and point kasmos at it.
+
+## starting the server
+
+```bash
+kas serve --port 7433 --db /path/to/kasmos.db
+```
+
+this starts an http server backed by sqlite. all task state is persisted to the database file you specify.
+
+default values:
+
+| flag | default |
+|------|---------|
+| `--port` | `7433` |
+| `--db` | `~/.config/kasmos/taskstore.db` |
+| `--bind` | `0.0.0.0` |
+
+the server also exposes an admin ui at `/admin/` for browsing task state in a browser.
+
+## connecting clients
+
+point kasmos at the remote server by adding one line to `<repo-root>/.kasmos/config.toml`:
+
+```toml
+database_url = "http://your-server:7433"
+```
+
+all kasmos instances that read this config — the tui, cli commands, and any store-backed local workflows — will use the remote store instead of the local sqlite file.
+
+verify the connection:
+
+```bash
+curl http://your-server:7433/v1/ping
+```
+
+## rest api
+
+the server exposes a rest api at `/v1/projects/{project}/tasks`. the `{project}` segment is the repository name as registered in the store (matching the `project` field in the task store entries).
+
+### health check
+
+```bash
+GET /v1/ping
+```
+
+returns `200 ok` if the store is reachable, `503` if the underlying sqlite connection is unhealthy.
+
+### tasks
+
+```bash
+# list all tasks
+GET /v1/projects/{project}/tasks
+
+# filter by status
+GET /v1/projects/{project}/tasks?status=implementing
+GET /v1/projects/{project}/tasks?status=ready&status=planning
+
+# filter by topic
+GET /v1/projects/{project}/tasks?topic=auth
+
+# get a single task
+GET /v1/projects/{project}/tasks/{filename}
+
+# create a task
+POST /v1/projects/{project}/tasks
+Content-Type: application/json
+{"filename": "my-feature", "status": "ready", ...}
+
+# update a task
+PUT /v1/projects/{project}/tasks/{filename}
+
+# get task content (the plan markdown)
+GET /v1/projects/{project}/tasks/{filename}/content
+
+# replace task content
+PUT /v1/projects/{project}/tasks/{filename}/content
+Content-Type: text/markdown
+<plan body>
+
+# get subtasks (wave tasks)
+GET /v1/projects/{project}/tasks/{filename}/subtasks
+
+# replace subtasks
+PUT /v1/projects/{project}/tasks/{filename}/subtasks
+
+# rename a task
+POST /v1/projects/{project}/tasks/{filename}/rename
+Content-Type: application/json
+{"new_filename": "better-name"}
+```
+
+### audit events
+
+```bash
+# list audit events for a project
+GET /v1/projects/{project}/audit-events
+```
+
+## audit querying
+
+Audit events can be filtered by repeated `kind=` values, `task`, `instance`, `after`, `before`, and `limit`. `after` and `before` accept RFC3339 timestamps, including fractional seconds from daemon JSON output.
+
+For Eagle Eye ingestion, poll with a moving timestamp window and key processed rows by the stable `id` field:
+
+```bash
+curl "http://your-server:7433/v1/projects/kasmos/audit-events?kind=wave_failed&kind=agent_finished&task=eagle-eye-optimizations&instance=eagle-eye-optimizations-W3-T5&after=2026-04-24T12:00:00Z&limit=500"
+```
+
+The `after` filter is strict (`timestamp > after`), and multiple events can share the same timestamp. Do not advance `after` to the newest processed timestamp by itself, or same-timestamp rows can be skipped. Keep an overlap window when polling and de-duplicate by stable `id`, or store a `(timestamp, id)` high-water mark and continue accepting rows at the same timestamp until every new `id` has been processed.
+
+### topics
+
+```bash
+# list topics
+GET /v1/projects/{project}/topics
+
+# create a topic
+POST /v1/projects/{project}/topics
+Content-Type: application/json
+{"name": "auth"}
+```
+
+## curl examples
+
+```bash
+# list all tasks in project "kasmos"
+curl http://localhost:7433/v1/projects/kasmos/tasks
+
+# get tasks in reviewing status
+curl 'http://localhost:7433/v1/projects/kasmos/tasks?status=reviewing'
+
+# read plan content
+curl http://localhost:7433/v1/projects/kasmos/tasks/add-jwt-auth/content
+
+# push updated plan content
+curl -X PUT http://localhost:7433/v1/projects/kasmos/tasks/add-jwt-auth/content \
+  -H 'Content-Type: text/markdown' \
+  --data-binary @my-plan.md
+```
+
+## mcp server
+
+`kas serve` also exposes the shared http mcp endpoint on a second port for agent-side tooling:
+
+```bash
+kas serve --mcp --mcp-port 7434
+```
+
+the mcp server is enabled by default. it exposes task-store operations, signal tools, instance tools, and repo-scoped filesystem tools to mcp-aware clients. in normal setups, scaffolded agents connect to this shared endpoint directly; they do not need one `kas mcp` subprocess per agent.
+
+## security considerations
+
+the http server has no built-in authentication. for remote access:
+
+- run it behind a reverse proxy (nginx, caddy) with TLS and basic auth
+- restrict access at the network level (firewall rules, Tailscale, WireGuard)
+- bind to localhost and use SSH port forwarding for occasional remote access:
+
+```bash
+ssh -L 7433:localhost:7433 your-server
+# then in config.toml:
+# database_url = "http://localhost:7433"
+```
+
+## related
+
+- [service management](./systemd-services.mdx) — run `kas serve` as a persistent user service (systemd or launchd)
+- [configuration](../configuration/index.mdx) — full `config.toml` reference
+- [cli reference](../cli-reference/index.mdx) — `kas serve` flags

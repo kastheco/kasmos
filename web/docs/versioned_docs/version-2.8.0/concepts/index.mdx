@@ -1,0 +1,76 @@
+---
+title: "concepts"
+---
+
+# concepts
+
+kasmos organizes AI agent orchestration around four core nouns. Understanding them makes the rest of the system click.
+
+## tasks
+
+A **task** is the unit of work kasmos manages. It is a markdown document with a structured header and one or more wave sections. The task store holds its status, branch, topic, and timestamps; the markdown file on disk holds its content.
+
+Tasks are registered via `kas task register <file>`, updated via `kas task update-content`, and progressed through lifecycle stages via `kas task transition`. The markdown file on disk is the source of content; the task store is the authoritative source of status.
+
+See [plans and tasks](./plans-and-tasks.mdx) for the full document format.
+
+## waves
+
+A wave is a group of tasks that can run in parallel. A multi-wave plan looks like:
+
+```
+## Wave 1
+### Task 1: ...
+### Task 2: ...
+
+## Wave 2
+### Task 3: ...
+```
+
+The wave orchestrator drives execution: wave 1 must complete before wave 2 begins. Within a wave, all tasks launch concurrently as separate agent instances.
+
+See [waves](./waves.mdx) for elaboration, blueprint-skip, and state transitions.
+
+## topics
+
+A **topic** groups related tasks. kasmos enforces a collision gate: only one task per topic can be in the `implementing` status at a time. If you try to start a coder on a task whose topic already has an implementing task, kasmos warns you.
+
+This prevents conflicting agents from landing simultaneous changes on the same codebase area.
+
+See [topics](./topics.mdx) for the exact collision logic.
+
+## agents and roles
+
+An **agent** is a running AI assistant (claude, opencode, codex, etc.) executing a task. A **role** defines the agent's purpose and is mapped to a phase in the lifecycle:
+
+| role | phase |
+|------|-------|
+| `planner` | planning |
+| `architect` | elaborating |
+| `coder` | implementing |
+| `reviewer` | spec_review, quality_review |
+| `master` | verifying |
+| `fixer` | fixer |
+| `chat` | (ad-hoc) |
+
+Each role is backed by an agent profile in `.kasmos/config.toml` that specifies the program, model, flags, effort, and execution mode.
+
+See [agents and roles](./agents-and-roles.mdx) for profile fields and execution modes.
+
+## lifecycle
+
+Every task moves through a finite state machine:
+
+```
+ready → planning → ready → implementing → reviewing → [verifying →] done
+```
+
+Cancelled and reopened tasks are also handled.
+
+See [lifecycle](./lifecycle.mdx) for all statuses, events, and valid transitions.
+
+## worktrees
+
+Each agent instance works in an isolated **git worktree** under `<repo-root>/.worktrees/`. The main repo root is resolved automatically, handling both regular repos and nested worktrees. kasmos configuration is always anchored to the main repo root, never the worktree.
+
+See [worktrees](./worktrees.mdx) for checkout, resume, and orphan adoption.

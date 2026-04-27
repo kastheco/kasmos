@@ -1,0 +1,73 @@
+---
+title: "kas setup"
+---
+
+# kas setup
+
+Run an interactive wizard to configure agent harnesses, write `.kasmos/config.toml`, and scaffold project-level agent files.
+
+```
+kas setup [--force] [--clean]
+```
+
+Alias: `kas init`
+
+## flags
+
+| flag | description |
+|------|-------------|
+| `--force` | overwrite existing project scaffold files (skipped by default) |
+| `--clean` | ignore any existing configuration and start from factory defaults |
+
+## the wizard
+
+The wizard runs three interactive steps:
+
+**Step 1 — detect agent CLIs**
+
+Scans `$PATH` for supported agent programs: `claude`, `opencode`, and `codex`. The wizard shows whether each program was found and, when detected, the path it resolved to. You select which harnesses to configure.
+
+**Step 2 — configure agent roles**
+
+For each selected harness, choose which agent roles it should fill: `coder`, `reviewer`, `planner`. You can also configure model names and per-role tuning options specific to each program.
+
+**Step 3 — confirm and write**
+
+Review the selections before the wizard proceeds to the post-run phases.
+
+## post-run phases
+
+After the wizard completes:
+
+1. **Personal skill sync** — skills from `~/.agents/skills/` are symlinked into each harness's global skill directory (e.g. `~/.claude/skills/`, `~/.opencode/skills/`).
+
+2. **Enforcement hooks** — cli-tools enforcement hooks are installed into each selected harness so agents are constrained to use preferred tools (`rg`, `fd`, `sd`, etc.) instead of raw shell commands.
+
+3. **TOML config write** — the selected configuration is written to `<repo-root>/.kasmos/config.toml`. The path is printed after writing.
+
+4. **Project scaffold** — project-level agent files are written into the current directory:
+   - `.agents/skills/` — project-scoped skills
+   - `.claude/` — Claude Code harness config (agents, settings, skills)
+   - `.opencode/` — opencode harness config (agents, skills)
+   - `AGENTS.md`, `CLAUDE.md`, `.codex/AGENTS.md` — harness-wide instructions
+
+   Files that already exist are skipped unless `--force` is given.
+
+   The scaffolded architect skill includes the current planning contract, including the default-on parallel baseline guidance and opt-out handling for `[orchestration].parallel_planner_architect = false`. It also instructs architect agents to write the final `decision_audit` into `.kasmos/cache/<task>-architect.json` so hq can display the baseline-vs-planner decision record. Run `kas setup --force` only when you intend to refresh those scaffold-managed skill and prompt files from the bundled templates.
+
+## example
+
+```sh
+# first-time setup
+kas setup
+
+# overwrite existing scaffold files with defaults
+kas setup --force
+
+# ignore existing config, start fresh
+kas setup --clean --force
+```
+
+## verifying setup
+
+After running `kas setup`, use `kas check -v` to verify that all skills are correctly symlinked across harnesses.

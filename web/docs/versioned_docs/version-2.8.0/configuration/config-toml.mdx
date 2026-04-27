@@ -1,0 +1,262 @@
+---
+title: "config.toml"
+---
+
+# config.toml
+
+**Path:** `<repo-root>/.kasmos/config.toml`
+
+This is the project-local configuration file. It is the authoritative source for agent profiles, lifecycle phase mappings, UI behavior, orchestration tuning, and webhook hooks.
+
+kasmos generates this file on first boot via `kas setup`. You can safely edit it by hand — it is re-read on each startup.
+
+## top-level fields
+
+| field | type | default | description |
+|-------|------|---------|-------------|
+| `default_program` | string | auto-detected (`opencode` → `claude`) | fallback agent executable when a role has no profile |
+| `auto_yes` | bool | `false` | when `true`, the daemon automatically accepts all agent prompts |
+| `daemon_poll_interval` | int (ms) | `1000` | how often the daemon checks session state (milliseconds) |
+| `branch_prefix` | string | `<username>/` | prefix prepended to git branch names created by kasmos |
+| `notifications_enabled` | bool? | `true` | desktop notifications; `null` defaults to enabled |
+| `claude_no_flicker` | bool? | `false` | set `CLAUDE_CODE_NO_FLICKER=1` on spawned claude agents; reduces TUI flicker but may affect prompt detection |
+| `database_url` | string | — | remote task store URL (e.g. `http://host:7433`); local SQLite used when empty |
+
+## `[phases]` — lifecycle phase-to-role mapping
+
+Maps lifecycle phase names to agent role names. kasmos uses this to look up which `[agents.<role>]` profile to use for each phase.
+
+```toml
+[phases]
+planning         = "planner"
+elaborating      = "architect"
+implementing     = "coder"
+spec_review      = "reviewer"
+quality_review   = "reviewer"
+fixer            = "fixer"
+readiness_review = "master"   # also accepted as master_review (backward-compat alias)
+```
+
+The phase names on the left are fixed lifecycle identifiers. The role names on the right must match keys in the `[agents]` table.
+
+> **`readiness_review` vs `master_review`:** `readiness_review` is the canonical phase key — it maps to the master agent role that runs during the `verifying` FSM status. The old key `master_review` is accepted as a backward-compatible alias and is resolved to `readiness_review` at profile resolution time (not at load time). New configs should use `readiness_review`.
+
+## `[agents.<role>]` — agent profiles
+
+Each role is configured in its own `[agents.<role>]` subsection. See the [agent profiles reference](./agent-profiles.mdx) for all available fields.
+
+```toml
+[agents.coder]
+enabled        = true
+program        = "claude"
+model          = "claude-sonnet-4-5"
+execution_mode = "tmux"
+flags          = ["--permission-mode bypassPermissions"]
+
+[agents.planner]
+enabled        = true
+program        = "opencode"
+execution_mode = "tmux"
+effort         = "high"
+```
+
+`permission_default` can be set per profile to `"prompt"` or `"bypass"`, or left unset to inherit the spawn-source default. `"inherit"` is accepted as an alias for unset, but normalized configs usually omit it; see [agent profiles: permission_default](./agent-profiles.mdx#permission_default) for resolution details.
+
+## `[ui]` — UI behavior
+
+| field | type | default | description |
+|-------|------|---------|-------------|
+| `animate_banner` | bool | `false` | enable idle banner animation |
+| `auto_advance` | bool? | `true` | skip the planner→architect confirmation dialog; start elaboration automatically after planning finishes |
+| `auto_advance_waves` | bool? | `true` | skip confirmation dialog after a clean wave |
+| `auto_review_fix` | bool? | `true` | automatically start the review→fix→re-review loop |
+| `max_review_fix_cycles` | int? | `0` (unlimited) | cap the review-fix loop iterations; `0` means no cap |
+| `auto_readiness_review` | bool? | `true` | when `true`, reviewer approval transitions the task to `verifying` status and spawns the master agent for a holistic readiness check before `done`. When `false`, `review_approved` flows directly to `done` and no master agent is spawned. |
+| `readiness_self_fix_max_lines` | int? | `80` | maximum number of net lines the master agent may change in a single self-fix attempt; findings that would require more are escalated via `verify_failed` instead |
+| `readiness_max_verify_cycles` | int? | `2` | maximum number of verify-round attempts before the loop is force-promoted to `verify_approved`. Must be a positive integer — values `≤ 0` are rejected at load time and fall back to the default. To disable the readiness gate entirely, set `auto_readiness_review = false` instead. |
+
+```toml
+[ui]
+animate_banner                = false
+auto_advance                  = true
+auto_advance_waves            = true
+auto_review_fix               = true
+max_review_fix_cycles         = 3
+auto_readiness_review         = true    # set to false to skip verifying status and go directly to done
+readiness_self_fix_max_lines  = 80      # master agent self-fix ceiling (net lines changed)
+readiness_max_verify_cycles   = 2       # force-promote after this many verify rounds
+```
+
+## `[telemetry]` — crash reporting
+
+| field | type | default | description |
+|-------|------|---------|-------------|
+| `enabled` | bool? | `true` | Sentry crash reporting; `null` defaults to enabled |
+
+```toml
+[telemetry]
+enabled = false
+```
+
+## `[orchestration]` — wave orchestration tuning
+
+| field | type | default | description |
+|-------|------|---------|-------------|
+| `blueprint_skip_threshold` | int? | `2` | when a plan has ≤ this many tasks, kasmos skips elaboration and wave orchestration and runs a single-agent "blueprint" mode instead |
+| `parallel_planner_architect` | bool | `true` | plan start launches a cache-only architect baseline session beside the planner by default; set to `false` to disable and restore planner-first behavior where the planner finishes first and the architect pass derives its own baseline inline |
+
+```toml
+[orchestration]
+blueprint_skip_threshold = 2
+```
+
+Setting this to `0` forces multi-agent wave orchestration for every plan, including single-task ones. Setting it higher causes more plans to run in single-agent mode.
+
+`parallel_planner_architect` is default-on. When unset or `true`, plan start launches the planner and an advisory cache-only architect baseline session together. To opt out and restore planner-first behavior where the planner finishes before the architect pass starts, set:
+
+```toml
+[orchestration]
+parallel_planner_architect = false
+```
+
+The runtime sequence when active (the default) is:
+
+1. plan start clears stale `.kasmos/cache/<planSlug>-architect-baseline.json`
+2. the planner starts
+3. an `architect-baseline` runtime session starts separately
+4. the planner writes the draft and emits `planner-finished`
+5. the final architect reads the planner draft plus a valid cached baseline, or falls back to its inline self-baseline when the cache is absent or invalid
+6. coder waves proceed normally
+
+The baseline cache is advisory, safe to delete, and not task-store state. The baseline session writes the cache artifact only; it does not mutate task content, change lifecycle status, or emit lifecycle signals. Signal names are unchanged.
+
+Blueprint skip still applies after the planner draft is available. A small planner draft can skip the final architect pass, so a baseline cache may be produced but unused.
+
+## `[[hooks]]` — FSM transition hooks
+
+Hooks fire when a task transitions between lifecycle states. They are defined as an array of tables.
+
+### webhook hook
+
+```toml
+[[hooks]]
+type   = "webhook"
+url    = "https://your-server.example.com/webhook"
+events = ["implement_start", "implement_finished", "review_approved"]
+
+[hooks.headers]
+Authorization = "Bearer your-secret-token"
+X-Source      = "kasmos"
+```
+
+### command hook
+
+```toml
+[[hooks]]
+type    = "command"
+command = "/usr/local/bin/notify-team.sh"
+events  = ["review_approved"]
+```
+
+### hook fields
+
+| field | type | description |
+|-------|------|-------------|
+| `type` | string | `"webhook"` or `"command"` |
+| `url` | string | (webhook) full URL to POST to |
+| `headers` | table | (webhook) additional HTTP headers |
+| `command` | string | (command) shell command to execute |
+| `events` | []string | FSM event names that trigger this hook |
+
+Valid event names: `plan_start`, `planner_finished`, `implement_start`, `implement_finished`, `request_review`, `review_approved`, `review_changes_requested`, `start_over`, `reimplement`, `cancel`, `reopen`.
+
+## full example
+
+```toml
+# Generated by kas setup
+
+default_program       = "opencode"
+auto_yes              = false
+daemon_poll_interval  = 1000
+branch_prefix         = "alice/"
+notifications_enabled = true
+claude_no_flicker     = false
+
+[phases]
+planning         = "planner"
+elaborating      = "architect"
+implementing     = "coder"
+spec_review      = "reviewer"
+quality_review   = "reviewer"
+fixer            = "fixer"
+readiness_review = "master"
+
+[agents.planner]
+enabled        = true
+program        = "opencode"
+execution_mode = "tmux"
+effort         = "high"
+
+[agents.architect]
+enabled        = true
+program        = "claude"
+model          = "claude-sonnet-4-5"
+execution_mode = "sdk"
+
+[agents.coder]
+enabled        = true
+program        = "claude"
+model          = "claude-sonnet-4-5"
+execution_mode = "tmux"
+flags          = ["--permission-mode bypassPermissions"]
+
+[agents.reviewer]
+enabled        = true
+program        = "claude"
+model          = "claude-opus-4-5"
+execution_mode = "sdk"
+
+[agents.master]
+enabled        = true
+program        = "claude"
+model          = "claude-opus-4-5"
+execution_mode = "sdk"
+
+[agents.fixer]
+enabled        = true
+program        = "claude"
+model          = "claude-sonnet-4-5"
+execution_mode = "tmux"
+
+[ui]
+animate_banner                = false
+auto_advance                  = true
+auto_advance_waves            = true
+auto_review_fix               = true
+max_review_fix_cycles         = 3
+auto_readiness_review         = true
+readiness_self_fix_max_lines  = 80
+readiness_max_verify_cycles   = 2
+
+[telemetry]
+enabled = true
+
+[orchestration]
+blueprint_skip_threshold = 2
+parallel_planner_architect = true
+
+[[hooks]]
+type   = "webhook"
+url    = "https://hooks.example.com/kasmos"
+events = ["implement_finished", "review_approved"]
+```
+
+## troubleshooting
+
+If kasmos does not seem to pick up your config changes, run:
+
+```sh
+kas debug
+```
+
+This prints the resolved config path and the fully-parsed configuration, so you can confirm the right file is being read.
