@@ -694,6 +694,128 @@ func intPtr(i int) *int { return &i }
 
 func boolPtr(b bool) *bool { return &b }
 
+func int64Ptr(i int64) *int64 { return &i }
+
+func TestDefaultConfig_SDK(t *testing.T) {
+	cfg := DefaultConfig()
+	assert.Equal(t, int64(4<<20), cfg.SDK.TranscriptMaxBytes, "default TranscriptMaxBytes should be 4 MiB")
+	assert.Equal(t, int64(2000), cfg.SDK.TranscriptMaxTurns, "default TranscriptMaxTurns should be 2000")
+}
+
+func TestConfigFromTOML_SDKOmittedTable(t *testing.T) {
+	// No [sdk] section at all — both fields must fall back to runtime defaults.
+	result := &TOMLConfigResult{
+		Profiles:   map[string]AgentProfile{},
+		PhaseRoles: map[string]string{},
+		// SDK is zero-value TOMLSDKConfig: both pointers nil
+	}
+	cfg := configFromTOML(result)
+	assert.Equal(t, int64(4<<20), cfg.SDK.TranscriptMaxBytes)
+	assert.Equal(t, int64(2000), cfg.SDK.TranscriptMaxTurns)
+}
+
+func TestConfigFromTOML_SDKOmittedIndividualKeys(t *testing.T) {
+	// [sdk] present but only one key set — the other keeps its default.
+	result := &TOMLConfigResult{
+		Profiles:   map[string]AgentProfile{},
+		PhaseRoles: map[string]string{},
+		SDK: TOMLSDKConfig{
+			TranscriptMaxBytes: int64Ptr(1 << 20), // 1 MiB explicit
+			// TranscriptMaxTurns absent (nil) → default 2000
+		},
+	}
+	cfg := configFromTOML(result)
+	assert.Equal(t, int64(1<<20), cfg.SDK.TranscriptMaxBytes)
+	assert.Equal(t, int64(2000), cfg.SDK.TranscriptMaxTurns)
+
+	result2 := &TOMLConfigResult{
+		Profiles:   map[string]AgentProfile{},
+		PhaseRoles: map[string]string{},
+		SDK: TOMLSDKConfig{
+			// TranscriptMaxBytes absent (nil) → default 4 MiB
+			TranscriptMaxTurns: int64Ptr(500),
+		},
+	}
+	cfg2 := configFromTOML(result2)
+	assert.Equal(t, int64(4<<20), cfg2.SDK.TranscriptMaxBytes)
+	assert.Equal(t, int64(500), cfg2.SDK.TranscriptMaxTurns)
+}
+
+func TestConfigFromTOML_SDKExplicitValues(t *testing.T) {
+	result := &TOMLConfigResult{
+		Profiles:   map[string]AgentProfile{},
+		PhaseRoles: map[string]string{},
+		SDK: TOMLSDKConfig{
+			TranscriptMaxBytes: int64Ptr(8 << 20),
+			TranscriptMaxTurns: int64Ptr(1000),
+		},
+	}
+	cfg := configFromTOML(result)
+	assert.Equal(t, int64(8<<20), cfg.SDK.TranscriptMaxBytes)
+	assert.Equal(t, int64(1000), cfg.SDK.TranscriptMaxTurns)
+}
+
+func TestConfigFromTOML_SDKExplicitZeros(t *testing.T) {
+	// Explicit zero values must be preserved (operator intends to disable that dimension).
+	result := &TOMLConfigResult{
+		Profiles:   map[string]AgentProfile{},
+		PhaseRoles: map[string]string{},
+		SDK: TOMLSDKConfig{
+			TranscriptMaxBytes: int64Ptr(0),
+			TranscriptMaxTurns: int64Ptr(0),
+		},
+	}
+	cfg := configFromTOML(result)
+	assert.Equal(t, int64(0), cfg.SDK.TranscriptMaxBytes, "explicit zero disables byte limit")
+	assert.Equal(t, int64(0), cfg.SDK.TranscriptMaxTurns, "explicit zero disables turn limit")
+}
+
+func TestConfigFromTOML_SDKNegativeClamp(t *testing.T) {
+	// Negative values must be clamped to zero with a warning (not used as-is).
+	result := &TOMLConfigResult{
+		Profiles:   map[string]AgentProfile{},
+		PhaseRoles: map[string]string{},
+		SDK: TOMLSDKConfig{
+			TranscriptMaxBytes: int64Ptr(-1024),
+			TranscriptMaxTurns: int64Ptr(-50),
+		},
+	}
+	cfg := configFromTOML(result)
+	assert.Equal(t, int64(0), cfg.SDK.TranscriptMaxBytes, "negative TranscriptMaxBytes clamped to 0")
+	assert.Equal(t, int64(0), cfg.SDK.TranscriptMaxTurns, "negative TranscriptMaxTurns clamped to 0")
+}
+
+func TestConfigToTOML_SDKRoundTrip(t *testing.T) {
+	// configToTOML must always write effective SDK values.
+	cfg := DefaultConfig()
+	tc := configToTOML(cfg)
+	require.NotNil(t, tc.SDK.TranscriptMaxBytes)
+	require.NotNil(t, tc.SDK.TranscriptMaxTurns)
+	assert.Equal(t, int64(4<<20), *tc.SDK.TranscriptMaxBytes)
+	assert.Equal(t, int64(2000), *tc.SDK.TranscriptMaxTurns)
+
+	// Also verify non-default explicit values round-trip.
+	cfg.SDK.TranscriptMaxBytes = 1 << 20
+	cfg.SDK.TranscriptMaxTurns = 500
+	tc2 := configToTOML(cfg)
+	require.NotNil(t, tc2.SDK.TranscriptMaxBytes)
+	require.NotNil(t, tc2.SDK.TranscriptMaxTurns)
+	assert.Equal(t, int64(1<<20), *tc2.SDK.TranscriptMaxBytes)
+	assert.Equal(t, int64(500), *tc2.SDK.TranscriptMaxTurns)
+}
+
+func TestConfigToTOML_SDKExplicitZeroRoundTrip(t *testing.T) {
+	// Explicit zeros must survive the configToTOML round-trip.
+	cfg := DefaultConfig()
+	cfg.SDK.TranscriptMaxBytes = 0
+	cfg.SDK.TranscriptMaxTurns = 0
+	tc := configToTOML(cfg)
+	require.NotNil(t, tc.SDK.TranscriptMaxBytes)
+	require.NotNil(t, tc.SDK.TranscriptMaxTurns)
+	assert.Equal(t, int64(0), *tc.SDK.TranscriptMaxBytes)
+	assert.Equal(t, int64(0), *tc.SDK.TranscriptMaxTurns)
+}
+
 func TestIsTelemetryEnabled(t *testing.T) {
 	tests := []struct {
 		name     string

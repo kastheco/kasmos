@@ -21,6 +21,14 @@ const (
 	// defaultDoubleTapThresholdMS is the default timing window (ms) for double-tap
 	// key detection. Two taps within this window register as ctrl+<key>.
 	defaultDoubleTapThresholdMS = 300
+
+	// defaultSDKTranscriptMaxBytes is the default in-process transcript size cap (~4 MiB).
+	// Matches the renderer retention default in session/sdk without importing that package.
+	defaultSDKTranscriptMaxBytes = 4 << 20 // 4 MiB
+
+	// defaultSDKTranscriptMaxTurns is the default number of completed turns retained by
+	// the renderer. Matches the renderer default in session/sdk.
+	defaultSDKTranscriptMaxTurns = 2000
 )
 
 // aliasRegex matches shell alias output to extract the real command path.
@@ -169,6 +177,17 @@ func copyIfMissing(src, dst string) {
 	_ = os.WriteFile(dst, data, 0644)
 }
 
+// SDKConfig holds SDK session transcript retention limits.
+// These are config-layer types; no session/sdk import is needed.
+type SDKConfig struct {
+	// TranscriptMaxBytes is the maximum in-process transcript size in bytes.
+	// Zero means no byte limit. Defaults to defaultSDKTranscriptMaxBytes (4 MiB).
+	TranscriptMaxBytes int64 `json:"transcript_max_bytes,omitempty"`
+	// TranscriptMaxTurns is the maximum number of completed turns retained.
+	// Zero means no turn limit. Defaults to defaultSDKTranscriptMaxTurns (2000).
+	TranscriptMaxTurns int64 `json:"transcript_max_turns,omitempty"`
+}
+
 // Config holds all persistent application configuration.
 type Config struct {
 	// DefaultProgram is the command launched for new instances.
@@ -232,6 +251,8 @@ type Config struct {
 	// enforcement is active for that harness. A nil map (the default) means enforcement
 	// is enabled for all harnesses. An explicit false entry opts a harness out.
 	Enforcement map[string]bool `json:"enforcement,omitempty"`
+	// SDK holds SDK session transcript retention limits.
+	SDK SDKConfig `json:"sdk,omitempty"`
 }
 
 // BlueprintSkipThreshold returns the configured threshold for single-agent mode.
@@ -294,6 +315,10 @@ func DefaultConfig() *Config {
 		NotificationsEnabled:     &trueVal,
 		DoubleTapThresholdMS:     &dtThreshold,
 		ParallelPlannerArchitect: true,
+		SDK: SDKConfig{
+			TranscriptMaxBytes: defaultSDKTranscriptMaxBytes,
+			TranscriptMaxTurns: defaultSDKTranscriptMaxTurns,
+		},
 	}
 	applyConfigDefaults(cfg)
 	return cfg
@@ -469,6 +494,28 @@ func configFromTOML(result *TOMLConfigResult) *Config {
 			cfg.ClaudeNoFlicker = *result.ClaudeNoFlicker
 		}
 		cfg.Enforcement = result.Enforcement
+		// SDK transcript retention — start from defaults, then apply TOML overrides.
+		// Nil pointer means key absent (keep default). Non-nil preserves explicit zero.
+		if result.SDK.TranscriptMaxBytes != nil {
+			v := *result.SDK.TranscriptMaxBytes
+			if v < 0 {
+				if log.WarningLog != nil {
+					log.WarningLog.Printf("config: sdk.transcript_max_bytes value %d is negative; clamping to 0", v)
+				}
+				v = 0
+			}
+			cfg.SDK.TranscriptMaxBytes = v
+		}
+		if result.SDK.TranscriptMaxTurns != nil {
+			v := *result.SDK.TranscriptMaxTurns
+			if v < 0 {
+				if log.WarningLog != nil {
+					log.WarningLog.Printf("config: sdk.transcript_max_turns value %d is negative; clamping to 0", v)
+				}
+				v = 0
+			}
+			cfg.SDK.TranscriptMaxTurns = v
+		}
 	}
 	applyConfigDefaults(cfg)
 	return cfg
@@ -541,6 +588,13 @@ func configToTOML(cfg *Config) *TOMLConfig {
 	if cfg.ReadinessMaxVerifyCycles > 0 {
 		v := cfg.ReadinessMaxVerifyCycles
 		out.UI.ReadinessMaxVerifyCycles = &v
+	}
+	// Always write effective SDK values (consistent with orchestration/keybind defaults).
+	maxBytes := cfg.SDK.TranscriptMaxBytes
+	maxTurns := cfg.SDK.TranscriptMaxTurns
+	out.SDK = TOMLSDKConfig{
+		TranscriptMaxBytes: &maxBytes,
+		TranscriptMaxTurns: &maxTurns,
 	}
 	return out
 }
