@@ -21,6 +21,9 @@ import (
 // In parallel, AddEvent maintains a turn-grouped presentation model accessible
 // via CapturePresentation. The flat and structured paths share formatting
 // helpers but are otherwise independent.
+//
+// Retention is controlled by RendererRetentionOptions. By default 4 MiB /
+// 2000 completed turns are kept; use WithRendererRetention to override.
 type Renderer struct {
 	mu      sync.Mutex
 	lines   []string // completed lines (flat path)
@@ -33,11 +36,32 @@ type Renderer struct {
 	currentTurnHasResponse bool
 	currentTurnOpenTextRow int
 	currentTurnInCodeFence bool
+
+	// retention configuration and accounting
+	retentionOpts     RendererRetentionOptions
+	retainedFlatBytes int64 // approximate bytes in r.lines (excludes r.partial)
+	retainedTurnBytes int64 // approximate bytes of completed/non-current turns
+	evictedTurns      int64 // cumulative structured turns evicted
+	evictedFlatLines  int64 // cumulative flat lines evicted
+	evictedBytes      int64 // cumulative bytes freed across both paths
+	truncatedRows     int64 // cumulative rows truncated from the current turn
+	hasSentinelTurn   bool  // true when r.turns[0] is the eviction sentinel
+	hasFlatMarker     bool  // true when r.lines[0] is the flat eviction marker
 }
 
-// NewRenderer constructs an empty Renderer.
-func NewRenderer() *Renderer {
-	return &Renderer{}
+// NewRenderer constructs an empty Renderer. Functional options (e.g.
+// WithRendererRetention) are applied in order before the renderer is returned.
+// Calling NewRenderer() with no arguments is equivalent to the previous
+// zero-argument signature and applies the default retention limits.
+func NewRenderer(opts ...RendererOption) *Renderer {
+	r := &Renderer{
+		currentTurnOpenTextRow: -1,
+		retentionOpts:          DefaultRendererRetentionOptions(),
+	}
+	for _, opt := range opts {
+		opt(r)
+	}
+	return r
 }
 
 // AddEvent incorporates a structured event into the renderer buffer.
@@ -47,6 +71,7 @@ func NewRenderer() *Renderer {
 func (r *Renderer) AddEvent(e Event) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	defer r.enforceRetentionLocked()
 
 	switch e.Kind {
 	case EventTextDelta:
@@ -266,8 +291,7 @@ func (r *Renderer) AddEvent(e Event) {
 
 	case EventTurnInterrupted:
 		// Flat path — flush partial and add marker.
-		r.flushPartial()
-		r.lines = append(r.lines, "[interrupted]")
+		r.appendLine("[interrupted]")
 		// Structured path — mark turn interrupted and add RowStatus row.
 		if r.currentTurn != nil {
 			r.currentTurn.Interrupted = true
@@ -428,6 +452,10 @@ func (r *Renderer) startTurn(turnID string, ts time.Time) *PresentationTurn {
 }
 
 func (r *Renderer) clearCurrentTurn() {
+	if r.currentTurn != nil {
+		// Account for completed turn bytes in the structured retained total.
+		r.retainedTurnBytes += turnBytes(r.currentTurn)
+	}
 	r.currentTurn = nil
 	r.currentTurnHasResponse = false
 	r.currentTurnOpenTextRow = -1
@@ -471,10 +499,13 @@ func (r *Renderer) appendText(text string) {
 		return
 	}
 	// First chunk completes the current partial line.
-	r.lines = append(r.lines, r.partial+parts[0])
+	newLine := r.partial + parts[0]
+	r.lines = append(r.lines, newLine)
+	r.retainedFlatBytes += flatLineBytes(newLine)
 	// Middle chunks are complete lines.
 	for _, p := range parts[1 : len(parts)-1] {
 		r.lines = append(r.lines, p)
+		r.retainedFlatBytes += flatLineBytes(p)
 	}
 	// Last chunk starts a new partial line.
 	r.partial = parts[len(parts)-1]
@@ -485,6 +516,7 @@ func (r *Renderer) appendText(text string) {
 func (r *Renderer) appendLine(line string) {
 	r.flushPartial()
 	r.lines = append(r.lines, line)
+	r.retainedFlatBytes += flatLineBytes(line)
 }
 
 // flushPartial moves the current partial fragment to the lines slice.
@@ -492,6 +524,7 @@ func (r *Renderer) appendLine(line string) {
 func (r *Renderer) flushPartial() {
 	if r.partial != "" {
 		r.lines = append(r.lines, r.partial)
+		r.retainedFlatBytes += flatLineBytes(r.partial)
 		r.partial = ""
 	}
 }
@@ -547,10 +580,16 @@ func (r *Renderer) CaptureRange(start, end string) string {
 
 // ContentHash returns a string that changes whenever the accumulated content
 // changes. Callers use it to implement HasUpdated-style change detection.
+// Eviction and truncation counters are included so a retention event is
+// observable even when the visible tail text is unchanged.
 func (r *Renderer) ContentHash() string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return strings.Join(r.allLines(), "\n")
+	base := strings.Join(r.allLines(), "\n")
+	if r.evictedTurns+r.evictedFlatLines+r.truncatedRows == 0 {
+		return base
+	}
+	return fmt.Sprintf("%s\x00ev:%d,%d,%d,%d", base, r.evictedTurns, r.evictedFlatLines, r.evictedBytes, r.truncatedRows)
 }
 
 // formatToolCallLine renders a tool invocation as a single compact line
@@ -885,6 +924,7 @@ func shellTurnStatusText(exitCode int, truncated bool, statusMsg string) string 
 func (r *Renderer) AddShellTurn(command, output string, exitCode int, truncated bool, statusMsg string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	defer r.enforceRetentionLocked()
 	now := time.Now()
 	r.nextTurnNumber++
 	turn := &PresentationTurn{
@@ -928,6 +968,7 @@ func (r *Renderer) AddShellTurn(command, output string, exitCode int, truncated 
 		r.appendLine(statusText)
 	}
 	r.turns = append(r.turns, turn)
+	r.retainedTurnBytes += turnBytes(turn)
 	// Do NOT assign r.currentTurn — an existing agent turn must remain open.
 }
 

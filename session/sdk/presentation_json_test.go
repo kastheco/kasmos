@@ -469,3 +469,45 @@ func TestPresentationRow_ExitCodeOutput_JSONRoundTrip(t *testing.T) {
 	assert.Nil(t, decoded.Rows[3].ExitCode)
 	assert.Equal(t, "", decoded.Rows[3].Output)
 }
+
+// TestClonePresentationTurns_CopiesSentinelField verifies that the unexported
+// isSentinel field is preserved through ClonePresentationTurns and that it
+// does not appear in JSON output.
+func TestClonePresentationTurns_CopiesSentinelField(t *testing.T) {
+	src := []*PresentationTurn{
+		{
+			ID:         "sentinel",
+			Number:     0,
+			isSentinel: true,
+			Rows: []PresentationRow{
+				{Kind: RowSystem, Text: "earlier turns evicted: 3"},
+			},
+		},
+		{
+			ID:     "t1",
+			Number: 1,
+			Rows: []PresentationRow{
+				{Kind: RowProse, Text: "hello"},
+			},
+		},
+	}
+
+	cloned := ClonePresentationTurns(src)
+	require.Len(t, cloned, 2)
+
+	// isSentinel must be copied by the shallow struct copy in ClonePresentationTurns.
+	assert.True(t, cloned[0].isSentinel, "isSentinel must be preserved through clone")
+	assert.False(t, cloned[1].isSentinel)
+
+	// isSentinel must NOT appear in JSON output.
+	data, err := json.Marshal(cloned[0])
+	require.NoError(t, err)
+	var raw map[string]any
+	require.NoError(t, json.Unmarshal(data, &raw))
+	assert.NotContains(t, raw, "isSentinel")
+	assert.NotContains(t, raw, "is_sentinel")
+
+	// Normal JSON fields must still be present.
+	assert.Contains(t, raw, "id")
+	assert.Contains(t, raw, "rows")
+}
