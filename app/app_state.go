@@ -1580,6 +1580,7 @@ func (m *home) updateInfoPane() {
 		return
 	}
 
+	rs := selected.RendererStats
 	data := ui.InfoData{
 		HasInstance:   true,
 		Title:         selected.DisplayName(),
@@ -1594,6 +1595,12 @@ func (m *home) updateInfoPane() {
 		WaveTaskCount: selected.WaveTaskCount,
 		ExecutionMode: string(selected.ExecutionMode),
 		SDKSpeedTier:  selected.SDKSpeedTier,
+		// Transcript diagnostics from last cached renderer stats snapshot.
+		TranscriptBytes:         rs.Bytes,
+		TranscriptLines:         rs.Lines,
+		TranscriptEvictedTurns:  rs.EvictedTurns,
+		TranscriptEvictedLines:  rs.EvictedLines,
+		TranscriptTruncatedRows: rs.TruncatedRows,
 	}
 
 	if !selected.CreatedAt.IsZero() {

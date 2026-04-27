@@ -780,3 +780,125 @@ func TestInfoPane_TmuxInstance_NoSpeedTierRow(t *testing.T) {
 	output := pane.String()
 	assert.NotContains(t, output, "speed tier", "speed tier must not appear for tmux instances")
 }
+
+// TestInfoPane_TranscriptRow_HiddenWhenZero verifies that transcript row is not
+// shown when TranscriptBytes is zero.
+func TestInfoPane_TranscriptRow_HiddenWhenZero(t *testing.T) {
+	pane := NewInfoPane()
+	pane.SetSize(70, 30)
+	pane.SetData(InfoData{
+		HasInstance:     true,
+		Title:           "sdk-agent",
+		Status:          "running",
+		ExecutionMode:   "sdk",
+		TranscriptBytes: 0,
+	})
+
+	output := pane.String()
+	assert.NotContains(t, output, "transcript", "transcript row must be hidden when bytes is zero")
+}
+
+// TestInfoPane_TranscriptRow_HiddenForTmux verifies that the transcript row is
+// suppressed for tmux instances even when stats are non-zero.
+func TestInfoPane_TranscriptRow_HiddenForTmux(t *testing.T) {
+	pane := NewInfoPane()
+	pane.SetSize(70, 30)
+	pane.SetData(InfoData{
+		HasInstance:     true,
+		Title:           "tmux-agent",
+		Status:          "running",
+		ExecutionMode:   "tmux",
+		TranscriptBytes: 1 << 20,
+		TranscriptLines: 100,
+	})
+
+	output := pane.String()
+	assert.NotContains(t, output, "transcript", "transcript row must be hidden for tmux instances")
+}
+
+// TestInfoPane_TranscriptRow_BasicStats verifies that transcript row renders
+// bytes and lines when evictions and truncations are zero.
+func TestInfoPane_TranscriptRow_BasicStats(t *testing.T) {
+	pane := NewInfoPane()
+	pane.SetSize(70, 30)
+	pane.SetData(InfoData{
+		HasInstance:     true,
+		Title:           "sdk-agent",
+		Status:          "running",
+		ExecutionMode:   "sdk",
+		TranscriptBytes: 1258291, // ~1.2M
+		TranscriptLines: 348,
+	})
+
+	output := pane.String()
+	plain := stripANSI(output)
+	assert.Contains(t, plain, "transcript", "transcript label must appear")
+	assert.Contains(t, plain, "lines", "lines count must appear")
+	assert.NotContains(t, plain, "evicted", "evicted must not appear when zero")
+	assert.NotContains(t, plain, "truncated", "truncated must not appear when zero")
+}
+
+// TestInfoPane_TranscriptRow_WithEvictions verifies that the eviction count appears
+// when TranscriptEvictedTurns is non-zero.
+func TestInfoPane_TranscriptRow_WithEvictions(t *testing.T) {
+	pane := NewInfoPane()
+	pane.SetSize(70, 30)
+	pane.SetData(InfoData{
+		HasInstance:            true,
+		Title:                  "sdk-agent",
+		Status:                 "running",
+		ExecutionMode:          "sdk",
+		TranscriptBytes:        2 << 20,
+		TranscriptLines:        500,
+		TranscriptEvictedTurns: 7,
+	})
+
+	output := pane.String()
+	plain := stripANSI(output)
+	assert.Contains(t, plain, "transcript")
+	assert.Contains(t, plain, "7 evicted", "eviction count must appear")
+	assert.NotContains(t, plain, "truncated", "truncated must not appear when zero")
+}
+
+// TestInfoPane_TranscriptRow_WithTruncations verifies that truncated count
+// appears inside the suffix when TranscriptTruncatedRows is non-zero.
+func TestInfoPane_TranscriptRow_WithTruncations(t *testing.T) {
+	pane := NewInfoPane()
+	pane.SetSize(70, 30)
+	pane.SetData(InfoData{
+		HasInstance:             true,
+		Title:                   "sdk-agent",
+		Status:                  "running",
+		ExecutionMode:           "sdk",
+		TranscriptBytes:         3 << 20,
+		TranscriptLines:         600,
+		TranscriptEvictedTurns:  5,
+		TranscriptTruncatedRows: 2,
+	})
+
+	output := pane.String()
+	plain := stripANSI(output)
+	assert.Contains(t, plain, "transcript")
+	assert.Contains(t, plain, "5 evicted")
+	assert.Contains(t, plain, "2 truncated")
+}
+
+// TestFormatBytesShort exercises the byte formatter helper.
+func TestFormatBytesShort(t *testing.T) {
+	tests := []struct {
+		n    int64
+		want string
+	}{
+		{0, "0B"},
+		{512, "512B"},
+		{1024, "1K"},
+		{1536, "2K"},
+		{1 << 20, "1.0M"},
+		{1258291, "1.2M"},
+		{4 << 20, "4.0M"},
+	}
+	for _, tt := range tests {
+		got := formatBytesShort(tt.n)
+		assert.Equal(t, tt.want, got, "formatBytesShort(%d)", tt.n)
+	}
+}

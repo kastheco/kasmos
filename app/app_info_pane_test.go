@@ -14,6 +14,7 @@ import (
 	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/kastheco/kasmos/orchestration"
 	"github.com/kastheco/kasmos/session"
+	"github.com/kastheco/kasmos/session/sdk"
 	"github.com/kastheco/kasmos/ui"
 	"github.com/kastheco/kasmos/ui/overlay"
 	"github.com/stretchr/testify/assert"
@@ -485,6 +486,65 @@ func TestUpdateInfoPane_SDKFastInstance(t *testing.T) {
 	assert.Contains(t, output, "execution mode")
 	assert.Contains(t, output, "speed tier")
 	assert.Contains(t, output, "fast")
+}
+
+// TestUpdateInfoPane_RendererStats verifies that updateInfoPane copies RendererStats
+// from the selected instance into the InfoData transcript fields.
+func TestUpdateInfoPane_RendererStats(t *testing.T) {
+	t.Parallel()
+	sp := spinner.New(spinner.WithSpinner(spinner.Dot))
+	h := &home{
+		ctx:            context.Background(),
+		state:          stateDefault,
+		appConfig:      config.DefaultConfig(),
+		nav:            ui.NewNavigationPanel(&sp),
+		menu:           ui.NewMenu(),
+		auditPane:      ui.NewAuditPane(),
+		tabbedWindow:   ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewInfoPane()),
+		toastManager:   overlay.NewToastManager(&sp),
+		overlays:       overlay.NewManager(),
+		activeRepoPath: t.TempDir(),
+	}
+
+	inst, err := session.NewInstance(session.InstanceOptions{
+		Title:         "sdk-agent",
+		Path:          t.TempDir(),
+		Program:       "claude",
+		ExecutionMode: session.ExecutionModeSDK,
+		AgentType:     session.AgentTypeCoder,
+	})
+	require.NoError(t, err)
+
+	// Inject cached renderer stats directly.
+	inst.SetCachedRendererStats(sdk.RendererStats{
+		Bytes:         2 << 20,
+		Lines:         400,
+		EvictedTurns:  3,
+		EvictedLines:  60,
+		TruncatedRows: 1,
+	})
+
+	h.nav.SetData(nil, []*session.Instance{inst}, nil, nil, nil)
+	ok := h.nav.SelectInstance(inst)
+	require.True(t, ok)
+
+	h.updateInfoPane()
+
+	data := h.tabbedWindow.GetInfoData()
+	assert.Equal(t, int64(2<<20), data.TranscriptBytes, "TranscriptBytes must be set")
+	assert.Equal(t, int64(400), data.TranscriptLines, "TranscriptLines must be set")
+	assert.Equal(t, int64(3), data.TranscriptEvictedTurns, "TranscriptEvictedTurns must be set")
+	assert.Equal(t, int64(60), data.TranscriptEvictedLines, "TranscriptEvictedLines must be set")
+	assert.Equal(t, int64(1), data.TranscriptTruncatedRows, "TranscriptTruncatedRows must be set")
+
+	// Also verify the rendered pane shows the transcript row.
+	pane := ui.NewInfoPane()
+	pane.SetSize(70, 30)
+	pane.SetData(data)
+	output := pane.String()
+	assert.Contains(t, output, "transcript", "transcript row must appear in rendered pane")
+	assert.Contains(t, output, "evicted")
+	assert.Contains(t, output, "truncated")
 }
 
 // TestSDKTranscriptRetentionOptions_WithConfig verifies that sdkTranscriptRetentionOptions

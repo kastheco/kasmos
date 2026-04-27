@@ -118,6 +118,30 @@ export default function AgentPreview({
   const data = presentation.data;
   const turns = data?.turns ?? null;
 
+  // ---------------------------------------------------------------------------
+  // Transcript diagnostics line — shown when stats are present and non-zero.
+  // ---------------------------------------------------------------------------
+
+  function formatBytesShort(n: number): string {
+    if (n >= 1 << 20) return `${(n / (1 << 20)).toFixed(1)}M`;
+    if (n >= 1 << 10) return `${Math.round(n / (1 << 10))}K`;
+    return `${n}B`;
+  }
+
+  const statsLine = (() => {
+    const s = data?.stats;
+    if (!s) return null;
+    if (s.bytes === 0 && s.evicted_turns === 0 && s.truncated_rows === 0) return null;
+    let text = `transcript ${formatBytesShort(s.bytes)} · ${s.lines} lines`;
+    if (s.evicted_turns > 0 || s.truncated_rows > 0) {
+      text += ` · ${s.evicted_turns} evicted`;
+      if (s.truncated_rows > 0) {
+        text += `, ${s.truncated_rows} truncated`;
+      }
+    }
+    return text;
+  })();
+
   const toolbar = (
     <FilterToolbar filters={filters} onChange={handleFiltersChange} />
   );
@@ -175,6 +199,9 @@ export default function AgentPreview({
   return (
     <div className={styles.wrapper}>
       {toolbar}
+      {statsLine && (
+        <p className={styles.transcriptStats}>{statsLine}</p>
+      )}
       <div ref={containerRef} className={styles.container} onScroll={handleScroll}>
         <TurnTimeline
           turns={turns}
