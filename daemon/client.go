@@ -149,6 +149,8 @@ func (c *SocketClient) CaptureInstance(project, title, start, end string) (strin
 // CapturePresentation fetches structured SDK presentation turns for a daemon-
 // tracked instance. It returns supported=false for non-SDK instances and nil
 // turns when the SDK session has not produced any turn data yet.
+// The Stats field in the response is passed through unchanged; callers that do
+// not need stats can ignore it.
 func (c *SocketClient) CapturePresentation(project, title string) ([]*sdk.PresentationTurn, bool, error) {
 	var resp api.PresentationResponse
 	if err := c.get("/v1/repos/"+project+"/instances/"+title+"/presentation", &resp); err != nil {
@@ -165,6 +167,17 @@ func (c *SocketClient) CapturePresentation(project, title string) ([]*sdk.Presen
 		return nil, true, fmt.Errorf("client: decode presentation %s/%s: %w", project, title, err)
 	}
 	return turns, true, nil
+}
+
+// CapturePresentationFull fetches structured SDK presentation turns and renderer
+// stats for a daemon-tracked instance. Unlike CapturePresentation it returns the
+// full api.PresentationResponse so callers that need stats can access them.
+func (c *SocketClient) CapturePresentationFull(project, title string) (api.PresentationResponse, error) {
+	var resp api.PresentationResponse
+	if err := c.get("/v1/repos/"+project+"/instances/"+title+"/presentation", &resp); err != nil {
+		return api.PresentationResponse{}, err
+	}
+	return resp, nil
 }
 
 // SendInstancePrompt delivers a new user turn to a daemon-tracked instance.

@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -19,6 +20,7 @@ import (
 	"github.com/kastheco/kasmos/config/taskstate"
 	"github.com/kastheco/kasmos/config/taskstore"
 	daemonpkg "github.com/kastheco/kasmos/daemon"
+	daemonapi "github.com/kastheco/kasmos/daemon/api"
 	"github.com/kastheco/kasmos/internal/clickup"
 	"github.com/kastheco/kasmos/internal/mcpclient"
 	sentrypkg "github.com/kastheco/kasmos/internal/sentry"
@@ -1043,12 +1045,17 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// control-socket API so the TUI preview reflects what the
 				// agent is actually doing.
 				if daemonClient != nil && !inst.Started() && session.NormalizeExecutionMode(inst.ExecutionMode) == session.ExecutionModeSDK {
-					turns, supported, err := daemonClient.CapturePresentation(project, inst.Title)
-					if err == nil && supported {
+					presResp, presErr := daemonClient.CapturePresentationFull(project, inst.Title)
+					if presErr == nil && presResp.Supported {
+						var turns []*sessionsdk.PresentationTurn
+						if len(presResp.Turns) > 0 && string(presResp.Turns) != "null" {
+							_ = json.Unmarshal(presResp.Turns, &turns)
+						}
 						results = append(results, instanceMetadata{
 							Title:              inst.Title,
 							PresentationTurns:  turns,
 							PresentationCached: true,
+							RendererStats:      presResp.Stats,
 							TmuxAlive:          true,
 						})
 						continue
@@ -1788,6 +1795,20 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			if md.PresentationCached {
 				inst.SetCachedPresentation(md.PresentationTurns)
+			}
+			if md.RendererStats != nil {
+				rs := md.RendererStats
+				inst.SetCachedRendererStats(sessionsdk.RendererStats{
+					Bytes:         rs.Bytes,
+					Lines:         rs.Lines,
+					Turns:         rs.Turns,
+					MaxBytes:      rs.MaxBytes,
+					MaxTurns:      rs.MaxTurns,
+					EvictedTurns:  rs.EvictedTurns,
+					EvictedLines:  rs.EvictedLines,
+					EvictedBytes:  rs.EvictedBytes,
+					TruncatedRows: rs.TruncatedRows,
+				})
 			}
 
 			if md.ContentCaptured {
@@ -3158,10 +3179,14 @@ type instanceMetadata struct {
 	ContentCaptured    bool
 	PresentationTurns  []*sessionsdk.PresentationTurn
 	PresentationCached bool
-	Updated            bool
-	HasPrompt          bool
-	CPUPercent         float64
-	MemMB              float64
+	// RendererStats carries the latest SDK renderer stats for daemon-managed
+	// SDK placeholder instances. Nil when stats are not available (tmux
+	// instances or daemon not reachable).
+	RendererStats *daemonapi.RendererStats
+	Updated       bool
+	HasPrompt     bool
+	CPUPercent    float64
+	MemMB         float64
 	ResourceUsageValid bool
 	TmuxAlive          bool
 	PermissionPrompt   *session.PermissionPrompt // non-nil when a supported harness shows a permission dialog

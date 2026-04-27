@@ -1925,7 +1925,7 @@ func (m *home) spawnReviewer(planFile string) tea.Cmd {
 		return nil
 	}
 
-	reviewerInst, err := session.NewInstance(session.InstanceOptions{
+	reviewerInst, err := session.NewInstance(m.withRetentionOpts(session.InstanceOptions{
 		Title:           title,
 		Path:            m.activeRepoPath,
 		Program:         m.programForAgent(session.AgentTypeReviewer),
@@ -1936,7 +1936,7 @@ func (m *home) spawnReviewer(planFile string) tea.Cmd {
 		AgentType:       session.AgentTypeReviewer,
 		ReviewCycle:     spec.ReviewCycle,
 		ClaudeNoFlicker: m.claudeNoFlicker(),
-	})
+	}))
 	if err != nil {
 		log.WarningLog.Printf("could not create reviewer instance for %q: %v", planFile, err)
 		return nil
@@ -2009,7 +2009,7 @@ func (m *home) spawnMaster(planFile string) tea.Cmd {
 		return nil
 	}
 
-	masterInst, err := session.NewInstance(session.InstanceOptions{
+	masterInst, err := session.NewInstance(m.withRetentionOpts(session.InstanceOptions{
 		Title:           title,
 		Path:            m.activeRepoPath,
 		Program:         m.programForAgent(session.AgentTypeMaster),
@@ -2019,7 +2019,7 @@ func (m *home) spawnMaster(planFile string) tea.Cmd {
 		TaskFile:        planFile,
 		AgentType:       session.AgentTypeMaster,
 		ClaudeNoFlicker: m.claudeNoFlicker(),
-	})
+	}))
 	if err != nil {
 		log.WarningLog.Printf("could not create master instance for %q: %v", planFile, err)
 		return nil
@@ -2174,6 +2174,30 @@ func (m *home) skipPermissionsForAgent(agentType string) bool {
 
 func (m *home) sdkSpeedTierForAgent(agentType string) string {
 	return session.NormalizeSDKSpeedTier(m.profileForAgent(agentType).Tier)
+}
+
+// sdkTranscriptRetentionOptions returns the SDK transcript retention limits from
+// the active app config. configured is true when the config is non-nil (so
+// callers can distinguish "no config" from "config with zero/unlimited values").
+func (m *home) sdkTranscriptRetentionOptions() (maxBytes, maxTurns int64, configured bool) {
+	if m.appConfig == nil {
+		return 0, 0, false
+	}
+	return m.appConfig.SDK.TranscriptMaxBytes, m.appConfig.SDK.TranscriptMaxTurns, true
+}
+
+// withRetentionOpts copies SDK transcript retention limits from config into opts
+// and sets SDKTranscriptLimitsSet so the SDK renderer applies them. Call this
+// on every InstanceOptions that may resolve to an SDK execution session.
+func (m *home) withRetentionOpts(opts session.InstanceOptions) session.InstanceOptions {
+	maxBytes, maxTurns, configured := m.sdkTranscriptRetentionOptions()
+	if !configured {
+		return opts
+	}
+	opts.SDKTranscriptLimitsSet = true
+	opts.SDKTranscriptMaxBytes = maxBytes
+	opts.SDKTranscriptMaxTurns = maxTurns
+	return opts
 }
 
 // standaloneExecutionMode resolves the execution mode for a standalone ad-hoc
@@ -2482,7 +2506,7 @@ func (m *home) spawnFixerWithFeedback(planFile, feedback string) tea.Cmd {
 		log.WarningLog.Printf("could not persist fixer execution state for %q: %v", planFile, err)
 		return nil
 	}
-	fixerInst, err := session.NewInstance(session.InstanceOptions{
+	fixerInst, err := session.NewInstance(m.withRetentionOpts(session.InstanceOptions{
 		Title:           title,
 		Path:            m.activeRepoPath,
 		Program:         m.programForAgent(session.AgentTypeFixer),
@@ -2493,7 +2517,7 @@ func (m *home) spawnFixerWithFeedback(planFile, feedback string) tea.Cmd {
 		AgentType:       session.AgentTypeFixer,
 		ReviewCycle:     spec.ReviewCycle,
 		ClaudeNoFlicker: m.claudeNoFlicker(),
-	})
+	}))
 	if err != nil {
 		log.WarningLog.Printf("could not create fixer instance for %q: %v", planFile, err)
 		return nil
@@ -2559,7 +2583,7 @@ func (m *home) spawnElaborator(planFile string) (tea.Model, tea.Cmd) {
 	// orchestrator immediately instead of waiting for this architect run to finish.
 	taskfsm.ClearElaborationSignal(m.signalsDir, planFile)
 
-	inst, err := session.NewInstance(session.InstanceOptions{
+	inst, err := session.NewInstance(m.withRetentionOpts(session.InstanceOptions{
 		Title:           spec.Title,
 		Path:            m.activeRepoPath,
 		Program:         m.programForAgent(session.AgentTypeElaborator),
@@ -2569,7 +2593,7 @@ func (m *home) spawnElaborator(planFile string) (tea.Model, tea.Cmd) {
 		TaskFile:        planFile,
 		AgentType:       session.AgentTypeElaborator,
 		ClaudeNoFlicker: m.claudeNoFlicker(),
-	})
+	}))
 	if err != nil {
 		return m, m.handleError(err)
 	}
@@ -2638,7 +2662,7 @@ func (m home) spawnArchitectBaseline(planFile, description string) (tea.Model, t
 	}
 	m.killExistingPlanAgent(planFile, agentType)
 
-	inst, err := session.NewInstance(session.InstanceOptions{
+	inst, err := session.NewInstance(m.withRetentionOpts(session.InstanceOptions{
 		Title:           spec.Title,
 		Path:            m.activeRepoPath,
 		Program:         m.programForAgent(session.AgentTypeElaborator),
@@ -2648,7 +2672,7 @@ func (m home) spawnArchitectBaseline(planFile, description string) (tea.Model, t
 		TaskFile:        planFile,
 		AgentType:       agentType,
 		ClaudeNoFlicker: m.claudeNoFlicker(),
-	})
+	}))
 	if err != nil {
 		return &m, m.handleError(err)
 	}
@@ -3196,7 +3220,7 @@ func (m *home) quickLaunchAgent() (tea.Model, tea.Cmd) {
 	}
 
 	title := m.nextPlaceholderName()
-	inst, err := session.NewInstance(session.InstanceOptions{
+	inst, err := session.NewInstance(m.withRetentionOpts(session.InstanceOptions{
 		Title:           title,
 		Path:            m.activeRepoPath,
 		Program:         fixerProgram,
@@ -3205,7 +3229,7 @@ func (m *home) quickLaunchAgent() (tea.Model, tea.Cmd) {
 		SkipPermissions: m.skipPermissionsForAgent(session.AgentTypeFixer),
 		AgentType:       session.AgentTypeFixer,
 		ClaudeNoFlicker: m.claudeNoFlicker(),
-	})
+	}))
 	if err != nil {
 		return m, m.handleError(err)
 	}
@@ -3440,7 +3464,7 @@ func (m *home) newNamedAgentInstance(title, path, program string, requestedMode 
 	if err := m.standaloneExecutionModeLimitError(session.ResolveExecutionMode(requestedMode, p)); err != nil {
 		return nil, err
 	}
-	return session.NewInstance(session.InstanceOptions{
+	return session.NewInstance(m.withRetentionOpts(session.InstanceOptions{
 		Title:           title,
 		Path:            path,
 		Program:         p,
@@ -3449,7 +3473,7 @@ func (m *home) newNamedAgentInstance(title, path, program string, requestedMode 
 		SkipPermissions: m.skipPermissionsForAgent(session.AgentTypeMaster),
 		AgentType:       session.AgentTypeMaster,
 		ClaudeNoFlicker: m.claudeNoFlicker(),
-	})
+	}))
 }
 
 // spawnAdHocAgent creates and starts an ad-hoc agent session (no plan, no lifecycle).
@@ -3572,7 +3596,7 @@ func (m *home) spawnTaskAgent(planFile, action, prompt string) (tea.Model, tea.C
 			prompt = spec.Prompt
 		}
 	}
-	inst, err := session.NewInstance(session.InstanceOptions{
+	inst, err := session.NewInstance(m.withRetentionOpts(session.InstanceOptions{
 		Title:           title,
 		Path:            m.activeRepoPath,
 		Program:         m.programForAgent(agentType),
@@ -3582,7 +3606,7 @@ func (m *home) spawnTaskAgent(planFile, action, prompt string) (tea.Model, tea.C
 		TaskFile:        planFile,
 		AgentType:       agentType,
 		ClaudeNoFlicker: m.claudeNoFlicker(),
-	})
+	}))
 	if err != nil {
 		return m, m.handleError(err)
 	}
@@ -3925,7 +3949,7 @@ func (m *home) spawnWaveTasks(orch *orchestration.WaveOrchestrator, tasks []task
 
 		prompt := orch.BuildTaskPrompt(task, len(tasks))
 
-		inst, err := session.NewInstance(session.InstanceOptions{
+		inst, err := session.NewInstance(m.withRetentionOpts(session.InstanceOptions{
 			Title:           title,
 			Path:            m.activeRepoPath,
 			Program:         m.programForAgent(session.AgentTypeCoder),
@@ -3939,7 +3963,7 @@ func (m *home) spawnWaveTasks(orch *orchestration.WaveOrchestrator, tasks []task
 			PeerCount:       len(tasks),
 			WaveTaskIndex:   waveTaskPos[task.Number], // 0 (unknown) if task not in current wave — safe, never happens in practice
 			WaveTaskCount:   waveTaskCount,
-		})
+		}))
 		if err != nil {
 			return m, m.handleError(err)
 		}
@@ -4090,7 +4114,7 @@ func (m *home) spawnChatAboutTask(planFile, question string) (tea.Model, tea.Cmd
 	planName := taskstate.DisplayName(planFile)
 	title := planName + "-chat"
 
-	inst, err := session.NewInstance(session.InstanceOptions{
+	inst, err := session.NewInstance(m.withRetentionOpts(session.InstanceOptions{
 		Title:           title,
 		Path:            m.activeRepoPath,
 		Program:         m.programForAgent(session.AgentTypeFixer),
@@ -4100,7 +4124,7 @@ func (m *home) spawnChatAboutTask(planFile, question string) (tea.Model, tea.Cmd
 		TaskFile:        planFile,
 		AgentType:       session.AgentTypeFixer,
 		ClaudeNoFlicker: m.claudeNoFlicker(),
-	})
+	}))
 	if err != nil {
 		return m, m.handleError(err)
 	}
@@ -4175,7 +4199,7 @@ func (m *home) adoptOrphanSession(item overlay.TmuxBrowserItem) (tea.Model, tea.
 	if bound && candidate.AgentType != "" {
 		program = m.programForAgent(candidate.AgentType)
 	}
-	inst, err := session.NewInstance(session.InstanceOptions{
+	inst, err := session.NewInstance(m.withRetentionOpts(session.InstanceOptions{
 		Title:           item.Title,
 		Path:            m.activeRepoPath,
 		Program:         program,
@@ -4186,7 +4210,7 @@ func (m *home) adoptOrphanSession(item overlay.TmuxBrowserItem) (tea.Model, tea.
 		WaveNumber:      candidate.WaveNumber,
 		ReviewCycle:     candidate.ReviewCycle,
 		ClaudeNoFlicker: m.claudeNoFlicker(),
-	})
+	}))
 	if err != nil {
 		return m, m.handleError(err)
 	}

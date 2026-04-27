@@ -279,6 +279,16 @@ type SpawnOpts struct {
 	// the spawn-source default before populating this field - the spawner sees
 	// only a final bool.
 	SkipPermissions bool
+	// SDKTranscriptLimitsSet guards against forwarding zero-value (unlimited)
+	// limits from call sites that never configured them. When false,
+	// SDKTranscriptMaxBytes and SDKTranscriptMaxTurns are ignored.
+	SDKTranscriptLimitsSet bool
+	// SDKTranscriptMaxBytes is the byte cap forwarded to the SDK renderer.
+	// Zero means no byte limit. Only applied when SDKTranscriptLimitsSet is true.
+	SDKTranscriptMaxBytes int64
+	// SDKTranscriptMaxTurns is the turn cap forwarded to the SDK renderer.
+	// Zero means no turn limit. Only applied when SDKTranscriptLimitsSet is true.
+	SDKTranscriptMaxTurns int64
 }
 
 // AgentSpawner abstracts tmux session management so the daemon and TUI can

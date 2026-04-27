@@ -156,7 +156,7 @@ func (d *Daemon) respawnWaveTaskCandidate(ctx context.Context, e RepoEntry, task
 		spawnWaveTask = d.spawner.SpawnWaveTask
 	}
 
-	return spawnWaveTask(ctx, loop.SpawnOpts{
+	return spawnWaveTask(ctx, withSDKTranscriptRetention(e, loop.SpawnOpts{
 		PlanFile:        task.Filename,
 		RepoPath:        e.Path,
 		Project:         e.Project,
@@ -166,7 +166,7 @@ func (d *Daemon) respawnWaveTaskCandidate(ctx context.Context, e RepoEntry, task
 		ExecutionMode:   executionModeForAgent(e.Path, session.AgentTypeCoder),
 		SDKSpeedTier:    sdkSpeedTierForAgent(e.Path, session.AgentTypeCoder),
 		SkipPermissions: skipPermissionsForAgent(e.Path, session.AgentTypeCoder),
-	}, waveTask, prompt, waveTaskIndex, peerCount)
+	}), waveTask, prompt, waveTaskIndex, peerCount)
 }
 
 func buildWaveRecoveryTask(e RepoEntry, task taskstore.TaskEntry, planContent string, candidate orchestration.RecoveryCandidate) (taskparser.Task, string, int, int, error) {

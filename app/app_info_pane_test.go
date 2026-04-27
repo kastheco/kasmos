@@ -486,3 +486,87 @@ func TestUpdateInfoPane_SDKFastInstance(t *testing.T) {
 	assert.Contains(t, output, "speed tier")
 	assert.Contains(t, output, "fast")
 }
+
+// TestSDKTranscriptRetentionOptions_WithConfig verifies that sdkTranscriptRetentionOptions
+// returns the limits from the active app config and sets configured=true.
+func TestSDKTranscriptRetentionOptions_WithConfig(t *testing.T) {
+	t.Parallel()
+	sp := spinner.New(spinner.WithSpinner(spinner.Dot))
+	cfg := config.DefaultConfig()
+	cfg.SDK.TranscriptMaxBytes = 1 << 20
+	cfg.SDK.TranscriptMaxTurns = 500
+	h := &home{
+		ctx:       context.Background(),
+		state:     stateDefault,
+		appConfig: cfg,
+		nav:       ui.NewNavigationPanel(&sp),
+		menu:      ui.NewMenu(),
+	}
+
+	maxBytes, maxTurns, configured := h.sdkTranscriptRetentionOptions()
+	assert.True(t, configured, "configured must be true when appConfig is set")
+	assert.Equal(t, int64(1<<20), maxBytes)
+	assert.Equal(t, int64(500), maxTurns)
+}
+
+// TestSDKTranscriptRetentionOptions_NilConfig verifies that sdkTranscriptRetentionOptions
+// returns configured=false when appConfig is nil, without panicking.
+func TestSDKTranscriptRetentionOptions_NilConfig(t *testing.T) {
+	t.Parallel()
+	sp := spinner.New(spinner.WithSpinner(spinner.Dot))
+	h := &home{
+		ctx:       context.Background(),
+		state:     stateDefault,
+		appConfig: nil,
+		nav:       ui.NewNavigationPanel(&sp),
+		menu:      ui.NewMenu(),
+	}
+
+	_, _, configured := h.sdkTranscriptRetentionOptions()
+	assert.False(t, configured, "configured must be false when appConfig is nil")
+}
+
+// TestWithRetentionOpts_AppliesLimits verifies that withRetentionOpts sets the
+// SDK transcript limit fields on InstanceOptions from the app config.
+func TestWithRetentionOpts_AppliesLimits(t *testing.T) {
+	t.Parallel()
+	sp := spinner.New(spinner.WithSpinner(spinner.Dot))
+	cfg := config.DefaultConfig()
+	cfg.SDK.TranscriptMaxBytes = 2 << 20
+	cfg.SDK.TranscriptMaxTurns = 250
+	h := &home{
+		ctx:       context.Background(),
+		state:     stateDefault,
+		appConfig: cfg,
+		nav:       ui.NewNavigationPanel(&sp),
+		menu:      ui.NewMenu(),
+	}
+
+	opts := h.withRetentionOpts(session.InstanceOptions{
+		Title:   "test",
+		Program: "claude",
+	})
+	assert.True(t, opts.SDKTranscriptLimitsSet, "SDKTranscriptLimitsSet must be set")
+	assert.Equal(t, int64(2<<20), opts.SDKTranscriptMaxBytes)
+	assert.Equal(t, int64(250), opts.SDKTranscriptMaxTurns)
+	// Original fields must survive.
+	assert.Equal(t, "test", opts.Title)
+	assert.Equal(t, "claude", opts.Program)
+}
+
+// TestWithRetentionOpts_NilConfig verifies that withRetentionOpts is a no-op
+// when appConfig is nil (SDKTranscriptLimitsSet stays false).
+func TestWithRetentionOpts_NilConfig(t *testing.T) {
+	t.Parallel()
+	sp := spinner.New(spinner.WithSpinner(spinner.Dot))
+	h := &home{
+		ctx:       context.Background(),
+		state:     stateDefault,
+		appConfig: nil,
+		nav:       ui.NewNavigationPanel(&sp),
+		menu:      ui.NewMenu(),
+	}
+
+	opts := h.withRetentionOpts(session.InstanceOptions{Title: "t"})
+	assert.False(t, opts.SDKTranscriptLimitsSet, "SDKTranscriptLimitsSet must stay false when no config")
+}

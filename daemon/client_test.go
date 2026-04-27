@@ -303,6 +303,65 @@ func TestSocketClient_CapturePresentation_DecodesNestedFields(t *testing.T) {
 	assert.False(t, previewRow.ToolPreview.Truncated)
 }
 
+// TestSocketClient_CapturePresentationFull_DecodesStats verifies that
+// CapturePresentationFull returns the stats field from the daemon response.
+func TestSocketClient_CapturePresentationFull_DecodesStats(t *testing.T) {
+	rawPayload := `{
+		"supported":true,
+		"captured_at":"2025-06-01T12:00:00Z",
+		"turns":[],
+		"stats":{
+			"bytes":1024,
+			"lines":42,
+			"turns":5,
+			"max_bytes":4194304,
+			"max_turns":2000,
+			"evicted_turns":1,
+			"evicted_lines":10,
+			"evicted_bytes":256,
+			"truncated_rows":3
+		}
+	}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/v1/repos/proj/instances/sdk-agent/presentation", r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(rawPayload))
+	}))
+	defer srv.Close()
+
+	client := &SocketClient{http: srv.Client(), baseURL: srv.URL}
+	resp, err := client.CapturePresentationFull("proj", "sdk-agent")
+	require.NoError(t, err)
+	assert.True(t, resp.Supported)
+	require.NotNil(t, resp.Stats, "stats must be decoded")
+	assert.Equal(t, int64(1024), resp.Stats.Bytes)
+	assert.Equal(t, int64(42), resp.Stats.Lines)
+	assert.Equal(t, int64(5), resp.Stats.Turns)
+	assert.Equal(t, int64(4194304), resp.Stats.MaxBytes)
+	assert.Equal(t, int64(2000), resp.Stats.MaxTurns)
+	assert.Equal(t, int64(1), resp.Stats.EvictedTurns)
+	assert.Equal(t, int64(10), resp.Stats.EvictedLines)
+	assert.Equal(t, int64(256), resp.Stats.EvictedBytes)
+	assert.Equal(t, int64(3), resp.Stats.TruncatedRows)
+}
+
+// TestSocketClient_CapturePresentationFull_NoStats verifies that when the daemon
+// omits the stats field, Stats is nil (omitempty round-trip).
+func TestSocketClient_CapturePresentationFull_NoStats(t *testing.T) {
+	rawPayload := `{"supported":false,"captured_at":"2025-06-01T12:00:00Z","turns":null}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(rawPayload))
+	}))
+	defer srv.Close()
+
+	client := &SocketClient{http: srv.Client(), baseURL: srv.URL}
+	resp, err := client.CapturePresentationFull("proj", "tmux-agent")
+	require.NoError(t, err)
+	assert.False(t, resp.Supported)
+	assert.Nil(t, resp.Stats, "stats must be nil when absent from response")
+}
+
 func TestSocketClient_SpawnSolo_HappyPath(t *testing.T) {
 	var gotBody []byte
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

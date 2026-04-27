@@ -686,14 +686,17 @@ func (s *TmuxSpawner) spawnOnMainBranch(_ context.Context, opts loop.SpawnOpts, 
 	}
 
 	inst, err := session.NewInstance(session.InstanceOptions{
-		Title:           title,
-		Path:            opts.RepoPath,
-		Program:         program,
-		ExecutionMode:   session.ExecutionMode(opts.ExecutionMode),
-		SDKSpeedTier:    opts.SDKSpeedTier,
-		AgentType:       agentType,
-		TaskFile:        opts.PlanFile,
-		SkipPermissions: opts.SkipPermissions,
+		Title:                  title,
+		Path:                   opts.RepoPath,
+		Program:                program,
+		ExecutionMode:          session.ExecutionMode(opts.ExecutionMode),
+		SDKSpeedTier:           opts.SDKSpeedTier,
+		AgentType:              agentType,
+		TaskFile:               opts.PlanFile,
+		SkipPermissions:        opts.SkipPermissions,
+		SDKTranscriptLimitsSet: opts.SDKTranscriptLimitsSet,
+		SDKTranscriptMaxBytes:  opts.SDKTranscriptMaxBytes,
+		SDKTranscriptMaxTurns:  opts.SDKTranscriptMaxTurns,
 	})
 	if err != nil {
 		s.releaseReservation(key)
@@ -843,19 +846,22 @@ func (s *TmuxSpawner) SpawnWaveTask(_ context.Context, opts loop.SpawnOpts, task
 		program = "opencode"
 	}
 	inst, err := session.NewInstance(session.InstanceOptions{
-		Title:           title,
-		Path:            opts.RepoPath,
-		Program:         program,
-		ExecutionMode:   session.ExecutionMode(opts.ExecutionMode),
-		SDKSpeedTier:    opts.SDKSpeedTier,
-		AgentType:       session.AgentTypeCoder,
-		TaskFile:        opts.PlanFile,
-		TaskNumber:      task.Number,
-		WaveNumber:      opts.Wave,
-		PeerCount:       peerCount,
-		WaveTaskIndex:   waveTaskIndex,
-		WaveTaskCount:   peerCount,
-		SkipPermissions: opts.SkipPermissions,
+		Title:                  title,
+		Path:                   opts.RepoPath,
+		Program:                program,
+		ExecutionMode:          session.ExecutionMode(opts.ExecutionMode),
+		SDKSpeedTier:           opts.SDKSpeedTier,
+		AgentType:              session.AgentTypeCoder,
+		TaskFile:               opts.PlanFile,
+		TaskNumber:             task.Number,
+		WaveNumber:             opts.Wave,
+		PeerCount:              peerCount,
+		WaveTaskIndex:          waveTaskIndex,
+		WaveTaskCount:          peerCount,
+		SkipPermissions:        opts.SkipPermissions,
+		SDKTranscriptLimitsSet: opts.SDKTranscriptLimitsSet,
+		SDKTranscriptMaxBytes:  opts.SDKTranscriptMaxBytes,
+		SDKTranscriptMaxTurns:  opts.SDKTranscriptMaxTurns,
 	})
 	if err != nil {
 		s.releaseReservation(key)
@@ -922,15 +928,18 @@ func (s *TmuxSpawner) spawnInSharedWorktreeReserved(_ context.Context, opts loop
 	}
 
 	inst, err := session.NewInstance(session.InstanceOptions{
-		Title:           title,
-		Path:            opts.RepoPath,
-		Program:         program,
-		ExecutionMode:   session.ExecutionMode(opts.ExecutionMode),
-		SDKSpeedTier:    opts.SDKSpeedTier,
-		AgentType:       agentType,
-		TaskFile:        opts.PlanFile,
-		ReviewCycle:     opts.ReviewCycle,
-		SkipPermissions: opts.SkipPermissions,
+		Title:                  title,
+		Path:                   opts.RepoPath,
+		Program:                program,
+		ExecutionMode:          session.ExecutionMode(opts.ExecutionMode),
+		SDKSpeedTier:           opts.SDKSpeedTier,
+		AgentType:              agentType,
+		TaskFile:               opts.PlanFile,
+		ReviewCycle:            opts.ReviewCycle,
+		SkipPermissions:        opts.SkipPermissions,
+		SDKTranscriptLimitsSet: opts.SDKTranscriptLimitsSet,
+		SDKTranscriptMaxBytes:  opts.SDKTranscriptMaxBytes,
+		SDKTranscriptMaxTurns:  opts.SDKTranscriptMaxTurns,
 	})
 	if err != nil {
 		s.releaseReservation(key)
@@ -1007,6 +1016,8 @@ func (s *TmuxSpawner) SpawnSolo(ctx context.Context, opts SpawnSoloOpts) error {
 		AgentType:       agentType,
 		SDKSpeedTier:    opts.SDKSpeedTier,
 		SkipPermissions: opts.SkipPermissions,
+		// Solo spawns do not carry repo-level transcript limits (no RepoEntry context).
+		// SDKTranscriptLimitsSet remains false — renderer uses its own defaults.
 	})
 	if err != nil {
 		s.releaseReservation(key)
