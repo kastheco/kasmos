@@ -246,6 +246,67 @@ func TestInstance_RunShellCommand_SDKSession_Delegates(t *testing.T) {
 	assert.Equal(t, "echo hello", mock.lastCommand)
 }
 
+// mockRendererStatsSession is an ExecutionSession that also implements
+// rendererStatsProvider to let CollectMetadata tests verify the stats path.
+type mockRendererStatsSession struct {
+	deadExecutionSession
+	stats sdk.RendererStats
+}
+
+func (m *mockRendererStatsSession) RendererStats() sdk.RendererStats {
+	return m.stats
+}
+
+// TestCollectMetadata_CopiesRendererStats verifies that CollectMetadata copies
+// RendererStats from the session into InstanceMetadata when the session implements
+// rendererStatsProvider.
+func TestCollectMetadata_CopiesRendererStats(t *testing.T) {
+	inst := &Instance{started: true, Status: Running}
+	mock := &mockRendererStatsSession{
+		stats: sdk.RendererStats{
+			Bytes:    1024,
+			Lines:    42,
+			Turns:    5,
+			MaxBytes: 4 << 20,
+			MaxTurns: 2000,
+		},
+	}
+	inst.SetExecutionSessionForTest(mock)
+
+	m := inst.CollectMetadata()
+	assert.Equal(t, int64(1024), m.RendererStats.Bytes)
+	assert.Equal(t, int64(42), m.RendererStats.Lines)
+	assert.Equal(t, int64(5), m.RendererStats.Turns)
+	assert.Equal(t, int64(4<<20), m.RendererStats.MaxBytes)
+	assert.Equal(t, int64(2000), m.RendererStats.MaxTurns)
+}
+
+// TestCollectMetadata_TmuxSession_NoRendererStats verifies that CollectMetadata
+// returns a zero RendererStats for tmux-backed sessions that do not implement
+// rendererStatsProvider.
+func TestCollectMetadata_TmuxSession_NoRendererStats(t *testing.T) {
+	inst := &Instance{started: true, Status: Running}
+	inst.SetExecutionSessionForTest(deadExecutionSession{})
+
+	m := inst.CollectMetadata()
+	assert.Equal(t, sdk.RendererStats{}, m.RendererStats)
+}
+
+// TestInstance_SetCachedRendererStats_IsValueCopy verifies that
+// SetCachedRendererStats stores a value-copy that cannot be aliased by the
+// caller retaining the original struct.
+func TestInstance_SetCachedRendererStats_IsValueCopy(t *testing.T) {
+	inst := &Instance{}
+	original := sdk.RendererStats{Bytes: 100, Lines: 10, Turns: 3}
+	inst.SetCachedRendererStats(original)
+
+	// Mutating the local copy must not affect the stored value.
+	original.Bytes = 999
+	assert.Equal(t, int64(100), inst.RendererStats.Bytes, "cached stats must not alias original")
+	assert.Equal(t, int64(10), inst.RendererStats.Lines)
+	assert.Equal(t, int64(3), inst.RendererStats.Turns)
+}
+
 // TestInstance_SetCachedPresentation_DeepCopy_Activity verifies that Activity
 // pointer fields are deep-copied.
 func TestInstance_SetCachedPresentation_DeepCopy_Activity(t *testing.T) {

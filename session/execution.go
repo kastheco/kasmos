@@ -103,6 +103,20 @@ type shellCommandRunner interface {
 	RunShellCommand(ctx context.Context, command string) error
 }
 
+// rendererRetentionSetter is optionally implemented by execution sessions that
+// support configuring in-process transcript limits. The instance layer uses a
+// type assertion so tmux-backed sessions do not need a stub method.
+type rendererRetentionSetter interface {
+	SetRendererRetention(maxBytes, maxTurns int64)
+}
+
+// rendererStatsProvider is optionally implemented by execution sessions that
+// expose renderer byte and eviction accounting. The instance layer uses a type
+// assertion inside CollectMetadata so tmux-backed sessions do not need a stub.
+type rendererStatsProvider interface {
+	RendererStats() sdk.RendererStats
+}
+
 // NormalizeSDKSpeedTier canonicalises a speed-tier value.
 // Recognised tiers are "fast" and "flex"; "default" maps to "flex".
 // Any other value — including the empty string, whitespace-only strings, or

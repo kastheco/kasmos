@@ -128,6 +128,23 @@ func (s *Session) SetTaskEnv(taskNumber, waveNumber, peerCount int) {
 	s.peerCount = peerCount
 }
 
+// SetRendererRetention configures the maximum byte and turn limits for the
+// renderer's in-process transcript. Zero values disable the corresponding limit.
+// May be called before or after Start.
+func (s *Session) SetRendererRetention(maxBytes, maxTurns int64) {
+	s.renderer.SetRetention(RendererRetentionOptions{
+		MaxBytes: maxBytes,
+		MaxTurns: maxTurns,
+		Name:     s.sanitizedName,
+	})
+}
+
+// RendererStats returns a point-in-time snapshot of the renderer's byte and
+// eviction accounting. Safe to call concurrently.
+func (s *Session) RendererStats() RendererStats {
+	return s.renderer.Stats()
+}
+
 // GetSanitizedName returns the sanitised session name used for log file naming.
 func (s *Session) GetSanitizedName() string { return s.sanitizedName }
 
