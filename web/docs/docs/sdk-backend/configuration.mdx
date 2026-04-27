@@ -123,6 +123,33 @@ Raw harness flags are still appended to the command where applicable, so `flags 
 
 **daemon api:** external callers can supply the same per-spawn tier via the `sdk_speed_tier` field on `POST /instances`.
 
+## transcript retention limits
+
+the renderer's in-process transcript is bounded by two limits that come from the global `[sdk]` table in `config.toml`:
+
+```toml
+[sdk]
+transcript_max_bytes = 4194304   # 4 MiB — default; omit to keep default
+transcript_max_turns = 2000      # completed turns to retain; omit to keep default
+```
+
+| key | type | default | description |
+|-----|------|---------|-------------|
+| `transcript_max_bytes` | int64 | `4194304` (4 MiB) | maximum bytes the in-process renderer retains across flat lines and structured turns combined |
+| `transcript_max_turns` | int64 | `2000` | maximum number of completed structured turns retained; the active (in-progress) turn is never evicted |
+
+**value semantics:**
+
+- **key omitted** — use the built-in default (4 MiB / 2000 turns).
+- **`0`** — disable the corresponding limit. the renderer will grow without bound for that dimension.
+- **negative** — normalized to `0` (unlimited).
+
+setting `transcript_max_bytes = 0` and `transcript_max_turns = 0` together disables all eviction. suitable only for short-lived sessions.
+
+these limits apply to the **in-process renderer** only. the on-disk log file (`<workDir>/.kasmos/logs/<name>.log`) and tmux scrollback (for tmux-mode sessions) are not affected.
+
+see [logs and output: transcript retention](./logs-and-output.mdx#transcript-retention) for a description of the three eviction phases and the eviction markers that appear in rendered output.
+
 ## standalone spawn modes
 
 three TUI entry points (`N`, `s`, `S`) also respect `execution_mode` when spawning standalone (ad-hoc) agents.

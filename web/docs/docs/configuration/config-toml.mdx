@@ -87,6 +87,39 @@ readiness_self_fix_max_lines  = 80      # master agent self-fix ceiling (net lin
 readiness_max_verify_cycles   = 2       # force-promote after this many verify rounds
 ```
 
+## `[sdk]` — SDK transcript retention
+
+Controls the in-process memory limits for SDK-backed agent sessions (those with `execution_mode = "sdk"`). Only the in-process renderer is affected — the on-disk log file and tmux scrollback are not.
+
+| field | type | default | description |
+|-------|------|---------|-------------|
+| `transcript_max_bytes` | int64 | `4194304` (4 MiB) | byte cap across flat lines and structured turns combined |
+| `transcript_max_turns` | int64 | `2000` | completed-turn cap; the active in-progress turn is never evicted |
+
+**value semantics:**
+
+- **key omitted** — use the built-in default.
+- **`0`** — disable that dimension's limit (unlimited).
+- **negative** — normalized to `0` (unlimited).
+
+```toml
+[sdk]
+transcript_max_bytes = 4194304   # 4 MiB (default; may be omitted)
+transcript_max_turns = 2000      # (default; may be omitted)
+```
+
+To disable retention limits entirely (unlimited growth):
+
+```toml
+[sdk]
+transcript_max_bytes = 0
+transcript_max_turns = 0
+```
+
+When the byte limit is exceeded the renderer evicts the oldest completed turns first (FIFO), then trims the oldest flat lines, and finally truncates rows from the active turn as a last resort. Eviction markers appear in rendered output: `earlier turns evicted: N` in the structured presentation and `[earlier lines evicted: N]` in flat `CapturePaneContent` output.
+
+See [sdk backend: transcript retention](../sdk-backend/logs-and-output.mdx#transcript-retention) for the full eviction model.
+
 ## `[telemetry]` — crash reporting
 
 | field | type | default | description |
@@ -244,6 +277,10 @@ enabled = true
 [orchestration]
 blueprint_skip_threshold = 2
 parallel_planner_architect = true
+
+[sdk]
+transcript_max_bytes = 4194304   # 4 MiB per sdk session renderer
+transcript_max_turns = 2000      # completed structured turns retained
 
 [[hooks]]
 type   = "webhook"
