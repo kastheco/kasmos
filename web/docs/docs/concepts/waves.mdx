@@ -6,12 +6,11 @@ import lifecycleDiagram from "@site/static/img/kasmos-lifecycle-flow.svg";
 
 # waves
 
-<figure
-  className="kasmos-lifecycle-diagram"
-  tabIndex={0}
-  aria-label="kasmos lifecycle: planner and architect baseline run in parallel, then architect merge, coder waves, review and fix loop, readiness, and done."
->
-  <img src={lifecycleDiagram} alt="" aria-hidden="true" />
+<figure className="kasmos-lifecycle-diagram">
+  <img
+    src={lifecycleDiagram}
+    alt="kasmos lifecycle: planner and architect baseline run in parallel, then architect merge, coder waves, review and fix loop, readiness, and done."
+  />
 </figure>
 
 Waves are the parallel execution unit in kasmos. A multi-wave plan runs wave 1 to completion, then wave 2, and so on. All tasks within a single wave run concurrently as separate agent instances on isolated git worktrees.
