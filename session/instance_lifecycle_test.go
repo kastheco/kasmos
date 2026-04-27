@@ -726,6 +726,45 @@ func TestResume_MainBranchPaused_UsesRepoPathAndClearsEphemeralState(t *testing.
 	assert.True(t, inst.CompletionPromptSince.IsZero(), "CompletionPromptSince should be zeroed on resume")
 }
 
+func TestResume_TmuxFreshStartPreservesInjectedSessionDependencies(t *testing.T) {
+	swapProbeMCP(t, func() error { return nil })
+	swapNewExecutionSession(t, func(mode ExecutionMode, name, program string, skipPermissions bool) ExecutionSession {
+		t.Fatalf("tmux resume must reuse resetExecutionSession, got mode=%s name=%s program=%s skip=%t", mode, name, program, skipPermissions)
+		return nil
+	})
+
+	hasSessionCalls := 0
+	cmdExec := cmd_test.MockCmdExec{
+		RunFunc: func(cmd *exec.Cmd) error {
+			for _, arg := range cmd.Args {
+				if arg == "has-session" {
+					hasSessionCalls++
+					if hasSessionCalls == 1 {
+						return fmt.Errorf("no session")
+					}
+					return nil
+				}
+			}
+			return nil
+		},
+		OutputFunc: func(cmd *exec.Cmd) ([]byte, error) { return []byte(""), nil },
+	}
+
+	inst := &Instance{
+		Title:            "test-resume-preserve-deps",
+		Path:             t.TempDir(),
+		Program:          "opencode",
+		ExecutionMode:    ExecutionModeTmux,
+		Status:           Paused,
+		started:          true,
+		executionSession: newMockTmuxSession("test-resume-preserve-deps", "opencode", &testPtyFactory{}, cmdExec),
+	}
+
+	require.NoError(t, inst.Resume())
+	assert.Equal(t, Running, inst.Status)
+	assert.GreaterOrEqual(t, hasSessionCalls, 2, "resume should probe the injected tmux executor")
+}
+
 func TestResume_SharedWorktree_ReusesExistingPath(t *testing.T) {
 	repoPath := setupGitRepo(t)
 

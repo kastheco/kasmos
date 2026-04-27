@@ -821,7 +821,7 @@ func (i *Instance) Resume() error {
 				return probeErr
 			}
 			prepareSession := func() {
-				i.executionSession = newExecutionSession(i.ExecutionMode, i.Title, i.Program, i.SkipPermissions)
+				i.executionSession = i.resetExecutionSession()
 				i.executionSession.SetAgentType(i.AgentType)
 				i.executionSession.SetSDKSpeedTier(i.SDKSpeedTier)
 				i.setExecutionTaskEnv()
@@ -844,7 +844,7 @@ func (i *Instance) Resume() error {
 			return err
 		}
 		prepareSession := func() {
-			i.executionSession = newExecutionSession(i.ExecutionMode, i.Title, i.Program, i.SkipPermissions)
+			i.executionSession = i.resetExecutionSession()
 			i.executionSession.SetAgentType(i.AgentType)
 			i.executionSession.SetSDKSpeedTier(i.SDKSpeedTier)
 			i.setExecutionTaskEnv()
