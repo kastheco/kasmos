@@ -653,10 +653,14 @@ func TestTriggerPlanStage_ImplementNoWaves_RespawnsPlanner(t *testing.T) {
 
 	sp := spinner.New(spinner.WithSpinner(spinner.Dot))
 	list := ui.NewNavigationPanel(&sp)
+	// Use planner-only config: this test covers wave-parse failure re-planning,
+	// not the parallel architect-baseline default behaviour.
+	noParallelCfg := config.DefaultConfig()
+	noParallelCfg.ParallelPlannerArchitect = false
 	h := &home{
 		ctx:               context.Background(),
 		state:             stateDefault,
-		appConfig:         config.DefaultConfig(),
+		appConfig:         noParallelCfg,
 		taskState:         ps,
 		taskStateDir:      plansDir,
 		fsm:               newPlanFSMForTest(t, plansDir),

@@ -36,7 +36,8 @@ type RepoEntry struct {
 	ReadinessSelfFixMaxLines int
 	// ReadinessMaxVerifyCycles is the effective per-repo verify-round cap.
 	ReadinessMaxVerifyCycles int
-	// ParallelPlannerArchitect is the effective per-repo opt-in parallel baseline flag.
+	// ParallelPlannerArchitect is the effective per-repo parallel baseline flag.
+	// Defaults to true (opt-out: set parallel_planner_architect = false in .kasmos/config.toml to disable).
 	ParallelPlannerArchitect bool
 }
 
@@ -294,17 +295,19 @@ func (m *RepoManager) Get(path string) (RepoEntry, error) {
 
 // resolveRepoConfig reads per-repo TOML overrides and returns the effective
 // values for autoAdvance, autoReadinessReview, readinessSelfFixMaxLines,
-// readinessMaxVerifyCycles, and parallelPlannerArchitect for the given repo path. It falls back to the
-// daemon-level defaults (stored on m) when no project-local override is found.
+// readinessMaxVerifyCycles, and parallelPlannerArchitect for the given repo path.
+// parallelPlannerArchitect defaults to true (opt-out); a project TOML key overrides
+// only when explicitly present. Falls back to daemon-level defaults for the other fields.
 func (m *RepoManager) resolveRepoConfig(path string) (autoAdvance bool, autoReadinessReview bool, selfFixMaxLines int, maxVerifyCycles int, parallelPlannerArchitect bool) {
 	autoAdvance = m.autoAdvance
 	autoReadinessReview = m.autoReadinessReview
 	selfFixMaxLines = m.readinessSelfFixMaxLines
 	maxVerifyCycles = m.readinessMaxVerifyCycles
+	parallelPlannerArchitect = true // default-on opt-out
 
 	projTomlPath := filepath.Join(path, ".kasmos", config.TOMLConfigFileName)
 	if _, err := os.Stat(projTomlPath); err != nil {
-		// File absent or unreadable — use daemon-level defaults.
+		// File absent or unreadable — use defaults.
 		return
 	}
 	result, err := config.LoadTOMLConfigFrom(projTomlPath)
@@ -318,7 +321,9 @@ func (m *RepoManager) resolveRepoConfig(path string) (autoAdvance bool, autoRead
 	if result.AutoReadinessReview != nil {
 		autoReadinessReview = *result.AutoReadinessReview
 	}
-	parallelPlannerArchitect = result.ParallelPlannerArchitect
+	if result.ParallelPlannerArchitect != nil {
+		parallelPlannerArchitect = *result.ParallelPlannerArchitect
+	}
 	if result.ReadinessSelfFixMaxLines != nil {
 		if *result.ReadinessSelfFixMaxLines > 0 {
 			selfFixMaxLines = *result.ReadinessSelfFixMaxLines

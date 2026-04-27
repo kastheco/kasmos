@@ -71,8 +71,10 @@ type TOMLHook struct {
 type TOMLOrchestrationConfig struct {
 	// BlueprintSkipThreshold is the maximum task count for single-agent mode.
 	// When <= this value, elaboration and wave orchestration are skipped.
-	BlueprintSkipThreshold   *int `toml:"blueprint_skip_threshold,omitempty"`
-	ParallelPlannerArchitect bool `toml:"parallel_planner_architect,omitempty"`
+	BlueprintSkipThreshold *int `toml:"blueprint_skip_threshold,omitempty"`
+	// ParallelPlannerArchitect controls whether the parallel planner/architect-baseline
+	// flow is active. When nil (key absent from TOML), the runtime default (true) applies.
+	ParallelPlannerArchitect *bool `toml:"parallel_planner_architect,omitempty"`
 }
 
 // TOMLKeybindsConfig holds key-handling settings from the [keybinds] TOML table.
@@ -118,7 +120,8 @@ type TOMLConfigResult struct {
 	TelemetryEnabled         *bool
 	DatabaseURL              string
 	BlueprintSkipThreshold   *int
-	ParallelPlannerArchitect bool
+	// ParallelPlannerArchitect is nil when the TOML key is absent (runtime default applies).
+	ParallelPlannerArchitect *bool
 	DoubleTapThresholdMS     *int
 	DefaultProgram           string
 	AutoYes                  bool
@@ -173,7 +176,7 @@ func LoadTOMLConfigFrom(path string) (*TOMLConfigResult, error) {
 		TelemetryEnabled:         tc.Telemetry.Enabled,
 		DatabaseURL:              tc.DatabaseURL,
 		BlueprintSkipThreshold:   tc.Orchestration.BlueprintSkipThreshold,
-		ParallelPlannerArchitect: tc.Orchestration.ParallelPlannerArchitect,
+		ParallelPlannerArchitect: tc.Orchestration.ParallelPlannerArchitect, // nil when key absent
 		DoubleTapThresholdMS:     tc.Keybinds.DoubleTapThresholdMS,
 		DefaultProgram:           tc.DefaultProgram,
 		AutoYes:                  tc.AutoYes,

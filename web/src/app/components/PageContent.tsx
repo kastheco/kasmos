@@ -8,6 +8,7 @@ import FeatureCard from "./FeatureCard";
 import InstallTabs from "./InstallTabs";
 import Header from "./Header";
 import OrchestrationVisual from "./OrchestrationVisual";
+import LifecycleDiagram from "./LifecycleDiagram";
 
 const features = [
   {
@@ -202,59 +203,8 @@ export default function PageContent() {
               </p>
             </ScrollReveal>
 
-            {/* Lifecycle grid – single layout for all viewports */}
             <ScrollReveal>
-              <div className={styles.lifecycleGrid}>
-                {/* Row 1: planning → architect */}
-                <div className={styles.lifecycleRow}>
-                  <div className={`${styles.lifecycleStep} ${styles.lifecycleGold}`}>
-                    <span className={styles.lifecycleStepNum}>1</span>
-                    <span className={styles.lifecycleStepLabel}>planning</span>
-                  </div>
-                  <div className={styles.lifecycleHArrow}>→</div>
-                  <div className={`${styles.lifecycleStep} ${styles.lifecycleIris}`}>
-                    <span className={styles.lifecycleStepNum}>2</span>
-                    <span className={styles.lifecycleStepLabel}>architect</span>
-                  </div>
-                </div>
-                <div className={styles.lifecycleVConnector}>↓</div>
-                {/* Row 2: implementing */}
-                <div className={styles.lifecycleRow}>
-                  <div className={`${styles.lifecycleStep} ${styles.lifecycleFoam} ${styles.lifecycleStepWide}`}>
-                    <span className={styles.lifecycleStepNum}>3</span>
-                    <span className={styles.lifecycleStepLabel}>implementing</span>
-                  </div>
-                </div>
-                <div className={styles.lifecycleVConnector}>↓</div>
-                {/* Row 3: reviewer ⇄ fixer */}
-                <div className={styles.lifecycleRow}>
-                  <div className={`${styles.lifecycleStep} ${styles.lifecycleRose}`}>
-                    <span className={styles.lifecycleStepNum}>4</span>
-                    <span className={styles.lifecycleStepLabel}>reviewer</span>
-                  </div>
-                  <div className={`${styles.lifecycleHArrow} ${styles.lifecycleArrowLoop}`}>
-                    ⇄
-                    <span className={styles.lifecycleLoopNote}>review/fix loop</span>
-                  </div>
-                  <div className={`${styles.lifecycleStep} ${styles.lifecycleGold}`}>
-                    <span className={styles.lifecycleStepNum}>5</span>
-                    <span className={styles.lifecycleStepLabel}>fixer</span>
-                  </div>
-                </div>
-                <div className={styles.lifecycleVConnector}>↓</div>
-                {/* Row 4: readiness review → done */}
-                <div className={styles.lifecycleRow}>
-                  <div className={`${styles.lifecycleStep} ${styles.lifecycleIris}`}>
-                    <span className={styles.lifecycleStepNum}>6</span>
-                    <span className={styles.lifecycleStepLabel}>readiness review</span>
-                  </div>
-                  <div className={styles.lifecycleHArrow}>→</div>
-                  <div className={`${styles.lifecycleStep} ${styles.lifecycleFoam}`}>
-                    <span className={styles.lifecycleStepNum}>7</span>
-                    <span className={styles.lifecycleStepLabel}>done</span>
-                  </div>
-                </div>
-              </div>
+              <LifecycleDiagram />
             </ScrollReveal>
 
             <div className={styles.agentsGrid}>

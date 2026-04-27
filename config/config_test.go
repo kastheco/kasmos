@@ -490,6 +490,31 @@ func TestLoadConfig_MigratesJSON(t *testing.T) {
 	assert.Contains(t, string(written), `auto_review_fix = false`)
 	assert.Contains(t, string(written), `max_review_fix_cycles = 0`)
 	assert.Contains(t, string(written), `notifications_enabled = false`)
+	assert.Contains(t, string(written), `parallel_planner_architect = true`)
+	assert.True(t, cfg.ParallelPlannerArchitect)
+}
+
+func TestLoadConfig_MigratesJSONParallelPlannerArchitectExplicitFalse(t *testing.T) {
+	tempDir := t.TempDir()
+	t.Chdir(tempDir)
+	t.Setenv("HOME", t.TempDir())
+
+	configDir := filepath.Join(tempDir, ".kasmos")
+	require.NoError(t, os.MkdirAll(configDir, 0o755))
+
+	jsonContent := `{
+		"default_program": "migrated-claude",
+		"parallel_planner_architect": false
+	}`
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.json"), []byte(jsonContent), 0o644))
+
+	cfg := LoadConfig()
+	require.NotNil(t, cfg)
+	assert.False(t, cfg.ParallelPlannerArchitect)
+
+	written, err := os.ReadFile(filepath.Join(configDir, TOMLConfigFileName))
+	require.NoError(t, err)
+	assert.Contains(t, string(written), `parallel_planner_architect = false`)
 }
 
 func TestAutoReadinessReviewConfig(t *testing.T) {
@@ -741,34 +766,54 @@ func TestConfigFromTOML_DoubleTapThreshold(t *testing.T) {
 }
 
 func TestParallelPlannerArchitectConfig(t *testing.T) {
-	t.Run("absent defaults false", func(t *testing.T) {
+	t.Run("DefaultConfig is true", func(t *testing.T) {
+		assert.True(t, DefaultConfig().ParallelPlannerArchitect)
+	})
+
+	t.Run("absent TOML pointer resolves true via DefaultConfig", func(t *testing.T) {
+		// ParallelPlannerArchitect is nil (key absent) — configFromTOML starts from
+		// DefaultConfig() so the resolved value is true.
 		cfg := configFromTOML(&TOMLConfigResult{
 			Profiles:   map[string]AgentProfile{},
 			PhaseRoles: map[string]string{},
 		})
 
-		assert.False(t, cfg.ParallelPlannerArchitect)
+		assert.True(t, cfg.ParallelPlannerArchitect)
 	})
 
-	t.Run("configFromTOML preserves true", func(t *testing.T) {
+	t.Run("explicit false pointer overrides default", func(t *testing.T) {
+		falseVal := false
 		cfg := configFromTOML(&TOMLConfigResult{
 			Profiles:                 map[string]AgentProfile{},
 			PhaseRoles:               map[string]string{},
-			ParallelPlannerArchitect: true,
+			ParallelPlannerArchitect: &falseVal,
+		})
+
+		assert.False(t, cfg.ParallelPlannerArchitect)
+	})
+
+	t.Run("explicit true pointer preserves true", func(t *testing.T) {
+		trueVal := true
+		cfg := configFromTOML(&TOMLConfigResult{
+			Profiles:                 map[string]AgentProfile{},
+			PhaseRoles:               map[string]string{},
+			ParallelPlannerArchitect: &trueVal,
 		})
 
 		assert.True(t, cfg.ParallelPlannerArchitect)
 	})
 
-	t.Run("configToTOML preserves true", func(t *testing.T) {
+	t.Run("configToTOML returns non-nil pointer for true", func(t *testing.T) {
 		tc := configToTOML(&Config{ParallelPlannerArchitect: true})
 
-		assert.True(t, tc.Orchestration.ParallelPlannerArchitect)
+		require.NotNil(t, tc.Orchestration.ParallelPlannerArchitect)
+		assert.True(t, *tc.Orchestration.ParallelPlannerArchitect)
 	})
 
-	t.Run("configToTOML preserves false", func(t *testing.T) {
+	t.Run("configToTOML returns non-nil pointer for false", func(t *testing.T) {
 		tc := configToTOML(&Config{})
 
-		assert.False(t, tc.Orchestration.ParallelPlannerArchitect)
+		require.NotNil(t, tc.Orchestration.ParallelPlannerArchitect)
+		assert.False(t, *tc.Orchestration.ParallelPlannerArchitect)
 	})
 }

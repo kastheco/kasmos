@@ -103,19 +103,23 @@ enabled = false
 | field | type | default | description |
 |-------|------|---------|-------------|
 | `blueprint_skip_threshold` | int? | `2` | when a plan has ≤ this many tasks, kasmos skips elaboration and wave orchestration and runs a single-agent "blueprint" mode instead |
-| `parallel_planner_architect` | bool | `false` | when `true`, plan start launches a cache-only architect baseline session beside the planner so the later architect pass can compare the planner draft with an independent baseline |
+| `parallel_planner_architect` | bool | `true` | plan start launches a cache-only architect baseline session beside the planner by default; set to `false` to disable and restore planner-first behavior where the planner finishes first and the architect pass derives its own baseline inline |
 
 ```toml
 [orchestration]
 blueprint_skip_threshold = 2
-parallel_planner_architect = true
 ```
 
 Setting this to `0` forces multi-agent wave orchestration for every plan, including single-task ones. Setting it higher causes more plans to run in single-agent mode.
 
-`parallel_planner_architect` is opt-in. The default `false` preserves the current planner-first behavior: the planner writes the draft, emits `planner-finished`, and the architect pass starts afterward.
+`parallel_planner_architect` is default-on. When unset or `true`, plan start launches the planner and an advisory cache-only architect baseline session together. To opt out and restore planner-first behavior where the planner finishes before the architect pass starts, set:
 
-When enabled, the runtime sequence is:
+```toml
+[orchestration]
+parallel_planner_architect = false
+```
+
+The runtime sequence when active (the default) is:
 
 1. plan start clears stale `.kasmos/cache/<planSlug>-architect-baseline.json`
 2. the planner starts
@@ -239,7 +243,7 @@ enabled = true
 
 [orchestration]
 blueprint_skip_threshold = 2
-parallel_planner_architect = false
+parallel_planner_architect = true
 
 [[hooks]]
 type   = "webhook"

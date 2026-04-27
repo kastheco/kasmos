@@ -42,14 +42,14 @@ Before wave 1 starts, kasmos spawns an **architect** agent (`elaborating` profil
 
 If an architect pass already ran for this plan before (e.g. after a TUI restart), kasmos detects the existing instance and skips re-elaboration, jumping straight to wave 1.
 
-By default, planning remains planner-first: the planner writes the draft and emits `planner-finished`, then the architect pass starts. You can opt into a parallel baseline in `.kasmos/config.toml`:
+By default, planning starts the planner and an advisory `architect-baseline` session together. Plan start clears any stale `.kasmos/cache/<planSlug>-architect-baseline.json`, starts the planner, and starts the baseline session concurrently. The baseline session writes only the cache artifact and emits no lifecycle signals. After the planner writes the draft and emits `planner_finished`, the final architect pass reads the planner draft plus a valid cached baseline, or falls back to its normal inline self-baseline if the cache is missing or invalid. Coder waves then proceed normally.
+
+To restore planner-first behavior — where the planner finishes and emits `planner_finished` before the architect pass starts — set:
 
 ```toml
 [orchestration]
-parallel_planner_architect = true
+parallel_planner_architect = false
 ```
-
-With this enabled, plan start clears any stale `.kasmos/cache/<planSlug>-architect-baseline.json`, starts the planner, and starts a separate `architect-baseline` runtime session. The baseline session writes only that cache artifact and emits no lifecycle signals. After the planner writes the draft and emits `planner-finished`, the final architect pass reads the planner draft plus a valid cached baseline, or falls back to its normal inline self-baseline if the cache is missing or invalid. Coder waves then proceed normally.
 
 The baseline cache is advisory, safe to delete, and not task-store state. Existing signal names do not change. If the planner draft is small enough for blueprint skip, kasmos may skip the final architect pass, leaving a produced baseline cache unused.
 

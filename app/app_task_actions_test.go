@@ -440,6 +440,49 @@ func TestSpawnPlannerWithOptionalBaseline_DisabledSpawnsOnlyPlanner(t *testing.T
 	assert.Equal(t, "plan prompt", instances[0].QueuedPrompt)
 }
 
+func TestSpawnPlannerWithOptionalBaseline_DefaultConfigSpawnsPlannerAndArchitectBaseline(t *testing.T) {
+	// DefaultConfig() sets ParallelPlannerArchitect: true — verify the TUI spawns
+	// both the planner and the architect-baseline agent out of the box.
+	t.Parallel()
+	dir := t.TempDir()
+	plansDir := filepath.Join(dir, "docs", "plans")
+	require.NoError(t, os.MkdirAll(plansDir, 0o755))
+	ps, err := newTestPlanState(t, plansDir)
+	require.NoError(t, err)
+	const planFile = "default-config-plan"
+	require.NoError(t, ps.Register(planFile, "default config plan", "plan/default-config-plan", time.Now()))
+
+	sp := spinner.New(spinner.WithSpinner(spinner.Dot))
+	h := &home{
+		appConfig:          config.DefaultConfig(),
+		taskState:          ps,
+		activeRepoPath:     dir,
+		taskStoreProject:   "proj",
+		program:            "opencode",
+		nav:                ui.NewNavigationPanel(&sp),
+		menu:               ui.NewMenu(),
+		tabbedWindow:       ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewInfoPane()),
+		toastManager:       overlay.NewToastManager(&sp),
+		instanceFinalizers: make(map[*session.Instance]func()),
+	}
+
+	model, cmd := h.spawnPlannerWithOptionalBaseline(planFile, "plan prompt", "build default config plan")
+	require.NotNil(t, cmd)
+	updated := model.(*home)
+
+	var planner, baseline *session.Instance
+	for _, inst := range updated.nav.GetInstances() {
+		switch inst.AgentType {
+		case session.AgentTypePlanner:
+			planner = inst
+		case session.AgentTypeArchitectBaseline:
+			baseline = inst
+		}
+	}
+	require.NotNil(t, planner, "DefaultConfig must spawn planner")
+	require.NotNil(t, baseline, "DefaultConfig must spawn architect-baseline")
+}
+
 func TestSpawnPlannerWithOptionalBaseline_EnabledSpawnsPlannerAndArchitectBaseline(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()

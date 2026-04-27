@@ -315,6 +315,31 @@ Complete the last implementation task and transition into review.
 	assert.Equal(t, []string{"kill:wave-1", "spawn:wave-2:task-3", "kill:wave-2", "spawn:reviewer", "create:pr"}, events[5:])
 }
 
+func TestDaemon_LifecycleE2E_ParallelPlannerArchitectFalse_PlanStartSpawnsOnlyPlanner(t *testing.T) {
+	// When ParallelPlannerArchitect is explicitly false, plan_start must emit exactly
+	// one SpawnPlannerAction — no clear_architect_baseline, no spawn_architect_baseline.
+	store := taskstore.NewTestStore(t)
+	project := "test-project-false"
+	planFile := "serial-plan.md"
+	require.NoError(t, store.Create(project, taskstore.TaskEntry{
+		Filename:    planFile,
+		Status:      taskstore.StatusReady,
+		Description: "serial planning run",
+	}))
+
+	proc := loop.NewProcessor(loop.ProcessorConfig{
+		Store:                    store,
+		Project:                  project,
+		AutoAdvance:              true,
+		ParallelPlannerArchitect: false,
+	})
+
+	planStartActions := proc.ProcessFSMSignals([]taskfsm.Signal{{TaskFile: planFile, Event: taskfsm.PlanStart}})
+	require.Len(t, planStartActions, 1, "plan_start with ParallelPlannerArchitect=false must emit only SpawnPlannerAction")
+	_, isSpawnPlanner := planStartActions[0].(loop.SpawnPlannerAction)
+	assert.True(t, isSpawnPlanner, "expected SpawnPlannerAction, got %T", planStartActions[0])
+}
+
 func TestDaemon_LifecycleE2E_ParallelBaselineDoesNotGatePlannerCompletion(t *testing.T) {
 	store := taskstore.NewTestStore(t)
 	project := "test-project"
