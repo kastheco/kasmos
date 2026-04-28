@@ -593,7 +593,7 @@ func (p *InfoPane) renderInstanceSection() string {
 	// Transcript diagnostics: show for SDK instances when bytes are non-zero.
 	if p.data.TranscriptBytes > 0 && p.data.ExecutionMode != "tmux" {
 		transcriptVal := fmt.Sprintf("%s · %d lines", formatBytesShort(p.data.TranscriptBytes), p.data.TranscriptLines)
-		if p.data.TranscriptEvictedTurns > 0 || p.data.TranscriptEvictedLines > 0 || p.data.TranscriptTruncatedRows > 0 {
+		if p.data.TranscriptEvictedTurns > 0 || p.data.TranscriptTruncatedRows > 0 {
 			suffix := fmt.Sprintf("%d evicted", p.data.TranscriptEvictedTurns)
 			if p.data.TranscriptTruncatedRows > 0 {
 				suffix += fmt.Sprintf(", %d truncated", p.data.TranscriptTruncatedRows)

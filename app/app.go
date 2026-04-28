@@ -3182,11 +3182,11 @@ type instanceMetadata struct {
 	// RendererStats carries the latest SDK renderer stats for daemon-managed
 	// SDK placeholder instances. Nil when stats are not available (tmux
 	// instances or daemon not reachable).
-	RendererStats *daemonapi.RendererStats
-	Updated       bool
-	HasPrompt     bool
-	CPUPercent    float64
-	MemMB         float64
+	RendererStats      *daemonapi.RendererStats
+	Updated            bool
+	HasPrompt          bool
+	CPUPercent         float64
+	MemMB              float64
 	ResourceUsageValid bool
 	TmuxAlive          bool
 	PermissionPrompt   *session.PermissionPrompt // non-nil when a supported harness shows a permission dialog
