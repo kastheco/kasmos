@@ -84,6 +84,18 @@ func TestTmuxSpawner_RestoreTrackedInstance_KeysWaveTasksByWaveAndTask(t *testin
 	assert.Equal(t, "/tmp/repo:plan.md:coder:w2:t3", running[0].Key)
 }
 
+func assertSpawnerKeyUntracked(t *testing.T, s *TmuxSpawner, key string) {
+	t.Helper()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	assert.NotContains(t, s.instances, key, "instance tracking must be cleared for %q", key)
+	assert.NotContains(t, s.planFileByKey, key, "plan metadata must be cleared for %q", key)
+	assert.NotContains(t, s.agentTypeByKey, key, "agent metadata must be cleared for %q", key)
+	assert.NotContains(t, s.projectByKey, key, "project metadata must be cleared for %q", key)
+	assert.NotContains(t, s.replacing, key, "replacement lock must be cleared for %q", key)
+}
+
 func TestTmuxSpawner_KillAgent_PreservesTrackingWhenClientAttached(t *testing.T) {
 	s := NewTmuxSpawner()
 
@@ -145,10 +157,7 @@ func TestTmuxSpawner_ForceKillAgent_KillsEvenWithAttachedClients(t *testing.T) {
 	assert.True(t, killCalled, "kill must be called even when a tmux client is attached")
 
 	// Instance must be removed from all tracking maps unconditionally.
-	s.mu.Lock()
-	_, stillTracked := s.instances[key]
-	s.mu.Unlock()
-	assert.False(t, stillTracked, "instance must be removed from tracking maps after force kill")
+	assertSpawnerKeyUntracked(t, s, key)
 }
 
 func TestTmuxSpawner_ReserveInstanceSlot_EvictsDeadTrackedAgent(t *testing.T) {
@@ -543,10 +552,7 @@ func TestTmuxSpawner_SpawnElaborator_StartFailureDiscardsTrackedInstance(t *test
 	require.Error(t, err)
 
 	key := instanceKey(repoPath, planFile, session.AgentTypeElaborator)
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	_, tracked := s.instances[key]
-	assert.False(t, tracked, "failed startup must not leave a tracked placeholder or dead instance behind")
+	assertSpawnerKeyUntracked(t, s, key)
 }
 
 func TestTmuxSpawner_SpawnElaborator_MissingRepoPath(t *testing.T) {
@@ -601,7 +607,7 @@ func TestTmuxSpawner_KillInstance_RemovesTracking(t *testing.T) {
 	err := s.KillInstance("/tmp/repo", "my-agent")
 	require.NoError(t, err)
 	assert.True(t, killed)
-	assert.Empty(t, s.instances)
+	assertSpawnerKeyUntracked(t, s, key)
 }
 
 func TestTmuxSpawner_KillInstance_PreservesTrackingOnFailure(t *testing.T) {
@@ -842,6 +848,33 @@ func TestTmuxSpawner_GracefulKill_KillsAfterSecondCheck(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, killed, "should report killed when no client is attached")
 	assert.True(t, killCalled, "kill must be called when no client is attached after grace period")
+}
+
+func TestTmuxSpawner_GracefulKill_KillsWhenProbeSeesNoUserClient(t *testing.T) {
+	s := NewTmuxSpawner()
+
+	// The real-tmux integration test guarantees kasmos detached monitoring does
+	// not create an attached client. Daemon cleanup therefore depends on this
+	// probe representing only real user clients.
+	var probed []string
+	s.hasAttachedClients = func(_ cmd.Executor, sessionName string) bool {
+		probed = append(probed, sessionName)
+		return false
+	}
+	s.sleep = func(_ time.Duration) {}
+	killedTitle := ""
+	s.kill = func(inst *session.Instance) error {
+		killedTitle = inst.Title
+		return nil
+	}
+	s.cleanupGracePeriod = 0
+
+	inst := &session.Instance{Title: "plan-coder"}
+	killed, err := s.gracefulKill(inst, "kas_plan-coder")
+	require.NoError(t, err)
+	assert.True(t, killed, "cleanup should proceed when the probe sees no user client")
+	assert.Equal(t, "plan-coder", killedTitle)
+	assert.Equal(t, []string{"kas_plan-coder", "kas_plan-coder"}, probed)
 }
 
 func TestTmuxSpawner_SpawnMaster_MissingRepoPath(t *testing.T) {
@@ -1180,10 +1213,7 @@ func TestTmuxSpawner_SpawnSolo_StartFailureDiscardsTrackedInstance(t *testing.T)
 	require.Error(t, err)
 
 	key := instanceKeyForStandalone(repoPath, title)
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	_, tracked := s.instances[key]
-	assert.False(t, tracked, "failed spawn must not leave a tracked placeholder behind")
+	assertSpawnerKeyUntracked(t, s, key)
 }
 
 func TestInstanceKeyForStandalone(t *testing.T) {

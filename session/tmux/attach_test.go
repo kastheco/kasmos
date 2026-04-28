@@ -15,39 +15,17 @@ import (
 )
 
 func TestAttach_SilencesOuterTerminal(t *testing.T) {
-	// serial: mutates tmux terminal globals
-	withFastTmuxTimings(t)
-	oldStdinFD := stdinFD
-	oldIsTTY := terminalIsTTY
-	oldMakeRaw := terminalMakeRaw
-	oldRestore := terminalRestore
-	oldSilence := outerTerminalSilence
-	oldOuterRestore := outerTerminalRestore
-	oldDrain := drainStdin
-	defer func() {
-		stdinFD = oldStdinFD
-		terminalIsTTY = oldIsTTY
-		terminalMakeRaw = oldMakeRaw
-		terminalRestore = oldRestore
-		outerTerminalSilence = oldSilence
-		outerTerminalRestore = oldOuterRestore
-		drainStdin = oldDrain
-	}()
-
-	stdinFD = func() int { return 9 }
-	terminalIsTTY = func(int) bool { return true }
-	state := &term.State{}
-	terminalMakeRaw = func(int) (*term.State, error) { return state, nil }
-	terminalRestore = func(int, *term.State) error { return nil }
-	drainStdin = func(time.Duration) {}
-
 	var got bytes.Buffer
-	outerTerminalSilence = func(io.Writer) {
-		got.WriteString("silence\n")
-	}
-	outerTerminalRestore = func(io.Writer) {
-		got.WriteString("restore\n")
-	}
+	withTerminalTestHarness(t, terminalTestHarness{
+		stdinFD: 9,
+		isTTY:   true,
+		silence: func(io.Writer) {
+			got.WriteString("silence\n")
+		},
+		outerRestore: func(io.Writer) {
+			got.WriteString("restore\n")
+		},
+	})
 
 	ptyFactory := NewMockPtyFactory(t)
 	s := NewTmuxSessionWithDeps("test-attach-silence", "opencode", false,
@@ -75,13 +53,50 @@ func TestSetDetachedSize(t *testing.T) {
 		OutputFunc: func(cmd *exec.Cmd) ([]byte, error) { return []byte(""), nil },
 	}
 	s := NewTmuxSessionWithDeps("test-size", "opencode", false, ptyFactory, cmdExec)
-	// Restore to get a PTY
+	// Restore leaves ptmx nil (monitor-only), so SetDetachedSize uses resize-window.
 	err := s.Restore()
 	require.NoError(t, err)
-	// SetDetachedSize should not error with a valid PTY
-	// May error on mock PTY (not a real terminal) — that's OK for unit test
-	// The important thing is it doesn't panic
+	// SetDetachedSize should not error; the important thing is it doesn't panic.
 	_ = s.SetDetachedSize(120, 40)
+}
+
+func TestSetDetachedSize_UsesResizeWindowWhenNoActivePTY(t *testing.T) {
+	t.Parallel()
+	var ranCmds []string
+	cmdExec := cmd_test.MockCmdExec{
+		RunFunc: func(cmd *exec.Cmd) error {
+			ranCmds = append(ranCmds, commandString(cmd))
+			return nil
+		},
+		OutputFunc: func(cmd *exec.Cmd) ([]byte, error) { return nil, nil },
+	}
+	s := NewTmuxSessionWithDeps("test-detached-size", "opencode", false, NewMockPtyFactory(t), cmdExec)
+	// No active PTY (ptmx is nil) — should use tmux resize-window.
+	require.Nil(t, s.ptmx)
+	err := s.SetDetachedSize(120, 40)
+	require.NoError(t, err)
+	require.Len(t, ranCmds, 1)
+	assert.Contains(t, ranCmds[0], "resize-window")
+	assert.Contains(t, ranCmds[0], "-x 120")
+	assert.Contains(t, ranCmds[0], "-y 40")
+	assert.Contains(t, ranCmds[0], "kas_test-detached-size")
+}
+
+func TestSetDetachedSize_ZeroDimensionsAreNoOp(t *testing.T) {
+	t.Parallel()
+	var ranCmds []string
+	cmdExec := cmd_test.MockCmdExec{
+		RunFunc: func(cmd *exec.Cmd) error {
+			ranCmds = append(ranCmds, commandString(cmd))
+			return nil
+		},
+		OutputFunc: func(cmd *exec.Cmd) ([]byte, error) { return nil, nil },
+	}
+	s := NewTmuxSessionWithDeps("test-zero-size", "opencode", false, NewMockPtyFactory(t), cmdExec)
+	// Zero dimensions should not issue resize-window.
+	err := s.SetDetachedSize(0, 0)
+	require.NoError(t, err)
+	assert.Empty(t, ranCmds, "zero dimensions should not issue resize-window")
 }
 
 func TestDetachSafely_IsIdempotent(t *testing.T) {
@@ -105,42 +120,23 @@ func TestUpdateWindowSize_NilPTY(t *testing.T) {
 // responses (e.g. DA1 replies like "\e[?62;22;52c") from leaking to whatever
 // process reads stdin after kasmos relinquishes the terminal.
 func TestDetach_DrainsStdinBeforeRestoringTTY(t *testing.T) {
-	// serial: mutates tmux timing globals
-	withFastTmuxTimings(t)
-	oldStdinFD := stdinFD
-	oldIsTTY := terminalIsTTY
-	oldMakeRaw := terminalMakeRaw
-	oldRestore := terminalRestore
-	oldDrain := drainStdin
-	oldOuterRestore := outerTerminalRestore
-	defer func() {
-		stdinFD = oldStdinFD
-		terminalIsTTY = oldIsTTY
-		terminalMakeRaw = oldMakeRaw
-		terminalRestore = oldRestore
-		drainStdin = oldDrain
-		outerTerminalRestore = oldOuterRestore
-	}()
-
-	stdinFD = func() int { return 7 }
-	terminalIsTTY = func(int) bool { return true }
-	state := &term.State{}
-	terminalMakeRaw = func(int) (*term.State, error) { return state, nil }
-
 	var mu sync.Mutex
 	var events []string
-	terminalRestore = func(int, *term.State) error {
-		mu.Lock()
-		defer mu.Unlock()
-		events = append(events, "restoreTTY")
-		return nil
-	}
-	drainStdin = func(budget time.Duration) {
-		mu.Lock()
-		defer mu.Unlock()
-		events = append(events, "drainStdin")
-	}
-	outerTerminalRestore = func(io.Writer) {}
+	withTerminalTestHarness(t, terminalTestHarness{
+		stdinFD: 7,
+		isTTY:   true,
+		restore: func(int, *term.State) error {
+			mu.Lock()
+			defer mu.Unlock()
+			events = append(events, "restoreTTY")
+			return nil
+		},
+		drain: func(time.Duration) {
+			mu.Lock()
+			defer mu.Unlock()
+			events = append(events, "drainStdin")
+		},
+	})
 
 	s := NewTmuxSessionWithDeps("test-detach-drain", "opencode", false,
 		NewMockPtyFactory(t), cmd_test.NewMockExecutor())

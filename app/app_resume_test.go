@@ -44,7 +44,7 @@ func TestHandleKeyPress_ResumeOnNilSelectedIsNoOp(t *testing.T) {
 	assert.Nil(t, cmd, "resume key should no-op when no instance selected")
 }
 
-func TestExecuteLauncherAction_ResumeOnNonPausedInstanceIsNoOp(t *testing.T) {
+func TestExecuteLauncherAction_ResumeOnNonPausedInstanceDoesNotResume(t *testing.T) {
 	t.Parallel()
 	for _, status := range []session.Status{session.Running, session.Ready} {
 		t.Run(fmt.Sprintf("status-%d", status), func(t *testing.T) {
@@ -56,21 +56,22 @@ func TestExecuteLauncherAction_ResumeOnNonPausedInstanceIsNoOp(t *testing.T) {
 			_ = h.nav.AddInstance(inst)
 			h.nav.SelectInstance(inst)
 
-			_, cmd := h.executeLauncherAction("resume")
+			_, cmd := h.executeLauncherAction("resume_instance")
 
-			assert.Nil(t, cmd, "launcher resume should no-op on %s instance", status)
+			assert.NotNil(t, cmd, "launcher resume should still request layout refresh on %s instance", status)
 			assert.Equal(t, status, inst.Status, "status should not change")
 		})
 	}
 }
 
-func TestExecuteLauncherAction_ResumeOnNilSelectedIsNoOp(t *testing.T) {
+func TestExecuteLauncherAction_ResumeOnNilSelectedDoesNotResume(t *testing.T) {
 	t.Parallel()
 	h := newTestHomeWithToast()
 
-	_, cmd := h.executeLauncherAction("resume")
+	model, cmd := h.executeLauncherAction("resume_instance")
 
-	assert.Nil(t, cmd, "launcher resume should no-op when no instance selected")
+	assert.Same(t, h, model)
+	assert.NotNil(t, cmd, "launcher resume should still request layout refresh when no instance selected")
 }
 
 func TestHandleKeyPress_ResumePausedInstanceCallsResume(t *testing.T) {

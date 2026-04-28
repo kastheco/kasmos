@@ -738,13 +738,14 @@ func TestResume_TmuxFreshStartPreservesInjectedSessionDependencies(t *testing.T)
 		return nil
 	})
 
+	ptyFactory := &testPtyFactory{}
 	hasSessionCalls := 0
 	cmdExec := cmd_test.MockCmdExec{
 		RunFunc: func(cmd *exec.Cmd) error {
 			for _, arg := range cmd.Args {
 				if arg == "has-session" {
 					hasSessionCalls++
-					if hasSessionCalls == 1 {
+					if ptyFactory.startCount == 0 {
 						return fmt.Errorf("no session")
 					}
 					return nil
@@ -762,12 +763,13 @@ func TestResume_TmuxFreshStartPreservesInjectedSessionDependencies(t *testing.T)
 		ExecutionMode:    ExecutionModeTmux,
 		Status:           Paused,
 		started:          true,
-		executionSession: newMockTmuxSession("test-resume-preserve-deps", "opencode", &testPtyFactory{}, cmdExec),
+		executionSession: newMockTmuxSession("test-resume-preserve-deps", "opencode", ptyFactory, cmdExec),
 	}
 
 	require.NoError(t, inst.Resume())
 	assert.Equal(t, Running, inst.Status)
 	assert.GreaterOrEqual(t, hasSessionCalls, 2, "resume should probe the injected tmux executor")
+	assert.Equal(t, 1, ptyFactory.startCount, "resume fresh-start must start through the injected tmux PTY factory")
 }
 
 func TestResume_SharedWorktree_ReusesExistingPath(t *testing.T) {

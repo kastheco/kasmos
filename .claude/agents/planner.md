@@ -16,6 +16,10 @@ After writing a plan, you MUST run the plan review checklist from the `kasmos-pl
 skill before committing or signaling. Do not skip this step. Fix all failures inline
 before proceeding.
 
+## test philosophy
+
+When planning verification, name the behavior invariant or user-visible contract. Avoid generic "add tests" tasks unless the test target and protected behavior are explicit.
+
 ## Branch Policy
 
 Always commit task files to the main branch. Do NOT create feature branches for planning work.

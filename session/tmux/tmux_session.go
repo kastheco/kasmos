@@ -109,10 +109,13 @@ type TmuxSession struct {
 
 	// Initialized by Start or Restore
 	//
-	// ptmx is a PTY running the tmux attach command. This can be resized to change the
-	// stdout dimensions of the tmux pane. On detach, we close it and set a new one.
-	// This should never be nil after a successful Start or Restore.
+	// ptmx is the PTY file for the active interactive attach. It is non-nil
+	// only between a successful Attach() call and the subsequent Detach() or
+	// Close(). During detached preview/monitoring, ptmx is nil.
 	ptmx *os.File
+	// ptmxHandle owns the PTY file and child process for the active attach.
+	// It is set alongside ptmx in Attach() and cleared by closeActivePty.
+	ptmxHandle PtyHandle
 	// monitor monitors the tmux pane content and sends signals to the UI when its status changes.
 	monitor *StatusMonitor
 
@@ -443,7 +446,7 @@ func (t *TmuxSession) Start(workDir string) error {
 	// Create a new detached tmux session and start the program in it.
 	cmd := exec.Command("tmux", "new-session", "-d", "-s", t.sanitizedName, "-c", workDir, program)
 
-	ptmx, err := t.ptyFactory.Start(cmd)
+	handle, err := t.ptyFactory.Start(cmd)
 	if err != nil {
 		// Cleanup any partially created session if any exists.
 		if t.DoesSessionExist() {
@@ -454,6 +457,10 @@ func (t *TmuxSession) Start(workDir string) error {
 		}
 		return fmt.Errorf("error starting tmux session: %w", err)
 	}
+	if handle == nil {
+		// Test stub returned nil handle with nil error — treat as a start failure.
+		return fmt.Errorf("error starting tmux session: PTY factory returned nil handle")
+	}
 
 	t.reportProgress(2, "Waiting for session to start...")
 
@@ -463,6 +470,8 @@ func (t *TmuxSession) Start(workDir string) error {
 	for !t.DoesSessionExist() {
 		select {
 		case <-timeout:
+			// Reap the short-lived new-session handle before cleanup.
+			_ = handle.Close()
 			if cleanupErr := t.Close(); cleanupErr != nil {
 				err = fmt.Errorf("%v (cleanup error: %v)", err, cleanupErr)
 			}
@@ -475,7 +484,8 @@ func (t *TmuxSession) Start(workDir string) error {
 			}
 		}
 	}
-	ptmx.Close()
+	// Close and reap the short-lived new-session PTY now that the tmux session exists.
+	_ = handle.Close()
 
 	// Set history limit to enable scrollback (default is 2000, we use 10000 for more history).
 	historyCmd := exec.Command("tmux", "set-option", "-t", t.sanitizedName, "history-limit", "10000")
@@ -621,13 +631,10 @@ func (t *TmuxSession) Start(workDir string) error {
 	return nil
 }
 
-// Restore attaches to an existing session and restores the window size.
+// Restore reattaches monitoring to an existing tmux session without spawning a
+// background PTY client. It is monitor-only: ptmx and ptmxHandle remain nil.
+// An interactive PTY is created only by Attach().
 func (t *TmuxSession) Restore() error {
-	ptmx, err := t.ptyFactory.Start(exec.Command("tmux", "attach-session", "-t", t.sanitizedName))
-	if err != nil {
-		return fmt.Errorf("error opening PTY: %w", err)
-	}
-	t.ptmx = ptmx
 	t.monitor = NewStatusMonitor()
 	// Idempotently hide the status bar — also covers sessions restored from crash
 	// that were created before this option was set.
@@ -670,15 +677,36 @@ func outerMouseEnabled(session string) bool {
 	return strings.Contains(string(out), "on")
 }
 
+// closeActivePty closes the active PTY handle (set by Attach) and nils both
+// ptmxHandle and ptmx. If only ptmx is set (e.g. by a legacy test helper),
+// it falls back to closing the file directly. The label is included in any
+// returned error for context.
+func (t *TmuxSession) closeActivePty(label string) error {
+	if t.ptmxHandle != nil {
+		err := t.ptmxHandle.Close()
+		t.ptmxHandle = nil
+		t.ptmx = nil
+		if err != nil {
+			return fmt.Errorf("%s: close active PTY: %w", label, err)
+		}
+		return nil
+	}
+	if t.ptmx != nil {
+		err := t.ptmx.Close()
+		t.ptmx = nil
+		if err != nil {
+			return fmt.Errorf("%s: close active PTY: %w", label, err)
+		}
+	}
+	return nil
+}
+
 // Close terminates the tmux session and cleans up resources.
 func (t *TmuxSession) Close() error {
 	var errs []error
 
-	if t.ptmx != nil {
-		if err := t.ptmx.Close(); err != nil {
-			errs = append(errs, fmt.Errorf("error closing PTY: %w", err))
-		}
-		t.ptmx = nil
+	if err := t.closeActivePty("close"); err != nil {
+		errs = append(errs, err)
 	}
 
 	existsCmd := exec.Command("tmux", "has-session", fmt.Sprintf("-t=%s", t.sanitizedName))

@@ -2,6 +2,7 @@ package tmux
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -42,8 +43,9 @@ var outerTerminalRestore = func(w io.Writer) {
 var detachWaitTimeout = 500 * time.Millisecond
 
 // Attach connects the calling terminal to the tmux session.
-// It disables mouse on the enclosing outer tmux session (if kasmos is running
-// inside tmux), then spawns two goroutines:
+// It creates a fresh tmux attach-session PTY handle, disables mouse on the
+// enclosing outer tmux session (if kasmos is running inside tmux), then
+// spawns two goroutines:
 //  1. PTY output → os.Stdout (io.Copy)
 //  2. os.Stdin → PTY, with Ctrl+Q (0x11) and Ctrl+Space (0x00) as detach keys
 //
@@ -51,6 +53,10 @@ var detachWaitTimeout = 500 * time.Millisecond
 //
 // Returns a channel that is closed when Detach completes.
 func (t *TmuxSession) Attach() (chan struct{}, error) {
+	if t.attachCh != nil {
+		return nil, fmt.Errorf("already attached to session %s", t.sanitizedName)
+	}
+
 	// Detect and disable outer tmux mouse so the inner session gets raw events.
 	outer := outerTmuxSession()
 	t.outerMouseWasEnabled = outerMouseEnabled(outer)
@@ -69,6 +75,31 @@ func (t *TmuxSession) Attach() (chan struct{}, error) {
 		t.restoreOuterMouse()
 		return nil, err
 	}
+
+	// Create a fresh attach PTY handle for this active session.
+	handle, err := t.ptyFactory.Start(exec.Command("tmux", "attach-session", "-t", t.sanitizedName))
+	if err != nil {
+		t.exitRawInputMode()
+		outerTerminalRestore(os.Stdout)
+		t.restoreOuterMouse()
+		return nil, fmt.Errorf("attach-session: start PTY: %w", err)
+	}
+	if handle == nil {
+		t.exitRawInputMode()
+		outerTerminalRestore(os.Stdout)
+		t.restoreOuterMouse()
+		return nil, fmt.Errorf("attach-session: PTY factory returned nil handle")
+	}
+	f := handle.File()
+	if f == nil {
+		_ = handle.Close()
+		t.exitRawInputMode()
+		outerTerminalRestore(os.Stdout)
+		t.restoreOuterMouse()
+		return nil, fmt.Errorf("attach-session: PTY handle returned nil file")
+	}
+	t.ptmxHandle = handle
+	t.ptmx = f
 
 	ch := make(chan struct{})
 	t.attachCh = ch
@@ -137,16 +168,16 @@ func (t *TmuxSession) Attach() (chan struct{}, error) {
 }
 
 // Detach disconnects from the tmux session:
-//  1. Cancels context and closes the PTY to unblock the attach goroutines.
-//  2. Waits for goroutines with a 500 ms timeout.
-//  3. Restores tmux mouse state (may write escape sequences to the terminal).
-//  4. Drains any stale bytes from stdin — late-arriving terminal query
-//     responses (notably DA1 replies like "\e[?62;22;52c") would otherwise
-//     sit in the tty input buffer and leak to whatever process reads stdin
-//     after kasmos relinquishes the terminal.
+//  1. Cancels context and closes/reaps the active PTY handle to unblock goroutines.
+//  2. Waits for goroutines with a timeout.
+//  3. Restores tmux mouse state.
+//  4. Drains any stale bytes from stdin.
 //  5. Restores stdin from raw mode.
-//  6. Calls Restore() to create a background monitoring PTY.
-//  7. Closes the attach channel (signals callers that detach is complete).
+//  6. Closes the attach channel (signals callers that detach is complete).
+//
+// Unlike the previous implementation, Detach does NOT call Restore() or
+// recreate a background PTY. Preview and status monitoring continue through
+// capture-pane without an attached PTY client.
 func (t *TmuxSession) Detach() {
 	// Cancel context to signal the stdin goroutine to exit on its next loop.
 	if t.cancel != nil {
@@ -154,10 +185,9 @@ func (t *TmuxSession) Detach() {
 		t.cancel = nil
 	}
 
-	// Close the PTY — this causes the io.Copy(os.Stdout, ptmx) goroutine to return.
-	if t.ptmx != nil {
-		_ = t.ptmx.Close()
-		t.ptmx = nil
+	// Close and reap the active PTY handle — this unblocks io.Copy(os.Stdout, ptmx).
+	if err := t.closeActivePty("detach"); err != nil {
+		log.ErrorLog.Printf("Detach: %v", err)
 	}
 
 	// Wait for goroutines with a timeout.
@@ -190,11 +220,6 @@ func (t *TmuxSession) Detach() {
 
 	t.exitRawInputMode()
 	outerTerminalRestore(os.Stdout)
-
-	// Recreate a background PTY for status monitoring (HasUpdated ticks).
-	if err := t.Restore(); err != nil {
-		log.ErrorLog.Printf("Detach: error restoring background PTY: %v", err)
-	}
 
 	// Signal any waiter that detach is complete.
 	if t.attachCh != nil {
@@ -361,13 +386,26 @@ func (t *TmuxSession) DetachSafely() error {
 	return nil
 }
 
-// SetDetachedSize resizes the background PTY to the given terminal dimensions.
-// Used to keep the tmux pane correctly sized while no interactive client is attached.
+// SetDetachedSize resizes the tmux pane when no interactive PTY is attached.
+// When an active PTY exists (during Attach), it uses pty.Setsize directly.
+// When detached, it uses tmux resize-window so the pane stays correctly sized
+// for capture-pane previews without needing a background attached client.
 func (t *TmuxSession) SetDetachedSize(width, height int) error {
-	return t.updateWindowSize(uint16(width), uint16(height))
+	if t.ptmx != nil {
+		return t.updateWindowSize(uint16(width), uint16(height))
+	}
+	if width > 0 && height > 0 {
+		cmd := exec.Command("tmux", "resize-window",
+			"-x", fmt.Sprintf("%d", width),
+			"-y", fmt.Sprintf("%d", height),
+			"-t", t.sanitizedName)
+		return t.cmdExec.Run(cmd)
+	}
+	return nil
 }
 
 // updateWindowSize calls pty.Setsize to resize the PTY file descriptor.
+// It is a no-op when no PTY is active (ptmx == nil).
 func (t *TmuxSession) updateWindowSize(cols, rows uint16) error {
 	if t.ptmx == nil {
 		return nil

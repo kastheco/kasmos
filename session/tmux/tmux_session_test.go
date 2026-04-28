@@ -194,10 +194,14 @@ func TestStart_CreatesAndRestoresSession(t *testing.T) {
 	s := NewTmuxSessionWithDeps("test-start", "claude", false, ptyFactory, cmdExec)
 	err := s.Start(workdir)
 	require.NoError(t, err)
-	require.Len(t, ptyFactory.cmds, 2) // new-session + attach-session
+	// Only one PTY handle: new-session. Restore() is monitor-only (no PTY).
+	require.Len(t, ptyFactory.cmds, 1)
 	assert.Contains(t, commandString(ptyFactory.cmds[0]), "new-session")
 	assert.Contains(t, commandString(ptyFactory.cmds[0]), "KASMOS_MANAGED=1")
-	assert.Contains(t, commandString(ptyFactory.cmds[1]), "attach-session")
+	// The new-session handle is closed after Start succeeds.
+	assert.True(t, ptyFactory.handles[0].closed, "new-session handle should be closed after Start")
+	// No active PTY in detached state.
+	assert.Nil(t, s.GetPTY(), "GetPTY should be nil after Start")
 }
 
 func TestStart_WithSkipPermissions(t *testing.T) {
@@ -324,6 +328,69 @@ func TestRestore_DisablesMouseOnRestoredSession(t *testing.T) {
 		}
 	}
 	assert.True(t, found, "expected 'tmux set-option ... mouse off' to be run during Restore(); ran: %v", ranCmds)
+}
+
+func TestRestore_LeavesPTYNil(t *testing.T) {
+	t.Parallel()
+	s := NewTmuxSessionWithDeps("test-restore-nil-pty", "opencode", false,
+		NewMockPtyFactory(t), cmd_test.NewMockExecutor())
+	require.NoError(t, s.Restore())
+	assert.Nil(t, s.GetPTY(), "GetPTY should be nil after Restore (monitor-only, no attached PTY)")
+	assert.Nil(t, s.ptmxHandle, "ptmxHandle should be nil after Restore")
+}
+
+func TestAttach_CreatesAndClosesAttachSessionHandles(t *testing.T) {
+	withNonInteractiveAttachUnitHarness(t)
+
+	ptyFactory := NewMockPtyFactory(t)
+	s := NewTmuxSessionWithDeps("test-attach-handle", "opencode", false,
+		ptyFactory, cmd_test.NewMockExecutor())
+	require.NoError(t, s.Restore())
+	require.Nil(t, s.GetPTY(), "GetPTY must be nil before Attach")
+
+	for i := 0; i < 3; i++ {
+		ch, err := s.Attach()
+		require.NoError(t, err, "attach cycle %d", i+1)
+		require.NotNil(t, ch)
+
+		require.Len(t, ptyFactory.cmds, i+1)
+		assert.Contains(t, commandString(ptyFactory.cmds[i]), "attach-session")
+		assert.Contains(t, commandString(ptyFactory.cmds[i]), "kas_test-attach-handle")
+		assert.NotNil(t, s.GetPTY(), "GetPTY should be non-nil during active attach")
+		assert.NotNil(t, s.ptmxHandle, "ptmxHandle should be set during active attach")
+
+		s.Detach()
+		select {
+		case <-ch:
+		case <-time.After(detachWaitTimeout):
+			t.Fatalf("detach did not close attach channel for cycle %d", i+1)
+		}
+
+		assert.Nil(t, s.GetPTY(), "GetPTY should be nil after Detach")
+		assert.Nil(t, s.ptmxHandle, "ptmxHandle should be nil after Detach")
+		require.Len(t, ptyFactory.handles, i+1)
+		assert.True(t, ptyFactory.handles[i].closed, "attach-session PTY handle should be closed after Detach")
+	}
+}
+
+func TestDetach_DoesNotCallRestore(t *testing.T) {
+	withNonInteractiveAttachUnitHarness(t)
+
+	ptyFactory := NewMockPtyFactory(t)
+	s := NewTmuxSessionWithDeps("test-detach-no-restore", "opencode", false,
+		ptyFactory, cmd_test.NewMockExecutor())
+	require.NoError(t, s.Restore())
+
+	ch, err := s.Attach()
+	require.NoError(t, err)
+	require.NotNil(t, ch)
+
+	handlesBefore := len(ptyFactory.cmds)
+	s.Detach()
+
+	// Detach must NOT create any additional PTY handles (no background Restore).
+	assert.Equal(t, handlesBefore, len(ptyFactory.cmds),
+		"Detach must not start a new PTY handle; handles before=%d, after=%d", handlesBefore, len(ptyFactory.cmds))
 }
 
 func TestStart_InjectsAgentFlag(t *testing.T) {

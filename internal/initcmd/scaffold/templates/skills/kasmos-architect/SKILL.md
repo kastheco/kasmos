@@ -169,6 +169,9 @@ For each task body:
 - avoid exploratory steps such as "inspect more files" or "explore the codebase"
 - include exact paths, function names, signatures, commands, and acceptance checks relevant to that task
 - split large logic into smaller `**Step**` items when needed
+- make verification expectations identify the invariant, user contract, or bug family they protect; prefer extending an existing invariant/workflow suite before creating another narrow regression file
+
+If a task's tests would duplicate old symptoms instead of covering the root behavior contract, merge or reshape the task until verification is aimed at the contract.
 
 ### metadata contract (required)
 
@@ -187,7 +190,7 @@ Each task must include a JSON contract section like:
       "estimated_tokens": 6000,
       "files_to_modify": [".agents/skills/kasmos-planner/SKILL.md"],
       "dependency_task_numbers": [],
-      "verify_checks": ["skill mirrors match", "signal name unchanged"]
+      "verify_checks": ["skill mirrors match", "signal name unchanged", "invariant or behavior contract coverage named"]
     }
   ]
 }
