@@ -11,13 +11,14 @@ var envNameRegex = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 // kasmosManagedEnvVars is the set of kasmos-owned control variables that the
 // [resources].env map must not overwrite.
 var kasmosManagedEnvVars = map[string]bool{
-	"KASMOS_MANAGED":        true,
-	"KASMOS_PROJECT":        true,
-	"KASMOS_TASK":           true,
-	"KASMOS_WAVE":           true,
-	"KASMOS_PEERS":          true,
-	"KASMOS_INSTANCE_TITLE": true,
-	"KASMOS_AGENT_TYPE":     true,
+	"KASMOS_MANAGED":          true,
+	"KASMOS_PROJECT":          true,
+	"KASMOS_RESOURCE_PROFILE": true,
+	"KASMOS_TASK":             true,
+	"KASMOS_WAVE":             true,
+	"KASMOS_PEERS":            true,
+	"KASMOS_INSTANCE_TITLE":   true,
+	"KASMOS_AGENT_TYPE":       true,
 }
 
 // ResourcesConfig is the raw config-layer representation of the [resources] TOML table.

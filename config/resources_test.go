@@ -228,15 +228,9 @@ func TestResourcesConfigResolve(t *testing.T) {
 			wantErr: "kasmos-managed variable",
 		},
 		{
-			name: "KASMOS_RESOURCE_PROFILE env key is allowed",
-			cfg: ResourcesConfig{
-				Profile: "interactive",
-				Env:     map[string]string{"KASMOS_RESOURCE_PROFILE": "interactive"},
-			},
-			wantCheck: func(t *testing.T, r ResolvedResourceControls) {
-				t.Helper()
-				assert.Equal(t, "interactive", r.Env["KASMOS_RESOURCE_PROFILE"])
-			},
+			name:    "env key overwriting KASMOS_RESOURCE_PROFILE rejected",
+			cfg:     ResourcesConfig{Profile: "interactive", Env: map[string]string{"KASMOS_RESOURCE_PROFILE": "spoofed"}},
+			wantErr: "kasmos-managed variable",
 		},
 	}
 
