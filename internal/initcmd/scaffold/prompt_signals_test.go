@@ -20,6 +20,9 @@ func TestPromptTemplates_UseMCPFirstSignals(t *testing.T) {
 			contains: []string{
 				"use MCP `task_update_content` (filename: \"<plan-file>\", content: \"<full plan markdown>\", project: \"$KASMOS_PROJECT\") to persist the finished plan.",
 				"then use MCP `signal_create` (signal_type: \"planner-finished\", plan_file: \"<plan-file>\", project: \"$KASMOS_PROJECT\") to notify completion.",
+				"planner-draft-finished",
+				"planner_draft_finished",
+				"planner_id",
 				"the signal filename must match the task filename exactly (with `planner-finished-` prefix).",
 			},
 		},
@@ -30,9 +33,15 @@ func TestPromptTemplates_UseMCPFirstSignals(t *testing.T) {
 				"compatibility note: emit `elaborator-finished` exactly as written until the gateway is renamed; this is a signal shim, not an active elaborator role",
 				"use MCP `signal_create` (signal_type: \"elaborator-finished\", plan_file: \"<plan-file>\", project: \"$KASMOS_PROJECT\") after the round-trip check succeeds.",
 				"writing the compatibility `elaborator-finished` signal with wrong filename",
-				"## parallel baseline mode",
-				"validate `plan_file`, `project`, `description_hash`, `schema_version`, and non-empty `baseline_markdown`",
-				"The final architect pass still remains the only task content writer.",
+				"## planner draft cache mode",
+				".kasmos/cache/<plan-file>-planner-*.md",
+				"`consumed_drafts`: list the planner draft cache paths and profile ids used for the final decision",
+				"The final architect pass remains the only final task content writer.",
+			},
+			notContains: []string{
+				"architect-baseline",
+				"<plan-file>-architect-baseline.json",
+				"parallel_planner_architect",
 			},
 		},
 		{

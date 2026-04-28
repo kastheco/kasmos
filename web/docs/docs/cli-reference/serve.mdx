@@ -67,7 +67,7 @@ All task endpoints use the project-scoped URL prefix `/v1/projects/{project}/tas
 
 | method | path | description |
 |--------|------|-------------|
-| `GET` | `/v1/projects/{project}/tasks/{filename}/architect-decisions` | return the cached architect `decision_audit`, final task markdown, and optional architect baseline markdown for hq task details |
+| `GET` | `/v1/projects/{project}/tasks/{filename}/architect-decisions` | return the cached architect `decision_audit`, final task markdown, and any planner draft decisions recorded for hq task details |
 
 The endpoint reads `.kasmos/cache/<task>-architect.json` from the resolved repo root. Older tasks without architect metadata return `available: false` with a stable reason instead of failing the task detail page.
 

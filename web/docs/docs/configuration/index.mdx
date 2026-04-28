@@ -44,7 +44,7 @@ The global task store (`~/.config/kasmos/taskstore.db`) is never copied — it i
 
 ## cache artifacts
 
-Runtime artifacts that are derived from agent work live under the repo-local `.kasmos/cache/` directory. Architect passes write their wave metadata to `.kasmos/cache/<task>-architect.json`; newer metadata may include a schema-versioned `decision_audit` object with the planner summary, architect baseline summary, final decision, and differences. The parallel `.kasmos/cache/<task>-architect-baseline.json` file is advisory input for that audit, not task-store state.
+Runtime artifacts that are derived from agent work live under the repo-local `.kasmos/cache/` directory. Multi-planner runs write draft caches as `.kasmos/cache/<task>-planner-<profile>.md`. Architect passes write their wave metadata to `.kasmos/cache/<task>-architect.json`; newer metadata may include a schema-versioned `decision_audit` object with planner draft summaries, the architect's final decision, differences, and `planner_drafts` entries for each consumed draft. Cache files are not task-store state.
 
 ## inspecting resolved paths
 

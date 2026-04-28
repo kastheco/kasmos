@@ -204,7 +204,7 @@ export interface ArchitectDecisionDifference {
   area: string;
   scope?: string;
   planner_proposal?: string;
-  architect_baseline?: string;
+  baseline_proposal?: string;
   final_decision: string;
   rationale?: string;
   related_files?: string[];

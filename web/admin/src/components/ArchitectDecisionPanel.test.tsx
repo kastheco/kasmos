@@ -38,7 +38,7 @@ const HAPPY_RESPONSE: ArchitectDecisionAuditResponse = {
         area: "admin ui",
         scope: "task detail",
         planner_proposal: "render markdown only",
-        architect_baseline: "add a structured operator view",
+        baseline_proposal: "add a structured operator view",
         final_decision: "ship the structured panel",
         rationale: "operators need the comparison at a glance",
         related_files: ["web/admin/src/components/ArchitectDecisionPanel.tsx"],

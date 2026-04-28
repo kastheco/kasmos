@@ -2,7 +2,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1260 480" role="img"
      aria-labelledby="kl-title kl-desc">
   <title id="kl-title">kasmos lifecycle flow</title>
-  <desc id="kl-desc">planner and architect baseline run in parallel, then architect merge, coder waves, reviewer and fixer loop, master readiness, and done.</desc>
+  <desc id="kl-desc">optional planner drafts feed the architect, then coder waves, reviewer and fixer loop, master readiness, and done.</desc>
 
   <defs>
     <!-- arrowhead markers — static colors with dark-mode CSS override for reliability -->
@@ -96,7 +96,7 @@
       .amr { fill: #fb7185; }
     }
 
-    /* ── advisory badge ── */
+    /* ── draft badge ── */
     .ba  { fill: #0891b2; }
     .bt  { font-size: 8px; fill: #ffffff; text-anchor: middle; dominant-baseline: central; font-family: ui-monospace, monospace; }
     @media (prefers-color-scheme: dark) {
@@ -141,29 +141,29 @@
   <line x1="123" y1="159" x2="123" y2="272"
         stroke="var(--muted)" stroke-width="1" stroke-dasharray="4,5"/>
 
-  <!-- baseline node + advisory badge -->
+  <!-- planner draft cache node + draft badge -->
   <rect x="28" y="274" width="190" height="52" rx="8" class="nf"/>
-  <text x="108" y="300" class="tl">baseline</text>
+  <text x="103" y="300" class="tl">draft caches</text>
   <rect x="147" y="291" width="54" height="16" rx="4" class="ba"/>
-  <text x="174" y="299" class="bt">advisory</text>
+  <text x="174" y="299" class="bt">drafts</text>
 
   <!-- elaborator_finished label inside plan_start -->
   <text x="123" y="370" class="sig">elaborator_finished</text>
 
-  <!-- ── planner → architect merge ── -->
+  <!-- ── planner → architect ── -->
   <path d="M232,132 C252,132 258,240 264,240" class="e ea"/>
-  <text x="250" y="161" class="sig" transform="rotate(-44 250 161)">planner_finished</text>
+  <text x="250" y="161" class="sig" transform="rotate(-44 250 161)">planner_draft_finished</text>
 
-  <!-- ── baseline → architect merge ── -->
+  <!-- ── draft caches → architect ── -->
   <path d="M232,300 C252,300 258,246 264,244" class="e"/>
 
   <!-- ════════════════════════════════════════════════════════
-       ZONE 2 — architect merge
+       ZONE 2 — architect
   ════════════════════════════════════════════════════════ -->
   <rect x="266" y="214" width="152" height="52" rx="8" class="ng"/>
-  <text x="342" y="240" class="tl">architect merge</text>
+  <text x="342" y="240" class="tl">architect</text>
 
-  <!-- ── architect merge → waves ── -->
+  <!-- ── architect → waves ── -->
   <line x1="420" y1="240" x2="444" y2="240" class="e ea"/>
 
   <!-- ════════════════════════════════════════════════════════

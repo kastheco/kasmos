@@ -42,16 +42,16 @@ Before wave 1 starts, kasmos spawns an **architect** agent (`elaborating` profil
 
 If an architect pass already ran for this plan before (e.g. after a TUI restart), kasmos detects the existing instance and skips re-elaboration, jumping straight to wave 1.
 
-By default, planning starts the planner and an advisory `architect-baseline` session together. Plan start clears any stale `.kasmos/cache/<planSlug>-architect-baseline.json`, starts the planner, and starts the baseline session concurrently. The baseline session writes only the cache artifact and emits no lifecycle signals. After the planner writes the draft and emits `planner_finished`, the final architect pass reads the planner draft plus a valid cached baseline, or falls back to its normal inline self-baseline if the cache is missing or invalid. Coder waves then proceed normally.
+Planning can run one planner or a configured planner list. With `[orchestration].planners` unset or empty, kasmos uses the legacy path: one planner writes the task store and emits `planner_finished`. With an explicit list, plan start clears stale `.kasmos/cache/<planSlug>-planner-<profile>.md` files, starts one draft-mode planner per profile, and lets the first listed planner update the task store as a preview.
 
-To restore planner-first behavior — where the planner finishes and emits `planner_finished` before the architect pass starts — set:
+To run multiple planners, set:
 
 ```toml
 [orchestration]
-parallel_planner_architect = false
+planners = ["planner", "planner_x"]
 ```
 
-The baseline cache is advisory, safe to delete, and not task-store state. Existing signal names do not change. If the planner draft is small enough for blueprint skip, kasmos may skip the final architect pass, leaving a produced baseline cache unused.
+Each draft-mode planner emits gateway-only `planner_draft_finished` with `{"planner_id":"<profile>"}`. The processor aggregates those draft signals and internally advances planning when all expected profiles are done. The final architect pass reads the task-store plan plus planner draft caches, derives its own baseline inline, writes the final task-store plan, and records consumed drafts in `decision_audit.planner_drafts`. If the planner draft is small enough for blueprint skip, kasmos may skip the final architect pass, leaving produced draft caches unused.
 
 ### skipping elaboration
 

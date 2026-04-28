@@ -288,6 +288,15 @@ if any check fails: fix inline, then re-run these checks.
 
 ### 1. store and signal the plan
 
+first identify the planner mode from the prompt:
+
+- **legacy mode:** the prompt does not provide all three draft fields: `profile`, `primary`, and `cache_path`.
+- **draft mode:** the prompt provides `profile`, `primary`, and `cache_path`.
+
+**legacy mode:** use MCP `task_update_content` (filename: "<plan-file>", content: "<full plan markdown>", project: "$KASMOS_PROJECT") to store the finished plan, then use MCP `signal_create` (signal_type: "planner-finished", plan_file: "<plan-file>", project: "$KASMOS_PROJECT") after the update succeeds. only if MCP is unavailable in your harness, fall back to `kas signal emit planner_finished <plan-file>`.
+
+**draft mode:** write the full plan markdown to the exact `cache_path` from the prompt. if `primary` is true, also use MCP `task_update_content` (filename: "<plan-file>", content: "<full plan markdown>", project: "$KASMOS_PROJECT") so the task store has a preview. if `primary` is false, do not write the task store. after the cache write succeeds, use MCP `signal_create` (signal_type: "planner-draft-finished", plan_file: "<plan-file>", project: "$KASMOS_PROJECT", payload: "{\"planner_id\":\"<profile>\"}") to notify completion. only if MCP is unavailable in your harness, fall back to `kas signal emit planner_draft_finished <plan-file> '{"planner_id":"<profile>"}'`.
+
 **managed mode:** use MCP `task_update_content` (filename: "<plan-file>", content: "<full plan markdown>", project: "$KASMOS_PROJECT") to store the finished plan.
 
 then use MCP `signal_create` (signal_type: "planner-finished", plan_file: "<plan-file>", project: "$KASMOS_PROJECT") after the update succeeds.
@@ -309,6 +318,15 @@ check your execution context:
 ### managed mode (`KASMOS_MANAGED=1`)
 
 kasmos is orchestrating this session. store the plan content and signal completion.
+
+if the prompt provides `profile`, `primary`, and `cache_path`, run in **draft mode**:
+
+1. write the full plan markdown to the exact `cache_path`.
+2. if `primary` is true, use MCP `task_update_content` (filename: "<plan-file>", content: "<full plan markdown>", project: "$KASMOS_PROJECT") to persist the preview plan. if `primary` is false, skip task-store writes.
+3. use MCP `signal_create` (signal_type: "planner-draft-finished", plan_file: "<plan-file>", project: "$KASMOS_PROJECT", payload: "{\"planner_id\":\"<profile>\"}") to notify completion.
+4. only if MCP is unavailable in your harness, fall back to `kas signal emit planner_draft_finished <plan-file> '{"planner_id":"<profile>"}'`.
+
+if the prompt does not provide all three draft fields, run in **legacy mode**:
 
 use MCP `task_update_content` (filename: "<plan-file>", content: "<full plan markdown>", project: "$KASMOS_PROJECT") to persist the finished plan.
 then use MCP `signal_create` (signal_type: "planner-finished", plan_file: "<plan-file>", project: "$KASMOS_PROJECT") to notify completion.

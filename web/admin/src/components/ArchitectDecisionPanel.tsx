@@ -133,7 +133,7 @@ function DifferencesTable({
             <tr>
               <th>area</th>
               <th>planner proposal</th>
-              <th>architect baseline</th>
+              <th>baseline proposal</th>
               <th>final decision</th>
               <th>rationale</th>
               <th>scope</th>
@@ -155,7 +155,7 @@ function DifferencesTable({
                   )}
                 </td>
                 <td>{diff.planner_proposal || "-"}</td>
-                <td>{diff.architect_baseline || "-"}</td>
+                <td>{diff.baseline_proposal || "-"}</td>
                 <td>{diff.final_decision}</td>
                 <td>{diff.rationale || "-"}</td>
                 <td>{diff.scope || "-"}</td>

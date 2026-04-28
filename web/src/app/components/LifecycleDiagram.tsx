@@ -10,7 +10,7 @@ export default function LifecycleDiagram({ className }: LifecycleDiagramProps) {
       <img
         className={styles.image}
         src="/kasmos-lifecycle-flow.svg"
-        alt="kasmos lifecycle: planner and architect baseline run in parallel, then architect merge, coder waves, review and fix loop, readiness, and done."
+        alt="kasmos lifecycle: optional planner drafts feed the architect, then coder waves, review and fix loop, readiness, and done."
       />
     </figure>
   );

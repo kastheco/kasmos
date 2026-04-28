@@ -13,6 +13,69 @@ func repoRoot(elem ...string) string {
 	return filepath.Join(append([]string{"..", "..", ".."}, elem...)...)
 }
 
+func TestPlannerArchitectGuidanceUsesPlannerDraftCaches(t *testing.T) {
+	guidanceFiles := []string{
+		repoRoot(".agents", "skills", "kasmos-planner", "SKILL.md"),
+		repoRoot(".agents", "skills", "kasmos-architect", "SKILL.md"),
+		repoRoot(".claude", "agents", "planner.md"),
+		repoRoot(".opencode", "agents", "planner.md"),
+		filepath.Join("templates", "skills", "kasmos-planner", "SKILL.md"),
+		filepath.Join("templates", "skills", "kasmos-architect", "SKILL.md"),
+		filepath.Join("templates", "claude", "agents", "planner.md"),
+		filepath.Join("templates", "opencode", "agents", "planner.md"),
+	}
+
+	forbidden := []string{
+		"architect-baseline",
+		"<plan-file>-architect-baseline.json",
+		"parallel_planner_architect",
+	}
+
+	for _, path := range guidanceFiles {
+		t.Run(path, func(t *testing.T) {
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatalf("read guidance: %v", err)
+			}
+			text := string(data)
+			for _, needle := range forbidden {
+				if strings.Contains(text, needle) {
+					t.Errorf("%s contains removed guidance: %q", path, needle)
+				}
+			}
+		})
+	}
+
+	plannerFiles := []string{
+		repoRoot(".agents", "skills", "kasmos-planner", "SKILL.md"),
+		repoRoot(".claude", "agents", "planner.md"),
+		repoRoot(".opencode", "agents", "planner.md"),
+		filepath.Join("templates", "skills", "kasmos-planner", "SKILL.md"),
+		filepath.Join("templates", "claude", "agents", "planner.md"),
+		filepath.Join("templates", "opencode", "agents", "planner.md"),
+	}
+
+	requiredPlannerDraftText := []string{
+		"planner_draft_finished",
+		"planner_id",
+	}
+
+	for _, path := range plannerFiles {
+		t.Run(path+" planner draft", func(t *testing.T) {
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatalf("read planner guidance: %v", err)
+			}
+			text := string(data)
+			for _, needle := range requiredPlannerDraftText {
+				if !strings.Contains(text, needle) {
+					t.Errorf("%s missing planner draft guidance: %q", path, needle)
+				}
+			}
+		})
+	}
+}
+
 func TestCoderPromptParallelSection(t *testing.T) {
 	coderFiles := []string{
 		repoRoot(".opencode", "agents", "coder.md"),

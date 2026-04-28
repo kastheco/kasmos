@@ -163,7 +163,7 @@ func TestSaveAndLoadArchitectMeta(t *testing.T) {
 				Area:              "metadata cache",
 				Scope:             "orchestration",
 				PlannerProposal:   "add an external planner snapshot",
-				ArchitectBaseline: "reuse existing architect cache",
+				BaselineProposal:  "reuse existing architect cache",
 				FinalDecision:     "add an optional decision_audit object",
 				Rationale:         "keeps cache ownership in one artifact",
 				RelatedFiles:      []string{"orchestration/meta.go", "orchestration/cache.go"},

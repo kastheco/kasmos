@@ -18,7 +18,8 @@ Signals describe lifecycle progress only. Permission and resource-control behavi
 
 | signal type | payload | description |
 |-------------|---------|-------------|
-| `planner_finished` | optional JSON or text | planner agent finished writing the plan |
+| `planner_finished` | optional JSON or text | legacy/manual planner completion; in multi-planner mode the processor applies this transition internally after all drafts finish |
+| `planner_draft_finished` | `{"planner_id": "profile"}` | gateway-only signal emitted by each draft-mode planner listed in `[orchestration].planners` |
 | `implement_finished` | optional JSON or text | all coder agents finished implementation |
 | `review_approved` | optional JSON or text | reviewer approved the implementation; triggers `reviewing → verifying` when `auto_readiness_review = true`, otherwise `reviewing → done` |
 | `review_changes_requested` | optional JSON or text | reviewer requested changes |
@@ -31,11 +32,12 @@ Signals describe lifecycle progress only. Permission and resource-control behavi
 
 > **Deprecated aliases:** `readiness_approved` → `verify_approved` (aliases: `readiness-approved`, `master_approved`); `readiness_changes_requested` → `verify_failed` (aliases: `readiness-changes`, `readiness-changes-requested`). These are accepted and canonicalized at ingress — use `verify_approved` / `verify_failed` in new automation.
 
-> **Parallel architect baseline:** the architect baseline is default-on and does not add a signal type. The advisory `architect baseline` runtime session writes only `.kasmos/cache/<plan-file>-architect-baseline.json`; the planner still emits `planner_finished`, and the final architect pass still completes with `elaborator_finished`. Set `[orchestration].parallel_planner_architect = false` to disable.
+> **Planner drafts:** `planner_draft_finished` is not an FSM event and has no filesystem sentinel form. It is a gateway-only coordination signal for multi-planner mode. The processor aggregates one signal per configured planner profile and internally advances planning when all expected drafts are done. Keep `planner_finished` for legacy single-planner runs and manual recovery.
 
 ### payload rules
 
 - **FSM signals** (`planner_finished`, `implement_finished`, `review_approved`, `review_changes_requested`, `verify_approved`, `verify_failed`): payload is optional. If provided and valid JSON, it is stored verbatim. Plain text is wrapped as `{"body": "..."}`.
+- **`planner_draft_finished`**: payload is **required** and must be JSON containing a non-empty string field `planner_id` that matches the configured planner profile name.
 - **`implement_task_finished`**: payload is **required** and must be JSON containing integer fields `wave_number` and `task_number`.
 - **`implement_wave`**: payload is **required** and must be JSON containing an integer `wave_number`.
 - **`elaborator_finished`** / **`architect_finished`**: payload must be **empty**.
@@ -53,6 +55,10 @@ kas signal emit <signal-type> <plan-file> [--payload <json>]
 ```sh
 # signal that planning finished
 kas signal emit planner_finished my-feature
+
+# signal that a draft-mode planner finished
+kas signal emit planner_draft_finished my-feature \
+  --payload '{"planner_id": "planner_x"}'
 
 # signal that a single task in a wave finished
 kas signal emit implement_task_finished my-feature \
@@ -72,7 +78,7 @@ kas signal emit architect_finished my-feature
 
 | flag | description |
 |------|-------------|
-| `--payload` | optional JSON payload (required for `implement_task_finished` and `implement_wave`) |
+| `--payload` | optional JSON payload (required for `planner_draft_finished`, `implement_task_finished`, and `implement_wave`) |
 
 The signal is inserted as a `pending` row in the SQLite gateway database (`signals` table). The daemon picks it up and applies the corresponding FSM transition. `kas signal process` is only for the filesystem compatibility path under `.kasmos/signals/`.
 

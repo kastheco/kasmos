@@ -30,13 +30,14 @@ Never modify task state directly — use MCP task tools by default. `kas task ..
 Kasmos creates the task entry before it spawns you. Your job is to replace that
 entry's placeholder content with the finished plan.
 
-Storage steps (do both, never skip step 2):
+Storage steps:
 1. Write the full plan content, including required `## Wave N` sections.
-2. Store the plan with MCP `task_update_content` (filename: "<plan-file>", project: "$KASMOS_PROJECT"). Use `kas task update-content <plan-file>` only if MCP is unavailable.
+2. If the prompt does not provide all draft fields (`profile`, `primary`, and `cache_path`), store the plan with MCP `task_update_content` (filename: "<plan-file>", project: "$KASMOS_PROJECT"). Use `kas task update-content <plan-file>` only if MCP is unavailable.
+3. If the prompt provides `profile`, `primary`, and `cache_path`, write the plan to the exact `cache_path`. Store to the task store only when `primary` is true.
 
 **If `KASMOS_MANAGED=1` (running inside kasmos):**
-- First store the plan with MCP `task_update_content` (filename: "<plan-file>", project: "$KASMOS_PROJECT"). Use `kas task update-content <plan-file>` only if MCP is unavailable.
-- Then signal completion with MCP `signal_create` (signal_type: "planner-finished", plan_file: "<plan-file>", project: "$KASMOS_PROJECT"). Use `kas signal emit planner_finished <plan-file>` only if MCP is unavailable.
+- Legacy mode: when the prompt does not provide all draft fields (`profile`, `primary`, and `cache_path`), first store the plan with MCP `task_update_content` (filename: "<plan-file>", project: "$KASMOS_PROJECT"). Use `kas task update-content <plan-file>` only if MCP is unavailable. Then signal completion with MCP `signal_create` (signal_type: "planner-finished", plan_file: "<plan-file>", project: "$KASMOS_PROJECT"). Use `kas signal emit planner_finished <plan-file>` only if MCP is unavailable.
+- Draft mode: when the prompt provides `profile`, `primary`, and `cache_path`, write the full plan to `cache_path`. If `primary` is true, also store the plan with MCP `task_update_content`; if `primary` is false, do not write task-store content. Then signal completion with MCP `signal_create` (signal_type: "planner-draft-finished", plan_file: "<plan-file>", project: "$KASMOS_PROJECT", payload: "{\"planner_id\":\"<profile>\"}"). Use `kas signal emit planner_draft_finished <plan-file> '{"planner_id":"<profile>"}'` only if MCP is unavailable.
 - **Do not modify task state directly.**
 
 **If `KASMOS_MANAGED` is unset (raw terminal):**

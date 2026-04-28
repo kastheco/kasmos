@@ -9,7 +9,7 @@ import lifecycleDiagram from "@site/static/img/kasmos-lifecycle-flow.svg";
 <figure className="kasmos-lifecycle-diagram">
   <img
     src={lifecycleDiagram}
-    alt="kasmos lifecycle: planner and architect baseline run in parallel, then architect merge, coder waves, review and fix loop, readiness, and done."
+    alt="kasmos lifecycle: optional planner drafts feed the architect, then coder waves, review and fix loop, readiness, and done."
   />
 </figure>
 
@@ -75,20 +75,16 @@ Before wave 1 begins, kasmos optionally runs an **architect** agent to decompose
 
 When elaboration completes, `UpdatePlan()` replaces the plan and resets the orchestrator to `WaveStateIdle` so waves can begin.
 
-By default, `[orchestration].parallel_planner_architect` is `true` and kasmos starts an advisory baseline beside the planner:
+Planning can either use the legacy single-planner path or a configured planner list:
 
-1. plan start clears stale `.kasmos/cache/<planSlug>-architect-baseline.json`
-2. the planner starts
-3. an `architect-baseline` runtime session starts separately
-4. the planner writes the draft and emits `planner-finished`
-5. the final architect reads the planner draft plus a valid cached baseline, or falls back inline
+1. when `[orchestration].planners` is unset or empty, the planner writes the task store and emits `planner_finished`
+2. when `[orchestration].planners = ["planner", "planner_x"]` is set, plan start clears stale `.kasmos/cache/<planSlug>-planner-<profile>.md` caches, spawns each listed profile in draft mode, and lets the first listed planner update the task store as a preview
+3. draft-mode planners emit gateway-only `planner_draft_finished` signals with `{"planner_id":"<profile>"}` payloads
+4. the processor aggregates those draft signals and internally advances planning once every expected profile has reported
+5. the final architect reads the task-store plan plus planner draft caches, derives its own baseline inline, writes the final task-store plan, and records consumed drafts in `decision_audit.planner_drafts`
 6. coder waves proceed normally
 
-To restore planner-first behavior — where the planner finishes before the architect pass starts — set `[orchestration].parallel_planner_architect = false`. The architect pass then derives its own baseline inline while reading the planner draft.
-
-The baseline cache is safe to delete and is not task-store state. The baseline session writes the cache artifact only; it does not edit task content, update lifecycle status, or emit signals. Signal names are unchanged. Blueprint skip can still skip the final architect pass for small planner drafts, so a baseline cache may be produced but unused.
-
-The final architect metadata is written to `.kasmos/cache/<task>-architect.json`. That file may include an optional, schema-versioned `decision_audit` object with the architect's baseline-vs-planner comparison and final decision. The parallel `.kasmos/cache/<task>-architect-baseline.json` file is advisory input only, not the final audit artifact. hq shows an `architect decisions` tab on task detail pages when audit metadata is available.
+The final architect metadata is written to `.kasmos/cache/<task>-architect.json`. That file may include an optional, schema-versioned `decision_audit` object with the planner-draft comparison and final decision. hq shows an `architect decisions` tab on task detail pages when audit metadata is available.
 
 ## wave confirmation
 

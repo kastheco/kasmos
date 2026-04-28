@@ -110,18 +110,19 @@ This baseline is private working context. Do not preserve the planner's file lis
 
 ---
 
-## parallel baseline mode
+## planner draft cache mode
 
-Parallel baseline mode is default-enabled unless the project config sets `[orchestration].parallel_planner_architect = false`; when active, another architect-baseline session may run alongside the planner and write `.kasmos/cache/<plan-file>-architect-baseline.json`.
+When the plan was produced by multiple planners, read every draft cache matching `.kasmos/cache/<plan-file>-planner-*.md` before rewriting the stored plan.
 
-That cache is advisory input only:
-- first read the planner draft with MCP `task_show` as usual
-- then read the cache if it exists
-- validate `plan_file`, `project`, `description_hash`, `schema_version`, and non-empty `baseline_markdown`
-- merge the planner draft with the cached baseline when it is valid
-- if the cache is missing, corrupt, stale, or incomplete, continue with your own inline independent solution baseline and mention the fallback in the plan summary
+Those caches are advisory input only:
+- first read the preview plan with MCP `task_show` as usual
+- then read all matching planner draft caches
+- identify each draft by the profile suffix in the cache path
+- compare all drafts against your own inline independent solution baseline
+- merge the strongest pieces into one consolidated task plan
+- if caches are missing, empty, stale, or inconsistent, continue from the preview plan and your inline baseline, and record the fallback in `decision_audit`
 
-The final architect pass still remains the only task content writer. You must still create your own independent solution baseline before judging the planner draft, even when a cached baseline is present. `.kasmos/cache/<plan-file>-architect-baseline.json` is advisory input and must not be treated as final implementation state.
+The final architect pass remains the only final task content writer. Keep the role as architect: you consolidate planner drafts, enrich tasks for coders, write the final plan to the task store, and write `.kasmos/cache/<plan-file>-architect.json` with a decision audit listing the consumed drafts.
 
 ---
 
@@ -168,6 +169,9 @@ For each task body:
 - avoid exploratory steps such as "inspect more files" or "explore the codebase"
 - include exact paths, function names, signatures, commands, and acceptance checks relevant to that task
 - split large logic into smaller `**Step**` items when needed
+- make verification expectations identify the invariant, user contract, or bug family they protect; prefer extending an existing invariant/workflow suite before creating another narrow regression file
+
+If a task's tests would duplicate old symptoms instead of covering the root behavior contract, merge or reshape the task until verification is aimed at the contract.
 
 ### metadata contract (required)
 
@@ -186,7 +190,7 @@ Each task must include a JSON contract section like:
       "estimated_tokens": 6000,
       "files_to_modify": [".agents/skills/kasmos-planner/SKILL.md"],
       "dependency_task_numbers": [],
-      "verify_checks": ["skill mirrors match", "signal name unchanged"]
+      "verify_checks": ["skill mirrors match", "signal name unchanged", "invariant or behavior contract coverage named"]
     }
   ]
 }
@@ -203,10 +207,11 @@ JSON writing rules:
 The same `.kasmos/cache/<plan-file>-architect.json` metadata file must include `decision_audit` alongside the existing wave/task metadata. Do not create a separate raw planner snapshot file.
 
 Record:
-- `baseline_source`: one of `parallel_cache`, `inline`, `absent`, or `stale`
+- `baseline_source`: one of `planner_drafts`, `inline`, `absent`, or `stale`
 - `summary`: concise overall audit summary
 - `planner_summary`: short summary of the planner's proposed path
 - `baseline_summary`: short summary of your independent architect baseline
+- `consumed_drafts`: list the planner draft cache paths and profile ids used for the final decision
 - `differences`: list each meaningful file, wave, API, UI, docs, or verification change
 - `final_decision`: one sentence stating the implementation path coders should follow
 
@@ -221,10 +226,16 @@ Prefer this shape:
     "plan_file": "<plan-file>",
     "project": "<project>",
     "created_at": "<rfc3339>",
-    "baseline_source": "parallel_cache",
+    "baseline_source": "planner_drafts",
     "summary": "...",
     "planner_summary": "...",
     "baseline_summary": "...",
+    "consumed_drafts": [
+      {
+        "profile": "<profile>",
+        "cache_path": ".kasmos/cache/<plan-file>-planner-<profile>.md"
+      }
+    ],
     "final_decision": "...",
     "differences": []
   }
@@ -271,10 +282,16 @@ cat > .kasmos/cache/<plan-file>-architect.json <<'EOF'
     "plan_file": "<plan-file>",
     "project": "<project>",
     "created_at": "<rfc3339>",
-    "baseline_source": "parallel_cache",
+    "baseline_source": "planner_drafts",
     "summary": "...",
     "planner_summary": "...",
     "baseline_summary": "...",
+    "consumed_drafts": [
+      {
+        "profile": "<profile>",
+        "cache_path": ".kasmos/cache/<plan-file>-planner-<profile>.md"
+      }
+    ],
     "final_decision": "...",
     "differences": []
   }
@@ -309,6 +326,6 @@ stop.
 | modifying planner structural blocks | leave `## Wave`, `### Task`, `**Files:**` unchanged |
 | creating import dependency between same-wave tasks | split or move tasks to a later wave |
 | skipping metadata JSON output | generate `.kasmos/cache/<plan-file>-architect.json` with `decision_audit` in the same run |
-| treating `.kasmos/cache/<plan-file>-architect-baseline.json` as final state | use it only as advisory input and classify stale/missing/corrupt caches correctly |
+| ignoring planner draft caches | read `.kasmos/cache/<plan-file>-planner-*.md` caches and list consumed drafts in `decision_audit` |
 | writing signal before round-trip check | run MCP `task_show` (filename: "<plan-file>", project: "$KASMOS_PROJECT") first |
 | writing the compatibility `elaborator-finished` signal with wrong filename | use exact plan file token in filename |

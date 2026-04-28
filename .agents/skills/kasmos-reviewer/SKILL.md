@@ -125,8 +125,8 @@ verdict: approve|changes required
 - [ ] Error handling — errors returned, not silently dropped; no bare `panic` in library code
 - [ ] DRY — no copy-paste logic that should be shared; helper functions extracted where useful
 - [ ] Edge cases — nil inputs, empty slices, zero values, concurrent access if applicable
-- [ ] Test coverage — new logic has tests; tests actually exercise the code, not just call it
-- [ ] Test quality — table-driven where appropriate, no test helpers that hide assertions
+- [ ] Test coverage — new logic has tests when behavior risk warrants it; tests protect a named contract, invariant, or bug family rather than just calling code
+- [ ] Test quality — table-driven where appropriate, no test helpers that hide assertions, and no scattered one-off regressions where an existing invariant/workflow suite should own the behavior
 - [ ] Production readiness — no debug prints, no TODO comments left in critical paths
 - [ ] Naming — exported names are clear, unexported names are concise; no abbreviation soup
 - [ ] Imports — no unused imports, no import cycles introduced
@@ -182,7 +182,7 @@ When self-fixing, commit with `fix: <description> (reviewer self-fix)` before si
 ### Kick to coder
 
 - Any logic error or incorrect algorithm
-- Missing tests or tests that don't cover the stated case
+- Missing contract/invariant coverage, or tests that only pin incidental implementation details without covering the stated behavior
 - Architectural concerns (wrong abstraction, wrong package boundary)
 - Debugging work (flaky test, subtle race condition, unclear root cause)
 - Anything requiring more than ~10 lines of new code

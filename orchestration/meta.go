@@ -46,7 +46,7 @@ type ArchitectDecisionDifference struct {
 	Area              string   `json:"area"`
 	Scope             string   `json:"scope,omitempty"`
 	PlannerProposal   string   `json:"planner_proposal,omitempty"`
-	ArchitectBaseline string   `json:"architect_baseline,omitempty"`
+	BaselineProposal  string   `json:"baseline_proposal,omitempty"`
 	FinalDecision     string   `json:"final_decision"`
 	Rationale         string   `json:"rationale,omitempty"`
 	RelatedFiles      []string `json:"related_files,omitempty"`

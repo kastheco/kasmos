@@ -89,7 +89,7 @@ After the wizard completes, kasmos writes:
 
 Skill sync runs after the wizard: `~/.agents/skills/` (personal) and `.agents/skills/` (project) are synced into per-harness directories (`.claude/skills/`, `.opencode/skills/`, `.codex/skills/`) as symlinks. Enforcement hooks are installed for each selected harness.
 
-The project `.agents/skills/` scaffold is also where kasmos ships role-specific operating rules. For example, the architect skill documents parallel baseline mode so final architect passes know how to merge a valid `.kasmos/cache/<plan-file>-architect-baseline.json` artifact while preserving the normal task-store writer and signal flow. The same architect skill requires the final `.kasmos/cache/<plan-file>-architect.json` metadata to include `decision_audit` fields for hq display.
+The project `.agents/skills/` scaffold is also where kasmos ships role-specific operating rules. For example, the planner and architect skills document optional `[orchestration].planners` fan-out, draft-mode `planner_draft_finished` signals, planner draft cache consumption, and final `.kasmos/cache/<plan-file>-architect.json` metadata with `decision_audit.planner_drafts` fields for hq display.
 
 ## config.toml schema
 

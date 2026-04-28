@@ -120,6 +120,7 @@ Specifically check these cross-cutting concerns before signaling:
 - [ ] Config keys are consistent: no mix of `readiness_review` and `master_review` in new call sites; `master_review` is only a backward-compatible alias
 - [ ] No duplicate or conflicting phase labels across orchestration code and UI labels
 - [ ] Test coverage for new gateway signals present in signal_test.go or equivalent
+- [ ] Cross-surface behavior has invariant/workflow evidence, not only narrow unit coverage or scattered one-off regressions
 
 ## Self-Fix Protocol
 
@@ -211,6 +212,7 @@ Do not produce any other final status wording. Do not emit `review_approved` or 
 - [ ] Changed files align with assigned task scope and scoped plan boundaries.
 - [ ] Diff shows no silent behavior changes outside explicit criteria.
 - [ ] Regression-sensitive paths have explicit verification coverage.
+- [ ] Test evidence protects the relevant invariant or user contract, not just the implementation shape.
 - [ ] Security and integration checks are present for boundaries in scope.
 - [ ] Performance-sensitive code has no newly introduced avoidable complexity.
 - [ ] Verification evidence includes at least one build and one test command result.
