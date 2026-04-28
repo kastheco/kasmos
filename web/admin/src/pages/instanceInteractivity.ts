@@ -283,7 +283,10 @@ export function shouldClearSuspendedCaptureError(
   previousStatus: InstanceEntry["status"] | undefined,
   currentStatus: InstanceEntry["status"] | undefined,
 ): boolean {
-  if (!shouldSuspendTerminalPolling(error)) return false;
+  const kind = captureErrorKind(error);
+  if (kind !== "session-ended" && kind !== "paused") return false;
   if (previousStatus === undefined || previousStatus === currentStatus) return false;
-  return currentStatus === "running" || currentStatus === "ready";
+  if (currentStatus !== "running" && currentStatus !== "ready") return false;
+  if (kind === "paused") return previousStatus === "paused";
+  return previousStatus === "loading";
 }

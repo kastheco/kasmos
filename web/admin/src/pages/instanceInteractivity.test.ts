@@ -351,7 +351,16 @@ assertTrue(
     "loading",
     "ready",
   ),
-  "session-ended capture error clears when instance returns ready",
+  "session-ended capture error clears when restarted instance returns ready",
+);
+
+assertFalse(
+  shouldClearSuspendedCaptureError(
+    { status: 410, message: "tmux session not found" },
+    "running",
+    "ready",
+  ),
+  "session-ended capture error stays on running-to-ready jitter",
 );
 
 assertFalse(
@@ -379,6 +388,15 @@ assertFalse(
     "paused",
   ),
   "paused capture error stays while instance is paused",
+);
+
+assertFalse(
+  shouldClearSuspendedCaptureError(
+    { status: 409, message: "cannot capture pane from a paused instance" },
+    "loading",
+    "ready",
+  ),
+  "paused capture error only clears after paused status",
 );
 
 assertFalse(
