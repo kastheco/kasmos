@@ -72,8 +72,8 @@ setting both limits to `0` disables all eviction. the renderer will grow without
 
 retention diagnostics are visible in two places:
 
-- **info pane (TUI):** with an sdk instance selected, the info pane shows current byte usage, line count, turn count, and cumulative eviction counters (`evicted_turns`, `evicted_lines`, `evicted_bytes`, `truncated_rows`).
-- **web admin structured preview:** the preview panel header shows the evicted-turn count when non-zero as `(N evicted)`.
+- **info pane (TUI):** with an sdk instance selected, the info pane shows a `transcript` row with byte usage and line count. when evicted turns or truncated rows are non-zero a suffix is appended, e.g. `1.2M · 348 lines (7 evicted)` or `1.2M · 348 lines (7 evicted, 2 truncated)`.
+- **web admin structured preview:** a compact transcript status line appears above the turn timeline when retention is active, e.g. `transcript 1.2M · 348 lines · 7 evicted`. the line is hidden when bytes, evictions, and truncations are all zero.
 
 the underlying stats are the `RendererStats` snapshot: `bytes`, `lines`, `turns`, `max_bytes`, `max_turns`, `evicted_turns`, `evicted_lines`, `evicted_bytes`, `truncated_rows`.
 

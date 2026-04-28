@@ -130,9 +130,12 @@ type Instance struct {
 	// SDKTranscriptLimitsSet is true when SDKTranscriptMaxBytes/MaxTurns were explicitly configured.
 	// Guards against forwarding zero-value (unlimited) limits from call sites that never set them.
 	SDKTranscriptLimitsSet bool
-	// SDKTranscriptMaxBytes is the byte cap forwarded to the SDK renderer (0 = renderer default).
+	// SDKTranscriptMaxBytes is the byte cap forwarded to the SDK renderer (0 = no byte limit / unlimited).
+	// A zero value here only takes effect when SDKTranscriptLimitsSet is true; otherwise
+	// SDKTranscriptLimitsSet=false leaves the renderer at its compiled defaults.
 	SDKTranscriptMaxBytes int64
-	// SDKTranscriptMaxTurns is the turn cap forwarded to the SDK renderer (0 = renderer default).
+	// SDKTranscriptMaxTurns is the turn cap forwarded to the SDK renderer (0 = no turn limit / unlimited).
+	// Same SDKTranscriptLimitsSet guard applies.
 	SDKTranscriptMaxTurns int64
 	// RendererStats holds the last collected renderer stats for this instance (cached, not persisted).
 	RendererStats sdk.RendererStats

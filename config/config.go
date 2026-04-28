@@ -627,6 +627,14 @@ func migrateJSONToTOML(configDir string) (*Config, bool) {
 		}
 	}
 	applyConfigDefaults(&cfg)
+	// Legacy JSON configs predate the [sdk] section; apply SDK defaults so the
+	// migrated TOML does not write 0/0 (which would disable retention).
+	if cfg.SDK.TranscriptMaxBytes == 0 {
+		cfg.SDK.TranscriptMaxBytes = defaultSDKTranscriptMaxBytes
+	}
+	if cfg.SDK.TranscriptMaxTurns == 0 {
+		cfg.SDK.TranscriptMaxTurns = defaultSDKTranscriptMaxTurns
+	}
 
 	tomlPath := filepath.Join(configDir, TOMLConfigFileName)
 	if err := SaveTOMLConfigTo(configToTOML(&cfg), tomlPath); err != nil {
