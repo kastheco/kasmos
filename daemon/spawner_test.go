@@ -84,6 +84,37 @@ func TestTmuxSpawner_RestoreTrackedInstance_KeysWaveTasksByWaveAndTask(t *testin
 	assert.Equal(t, "/tmp/repo:plan.md:coder:w2:t3", running[0].Key)
 }
 
+func TestTmuxSpawner_RestoreTrackedInstance_KeysPlannerDraftsByProfile(t *testing.T) {
+	s := NewTmuxSpawner()
+	s.restoreInstance = func(data session.InstanceData) (*session.Instance, error) {
+		return &session.Instance{
+			Title:          data.Title,
+			Path:           data.Path,
+			TaskFile:       data.TaskFile,
+			AgentType:      data.AgentType,
+			PlannerProfile: data.PlannerProfile,
+		}, nil
+	}
+
+	for _, profile := range []string{"planner-a", "planner-b"} {
+		err := s.RestoreTrackedInstance("/tmp/repo", "proj", "plan.md", session.AgentTypePlanner, session.InstanceData{
+			Title:          "plan-plan-" + profile,
+			Path:           "/tmp/repo",
+			TaskFile:       "plan.md",
+			AgentType:      session.AgentTypePlanner,
+			PlannerProfile: profile,
+		})
+		require.NoError(t, err)
+	}
+
+	running := s.RunningInstances()
+	require.Len(t, running, 2)
+	assert.ElementsMatch(t, []string{
+		"/tmp/repo:plan.md:planner:planner-a",
+		"/tmp/repo:plan.md:planner:planner-b",
+	}, []string{running[0].Key, running[1].Key})
+}
+
 func assertSpawnerKeyUntracked(t *testing.T, s *TmuxSpawner, key string) {
 	t.Helper()
 	s.mu.Lock()

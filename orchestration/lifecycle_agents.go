@@ -24,15 +24,16 @@ type LifecycleAgentSpec struct {
 // RecoveryCandidate describes a single phase-valid session title that may be
 // re-adopted after restart or manual orphan discovery.
 type RecoveryCandidate struct {
-	TaskFile      string
-	Title         string
-	AgentType     string
-	Branch        string
-	ReviewCycle   int
-	WaveNumber    int
-	TaskNumber    int
-	WaveTaskIndex int
-	WaveTaskCount int
+	TaskFile       string
+	Title          string
+	AgentType      string
+	PlannerProfile string
+	Branch         string
+	ReviewCycle    int
+	WaveNumber     int
+	TaskNumber     int
+	WaveTaskIndex  int
+	WaveTaskCount  int
 }
 
 // BuildLifecycleAgentTitle returns the canonical title for a lifecycle agent.
@@ -296,8 +297,13 @@ func MatchRecoveryCandidateByTitle(task taskstore.TaskEntry, planContent, title 
 	// planner drafts are handled here via title inference.
 	if task.Status == taskstore.StatusPlanning {
 		planName := taskstate.DisplayName(task.Filename)
-		if planName != "" && strings.HasPrefix(title, planName+"-plan-") {
-			return RecoveryCandidate{TaskFile: task.Filename, Title: title, AgentType: session.AgentTypePlanner}, true
+		prefix := planName + "-plan-"
+		if planName != "" && strings.HasPrefix(title, prefix) {
+			profile := strings.TrimPrefix(title, prefix)
+			if profile == "" {
+				return RecoveryCandidate{}, false
+			}
+			return RecoveryCandidate{TaskFile: task.Filename, Title: title, AgentType: session.AgentTypePlanner, PlannerProfile: profile}, true
 		}
 		return RecoveryCandidate{}, false
 	}

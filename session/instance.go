@@ -417,6 +417,8 @@ type InstanceOptions struct {
 	TaskFile string
 	// AgentType is the role of this instance within a plan: planner, coder, reviewer, fixer, architect, master, or empty.
 	AgentType string
+	// PlannerProfile identifies the named [agents.<profile>] used by planner instances.
+	PlannerProfile string
 	// TaskNumber is the 1-indexed task number within a plan wave (0 = not a wave task).
 	TaskNumber int
 	// WaveNumber is the 1-indexed wave this task belongs to (0 = not a wave task).
@@ -481,6 +483,7 @@ func NewInstance(opts InstanceOptions) (*Instance, error) {
 		SkipPermissions:        opts.SkipPermissions,
 		TaskFile:               opts.TaskFile,
 		AgentType:              opts.AgentType,
+		PlannerProfile:         opts.PlannerProfile,
 		IsReviewer:             opts.AgentType == AgentTypeReviewer,
 		TaskNumber:             opts.TaskNumber,
 		WaveNumber:             opts.WaveNumber,

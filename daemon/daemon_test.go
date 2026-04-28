@@ -643,6 +643,56 @@ func TestDaemon_RecoverSessions_AdoptsNumberedReviewerSessions(t *testing.T) {
 	assert.Equal(t, 6, restored.ReviewCycle)
 }
 
+func TestDaemon_RecoverSessions_AdoptsPlannerDraftProfiles(t *testing.T) {
+	project := "proj"
+	store := taskstore.NewTestStore(t)
+	require.NoError(t, store.Create(project, taskstore.TaskEntry{
+		Filename: "feature",
+		Status:   taskstore.StatusPlanning,
+	}))
+
+	d := &Daemon{
+		repos:       NewRepoManager(),
+		spawner:     NewTmuxSpawner(),
+		logger:      slog.Default(),
+		broadcaster: api.NewEventBroadcaster(),
+	}
+	d.repos.repos = []RepoEntry{{
+		Path:    "/tmp/proj",
+		Project: project,
+		Store:   store,
+	}}
+	d.spawner.discoverOrphans = func(_ []string) ([]tmuxpkg.SessionInfo, error) {
+		return []tmuxpkg.SessionInfo{
+			{Title: "feature-plan-planner-a"},
+			{Title: "feature-plan-planner-b"},
+		}, nil
+	}
+	var restoredProfiles []string
+	d.spawner.restoreInstance = func(data session.InstanceData) (*session.Instance, error) {
+		restoredProfiles = append(restoredProfiles, data.PlannerProfile)
+		return &session.Instance{
+			Title:          data.Title,
+			Path:           data.Path,
+			TaskFile:       data.TaskFile,
+			AgentType:      data.AgentType,
+			PlannerProfile: data.PlannerProfile,
+		}, nil
+	}
+
+	recovered, err := d.RecoverSessions()
+	require.NoError(t, err)
+	assert.Equal(t, 2, recovered)
+	assert.ElementsMatch(t, []string{"planner-a", "planner-b"}, restoredProfiles)
+
+	running := d.spawner.RunningInstances()
+	require.Len(t, running, 2)
+	assert.ElementsMatch(t, []string{
+		"/tmp/proj:feature:planner:planner-a",
+		"/tmp/proj:feature:planner:planner-b",
+	}, []string{running[0].Key, running[1].Key})
+}
+
 func TestDaemon_StartPlan_ReturnsBeforeSpawnCompletes(t *testing.T) {
 	project := "proj"
 	store := taskstore.NewTestStore(t)

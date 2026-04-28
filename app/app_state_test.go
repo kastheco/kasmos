@@ -350,6 +350,36 @@ func TestAdoptOrphanSession_BindsPersistedReviewerCycle(t *testing.T) {
 	assert.Equal(t, 3, instances[0].ReviewCycle)
 }
 
+func TestAdoptOrphanSession_BindsPlannerDraftProfile(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	plansDir := filepath.Join(dir, "docs", "plans")
+	require.NoError(t, os.MkdirAll(plansDir, 0o755))
+	ps, err := newTestPlanState(t, plansDir)
+	require.NoError(t, err)
+	planFile := "feature"
+	require.NoError(t, ps.Register(planFile, "feature", "plan/feature", time.Now()))
+	seedPlanStatus(t, ps, planFile, taskstate.StatusPlanning)
+
+	sp := spinner.New(spinner.WithSpinner(spinner.Dot))
+	m := &home{
+		taskState:      ps,
+		activeRepoPath: dir,
+		program:        "opencode",
+		nav:            ui.NewNavigationPanel(&sp),
+		menu:           ui.NewMenu(),
+		toastManager:   overlay.NewToastManager(&sp),
+	}
+
+	model, _ := m.adoptOrphanSession(overlay.TmuxBrowserItem{Title: "feature-plan-planner-a", Name: "kas_feature-plan-planner-a"})
+	updated := model.(*home)
+	instances := updated.nav.GetInstances()
+	require.Len(t, instances, 1)
+	assert.Equal(t, planFile, instances[0].TaskFile)
+	assert.Equal(t, session.AgentTypePlanner, instances[0].AgentType)
+	assert.Equal(t, "planner-a", instances[0].PlannerProfile)
+}
+
 func TestAdoptOrphanSession_BindsPlanMetadataFromTitle(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()

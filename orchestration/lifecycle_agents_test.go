@@ -327,6 +327,7 @@ func TestMatchRecoveryCandidateByTitle_PlannerDraftTitles(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, session.AgentTypePlanner, cand.AgentType)
 	assert.Equal(t, "feature-plan", cand.Title)
+	assert.Empty(t, cand.PlannerProfile)
 
 	// Draft-mode <plan>-plan-<profile> titles are accepted via inference
 	for _, profile := range []string{"gpt", "claude", "planner"} {
@@ -336,10 +337,14 @@ func TestMatchRecoveryCandidateByTitle_PlannerDraftTitles(t *testing.T) {
 		assert.Equal(t, session.AgentTypePlanner, cand.AgentType)
 		assert.Equal(t, draftTitle, cand.Title)
 		assert.Equal(t, "feature", cand.TaskFile)
+		assert.Equal(t, profile, cand.PlannerProfile)
 	}
 
 	// Non-planner-draft title for StatusPlanning returns false
 	_, ok = MatchRecoveryCandidateByTitle(entry, "", "feature-architect")
+	assert.False(t, ok)
+
+	_, ok = MatchRecoveryCandidateByTitle(entry, "", "feature-plan-")
 	assert.False(t, ok)
 }
 

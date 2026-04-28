@@ -345,6 +345,9 @@ func (s *TmuxSpawner) DiscoverOrphanSessions() []tmuxpkg.SessionInfo {
 // spawner's tracking maps.
 func (s *TmuxSpawner) RestoreTrackedInstance(repoPath, project, planFile, agentType string, data session.InstanceData) error {
 	key := instanceKeyForTask(repoPath, planFile, agentType, data.WaveNumber, data.TaskNumber)
+	if agentType == session.AgentTypePlanner {
+		key = instanceKeyForPlanner(repoPath, planFile, data.PlannerProfile)
+	}
 	s.mu.Lock()
 	if _, ok := s.instances[key]; ok {
 		s.mu.Unlock()
@@ -716,6 +719,7 @@ func (s *TmuxSpawner) spawnOnMainBranchWithKey(_ context.Context, opts loop.Spaw
 		SDKSpeedTier:           opts.SDKSpeedTier,
 		AgentType:              agentType,
 		TaskFile:               opts.PlanFile,
+		PlannerProfile:         plannerProfile,
 		SkipPermissions:        opts.SkipPermissions,
 		SDKTranscriptLimitsSet: opts.SDKTranscriptLimitsSet,
 		SDKTranscriptMaxBytes:  opts.SDKTranscriptMaxBytes,
@@ -726,7 +730,6 @@ func (s *TmuxSpawner) spawnOnMainBranchWithKey(_ context.Context, opts loop.Spaw
 		s.releaseReservation(key)
 		return fmt.Errorf("TmuxSpawner.%s: create instance: %w", agentType, err)
 	}
-	inst.PlannerProfile = plannerProfile
 	inst.QueuedPrompt = prompt
 	inst.SetStatus(session.Loading)
 

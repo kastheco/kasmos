@@ -4244,6 +4244,7 @@ func (m *home) adoptOrphanSession(item overlay.TmuxBrowserItem) (tea.Model, tea.
 		SkipPermissions: m.skipPermissionsForAgent(candidate.AgentType),
 		TaskFile:        candidate.TaskFile,
 		AgentType:       candidate.AgentType,
+		PlannerProfile:  candidate.PlannerProfile,
 		TaskNumber:      candidate.TaskNumber,
 		WaveNumber:      candidate.WaveNumber,
 		ReviewCycle:     candidate.ReviewCycle,

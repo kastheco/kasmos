@@ -2473,20 +2473,21 @@ func (d *Daemon) RecoverSessions() (int, error) {
 				}
 
 				data := session.InstanceData{
-					Title:         candidate.Title,
-					Path:          e.Path,
-					Branch:        candidate.Branch,
-					Status:        session.Running,
-					Program:       "opencode",
-					ExecutionMode: session.ExecutionModeTmux,
-					AutoYes:       true,
-					TaskFile:      task.Filename,
-					AgentType:     candidate.AgentType,
-					TaskNumber:    candidate.TaskNumber,
-					WaveNumber:    candidate.WaveNumber,
-					ReviewCycle:   candidate.ReviewCycle,
-					WaveTaskIndex: candidate.WaveTaskIndex,
-					WaveTaskCount: candidate.WaveTaskCount,
+					Title:          candidate.Title,
+					Path:           e.Path,
+					Branch:         candidate.Branch,
+					Status:         session.Running,
+					Program:        "opencode",
+					ExecutionMode:  session.ExecutionModeTmux,
+					AutoYes:        true,
+					TaskFile:       task.Filename,
+					AgentType:      candidate.AgentType,
+					PlannerProfile: candidate.PlannerProfile,
+					TaskNumber:     candidate.TaskNumber,
+					WaveNumber:     candidate.WaveNumber,
+					ReviewCycle:    candidate.ReviewCycle,
+					WaveTaskIndex:  candidate.WaveTaskIndex,
+					WaveTaskCount:  candidate.WaveTaskCount,
 				}
 				if candidate.Branch != "" {
 					shared := gitpkg.NewSharedTaskWorktree(e.Path, candidate.Branch)
