@@ -355,6 +355,10 @@ func (r *Renderer) truncatePartialLocked() int64 {
 		return 0
 	}
 	oldBytes := flatLineBytes(r.partial)
+	if len(r.partial) == 1 {
+		r.partial = ""
+		return oldBytes
+	}
 	nextLen := len(r.partial) / 2
 	r.partial = r.partial[nextLen:]
 	if r.partial == "" {

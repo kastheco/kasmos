@@ -298,6 +298,19 @@ func TestRendererRetention_FlatCap_OversizedPartialTrimmed(t *testing.T) {
 	assert.Less(t, len(r.Capture()), 4096, "flat partial capture must be shortened when it is the only flat data")
 }
 
+func TestRendererRetention_FlatCap_OneBytePartialDropped(t *testing.T) {
+	r := NewRenderer(WithRendererRetention(bytesOnly(1)))
+	r.mu.Lock()
+	r.partial = "x"
+
+	r.enforceRetentionLocked()
+	r.mu.Unlock()
+
+	s := r.Stats()
+	assert.LessOrEqual(t, s.Bytes, int64(1), "single-byte partial fragments must not remain over the cap")
+	assert.Empty(t, r.Capture(), "single-byte partial fragments should be dropped when they exceed the cap")
+}
+
 // ---- active-turn row truncation ----
 
 func TestRendererRetention_ActiveTurnTruncation_RowsRemoved(t *testing.T) {
