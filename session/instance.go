@@ -127,6 +127,19 @@ type Instance struct {
 	// The Codex transport forwards this as serviceTier on thread/start.
 	SDKSpeedTier string
 
+	// SDKTranscriptLimitsSet is true when SDKTranscriptMaxBytes/MaxTurns were explicitly configured.
+	// Guards against forwarding zero-value (unlimited) limits from call sites that never set them.
+	SDKTranscriptLimitsSet bool
+	// SDKTranscriptMaxBytes is the byte cap forwarded to the SDK renderer (0 = no byte limit / unlimited).
+	// A zero value here only takes effect when SDKTranscriptLimitsSet is true; otherwise
+	// SDKTranscriptLimitsSet=false leaves the renderer at its compiled defaults.
+	SDKTranscriptMaxBytes int64
+	// SDKTranscriptMaxTurns is the turn cap forwarded to the SDK renderer (0 = no turn limit / unlimited).
+	// Same SDKTranscriptLimitsSet guard applies.
+	SDKTranscriptMaxTurns int64
+	// RendererStats holds the last collected renderer stats for this instance (cached, not persisted).
+	RendererStats sdk.RendererStats
+
 	// HasWorked is true once the agent produces at least one content update after receiving its task.
 	// Prevents permission prompts or early returns from prematurely completing a wave.
 	HasWorked bool
@@ -193,6 +206,9 @@ func (i *Instance) ToInstanceData() InstanceData {
 		ReviewCycle:            i.ReviewCycle,
 		ClaudeNoFlicker:        i.ClaudeNoFlicker,
 		SDKSpeedTier:           i.SDKSpeedTier,
+		SDKTranscriptLimitsSet: i.SDKTranscriptLimitsSet,
+		SDKTranscriptMaxBytes:  i.SDKTranscriptMaxBytes,
+		SDKTranscriptMaxTurns:  i.SDKTranscriptMaxTurns,
 	}
 
 	if i.gitWorktree != nil {
@@ -276,6 +292,9 @@ func FromInstanceData(data InstanceData) (*Instance, error) {
 		ReviewCycle:            data.ReviewCycle,
 		ClaudeNoFlicker:        data.ClaudeNoFlicker,
 		SDKSpeedTier:           sdkSpeedTier,
+		SDKTranscriptLimitsSet: data.SDKTranscriptLimitsSet,
+		SDKTranscriptMaxBytes:  data.SDKTranscriptMaxBytes,
+		SDKTranscriptMaxTurns:  data.SDKTranscriptMaxTurns,
 		sharedWorktree:         sharedWorktree,
 		gitWorktree:            restoredWorktree,
 	}
@@ -399,6 +418,14 @@ type InstanceOptions struct {
 	// SDKSpeedTier is the session-scoped speed tier ("", "flex", or "fast").
 	// Only applied when ExecutionMode resolves to SDK and the program is Codex.
 	SDKSpeedTier string
+	// SDKTranscriptLimitsSet must be true to forward MaxBytes/MaxTurns to the renderer.
+	SDKTranscriptLimitsSet bool
+	// SDKTranscriptMaxBytes caps the SDK renderer's in-process byte usage (0 = unlimited).
+	// A zero value only takes effect when SDKTranscriptLimitsSet is true.
+	SDKTranscriptMaxBytes int64
+	// SDKTranscriptMaxTurns caps completed turns retained by the renderer (0 = unlimited).
+	// A zero value only takes effect when SDKTranscriptLimitsSet is true.
+	SDKTranscriptMaxTurns int64
 }
 
 // NewInstance constructs a new unstarted Instance from the given options.
@@ -421,28 +448,31 @@ func NewInstance(opts InstanceOptions) (*Instance, error) {
 	}
 
 	return &Instance{
-		Title:           opts.Title,
-		Status:          Ready,
-		Path:            absPath,
-		Program:         opts.Program,
-		ExecutionMode:   resolvedMode,
-		Height:          0,
-		Width:           0,
-		CreatedAt:       now,
-		UpdatedAt:       now,
-		AutoYes:         opts.AutoYes,
-		SkipPermissions: opts.SkipPermissions,
-		TaskFile:        opts.TaskFile,
-		AgentType:       opts.AgentType,
-		IsReviewer:      opts.AgentType == AgentTypeReviewer,
-		TaskNumber:      opts.TaskNumber,
-		WaveNumber:      opts.WaveNumber,
-		PeerCount:       opts.PeerCount,
-		WaveTaskIndex:   opts.WaveTaskIndex,
-		WaveTaskCount:   opts.WaveTaskCount,
-		ReviewCycle:     opts.ReviewCycle,
-		ClaudeNoFlicker: opts.ClaudeNoFlicker,
-		SDKSpeedTier:    sdkSpeedTier,
+		Title:                  opts.Title,
+		Status:                 Ready,
+		Path:                   absPath,
+		Program:                opts.Program,
+		ExecutionMode:          resolvedMode,
+		Height:                 0,
+		Width:                  0,
+		CreatedAt:              now,
+		UpdatedAt:              now,
+		AutoYes:                opts.AutoYes,
+		SkipPermissions:        opts.SkipPermissions,
+		TaskFile:               opts.TaskFile,
+		AgentType:              opts.AgentType,
+		IsReviewer:             opts.AgentType == AgentTypeReviewer,
+		TaskNumber:             opts.TaskNumber,
+		WaveNumber:             opts.WaveNumber,
+		PeerCount:              opts.PeerCount,
+		WaveTaskIndex:          opts.WaveTaskIndex,
+		WaveTaskCount:          opts.WaveTaskCount,
+		ReviewCycle:            opts.ReviewCycle,
+		ClaudeNoFlicker:        opts.ClaudeNoFlicker,
+		SDKSpeedTier:           sdkSpeedTier,
+		SDKTranscriptLimitsSet: opts.SDKTranscriptLimitsSet,
+		SDKTranscriptMaxBytes:  opts.SDKTranscriptMaxBytes,
+		SDKTranscriptMaxTurns:  opts.SDKTranscriptMaxTurns,
 	}, nil
 }
 

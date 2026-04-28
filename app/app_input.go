@@ -2351,14 +2351,14 @@ func (m *home) handleResolvedKey(name keys.KeyName) (tea.Model, tea.Cmd) {
 		if err := m.standaloneExecutionModeLimitError(requestedMode); err != nil {
 			return m, m.handleError(err)
 		}
-		instance, err := session.NewInstance(session.InstanceOptions{
+		instance, err := session.NewInstance(m.withRetentionOpts(session.InstanceOptions{
 			Title:           "",
 			Path:            m.activeRepoPath,
 			Program:         promptProgram,
 			ExecutionMode:   requestedMode,
 			SDKSpeedTier:    m.sdkSpeedTierForAgent(""),
 			SkipPermissions: m.skipPermissionsForAgent(""),
-		})
+		}))
 		if err != nil {
 			return m, m.handleError(err)
 		}

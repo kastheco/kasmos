@@ -970,6 +970,32 @@ func TestTmuxSpawner_SpawnSolo_DefaultPath_CallsStartOnMain(t *testing.T) {
 	assert.Equal(t, "", running[0].PlanFile, "standalone instances have no plan file")
 }
 
+func TestTmuxSpawner_SpawnSolo_SDKTranscriptLimitsForwarded(t *testing.T) {
+	s := NewTmuxSpawner()
+	var capturedInst *session.Instance
+	s.startOnMain = func(inst *session.Instance) error {
+		capturedInst = inst
+		inst.MarkStartedForTest()
+		inst.SetStatus(session.Running)
+		return nil
+	}
+
+	err := s.SpawnSolo(context.Background(), SpawnSoloOpts{
+		RepoPath:               "/tmp/repo",
+		Project:                "proj",
+		Title:                  "limited-solo",
+		Program:                "claude",
+		SDKTranscriptLimitsSet: true,
+		SDKTranscriptMaxBytes:  0,
+		SDKTranscriptMaxTurns:  0,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, capturedInst)
+	assert.True(t, capturedInst.SDKTranscriptLimitsSet)
+	assert.Equal(t, int64(0), capturedInst.SDKTranscriptMaxBytes)
+	assert.Equal(t, int64(0), capturedInst.SDKTranscriptMaxTurns)
+}
+
 func TestTmuxSpawner_SpawnSolo_WithBranch_CallsStartOnBranch(t *testing.T) {
 	s := NewTmuxSpawner()
 	var capturedInst *session.Instance
@@ -1162,4 +1188,63 @@ func TestInstanceKeyForStandalone(t *testing.T) {
 	assert.NotEqual(t, instanceKeyForStandalone("/tmp/repo", "a"), instanceKeyForStandalone("/tmp/repo", "b"))
 	// Two different repos with the same title must produce distinct keys.
 	assert.NotEqual(t, instanceKeyForStandalone("/repo-a", "agent"), instanceKeyForStandalone("/repo-b", "agent"))
+}
+
+// TestTmuxSpawner_SpawnWaveTask_SDKTranscriptLimitsForwarded verifies that
+// SDKTranscriptLimitsSet and the byte/turn caps are copied from SpawnOpts into
+// the Instance created by SpawnWaveTask. This ensures the daemon properly
+// propagates repo-level transcript limits to every spawned wave task.
+func TestTmuxSpawner_SpawnWaveTask_SDKTranscriptLimitsForwarded(t *testing.T) {
+	repoPath := t.TempDir()
+	runGit := func(args ...string) {
+		t.Helper()
+		c := exec.Command("git", append([]string{"-C", repoPath}, args...)...)
+		out, err := c.CombinedOutput()
+		require.NoErrorf(t, err, "git %v failed: %s", args, string(out))
+	}
+	runGit("init")
+	runGit("config", "user.email", "test@example.com")
+	runGit("config", "user.name", "Test User")
+	require.NoError(t, os.WriteFile(filepath.Join(repoPath, "f.txt"), []byte("x\n"), 0o644))
+	runGit("add", "f.txt")
+	runGit("commit", "-m", "init")
+	runGit("checkout", "-b", "plan/feature")
+	runGit("checkout", "-")
+
+	s := NewTmuxSpawner()
+	var capturedInst *session.Instance
+	release := make(chan struct{})
+	s.startInShared = func(inst *session.Instance, _ *gitpkg.GitWorktree, _ string) error {
+		capturedInst = inst
+		<-release
+		inst.MarkStartedForTest()
+		inst.SetStatus(session.Running)
+		return nil
+	}
+
+	opts := loop.SpawnOpts{
+		PlanFile:               "feature.md",
+		RepoPath:               repoPath,
+		Project:                "proj",
+		Branch:                 "plan/feature",
+		Program:                "true",
+		Wave:                   1,
+		SDKTranscriptLimitsSet: true,
+		SDKTranscriptMaxBytes:  2 << 20,
+		SDKTranscriptMaxTurns:  100,
+	}
+	task := taskparser.Task{Number: 1, Title: "add feature"}
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- s.SpawnWaveTask(context.Background(), opts, task, "do the thing", 1, 1)
+	}()
+	// Wait until start is reached so we can inspect the instance before release.
+	require.Eventually(t, func() bool { return capturedInst != nil }, 2*time.Second, 10*time.Millisecond)
+	close(release)
+	require.NoError(t, <-errCh)
+
+	assert.True(t, capturedInst.SDKTranscriptLimitsSet)
+	assert.Equal(t, int64(2<<20), capturedInst.SDKTranscriptMaxBytes)
+	assert.Equal(t, int64(100), capturedInst.SDKTranscriptMaxTurns)
 }

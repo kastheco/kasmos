@@ -487,36 +487,51 @@ func (a *daemonStateAdapter) RunInstanceShellCommand(project, title, command str
 	return inst.RunShellCommand(ctx, command)
 }
 
-// CapturePresentation implements StateProvider. It returns the structured turn
-// model for SDK-backed instances (supported=true) and (nil, false, nil) for
-// tmux-backed instances. The execution mode, not turn count, is the source of
-// truth for the supported flag.
+// CapturePresentation implements StateProvider. It returns a PresentationSnapshot
+// with the structured turn model for SDK-backed instances (Supported=true) and
+// an empty snapshot for tmux-backed instances (Supported=false).
+// The execution mode, not turn count, is the source of truth for Supported.
 //
 // Turns are pre-marshaled to json.RawMessage here (rather than in daemon/api)
 // to avoid an import cycle: session/sdk → session/tmux → cmd → daemon/api.
-func (a *daemonStateAdapter) CapturePresentation(project, title string) (json.RawMessage, bool, error) {
+// Stats are copied field-by-field from inst.RendererStats into an api.RendererStats
+// value (same fields, no import of session/sdk needed in daemon/api).
+func (a *daemonStateAdapter) CapturePresentation(project, title string) (api.PresentationSnapshot, error) {
 	repoPath, ok := a.repoPathByProject(project)
 	if !ok {
-		return nil, false, fmt.Errorf("%w: project %s", api.ErrProjectNotFound, project)
+		return api.PresentationSnapshot{}, fmt.Errorf("%w: project %s", api.ErrProjectNotFound, project)
 	}
 	_, inst, ok := a.d.spawner.trackedInstanceByTitle(repoPath, title)
 	if !ok {
-		return nil, false, fmt.Errorf("%w: %s/%s", api.ErrInstanceNotFound, project, title)
+		return api.PresentationSnapshot{}, fmt.Errorf("%w: %s/%s", api.ErrInstanceNotFound, project, title)
 	}
 	if session.NormalizeExecutionMode(inst.ExecutionMode) != session.ExecutionModeSDK {
-		return nil, false, nil
+		return api.PresentationSnapshot{Supported: false}, nil
+	}
+	// Collect renderer stats from the instance (cached on last metadata tick).
+	rs := inst.RendererStats
+	stats := &api.RendererStats{
+		Bytes:         rs.Bytes,
+		Lines:         rs.Lines,
+		Turns:         rs.Turns,
+		MaxBytes:      rs.MaxBytes,
+		MaxTurns:      rs.MaxTurns,
+		EvictedTurns:  rs.EvictedTurns,
+		EvictedLines:  rs.EvictedLines,
+		EvictedBytes:  rs.EvictedBytes,
+		TruncatedRows: rs.TruncatedRows,
 	}
 	turns := inst.CapturePresentation()
 	if turns == nil {
 		// No turns yet but SDK-backed — return JSON null so the browser can
 		// distinguish "no data" from "unsupported".
-		return json.RawMessage("null"), true, nil
+		return api.PresentationSnapshot{Supported: true, Turns: json.RawMessage("null"), Stats: stats}, nil
 	}
 	raw, err := json.Marshal(turns)
 	if err != nil {
-		return nil, true, fmt.Errorf("marshal presentation turns: %w", err)
+		return api.PresentationSnapshot{}, fmt.Errorf("marshal presentation turns: %w", err)
 	}
-	return raw, true, nil
+	return api.PresentationSnapshot{Supported: true, Turns: raw, Stats: stats}, nil
 }
 
 // NewDaemon creates a new Daemon from the given configuration. The daemon is
@@ -645,7 +660,7 @@ func (d *Daemon) startPlanAsync(entry RepoEntry, planFile, prompt, program strin
 			return
 		}
 	}
-	if err := spawnPlanner(context.Background(), loop.SpawnOpts{
+	if err := spawnPlanner(context.Background(), withSDKTranscriptRetention(entry, loop.SpawnOpts{
 		PlanFile:        planFile,
 		RepoPath:        entry.Path,
 		Project:         entry.Project,
@@ -654,7 +669,7 @@ func (d *Daemon) startPlanAsync(entry RepoEntry, planFile, prompt, program strin
 		ExecutionMode:   executionModeForAgent(entry.Path, session.AgentTypePlanner),
 		SDKSpeedTier:    sdkSpeedTierForAgent(entry.Path, session.AgentTypePlanner),
 		SkipPermissions: skipPermissionsForAgent(entry.Path, session.AgentTypePlanner),
-	}); err != nil {
+	})); err != nil {
 		d.logger.Error("spawn planner failed", "project", entry.Project, "plan", planFile, "err", err)
 		return
 	}
@@ -677,7 +692,7 @@ func (d *Daemon) startPlanAsync(entry RepoEntry, planFile, prompt, program strin
 	baselineAgentType := session.AgentTypeArchitectBaseline
 	harnessAgentType := harnessAgentTypeForSpawn(baselineAgentType)
 	baselineSpec := orchestration.BuildArchitectBaselineAgentSpec(planFile, entry.Project, taskEntry.Description)
-	if err := spawnArchitectBaseline(context.Background(), loop.SpawnOpts{
+	if err := spawnArchitectBaseline(context.Background(), withSDKTranscriptRetention(entry, loop.SpawnOpts{
 		PlanFile:        planFile,
 		RepoPath:        entry.Path,
 		Project:         entry.Project,
@@ -687,7 +702,7 @@ func (d *Daemon) startPlanAsync(entry RepoEntry, planFile, prompt, program strin
 		ExecutionMode:   executionModeForAgent(entry.Path, harnessAgentType),
 		SDKSpeedTier:    sdkSpeedTierForAgent(entry.Path, harnessAgentType),
 		SkipPermissions: skipPermissionsForAgent(entry.Path, harnessAgentType),
-	}); err != nil {
+	})); err != nil {
 		d.logger.Error("spawn architect baseline failed", "project", entry.Project, "plan", planFile, "err", err)
 		return
 	}
@@ -760,18 +775,21 @@ func (d *Daemon) startSoloAsync(entry RepoEntry, req api.SpawnSoloRequest) {
 		skip = skipPermissionsForAgent(entry.Path, req.AgentType)
 	}
 	opts := SpawnSoloOpts{
-		RepoPath:        entry.Path,
-		Project:         entry.Project,
-		Title:           req.Title,
-		Program:         req.Program,
-		Prompt:          req.Prompt,
-		TaskFile:        req.TaskFile,
-		AgentType:       req.AgentType,
-		SoloAgent:       req.SoloAgent,
-		Branch:          req.Branch,
-		WorkPath:        req.WorkPath,
-		SDKSpeedTier:    req.SDKSpeedTier,
-		SkipPermissions: skip,
+		RepoPath:               entry.Path,
+		Project:                entry.Project,
+		Title:                  req.Title,
+		Program:                req.Program,
+		Prompt:                 req.Prompt,
+		TaskFile:               req.TaskFile,
+		AgentType:              req.AgentType,
+		SoloAgent:              req.SoloAgent,
+		Branch:                 req.Branch,
+		WorkPath:               req.WorkPath,
+		SDKSpeedTier:           req.SDKSpeedTier,
+		SDKTranscriptLimitsSet: true,
+		SDKTranscriptMaxBytes:  entry.SDK.TranscriptMaxBytes,
+		SDKTranscriptMaxTurns:  entry.SDK.TranscriptMaxTurns,
+		SkipPermissions:        skip,
 	}
 	if err := spawnSolo(context.Background(), opts); err != nil {
 		d.logger.Error("spawn solo failed", "project", entry.Project, "title", req.Title, "err", err)
@@ -1369,6 +1387,9 @@ func (d *Daemon) monitorRunningInstances(ctx context.Context, e RepoEntry) {
 		}
 
 		md := inst.CollectMetadata()
+		if session.NormalizeExecutionMode(inst.ExecutionMode) == session.ExecutionModeSDK {
+			inst.SetCachedRendererStats(md.RendererStats)
+		}
 		wasAwaitingWork := inst.AwaitingWork
 		if md.TmuxAlive && inst.Exited {
 			inst.Exited = false
@@ -1591,7 +1612,7 @@ func (d *Daemon) executeAction(ctx context.Context, e RepoEntry, action loop.Act
 		}
 		entry := entryFor(a.PlanFile)
 		spec := orchestration.BuildPlannerAgentSpec(a.PlanFile, e.Project, entry.Description)
-		opts := loop.SpawnOpts{
+		opts := withSDKTranscriptRetention(e, loop.SpawnOpts{
 			PlanFile:        a.PlanFile,
 			RepoPath:        e.Path,
 			Project:         e.Project,
@@ -1600,7 +1621,7 @@ func (d *Daemon) executeAction(ctx context.Context, e RepoEntry, action loop.Act
 			ExecutionMode:   executionModeForAgent(e.Path, session.AgentTypePlanner),
 			SDKSpeedTier:    sdkSpeedTierForAgent(e.Path, session.AgentTypePlanner),
 			SkipPermissions: skipPermissionsForAgent(e.Path, session.AgentTypePlanner),
-		}
+		})
 		spawnPlanner := d.spawnPlanner
 		if spawnPlanner == nil {
 			spawnPlanner = d.spawner.SpawnPlanner
@@ -1637,7 +1658,7 @@ func (d *Daemon) executeAction(ctx context.Context, e RepoEntry, action loop.Act
 		spec := orchestration.BuildArchitectBaselineAgentSpec(a.PlanFile, e.Project, entry.Description)
 		agentType := session.AgentTypeArchitectBaseline
 		harnessAgentType := harnessAgentTypeForSpawn(agentType)
-		opts := loop.SpawnOpts{
+		opts := withSDKTranscriptRetention(e, loop.SpawnOpts{
 			PlanFile:        a.PlanFile,
 			RepoPath:        e.Path,
 			Project:         e.Project,
@@ -1647,7 +1668,7 @@ func (d *Daemon) executeAction(ctx context.Context, e RepoEntry, action loop.Act
 			ExecutionMode:   executionModeForAgent(e.Path, harnessAgentType),
 			SDKSpeedTier:    sdkSpeedTierForAgent(e.Path, harnessAgentType),
 			SkipPermissions: skipPermissionsForAgent(e.Path, harnessAgentType),
-		}
+		})
 		spawnArchitectBaseline := d.spawnArchitectBaseline
 		if spawnArchitectBaseline == nil {
 			spawnArchitectBaseline = d.spawner.SpawnArchitectBaseline
@@ -1676,7 +1697,7 @@ func (d *Daemon) executeAction(ctx context.Context, e RepoEntry, action loop.Act
 			ParallelBaseline: e.ParallelPlannerArchitect,
 			DescriptionHash:  orchestration.ArchitectBaselineDescriptionHash(entry.Description),
 		})
-		opts := loop.SpawnOpts{
+		opts := withSDKTranscriptRetention(e, loop.SpawnOpts{
 			PlanFile:        a.PlanFile,
 			RepoPath:        e.Path,
 			Project:         e.Project,
@@ -1685,7 +1706,7 @@ func (d *Daemon) executeAction(ctx context.Context, e RepoEntry, action loop.Act
 			ExecutionMode:   executionModeForAgent(e.Path, session.AgentTypeElaborator),
 			SDKSpeedTier:    sdkSpeedTierForAgent(e.Path, session.AgentTypeElaborator),
 			SkipPermissions: skipPermissionsForAgent(e.Path, session.AgentTypeElaborator),
-		}
+		})
 		spawnElaborator := d.spawnElaborator
 		if spawnElaborator == nil {
 			spawnElaborator = d.spawner.SpawnElaborator
@@ -1983,7 +2004,7 @@ func (d *Daemon) startWaveTasks(ctx context.Context, e RepoEntry, planFile strin
 		task := task
 		waveTaskIndex := i + 1
 		prompt := orch.BuildTaskPrompt(task, peerCount)
-		opts := loop.SpawnOpts{
+		opts := withSDKTranscriptRetention(e, loop.SpawnOpts{
 			PlanFile:        planFile,
 			RepoPath:        e.Path,
 			Project:         e.Project,
@@ -1993,7 +2014,7 @@ func (d *Daemon) startWaveTasks(ctx context.Context, e RepoEntry, planFile strin
 			ExecutionMode:   executionModeForAgent(e.Path, session.AgentTypeCoder),
 			SDKSpeedTier:    sdkSpeedTierForAgent(e.Path, session.AgentTypeCoder),
 			SkipPermissions: skipPermissionsForAgent(e.Path, session.AgentTypeCoder),
-		}
+		})
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -2362,7 +2383,7 @@ func buildProgramCommand(profile config.AgentProfile, registry *harness.Registry
 }
 
 func coderSpawnOpts(e RepoEntry, planFile, branch, feedback string) loop.SpawnOpts {
-	return loop.SpawnOpts{
+	return withSDKTranscriptRetention(e, loop.SpawnOpts{
 		PlanFile:        planFile,
 		RepoPath:        e.Path,
 		Project:         e.Project,
@@ -2373,12 +2394,12 @@ func coderSpawnOpts(e RepoEntry, planFile, branch, feedback string) loop.SpawnOp
 		ExecutionMode:   executionModeForAgent(e.Path, session.AgentTypeCoder),
 		SDKSpeedTier:    sdkSpeedTierForAgent(e.Path, session.AgentTypeCoder),
 		SkipPermissions: skipPermissionsForAgent(e.Path, session.AgentTypeCoder),
-	}
+	})
 }
 
 func reviewerSpawnOpts(e RepoEntry, entry taskstore.TaskEntry) loop.SpawnOpts {
 	spec := orchestration.BuildReviewerAgentSpec(entry.Filename, e.Project, entry.ReviewCycle, entry.LatestReviewFeedback)
-	return loop.SpawnOpts{
+	return withSDKTranscriptRetention(e, loop.SpawnOpts{
 		PlanFile:        entry.Filename,
 		RepoPath:        e.Path,
 		Project:         e.Project,
@@ -2389,7 +2410,7 @@ func reviewerSpawnOpts(e RepoEntry, entry taskstore.TaskEntry) loop.SpawnOpts {
 		ExecutionMode:   executionModeForAgent(e.Path, session.AgentTypeReviewer),
 		SDKSpeedTier:    sdkSpeedTierForAgent(e.Path, session.AgentTypeReviewer),
 		SkipPermissions: skipPermissionsForAgent(e.Path, session.AgentTypeReviewer),
-	}
+	})
 }
 
 func fixerSpawnOpts(e RepoEntry, planFile, branch, feedback string) loop.SpawnOpts {
@@ -2400,7 +2421,7 @@ func fixerSpawnOpts(e RepoEntry, planFile, branch, feedback string) loop.SpawnOp
 		}
 	}
 	spec := orchestration.BuildFixerAgentSpec(planFile, e.Project, reviewCycle, feedback)
-	return loop.SpawnOpts{
+	return withSDKTranscriptRetention(e, loop.SpawnOpts{
 		PlanFile:        planFile,
 		RepoPath:        e.Path,
 		Project:         e.Project,
@@ -2412,12 +2433,12 @@ func fixerSpawnOpts(e RepoEntry, planFile, branch, feedback string) loop.SpawnOp
 		ExecutionMode:   executionModeForAgent(e.Path, session.AgentTypeFixer),
 		SDKSpeedTier:    sdkSpeedTierForAgent(e.Path, session.AgentTypeFixer),
 		SkipPermissions: skipPermissionsForAgent(e.Path, session.AgentTypeFixer),
-	}
+	})
 }
 
 func masterSpawnOpts(e RepoEntry, entry taskstore.TaskEntry) loop.SpawnOpts {
 	spec := orchestration.BuildMasterAgentSpecWithConfig(entry.Filename, e.Project, entry.ReviewCycle, e.ReadinessSelfFixMaxLines, e.ReadinessMaxVerifyCycles)
-	return loop.SpawnOpts{
+	return withSDKTranscriptRetention(e, loop.SpawnOpts{
 		PlanFile:        entry.Filename,
 		RepoPath:        e.Path,
 		Project:         e.Project,
@@ -2428,7 +2449,7 @@ func masterSpawnOpts(e RepoEntry, entry taskstore.TaskEntry) loop.SpawnOpts {
 		ExecutionMode:   executionModeForAgent(e.Path, session.AgentTypeMaster),
 		SDKSpeedTier:    sdkSpeedTierForAgent(e.Path, session.AgentTypeMaster),
 		SkipPermissions: skipPermissionsForAgent(e.Path, session.AgentTypeMaster),
-	}
+	})
 }
 
 // RecoverSessions discovers orphaned kas_ tmux sessions and attempts to

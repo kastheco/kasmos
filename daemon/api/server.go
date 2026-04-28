@@ -141,6 +141,31 @@ type SpawnSoloResponse struct {
 	Title string `json:"title"`
 }
 
+// RendererStats mirrors session/sdk.RendererStats without importing that package
+// (which would create an import cycle via session/sdk → session/tmux → cmd → daemon/api).
+// Fields are kept in sync with sdk.RendererStats by convention — daemon.go copies the
+// values field-by-field when building a PresentationResponse.
+type RendererStats struct {
+	Bytes         int64 `json:"bytes"`
+	Lines         int64 `json:"lines"`
+	Turns         int64 `json:"turns"`
+	MaxBytes      int64 `json:"max_bytes"`
+	MaxTurns      int64 `json:"max_turns"`
+	EvictedTurns  int64 `json:"evicted_turns"`
+	EvictedLines  int64 `json:"evicted_lines"`
+	EvictedBytes  int64 `json:"evicted_bytes"`
+	TruncatedRows int64 `json:"truncated_rows"`
+}
+
+// PresentationSnapshot is the return type for StateProvider.CapturePresentation.
+// It carries the pre-serialized turns, the supported flag, and optional stats.
+// Using a named struct avoids a sprawling multi-return signature.
+type PresentationSnapshot struct {
+	Supported bool
+	Turns     json.RawMessage
+	Stats     *RendererStats
+}
+
 // PresentationResponse is the response body for GET .../presentation.
 // Turns is pre-serialized JSON from the daemon adapter so that daemon/api does
 // not need to import session/sdk (which would create an import cycle via
@@ -148,6 +173,7 @@ type SpawnSoloResponse struct {
 type PresentationResponse struct {
 	Supported  bool            `json:"supported"`
 	Turns      json.RawMessage `json:"turns"`
+	Stats      *RendererStats  `json:"stats,omitempty"`
 	CapturedAt time.Time       `json:"captured_at"`
 }
 
@@ -225,12 +251,13 @@ type StateProvider interface {
 	// to the tracked instance.
 	SendInstancePromptWithLocalImages(project, title, prompt string, imagePaths []string) error
 	// CapturePresentation returns the structured turn-grouped presentation model
-	// for an instance as pre-serialized JSON. The bool indicates whether
-	// structured presentation is supported (true for SDK-backed instances, false
-	// for tmux-backed ones). A nil RawMessage with supported=true means "no turns
-	// yet". Pre-serializing here avoids importing session/sdk from daemon/api
+	// for an instance as a PresentationSnapshot. Supported indicates whether
+	// structured presentation is available (true for SDK-backed instances, false
+	// for tmux-backed ones). A nil Turns with Supported=true means "no turns
+	// yet". Pre-serializing turns here avoids importing session/sdk from daemon/api
 	// which would create an import cycle via session/tmux → cmd → daemon/api.
-	CapturePresentation(project, title string) (json.RawMessage, bool, error)
+	// Stats is non-nil when the instance has a live SDK renderer to query.
+	CapturePresentation(project, title string) (PresentationSnapshot, error)
 	// SendInstancePermissionResponse forwards a permission-overlay selection to
 	// the tracked instance identified by project/title.
 	SendInstancePermissionResponse(project, title string, choice PermissionChoice) error
@@ -357,8 +384,8 @@ func (s *DaemonState) SendInstancePrompt(_, _, _ string) error {
 func (s *DaemonState) SendInstancePromptWithLocalImages(_, _, _ string, _ []string) error {
 	return fmt.Errorf("%w: not tracked", ErrInstanceNotFound)
 }
-func (s *DaemonState) CapturePresentation(_, _ string) (json.RawMessage, bool, error) {
-	return nil, false, fmt.Errorf("%w: not tracked", ErrInstanceNotFound)
+func (s *DaemonState) CapturePresentation(_, _ string) (PresentationSnapshot, error) {
+	return PresentationSnapshot{}, fmt.Errorf("%w: not tracked", ErrInstanceNotFound)
 }
 func (s *DaemonState) SendInstancePermissionResponse(_, _ string, _ PermissionChoice) error {
 	return fmt.Errorf("%w: not tracked", ErrInstanceNotFound)
@@ -703,7 +730,7 @@ func (h *Handler) handleInstancePresentation(w http.ResponseWriter, r *http.Requ
 	title := r.PathValue("title")
 	capturedAt := time.Now().UTC()
 
-	turns, supported, err := h.state.CapturePresentation(project, title)
+	snap, err := h.state.CapturePresentation(project, title)
 	if err != nil {
 		switch {
 		case errors.Is(err, ErrInstanceNotFound):
@@ -714,8 +741,9 @@ func (h *Handler) handleInstancePresentation(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	writeJSON(w, http.StatusOK, PresentationResponse{
-		Supported:  supported,
-		Turns:      turns,
+		Supported:  snap.Supported,
+		Turns:      snap.Turns,
+		Stats:      snap.Stats,
 		CapturedAt: capturedAt,
 	})
 }

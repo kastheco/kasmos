@@ -23,7 +23,59 @@ events are rendered as follows:
 | `EventTurnInterrupted` | flushes partial line, appends `[interrupted]` |
 | `EventTurnStarted` | no visible marker |
 
-the buffer grows continuously and is never truncated or rotated. concurrent reads are safe — all mutations are serialized under the renderer's `sync.Mutex`.
+the buffer is bounded by configurable limits (see [transcript retention](#transcript-retention)) and concurrent reads are safe — all mutations are serialized under the renderer's `sync.Mutex`.
+
+## transcript retention
+
+the renderer enforces two independent limits on the in-process transcript to prevent long-running agent sessions from growing without bound:
+
+| limit | default | config key |
+|-------|---------|------------|
+| bytes retained | **4 MiB** (`4194304`) | `[sdk] transcript_max_bytes` |
+| completed turns retained | **2000** | `[sdk] transcript_max_turns` |
+
+both limits apply to the in-process renderer only. the log file on disk (`<workDir>/.kasmos/logs/<name>.log`) and tmux scrollback (for tmux sessions) are **not** affected.
+
+### three-phase eviction
+
+when a limit is exceeded after each event, the renderer runs three phases in order:
+
+1. **completed-turn eviction (FIFO):** the oldest completed, non-active structured turns are removed one at a time until the turn count and turn byte total are back within budget. the active (in-progress) turn is never evicted.
+
+2. **flat-line trimming:** if the flat `lines` buffer still exceeds the byte limit after turn eviction, the oldest flat lines are removed from the front of the buffer until byte usage is within budget.
+
+3. **active-turn row truncation:** if the current in-progress turn alone exceeds the byte limit (e.g. a single tool result is extremely large), the oldest rows *within* that turn are removed one by one. this is a last-resort cap; it never removes the currently open text row.
+
+### eviction markers
+
+each eviction phase inserts or updates a visible marker so operators can tell how much history was dropped:
+
+| marker | where it appears | meaning |
+|--------|-----------------|---------|
+| `earlier turns evicted: N` | first entry in the structured presentation | N completed turns were evicted from the front of the structured history |
+| `[earlier lines evicted: N]` | first line in the flat `CapturePaneContent` output | N flat lines were removed from the oldest part of the buffer |
+| `(N evicted)` | web admin structured preview header | cumulative evicted-turn count shown beside the instance name |
+
+the counters are cumulative: they reflect the total since the session started, not just the most recent batch.
+
+### zero and negative values
+
+| config value | meaning |
+|-------------|---------|
+| key omitted | use the default (4 MiB bytes, 2000 turns) |
+| `0` | disable the corresponding limit (unlimited) |
+| negative | normalized to `0` (unlimited) |
+
+setting both limits to `0` disables all eviction. the renderer will grow without bound — only do this for short-lived sessions or when an external process manages memory.
+
+### viewing retention stats
+
+retention diagnostics are visible in two places:
+
+- **info pane (TUI):** with an sdk instance selected, the info pane shows a `transcript` row with byte usage and line count. when evicted turns or truncated rows are non-zero a suffix is appended, e.g. `1.2M · 348 lines (7 evicted)` or `1.2M · 348 lines (7 evicted, 2 truncated)`.
+- **web admin structured preview:** a compact transcript status line appears above the turn timeline when retention is active, e.g. `transcript 1.2M · 348 lines · 7 evicted`. the line is hidden when bytes, evictions, and truncations are all zero.
+
+the underlying stats are the `RendererStats` snapshot: `bytes`, `lines`, `turns`, `max_bytes`, `max_turns`, `evicted_turns`, `evicted_lines`, `evicted_bytes`, `truncated_rows`.
 
 ## reading output
 

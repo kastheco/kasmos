@@ -673,6 +673,123 @@ func TestIsEnforcementEnabled(t *testing.T) {
 	}
 }
 
+func TestSDKConfig_TOMLOmittedTable(t *testing.T) {
+	// No [sdk] section — both TOML pointer fields must be nil.
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	require.NoError(t, os.WriteFile(path, []byte("[ui]\nanimate_banner = false\n"), 0o644))
+
+	result, err := LoadTOMLConfigFrom(path)
+	require.NoError(t, err)
+	assert.Nil(t, result.SDK.TranscriptMaxBytes, "absent [sdk] table → TranscriptMaxBytes nil")
+	assert.Nil(t, result.SDK.TranscriptMaxTurns, "absent [sdk] table → TranscriptMaxTurns nil")
+}
+
+func TestSDKConfig_TOMLOmittedIndividualKeys(t *testing.T) {
+	// [sdk] present but only one key — the other must be nil.
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	content := `
+[sdk]
+transcript_max_bytes = 1048576
+`
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o644))
+
+	result, err := LoadTOMLConfigFrom(path)
+	require.NoError(t, err)
+	require.NotNil(t, result.SDK.TranscriptMaxBytes)
+	assert.Equal(t, int64(1<<20), *result.SDK.TranscriptMaxBytes)
+	assert.Nil(t, result.SDK.TranscriptMaxTurns, "absent transcript_max_turns → nil")
+}
+
+func TestSDKConfig_TOMLExplicitValues(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	content := `
+[sdk]
+transcript_max_bytes = 8388608
+transcript_max_turns = 1000
+`
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o644))
+
+	result, err := LoadTOMLConfigFrom(path)
+	require.NoError(t, err)
+	require.NotNil(t, result.SDK.TranscriptMaxBytes)
+	require.NotNil(t, result.SDK.TranscriptMaxTurns)
+	assert.Equal(t, int64(8<<20), *result.SDK.TranscriptMaxBytes)
+	assert.Equal(t, int64(1000), *result.SDK.TranscriptMaxTurns)
+}
+
+func TestSDKConfig_TOMLExplicitZeros(t *testing.T) {
+	// Explicit zeros must arrive as non-nil pointers to zero.
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	content := `
+[sdk]
+transcript_max_bytes = 0
+transcript_max_turns = 0
+`
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o644))
+
+	result, err := LoadTOMLConfigFrom(path)
+	require.NoError(t, err)
+	require.NotNil(t, result.SDK.TranscriptMaxBytes)
+	require.NotNil(t, result.SDK.TranscriptMaxTurns)
+	assert.Equal(t, int64(0), *result.SDK.TranscriptMaxBytes)
+	assert.Equal(t, int64(0), *result.SDK.TranscriptMaxTurns)
+}
+
+func TestSDKConfig_SaveLoadRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+
+	maxBytes := int64(2 << 20)
+	maxTurns := int64(500)
+	tc := &TOMLConfig{
+		SDK: TOMLSDKConfig{
+			TranscriptMaxBytes: &maxBytes,
+			TranscriptMaxTurns: &maxTurns,
+		},
+	}
+
+	require.NoError(t, SaveTOMLConfigTo(tc, path))
+
+	data, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Contains(t, string(data), "[sdk]")
+	assert.Contains(t, string(data), "transcript_max_bytes")
+	assert.Contains(t, string(data), "transcript_max_turns")
+
+	loaded, err := LoadTOMLConfigFrom(path)
+	require.NoError(t, err)
+	require.NotNil(t, loaded.SDK.TranscriptMaxBytes)
+	require.NotNil(t, loaded.SDK.TranscriptMaxTurns)
+	assert.Equal(t, int64(2<<20), *loaded.SDK.TranscriptMaxBytes)
+	assert.Equal(t, int64(500), *loaded.SDK.TranscriptMaxTurns)
+}
+
+func TestSDKConfig_DefaultConfigWritesSDK(t *testing.T) {
+	// SaveTOMLConfigTo(configToTOML(DefaultConfig())) must include [sdk] with defaults.
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+
+	def := DefaultConfig()
+	require.NoError(t, SaveTOMLConfigTo(configToTOML(def), path))
+
+	data, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Contains(t, string(data), "[sdk]", "default config should write [sdk] section")
+	assert.Contains(t, string(data), "transcript_max_bytes")
+	assert.Contains(t, string(data), "transcript_max_turns")
+
+	loaded, err := LoadTOMLConfigFrom(path)
+	require.NoError(t, err)
+	require.NotNil(t, loaded.SDK.TranscriptMaxBytes)
+	require.NotNil(t, loaded.SDK.TranscriptMaxTurns)
+	assert.Equal(t, int64(4<<20), *loaded.SDK.TranscriptMaxBytes)
+	assert.Equal(t, int64(2000), *loaded.SDK.TranscriptMaxTurns)
+}
+
 func TestLoadHooksForRepo(t *testing.T) {
 	t.Run("returns nil when config.toml absent", func(t *testing.T) {
 		repoDir := t.TempDir()

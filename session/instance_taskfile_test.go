@@ -532,3 +532,34 @@ func TestInstanceData_SDKSpeedTier_FromInstanceDataRoundTrip(t *testing.T) {
 	roundTrip := inst.ToInstanceData()
 	assert.Equal(t, "fast", roundTrip.SDKSpeedTier)
 }
+
+func TestInstanceData_SDKTranscriptLimits_FromInstanceDataRoundTrip(t *testing.T) {
+	data := InstanceData{
+		Title:                  "retained-sdk",
+		Path:                   "/tmp/repo",
+		Branch:                 "plan/retained-sdk",
+		Status:                 Paused,
+		Program:                "codex",
+		ExecutionMode:          ExecutionModeSDK,
+		SDKTranscriptLimitsSet: true,
+		SDKTranscriptMaxBytes:  2 << 20,
+		SDKTranscriptMaxTurns:  250,
+		Worktree: GitWorktreeData{
+			RepoPath:     "/tmp/repo",
+			WorktreePath: "/tmp/repo/.worktrees/retained-sdk",
+			SessionName:  "retained-sdk",
+			BranchName:   "plan/retained-sdk",
+		},
+	}
+
+	inst, err := FromInstanceData(data)
+	require.NoError(t, err)
+	assert.True(t, inst.SDKTranscriptLimitsSet)
+	assert.Equal(t, int64(2<<20), inst.SDKTranscriptMaxBytes)
+	assert.Equal(t, int64(250), inst.SDKTranscriptMaxTurns)
+
+	roundTrip := inst.ToInstanceData()
+	assert.True(t, roundTrip.SDKTranscriptLimitsSet)
+	assert.Equal(t, int64(2<<20), roundTrip.SDKTranscriptMaxBytes)
+	assert.Equal(t, int64(250), roundTrip.SDKTranscriptMaxTurns)
+}

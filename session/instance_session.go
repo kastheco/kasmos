@@ -226,6 +226,13 @@ func (i *Instance) SetCachedPresentation(turns []*sdk.PresentationTurn) {
 	i.CachedPresentation = sdk.ClonePresentationTurns(turns)
 }
 
+// SetCachedRendererStats stores a value-copy of the most recent renderer stats.
+// RendererStats is a plain value type so this is always a copy — callers
+// cannot alias the stored value by retaining a pointer.
+func (i *Instance) SetCachedRendererStats(stats sdk.RendererStats) {
+	i.RendererStats = stats
+}
+
 // SetExecutionSessionForTest replaces the execution session without starting the
 // instance. Intended for use in tests that need to inject a custom session
 // (e.g. a mock presentationProvider) without spawning real processes.
@@ -318,6 +325,9 @@ type InstanceMetadata struct {
 	// TmuxAlive reflects the result of session liveness check (used by the reviewer completion check).
 	TmuxAlive        bool
 	PermissionPrompt *PermissionPrompt
+	// RendererStats is a point-in-time snapshot of the SDK renderer's byte and eviction accounting.
+	// Zero-valued for tmux-backed sessions (which do not implement rendererStatsProvider).
+	RendererStats sdk.RendererStats
 }
 
 // CollectMetadata gathers all per-tick data for this instance via subprocess calls.
@@ -346,6 +356,11 @@ func (i *Instance) CollectMetadata() InstanceMetadata {
 	}
 	if m.PermissionPrompt == nil && m.ContentCaptured && m.Content != "" {
 		m.PermissionPrompt = ParsePermissionPrompt(m.Content, i.Program)
+	}
+
+	// Renderer stats for SDK sessions. Zero for tmux-backed sessions.
+	if provider, ok := i.executionSession.(rendererStatsProvider); ok {
+		m.RendererStats = provider.RendererStats()
 	}
 
 	// Resource usage via pgrep + ps.

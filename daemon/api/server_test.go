@@ -415,6 +415,7 @@ type presentationStub struct {
 	DaemonState
 	rawTurns  json.RawMessage
 	supported bool
+	stats     *RendererStats
 	err       error
 }
 
@@ -425,8 +426,11 @@ func (s *presentationStub) ListPlans(_ string) ([]taskstore.TaskEntry, error) {
 	return nil, nil
 }
 func (s *presentationStub) ListTasks(_ string) ([]TaskStatus, error) { return nil, nil }
-func (s *presentationStub) CapturePresentation(_, _ string) (json.RawMessage, bool, error) {
-	return s.rawTurns, s.supported, s.err
+func (s *presentationStub) CapturePresentation(_, _ string) (PresentationSnapshot, error) {
+	if s.err != nil {
+		return PresentationSnapshot{}, s.err
+	}
+	return PresentationSnapshot{Supported: s.supported, Turns: s.rawTurns, Stats: s.stats}, nil
 }
 
 func TestHandler_InstancePresentation_SDK(t *testing.T) {
@@ -561,6 +565,60 @@ func TestHandler_InstancePresentation_NotFound(t *testing.T) {
 	h.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusNotFound, w.Code, "body: %s", w.Body.String())
+}
+
+// TestHandler_InstancePresentation_RendererStats verifies that renderer stats
+// provided by the StateProvider are serialized in the presentation response
+// under the "stats" key.
+func TestHandler_InstancePresentation_RendererStats(t *testing.T) {
+	rawTurns := json.RawMessage(`[]`)
+	stats := &RendererStats{
+		Bytes:        1024,
+		Lines:        42,
+		Turns:        5,
+		MaxBytes:     4 << 20,
+		MaxTurns:     2000,
+		EvictedTurns: 1,
+		EvictedBytes: 256,
+	}
+	state := &presentationStub{rawTurns: rawTurns, supported: true, stats: stats}
+	h := NewHandler(state)
+
+	req := httptest.NewRequest("GET", "/v1/repos/proj/instances/sdk-agent/presentation", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code, "body: %s", w.Body.String())
+
+	var resp PresentationResponse
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
+	assert.True(t, resp.Supported)
+	require.NotNil(t, resp.Stats, "stats must be present in response")
+	assert.Equal(t, int64(1024), resp.Stats.Bytes)
+	assert.Equal(t, int64(42), resp.Stats.Lines)
+	assert.Equal(t, int64(5), resp.Stats.Turns)
+	assert.Equal(t, int64(4<<20), resp.Stats.MaxBytes)
+	assert.Equal(t, int64(2000), resp.Stats.MaxTurns)
+	assert.Equal(t, int64(1), resp.Stats.EvictedTurns)
+	assert.Equal(t, int64(256), resp.Stats.EvictedBytes)
+}
+
+// TestHandler_InstancePresentation_NoStats verifies that when stats is nil
+// (e.g. tmux instance or no live renderer), the "stats" field is omitted.
+func TestHandler_InstancePresentation_NoStats(t *testing.T) {
+	state := &presentationStub{rawTurns: nil, supported: false, stats: nil}
+	h := NewHandler(state)
+
+	req := httptest.NewRequest("GET", "/v1/repos/proj/instances/tmux-agent/presentation", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var outer map[string]json.RawMessage
+	require.NoError(t, json.NewDecoder(w.Body).Decode(&outer))
+	_, hasStats := outer["stats"]
+	assert.False(t, hasStats, "stats must be omitted when nil")
 }
 
 // ---------------------------------------------------------------------------

@@ -85,6 +85,20 @@ type TOMLKeybindsConfig struct {
 	DoubleTapThresholdMS *int `toml:"double_tap_threshold_ms,omitempty"`
 }
 
+// TOMLSDKConfig holds SDK session transcript retention limits from the [sdk] TOML table.
+// Pointer fields distinguish omitted keys (nil → use runtime default) from explicit zeros
+// (non-nil zero → disable that dimension).
+type TOMLSDKConfig struct {
+	// TranscriptMaxBytes caps the in-process transcript at this many bytes.
+	// Nil means the key was absent; the runtime default (4 MiB) applies.
+	// Zero disables the byte limit. Negative values are clamped to zero with a warning.
+	TranscriptMaxBytes *int64 `toml:"transcript_max_bytes,omitempty"`
+	// TranscriptMaxTurns caps the number of completed turns retained by the renderer.
+	// Nil means the key was absent; the runtime default (2000) applies.
+	// Zero disables the turn limit. Negative values are clamped to zero with a warning.
+	TranscriptMaxTurns *int64 `toml:"transcript_max_turns,omitempty"`
+}
+
 // TOMLConfig is the top-level TOML file structure.
 type TOMLConfig struct {
 	Phases               map[string]string       `toml:"phases"`
@@ -93,6 +107,7 @@ type TOMLConfig struct {
 	Telemetry            TOMLTelemetryConfig     `toml:"telemetry"`
 	Orchestration        TOMLOrchestrationConfig `toml:"orchestration"`
 	Keybinds             TOMLKeybindsConfig      `toml:"keybinds"`
+	SDK                  TOMLSDKConfig           `toml:"sdk"`
 	Enforcement          map[string]bool         `toml:"enforcement,omitempty"`
 	DatabaseURL          string                  `toml:"database_url,omitempty"`
 	DefaultProgram       string                  `toml:"default_program,omitempty"`
@@ -131,6 +146,9 @@ type TOMLConfigResult struct {
 	ClaudeNoFlicker          *bool
 	Hooks                    []TOMLHook
 	Enforcement              map[string]bool
+	// SDK holds transcript retention limit pointers from the [sdk] TOML table.
+	// Nil fields mean the key was absent; configFromTOML applies runtime defaults.
+	SDK TOMLSDKConfig
 }
 
 // IsEnforcementEnabled reports whether hook enforcement is active for the given harness.
@@ -186,6 +204,7 @@ func LoadTOMLConfigFrom(path string) (*TOMLConfigResult, error) {
 		ClaudeNoFlicker:          tc.ClaudeNoFlicker,
 		Hooks:                    tc.Hooks,
 		Enforcement:              tc.Enforcement,
+		SDK:                      tc.SDK, // nil pointers mean key absent; configFromTOML applies defaults
 	}
 
 	for name, agent := range tc.Agents {

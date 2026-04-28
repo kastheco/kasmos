@@ -166,3 +166,15 @@
   flex-direction: column;
   gap: 0;
 }
+
+/* transcript diagnostics line — compact single line above TurnTimeline */
+.transcriptStats {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--rp-muted);
+  padding: 2px 0 4px;
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

@@ -80,6 +80,9 @@ func TestRecord_RoundTripsFullInstanceData(t *testing.T) {
 		ReviewCycle:            7,
 		ClaudeNoFlicker:        true,
 		SDKSpeedTier:           "fast",
+		SDKTranscriptLimitsSet: true,
+		SDKTranscriptMaxBytes:  1024,
+		SDKTranscriptMaxTurns:  8,
 		Worktree: session.GitWorktreeData{
 			RepoPath:      "/repo",
 			WorktreePath:  "/worktrees/schema-agent",

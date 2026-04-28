@@ -6,7 +6,9 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/kastheco/kasmos/config"
 	"github.com/kastheco/kasmos/config/taskstore"
+	"github.com/kastheco/kasmos/orchestration/loop"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -246,4 +248,125 @@ parallel_planner_architect = false
 		require.Len(t, repos, 1)
 		assert.False(t, repos[0].ParallelPlannerArchitect)
 	})
+}
+
+// TestSDKTranscriptRetention_ResolveRepoConfig verifies that resolveRepoConfig
+// reads [sdk] transcript limits from the project TOML and returns defaults when
+// the section is absent.
+func TestSDKTranscriptRetention_ResolveRepoConfig(t *testing.T) {
+	defaults := config.DefaultConfig().SDK
+
+	t.Run("no project config — default SDK limits apply", func(t *testing.T) {
+		rm := newTestRepoManager(t)
+		_, _, _, _, _, sdk := rm.resolveRepoConfig(t.TempDir())
+		assert.Equal(t, defaults.TranscriptMaxBytes, sdk.TranscriptMaxBytes)
+		assert.Equal(t, defaults.TranscriptMaxTurns, sdk.TranscriptMaxTurns)
+	})
+
+	t.Run("explicit values in project TOML override defaults", func(t *testing.T) {
+		repoDir := t.TempDir()
+		kasmosDir := filepath.Join(repoDir, ".kasmos")
+		require.NoError(t, os.MkdirAll(kasmosDir, 0o755))
+		content := `
+[sdk]
+transcript_max_bytes = 1048576
+transcript_max_turns = 500
+`
+		require.NoError(t, os.WriteFile(filepath.Join(kasmosDir, "config.toml"), []byte(content), 0o644))
+
+		rm := newTestRepoManager(t)
+		_, _, _, _, _, sdk := rm.resolveRepoConfig(repoDir)
+		assert.Equal(t, int64(1<<20), sdk.TranscriptMaxBytes)
+		assert.Equal(t, int64(500), sdk.TranscriptMaxTurns)
+	})
+
+	t.Run("explicit zero disables limits", func(t *testing.T) {
+		repoDir := t.TempDir()
+		kasmosDir := filepath.Join(repoDir, ".kasmos")
+		require.NoError(t, os.MkdirAll(kasmosDir, 0o755))
+		content := `
+[sdk]
+transcript_max_bytes = 0
+transcript_max_turns = 0
+`
+		require.NoError(t, os.WriteFile(filepath.Join(kasmosDir, "config.toml"), []byte(content), 0o644))
+
+		rm := newTestRepoManager(t)
+		_, _, _, _, _, sdk := rm.resolveRepoConfig(repoDir)
+		assert.Equal(t, int64(0), sdk.TranscriptMaxBytes, "explicit zero must disable byte limit")
+		assert.Equal(t, int64(0), sdk.TranscriptMaxTurns, "explicit zero must disable turn limit")
+	})
+
+	t.Run("negative values clamped to zero", func(t *testing.T) {
+		repoDir := t.TempDir()
+		kasmosDir := filepath.Join(repoDir, ".kasmos")
+		require.NoError(t, os.MkdirAll(kasmosDir, 0o755))
+		content := `
+[sdk]
+transcript_max_bytes = -1024
+transcript_max_turns = -50
+`
+		require.NoError(t, os.WriteFile(filepath.Join(kasmosDir, "config.toml"), []byte(content), 0o644))
+
+		rm := newTestRepoManager(t)
+		_, _, _, _, _, sdk := rm.resolveRepoConfig(repoDir)
+		assert.Equal(t, int64(0), sdk.TranscriptMaxBytes, "negative must clamp to 0")
+		assert.Equal(t, int64(0), sdk.TranscriptMaxTurns, "negative must clamp to 0")
+	})
+}
+
+// TestSDKTranscriptRetention_RepoEntryPropagated verifies that the SDK limits
+// are stored on the RepoEntry returned by Add/List so spawners can access them.
+func TestSDKTranscriptRetention_RepoEntryPropagated(t *testing.T) {
+	repoDir := t.TempDir()
+	kasmosDir := filepath.Join(repoDir, ".kasmos")
+	require.NoError(t, os.MkdirAll(kasmosDir, 0o755))
+	content := `
+[sdk]
+transcript_max_bytes = 2097152
+transcript_max_turns = 100
+`
+	require.NoError(t, os.WriteFile(filepath.Join(kasmosDir, "config.toml"), []byte(content), 0o644))
+
+	rm := newTestRepoManager(t)
+	require.NoError(t, rm.Add(repoDir))
+	repos := rm.List()
+	require.Len(t, repos, 1)
+	assert.Equal(t, int64(2<<20), repos[0].SDK.TranscriptMaxBytes)
+	assert.Equal(t, int64(100), repos[0].SDK.TranscriptMaxTurns)
+}
+
+// TestWithSDKTranscriptRetention_SetsLimits verifies that withSDKTranscriptRetention
+// copies entry.SDK limits into the SpawnOpts and sets SDKTranscriptLimitsSet.
+func TestWithSDKTranscriptRetention_SetsLimits(t *testing.T) {
+	entry := RepoEntry{
+		SDK: config.SDKConfig{
+			TranscriptMaxBytes: 4 << 20,
+			TranscriptMaxTurns: 2000,
+		},
+	}
+	base := loop.SpawnOpts{PlanFile: "plan.md"}
+	got := withSDKTranscriptRetention(entry, base)
+
+	assert.True(t, got.SDKTranscriptLimitsSet, "SDKTranscriptLimitsSet must be set")
+	assert.Equal(t, int64(4<<20), got.SDKTranscriptMaxBytes)
+	assert.Equal(t, int64(2000), got.SDKTranscriptMaxTurns)
+	// Existing fields must be preserved.
+	assert.Equal(t, "plan.md", got.PlanFile)
+}
+
+// TestWithSDKTranscriptRetention_ZeroLimitsAreValid verifies that zero values
+// (unlimited) are forwarded with SDKTranscriptLimitsSet=true so the renderer
+// explicitly disables its limits rather than falling back to defaults.
+func TestWithSDKTranscriptRetention_ZeroLimitsAreValid(t *testing.T) {
+	entry := RepoEntry{
+		SDK: config.SDKConfig{
+			TranscriptMaxBytes: 0, // unlimited
+			TranscriptMaxTurns: 0, // unlimited
+		},
+	}
+	got := withSDKTranscriptRetention(entry, loop.SpawnOpts{})
+	assert.True(t, got.SDKTranscriptLimitsSet)
+	assert.Equal(t, int64(0), got.SDKTranscriptMaxBytes)
+	assert.Equal(t, int64(0), got.SDKTranscriptMaxTurns)
 }

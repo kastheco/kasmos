@@ -327,6 +327,18 @@ func (i *Instance) setProgressFunc(fn func(int, string)) {
 	}
 }
 
+// applySDKRetentionToSession forwards transcript limits to the execution session
+// when SDKTranscriptLimitsSet is true and the session implements rendererRetentionSetter.
+// No-op for tmux-backed sessions (which do not implement the interface).
+func (i *Instance) applySDKRetentionToSession() {
+	if !i.SDKTranscriptLimitsSet || i.executionSession == nil {
+		return
+	}
+	if rrs, ok := i.executionSession.(rendererRetentionSetter); ok {
+		rrs.SetRendererRetention(i.SDKTranscriptMaxBytes, i.SDKTranscriptMaxTurns)
+	}
+}
+
 // Start launches the instance. When firstTimeSetup is true a fresh git worktree is
 // created and the execution session starts inside it. When false the instance was loaded
 // from storage and the existing session is restored instead.
@@ -361,6 +373,7 @@ func (i *Instance) Start(firstTimeSetup bool) error {
 		i.executionSession.SetAgentType(i.AgentType)
 		i.executionSession.SetNoFlicker(i.ClaudeNoFlicker)
 		i.executionSession.SetSDKSpeedTier(i.SDKSpeedTier)
+		i.applySDKRetentionToSession()
 		i.setExecutionTaskEnv()
 		i.configureSessionTitle()
 		i.setProgressFunc(func(stage int, desc string) {
@@ -448,6 +461,7 @@ func (i *Instance) StartOnMainBranch() error {
 		i.executionSession.SetAgentType(i.AgentType)
 		i.executionSession.SetNoFlicker(i.ClaudeNoFlicker)
 		i.executionSession.SetSDKSpeedTier(i.SDKSpeedTier)
+		i.applySDKRetentionToSession()
 		i.setExecutionTaskEnv()
 		i.configureSessionTitle()
 		i.setProgressFunc(func(stage int, desc string) {
@@ -504,6 +518,7 @@ func (i *Instance) StartOnBranch(branch string) error {
 		i.executionSession.SetAgentType(i.AgentType)
 		i.executionSession.SetNoFlicker(i.ClaudeNoFlicker)
 		i.executionSession.SetSDKSpeedTier(i.SDKSpeedTier)
+		i.applySDKRetentionToSession()
 		i.setExecutionTaskEnv()
 		i.configureSessionTitle()
 		i.setProgressFunc(func(stage int, desc string) {
@@ -576,6 +591,7 @@ func (i *Instance) StartInSharedWorktree(worktree *git.GitWorktree, branch strin
 		i.executionSession = i.prepareExecutionSession()
 		i.executionSession.SetAgentType(i.AgentType)
 		i.executionSession.SetSDKSpeedTier(i.SDKSpeedTier)
+		i.applySDKRetentionToSession()
 		i.setExecutionTaskEnv()
 		i.configureSessionTitle()
 		i.setProgressFunc(func(stage int, desc string) {
@@ -749,6 +765,7 @@ func (i *Instance) Restart() error {
 		i.executionSession = i.resetExecutionSession()
 		i.executionSession.SetAgentType(i.AgentType)
 		i.executionSession.SetSDKSpeedTier(i.SDKSpeedTier)
+		i.applySDKRetentionToSession()
 		i.setExecutionTaskEnv()
 		i.configureSessionTitle()
 	}
@@ -824,6 +841,7 @@ func (i *Instance) Resume() error {
 				i.executionSession = i.resetExecutionSession()
 				i.executionSession.SetAgentType(i.AgentType)
 				i.executionSession.SetSDKSpeedTier(i.SDKSpeedTier)
+				i.applySDKRetentionToSession()
 				i.setExecutionTaskEnv()
 				i.configureSessionTitle()
 			}
@@ -847,6 +865,7 @@ func (i *Instance) Resume() error {
 			i.executionSession = i.resetExecutionSession()
 			i.executionSession.SetAgentType(i.AgentType)
 			i.executionSession.SetSDKSpeedTier(i.SDKSpeedTier)
+			i.applySDKRetentionToSession()
 			i.setExecutionTaskEnv()
 			i.configureSessionTitle()
 		}

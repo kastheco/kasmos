@@ -914,4 +914,140 @@ describe("AgentPreview", () => {
     expect(container.querySelectorAll("[data-kind='tool_diff']")).toHaveLength(0);
     expect(container.querySelectorAll("[data-kind='tool_preview']")).toHaveLength(0);
   });
+
+  // ---------------------------------------------------------------------------
+  // Transcript diagnostics
+  // ---------------------------------------------------------------------------
+
+  it("hides transcript line when stats is absent", async () => {
+    (api.getInstancePresentation as Mock).mockResolvedValue(
+      makePresentation({
+        turns: [makeTurn({ rows: [makeRow({ kind: "prose", text: "hello" })] })],
+        // no stats field
+      }),
+    );
+
+    render(<AgentPreview project="my-project" title="agent-1" />);
+
+    await waitFor(() => {
+      expect(screen.getByText("hello")).toBeTruthy();
+    });
+
+    expect(screen.queryByText(/^transcript/)).toBeNull();
+  });
+
+  it("hides transcript line when stats bytes and evictions are all zero", async () => {
+    (api.getInstancePresentation as Mock).mockResolvedValue(
+      makePresentation({
+        turns: [makeTurn({ rows: [makeRow({ kind: "prose", text: "hello" })] })],
+        stats: {
+          bytes: 0,
+          lines: 0,
+          turns: 0,
+          max_bytes: 4194304,
+          max_turns: 2000,
+          evicted_turns: 0,
+          evicted_lines: 0,
+          evicted_bytes: 0,
+          truncated_rows: 0,
+        },
+      }),
+    );
+
+    render(<AgentPreview project="my-project" title="agent-1" />);
+
+    await waitFor(() => {
+      expect(screen.getByText("hello")).toBeTruthy();
+    });
+
+    expect(screen.queryByText(/^transcript/)).toBeNull();
+  });
+
+  it("shows transcript line with bytes and lines when no evictions", async () => {
+    (api.getInstancePresentation as Mock).mockResolvedValue(
+      makePresentation({
+        turns: [makeTurn({ rows: [makeRow({ kind: "prose", text: "hello" })] })],
+        stats: {
+          bytes: 1258291, // ~1.2M
+          lines: 348,
+          turns: 10,
+          max_bytes: 4194304,
+          max_turns: 2000,
+          evicted_turns: 0,
+          evicted_lines: 0,
+          evicted_bytes: 0,
+          truncated_rows: 0,
+        },
+      }),
+    );
+
+    render(<AgentPreview project="my-project" title="agent-1" />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/transcript/)).toBeTruthy();
+    });
+
+    const statsEl = screen.getByText(/transcript/);
+    expect(statsEl.textContent).toContain("lines");
+    expect(statsEl.textContent).not.toContain("evicted");
+    expect(statsEl.textContent).not.toContain("truncated");
+  });
+
+  it("shows eviction count in transcript line when evicted_turns > 0", async () => {
+    (api.getInstancePresentation as Mock).mockResolvedValue(
+      makePresentation({
+        turns: [makeTurn({ rows: [makeRow({ kind: "prose", text: "hi" })] })],
+        stats: {
+          bytes: 2097152, // 2M
+          lines: 500,
+          turns: 20,
+          max_bytes: 4194304,
+          max_turns: 2000,
+          evicted_turns: 7,
+          evicted_lines: 140,
+          evicted_bytes: 1048576,
+          truncated_rows: 0,
+        },
+      }),
+    );
+
+    render(<AgentPreview project="my-project" title="agent-1" />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/transcript/)).toBeTruthy();
+    });
+
+    const statsEl = screen.getByText(/transcript/);
+    expect(statsEl.textContent).toContain("7 evicted");
+    expect(statsEl.textContent).not.toContain("truncated");
+  });
+
+  it("shows truncated count alongside evictions when truncated_rows > 0", async () => {
+    (api.getInstancePresentation as Mock).mockResolvedValue(
+      makePresentation({
+        turns: [makeTurn({ rows: [makeRow({ kind: "prose", text: "hi" })] })],
+        stats: {
+          bytes: 3145728, // 3M
+          lines: 600,
+          turns: 25,
+          max_bytes: 4194304,
+          max_turns: 2000,
+          evicted_turns: 5,
+          evicted_lines: 100,
+          evicted_bytes: 1572864,
+          truncated_rows: 2,
+        },
+      }),
+    );
+
+    render(<AgentPreview project="my-project" title="agent-1" />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/transcript/)).toBeTruthy();
+    });
+
+    const statsEl = screen.getByText(/transcript/);
+    expect(statsEl.textContent).toContain("5 evicted");
+    expect(statsEl.textContent).toContain("2 truncated");
+  });
 });

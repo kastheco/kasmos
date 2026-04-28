@@ -192,6 +192,10 @@ type PresentationTurn struct {
 	// It is nil on completed and interrupted turns, and nil in the live
 	// renderer's internal state (set only on the deep copy).
 	Activity *TurnActivity
+
+	// isSentinel marks the eviction sentinel turn at index 0 of the renderer's
+	// internal turns slice. It is unexported and invisible to JSON consumers.
+	isSentinel bool
 }
 
 type presentationRowJSON struct {

@@ -1060,6 +1060,50 @@ assertEqual(
 
 console.log("api.test.ts diff/preview/activity normalization ok");
 
+// ---- getInstancePresentation: stats field -----------------------------------
+
+// Response with stats passes them through unchanged.
+const statsPayload = {
+  supported: true,
+  captured_at: "2026-04-17T10:00:00Z",
+  turns: [],
+  stats: {
+    bytes: 1258291,
+    lines: 348,
+    turns: 12,
+    max_bytes: 4194304,
+    max_turns: 2000,
+    evicted_turns: 7,
+    evicted_lines: 140,
+    evicted_bytes: 524288,
+    truncated_rows: 2,
+  },
+};
+mockFetch(true, 200, JSON.stringify(statsPayload));
+const statsPresentation = await getInstancePresentation("proj", "agent-stats");
+if (!statsPresentation.stats) {
+  throw new Error("stats payload: stats must be present in normalized response");
+}
+assertEqual(statsPresentation.stats.bytes, 1258291, "stats.bytes passes through");
+assertEqual(statsPresentation.stats.lines, 348, "stats.lines passes through");
+assertEqual(statsPresentation.stats.evicted_turns, 7, "stats.evicted_turns passes through");
+assertEqual(statsPresentation.stats.truncated_rows, 2, "stats.truncated_rows passes through");
+
+// Response without stats field: stats must be absent (undefined).
+const noStatsPayload = {
+  supported: true,
+  captured_at: "2026-04-17T10:00:00Z",
+  turns: [],
+  // no stats field — daemon version pre-dates this field or tmux instance
+};
+mockFetch(true, 200, JSON.stringify(noStatsPayload));
+const noStatsPresentation = await getInstancePresentation("proj", "agent-no-stats");
+if (noStatsPresentation.stats !== undefined) {
+  throw new Error("no-stats payload: stats must be absent (undefined) in normalized response");
+}
+
+console.log("api.test.ts stats normalization ok");
+
 // ---- sendInstancePermission -------------------------------------------------
 
 // Reinstall the full-tracking stub so _lastFetchedInit is captured.

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/kastheco/kasmos/cmd"
+	"github.com/kastheco/kasmos/config"
 	"github.com/kastheco/kasmos/config/taskfsm"
 	"github.com/kastheco/kasmos/config/taskparser"
 	"github.com/kastheco/kasmos/config/taskstore"
@@ -17,6 +18,7 @@ import (
 	"github.com/kastheco/kasmos/orchestration"
 	"github.com/kastheco/kasmos/orchestration/loop"
 	"github.com/kastheco/kasmos/session"
+	sessionsdk "github.com/kastheco/kasmos/session/sdk"
 	tmuxpkg "github.com/kastheco/kasmos/session/tmux"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -335,6 +337,7 @@ func TestDaemonStateAdapter_InstanceActionErrorMapping(t *testing.T) {
 type shellCommandExecutionSession struct {
 	command string
 	err     error
+	stats   sessionsdk.RendererStats
 }
 
 var _ session.ExecutionSession = (*shellCommandExecutionSession)(nil)
@@ -370,6 +373,9 @@ func (s *shellCommandExecutionSession) SetSessionTitle(string)         {}
 func (s *shellCommandExecutionSession) SetTitleFunc(func(string, time.Time, string)) {
 }
 func (s *shellCommandExecutionSession) SetSDKSpeedTier(string) {}
+func (s *shellCommandExecutionSession) RendererStats() sessionsdk.RendererStats {
+	return s.stats
+}
 func (s *shellCommandExecutionSession) RunShellCommand(_ context.Context, command string) error {
 	s.command = command
 	return s.err
@@ -449,6 +455,53 @@ func TestDaemonStateAdapter_RunInstanceShellCommand_NonSDKInstanceInvalidRequest
 	err := adapter.RunInstanceShellCommand(project, title, "echo")
 
 	require.ErrorIs(t, err, api.ErrInvalidRequest)
+}
+
+func TestDaemon_MonitorRunningInstances_CachesSDKRendererStats(t *testing.T) {
+	const (
+		project  = "proj"
+		repoPath = "/tmp/proj"
+		title    = "sdk-agent"
+	)
+
+	stats := sessionsdk.RendererStats{
+		Bytes:         8192,
+		Lines:         64,
+		Turns:         7,
+		MaxBytes:      8 << 20,
+		MaxTurns:      3000,
+		EvictedTurns:  3,
+		EvictedLines:  10,
+		EvictedBytes:  2048,
+		TruncatedRows: 1,
+	}
+	execSession := &shellCommandExecutionSession{stats: stats}
+	inst := &session.Instance{
+		Title:         title,
+		Path:          repoPath,
+		ExecutionMode: session.ExecutionModeSDK,
+		Status:        session.Running,
+	}
+	inst.MarkStartedForTest()
+	inst.SetExecutionSessionForTest(execSession)
+
+	spawner := NewTmuxSpawner()
+	spawner.commitInstance(
+		instanceKey(repoPath, "plan.md", session.AgentTypeCoder),
+		"plan.md",
+		session.AgentTypeCoder,
+		project,
+		inst,
+	)
+	d := &Daemon{
+		spawner:     spawner,
+		logger:      slog.Default(),
+		broadcaster: api.NewEventBroadcaster(),
+	}
+
+	d.monitorRunningInstances(context.Background(), RepoEntry{Path: repoPath, Project: project})
+
+	assert.Equal(t, stats, inst.RendererStats)
 }
 
 func TestDaemon_GracefulShutdown_DrainsAgents(t *testing.T) {
@@ -2047,6 +2100,40 @@ func TestDaemon_SpawnSolo_ReturnsBeforeSpawnCompletes(t *testing.T) {
 		t.Fatal("background solo spawn did not start")
 	}
 	close(release)
+}
+
+func TestDaemon_SpawnSolo_ForwardsRepoSDKTranscriptLimits(t *testing.T) {
+	project := "proj"
+	gotOpts := make(chan SpawnSoloOpts, 1)
+	d := &Daemon{
+		repos:       NewRepoManager(),
+		spawner:     NewTmuxSpawner(),
+		logger:      slog.Default(),
+		broadcaster: api.NewEventBroadcaster(),
+		spawnSolo: func(_ context.Context, opts SpawnSoloOpts) error {
+			gotOpts <- opts
+			return nil
+		},
+	}
+	d.repos.repos = []RepoEntry{{
+		Path:    "/tmp/proj",
+		Project: project,
+		SDK: config.SDKConfig{
+			TranscriptMaxBytes: 0,
+			TranscriptMaxTurns: 0,
+		},
+	}}
+
+	require.NoError(t, d.SpawnSolo(project, api.SpawnSoloRequest{Title: "my-solo", Program: "claude"}))
+
+	select {
+	case opts := <-gotOpts:
+		assert.True(t, opts.SDKTranscriptLimitsSet)
+		assert.Equal(t, int64(0), opts.SDKTranscriptMaxBytes)
+		assert.Equal(t, int64(0), opts.SDKTranscriptMaxTurns)
+	case <-time.After(time.Second):
+		t.Fatal("background solo spawn did not start")
+	}
 }
 
 func TestDaemon_SpawnSolo_ConflictWhileAsyncSpawnPending(t *testing.T) {

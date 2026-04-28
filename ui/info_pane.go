@@ -76,6 +76,14 @@ type InfoData struct {
 	CPUPercent float64
 	MemMB      float64
 
+	// Transcript diagnostics — populated for SDK instances from cached renderer stats.
+	// Zero values mean no data available; the row is suppressed when TranscriptBytes == 0.
+	TranscriptBytes         int64
+	TranscriptLines         int64
+	TranscriptEvictedTurns  int64
+	TranscriptEvictedLines  int64
+	TranscriptTruncatedRows int64
+
 	// Wave / task context (zero values mean no wave info)
 	AgentType     string
 	WaveNumber    int
@@ -229,6 +237,19 @@ func statusToGlyph(status string) (string, color.Color) {
 		return "✓", ColorFoam
 	default:
 		return "○", ColorMuted
+	}
+}
+
+// formatBytesShort formats a byte count into a compact human-readable string.
+// Examples: 1200000 → "1.1M", 348000 → "340K", 512 → "512B".
+func formatBytesShort(n int64) string {
+	switch {
+	case n >= 1<<20:
+		return fmt.Sprintf("%.1fM", float64(n)/float64(1<<20))
+	case n >= 1<<10:
+		return fmt.Sprintf("%.0fK", float64(n)/float64(1<<10))
+	default:
+		return fmt.Sprintf("%dB", n)
 	}
 }
 
@@ -568,6 +589,18 @@ func (p *InfoPane) renderInstanceSection() string {
 	if p.data.CPUPercent > 0 || p.data.MemMB > 0 {
 		rows = append(rows, p.renderRow("cpu", fmt.Sprintf("%.0f%%", math.Round(p.data.CPUPercent))))
 		rows = append(rows, p.renderRow("memory", fmt.Sprintf("%.0fM", p.data.MemMB)))
+	}
+	// Transcript diagnostics: show for SDK instances when bytes are non-zero.
+	if p.data.TranscriptBytes > 0 && p.data.ExecutionMode != "tmux" {
+		transcriptVal := fmt.Sprintf("%s · %d lines", formatBytesShort(p.data.TranscriptBytes), p.data.TranscriptLines)
+		if p.data.TranscriptEvictedTurns > 0 || p.data.TranscriptTruncatedRows > 0 {
+			suffix := fmt.Sprintf("%d evicted", p.data.TranscriptEvictedTurns)
+			if p.data.TranscriptTruncatedRows > 0 {
+				suffix += fmt.Sprintf(", %d truncated", p.data.TranscriptTruncatedRows)
+			}
+			transcriptVal += " (" + suffix + ")"
+		}
+		rows = append(rows, p.renderRow("transcript", transcriptVal))
 	}
 	if p.data.HasPlan {
 		rows = append(rows, "", renderViewPlanButton("view plan doc"))

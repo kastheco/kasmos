@@ -128,10 +128,27 @@ export interface PresentationTurn {
   activity?: TurnActivity;
 }
 
+// RendererStats is a point-in-time snapshot of SDK renderer byte and eviction accounting.
+// Mirrors session/sdk.RendererStats JSON wire shape. All fields are integers.
+export interface RendererStats {
+  bytes: number;
+  lines: number;
+  turns: number;
+  max_bytes: number;
+  max_turns: number;
+  evicted_turns: number;
+  evicted_lines: number;
+  evicted_bytes: number;
+  truncated_rows: number;
+}
+
 export interface PresentationResponse {
   supported: boolean;
   turns: PresentationTurn[] | null;
   captured_at: Date;
+  // stats is the renderer retention snapshot at capture time.
+  // Absent for tmux instances and daemon versions that pre-date this field.
+  stats?: RendererStats;
 }
 
 export type PermissionDecision = "allow_once" | "allow_always" | "reject";

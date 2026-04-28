@@ -458,6 +458,29 @@ func TestSDKSession_CapturePresentation_AfterTurnStarted(t *testing.T) {
 	assert.Equal(t, "t1", turns[0].ID)
 }
 
+func TestSDKSession_SetRendererRetention_LimitsAppliedBeforeEvents(t *testing.T) {
+	// Set limits before Start so the renderer sees them before any events flow.
+	s := New("name", "claude", false)
+	s.SetRendererRetention(1024, 10)
+	stats := s.RendererStats()
+	assert.Equal(t, int64(1024), stats.MaxBytes)
+	assert.Equal(t, int64(10), stats.MaxTurns)
+}
+
+func TestSDKSession_RendererStats_ReflectsConfiguredLimits(t *testing.T) {
+	mock := newMockTransport()
+	restore := injectTransport(mock)
+	defer restore()
+
+	s := New("name", "claude", false)
+	s.SetRendererRetention(512, 5)
+	require.NoError(t, s.Start(t.TempDir()))
+
+	stats := s.RendererStats()
+	assert.Equal(t, int64(512), stats.MaxBytes)
+	assert.Equal(t, int64(5), stats.MaxTurns)
+}
+
 func TestSDKSession_SetSDKSpeedTier_PropagatesViaLaunchConfig(t *testing.T) {
 	var capturedCfg LaunchConfig
 	orig := transportFactory

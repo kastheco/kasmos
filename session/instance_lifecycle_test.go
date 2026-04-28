@@ -849,6 +849,104 @@ func TestResume_NotPaused_ReturnsError(t *testing.T) {
 	assert.Contains(t, err.Error(), "paused")
 }
 
+// mockRetentionSession is a scriptedExecutionSession that also implements
+// rendererRetentionSetter to let lifecycle tests verify the limits path.
+type mockRetentionSession struct {
+	scriptedExecutionSession
+	capturedMaxBytes int64
+	capturedMaxTurns int64
+	retentionSet     bool
+}
+
+func (m *mockRetentionSession) SetRendererRetention(maxBytes, maxTurns int64) {
+	m.capturedMaxBytes = maxBytes
+	m.capturedMaxTurns = maxTurns
+	m.retentionSet = true
+}
+
+// TestStart_RendererRetention_TmuxSessionIgnoresInterface verifies that tmux-backed
+// sessions (which do not implement rendererRetentionSetter) are not affected by the
+// SDKTranscriptLimitsSet flag.
+func TestStart_RendererRetention_TmuxSessionIgnoresInterface(t *testing.T) {
+	swapProbeMCP(t, func() error { return nil })
+
+	sess := &scriptedExecutionSession{sanitizedName: "tmux-no-retention"}
+	swapNewExecutionSession(t, func(mode ExecutionMode, name, program string, skipPermissions bool) ExecutionSession {
+		return sess
+	})
+
+	inst := &Instance{
+		Title:                  "tmux-no-retention",
+		Path:                   t.TempDir(),
+		Program:                "opencode",
+		SDKTranscriptLimitsSet: true,
+		SDKTranscriptMaxBytes:  1024,
+		SDKTranscriptMaxTurns:  10,
+	}
+
+	// scriptedExecutionSession does not implement rendererRetentionSetter —
+	// no panic and no error is the expected outcome.
+	err := inst.StartOnMainBranch()
+	require.NoError(t, err)
+}
+
+// TestStart_RendererRetention_SDKSessionReceivesLimits verifies that when
+// SDKTranscriptLimitsSet is true and the execution session implements
+// rendererRetentionSetter, the configured limits are forwarded.
+func TestStart_RendererRetention_SDKSessionReceivesLimits(t *testing.T) {
+	swapProbeMCP(t, func() error { return nil })
+
+	sess := &mockRetentionSession{
+		scriptedExecutionSession: scriptedExecutionSession{sanitizedName: "sdk-retention"},
+	}
+	swapNewExecutionSession(t, func(mode ExecutionMode, name, program string, skipPermissions bool) ExecutionSession {
+		return sess
+	})
+
+	inst := &Instance{
+		Title:                  "sdk-retention",
+		Path:                   t.TempDir(),
+		Program:                "claude",
+		ExecutionMode:          ExecutionModeSDK,
+		SDKTranscriptLimitsSet: true,
+		SDKTranscriptMaxBytes:  2048,
+		SDKTranscriptMaxTurns:  20,
+	}
+
+	err := inst.StartOnMainBranch()
+	require.NoError(t, err)
+	assert.True(t, sess.retentionSet)
+	assert.Equal(t, int64(2048), sess.capturedMaxBytes)
+	assert.Equal(t, int64(20), sess.capturedMaxTurns)
+}
+
+// TestStart_RendererRetention_NotSetWhenFlagFalse verifies that when
+// SDKTranscriptLimitsSet is false, the retention setter is never called.
+func TestStart_RendererRetention_NotSetWhenFlagFalse(t *testing.T) {
+	swapProbeMCP(t, func() error { return nil })
+
+	sess := &mockRetentionSession{
+		scriptedExecutionSession: scriptedExecutionSession{sanitizedName: "sdk-no-limits"},
+	}
+	swapNewExecutionSession(t, func(mode ExecutionMode, name, program string, skipPermissions bool) ExecutionSession {
+		return sess
+	})
+
+	inst := &Instance{
+		Title:                  "sdk-no-limits",
+		Path:                   t.TempDir(),
+		Program:                "claude",
+		ExecutionMode:          ExecutionModeSDK,
+		SDKTranscriptLimitsSet: false, // flag not set
+		SDKTranscriptMaxBytes:  2048,
+		SDKTranscriptMaxTurns:  20,
+	}
+
+	err := inst.StartOnMainBranch()
+	require.NoError(t, err)
+	assert.False(t, sess.retentionSet, "retention must not be set when SDKTranscriptLimitsSet is false")
+}
+
 // swapProbeMCP replaces probeMCPFunc for the duration of the test and restores
 // it on cleanup.
 func swapProbeMCP(t *testing.T, fn func() error) {

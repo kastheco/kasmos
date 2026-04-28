@@ -1,4 +1,4 @@
-import type { Status, TaskEntry, SubtaskEntry, TopicEntry, AuditEvent, AuditEventKillDetail, InstanceEntry, InstanceAction, ScrollbackDepth, ExecutionMode, PresentationResponse, PresentationRowKind, ToolDiffPayload, ToolPreviewPayload, PermissionDecision, ArchitectDecisionAuditResponse } from "./types";
+import type { Status, TaskEntry, SubtaskEntry, TopicEntry, AuditEvent, AuditEventKillDetail, InstanceEntry, InstanceAction, ScrollbackDepth, ExecutionMode, PresentationResponse, PresentationRowKind, ToolDiffPayload, ToolPreviewPayload, PermissionDecision, ArchitectDecisionAuditResponse, RendererStats } from "./types";
 
 // Legacy persisted statuses that predate canonical normalization at ingest.
 // Mirrors config/taskfsm/fsm.go:MapLegacyStatus so the SPA reader boundary
@@ -605,6 +605,8 @@ type RawPresentationResponse = {
   supported: boolean;
   turns: RawPresentationTurn[] | null;
   captured_at: string;
+  // stats is optional — absent for tmux instances and older daemon versions.
+  stats?: RendererStats;
 };
 
 const GO_ZERO_TIME = "0001-01-01T00:00:00Z";
@@ -618,6 +620,7 @@ function normalizePresentationResponse(raw: RawPresentationResponse): Presentati
   return {
     supported: raw.supported,
     captured_at: new Date(raw.captured_at),
+    ...(raw.stats !== undefined ? { stats: raw.stats } : {}),
     turns:
       raw.turns?.map((t) => ({
         id: t.id,
