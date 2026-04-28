@@ -838,6 +838,33 @@ func TestTmuxSpawner_GracefulKill_KillsAfterSecondCheck(t *testing.T) {
 	assert.True(t, killCalled, "kill must be called when no client is attached after grace period")
 }
 
+func TestTmuxSpawner_GracefulKill_KillsWhenProbeSeesNoUserClient(t *testing.T) {
+	s := NewTmuxSpawner()
+
+	// The real-tmux integration test guarantees kasmos detached monitoring does
+	// not create an attached client. Daemon cleanup therefore depends on this
+	// probe representing only real user clients.
+	var probed []string
+	s.hasAttachedClients = func(_ cmd.Executor, sessionName string) bool {
+		probed = append(probed, sessionName)
+		return false
+	}
+	s.sleep = func(_ time.Duration) {}
+	killedTitle := ""
+	s.kill = func(inst *session.Instance) error {
+		killedTitle = inst.Title
+		return nil
+	}
+	s.cleanupGracePeriod = 0
+
+	inst := &session.Instance{Title: "plan-coder"}
+	killed, err := s.gracefulKill(inst, "kas_plan-coder")
+	require.NoError(t, err)
+	assert.True(t, killed, "cleanup should proceed when the probe sees no user client")
+	assert.Equal(t, "plan-coder", killedTitle)
+	assert.Equal(t, []string{"kas_plan-coder", "kas_plan-coder"}, probed)
+}
+
 func TestTmuxSpawner_SpawnMaster_MissingRepoPath(t *testing.T) {
 	s := NewTmuxSpawner()
 	err := s.SpawnMaster(context.Background(), loop.SpawnOpts{
