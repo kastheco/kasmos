@@ -209,6 +209,10 @@ type home struct {
 	// Supports concurrent batch spawns (e.g. wave tasks) where multiple
 	// instances start in parallel. Lazily initialized via addInstanceFinalizer.
 	instanceFinalizers map[*session.Instance]func()
+	// abortedInstanceStartGroups records async start batches whose rollback
+	// already ran, so late success messages from the same batch are ignored.
+	abortedInstanceStartGroups map[string]struct{}
+	plannerFanoutSeq           int
 	// newInstance is the instance currently being named in stateNew.
 	// Set when entering stateNew, cleared on Enter/Esc/ctrl+c.
 	newInstance *session.Instance
@@ -561,6 +565,7 @@ func newHome(ctx context.Context, program string, autoYes bool, version string) 
 		coderPushPrompted:          make(map[string]bool),
 		pendingReviewFeedback:      make(map[string]string),
 		deferredPermissionToastIDs: make(map[string]string),
+		abortedInstanceStartGroups: make(map[string]struct{}),
 	}
 
 	if appConfig.DatabaseURL != "" {
@@ -1341,6 +1346,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 				draftSpawnCmds := make(map[string][]tea.Cmd)
 				failedDraftPlannerFanout := make(map[string]bool)
+				draftSpawnGroups := make(map[string]string)
 				for _, act := range actions {
 					switch a := act.(type) {
 					case loop.SpawnReviewerAction:
@@ -1446,9 +1452,15 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							if a.Primary {
 								m.killExistingPlanAgent(a.PlanFile, session.AgentTypePlanner)
 							}
-							cmd, err := m.spawnPlannerProfileForTask(a.PlanFile, a.PlannerProfile, a.Primary, entry.Description)
+							startGroupID := draftSpawnGroups[a.PlanFile]
+							if startGroupID == "" {
+								startGroupID = m.nextPlannerFanoutStartGroup(a.PlanFile)
+								draftSpawnGroups[a.PlanFile] = startGroupID
+							}
+							cmd, err := m.spawnPlannerProfileForTask(a.PlanFile, a.PlannerProfile, a.Primary, entry.Description, startGroupID)
 							if err != nil {
 								log.WarningLog.Printf("could not spawn planner profile %q for %q: %v", a.PlannerProfile, a.PlanFile, err)
+								m.markInstanceStartGroupAborted(startGroupID)
 								m.killExistingPlanAgent(a.PlanFile, session.AgentTypePlanner)
 								failedDraftPlannerFanout[a.PlanFile] = true
 								delete(draftSpawnCmds, a.PlanFile)
@@ -2823,13 +2835,31 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Batch(tea.RequestWindowSize, m.instanceChanged())
 	case instanceStartedMsg:
+		if msg.instance == nil {
+			return m, m.handleError(fmt.Errorf("instance start returned no instance"))
+		}
 		if msg.err != nil {
+			if msg.startGroupID != "" && m.isDraftPlannerFanoutInstance(msg.instance) {
+				m.markInstanceStartGroupAborted(msg.startGroupID)
+				m.killExistingPlanAgent(msg.instance.TaskFile, session.AgentTypePlanner)
+				m.updateNavPanelStatus()
+				return m, m.handleError(fmt.Errorf("planner fan-out failed: %w", msg.err))
+			}
 			// Remove the specific instance that failed — not the currently selected one.
 			_ = msg.instance.Kill()
 			m.nav.RemoveByTitle(msg.instance.Title)
 			m.removeFromAllInstances(msg.instance.Title)
+			delete(m.instanceFinalizers, msg.instance)
 			m.updateNavPanelStatus()
 			return m, m.handleError(msg.err)
+		}
+		if msg.startGroupID != "" && m.instanceStartGroupAborted(msg.startGroupID) {
+			_ = msg.instance.Kill()
+			m.nav.RemoveByTitle(msg.instance.Title)
+			m.removeFromAllInstances(msg.instance.Title)
+			delete(m.instanceFinalizers, msg.instance)
+			m.updateNavPanelStatus()
+			return m, tea.Batch(tea.RequestWindowSize, m.instanceChanged())
 		}
 		// Instance started successfully — add to master list, save and finalize
 		m.allInstances = append(m.allInstances, msg.instance)
@@ -3273,8 +3303,9 @@ func (m *home) reconcileDismissedInstanceTitles(daemonTitles []string) {
 
 // instanceStartedMsg is sent when an async instance startup completes.
 type instanceStartedMsg struct {
-	instance *session.Instance
-	err      error
+	instance     *session.Instance
+	err          error
+	startGroupID string
 }
 
 // promptSubmittedMsg is sent when an async prompt delivery finishes.

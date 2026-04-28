@@ -1266,6 +1266,36 @@ func (m *home) removeFromAllInstances(title string) {
 	m.allInstances = filtered
 }
 
+func (m *home) isDraftPlannerFanoutInstance(inst *session.Instance) bool {
+	return inst != nil &&
+		inst.TaskFile != "" &&
+		inst.AgentType == session.AgentTypePlanner &&
+		inst.PlannerProfile != ""
+}
+
+func (m *home) nextPlannerFanoutStartGroup(planFile string) string {
+	m.plannerFanoutSeq++
+	return fmt.Sprintf("planner:%s:%d", planFile, m.plannerFanoutSeq)
+}
+
+func (m *home) markInstanceStartGroupAborted(groupID string) {
+	if groupID == "" {
+		return
+	}
+	if m.abortedInstanceStartGroups == nil {
+		m.abortedInstanceStartGroups = make(map[string]struct{})
+	}
+	m.abortedInstanceStartGroups[groupID] = struct{}{}
+}
+
+func (m *home) instanceStartGroupAborted(groupID string) bool {
+	if groupID == "" || m.abortedInstanceStartGroups == nil {
+		return false
+	}
+	_, ok := m.abortedInstanceStartGroups[groupID]
+	return ok
+}
+
 // dismissInstanceFromList removes inst from the sidebar, allInstances, and
 // persistence in a single step. Both the delete/backspace path and the k+k+k
 // triple-tap path use this helper so list-mutation semantics stay single-sourced.
@@ -2515,6 +2545,7 @@ func (m *home) killExistingPlanAgent(planFile, agentType string) {
 			m.previewTerminalInstance = ""
 		}
 		if inst != nil {
+			delete(m.instanceFinalizers, inst)
 			if err := inst.Kill(); err != nil {
 				log.WarningLog.Printf("could not kill old %s for %q: %v", agentType, planFile, err)
 			}

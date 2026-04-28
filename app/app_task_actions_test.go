@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -522,6 +523,65 @@ func TestSpawnPlannersForTask_DraftModeSpawnsConfiguredProfiles(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, taskstore.ExecutionState{}, entry.ExecutionState,
 		"planner draft fan-out must not mutate task execution state")
+}
+
+func TestPlannerFanoutStartFailureRollsBackSiblingsAndIgnoresLateSuccess(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	plansDir := filepath.Join(dir, "docs", "plans")
+	require.NoError(t, os.MkdirAll(plansDir, 0o755))
+	ps, err := newTestPlanState(t, plansDir)
+	require.NoError(t, err)
+	const planFile = "rollback-parallel-plan"
+	require.NoError(t, ps.Register(planFile, "rollback parallel plan", "plan/rollback-parallel-plan", time.Now()))
+
+	sp := spinner.New(spinner.WithSpinner(spinner.Dot))
+	h := &home{
+		appConfig: &config.Config{
+			Planners: []string{"planner_a", "planner_b"},
+			Profiles: map[string]config.AgentProfile{
+				"planner_a": {Enabled: true, Program: "opencode"},
+				"planner_b": {Enabled: true, Program: "opencode"},
+			},
+		},
+		taskState:          ps,
+		activeRepoPath:     dir,
+		taskStoreProject:   "proj",
+		program:            "opencode",
+		nav:                ui.NewNavigationPanel(&sp),
+		menu:               ui.NewMenu(),
+		tabbedWindow:       ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewInfoPane()),
+		toastManager:       overlay.NewToastManager(&sp),
+		overlays:           overlay.NewManager(),
+		instanceFinalizers: make(map[*session.Instance]func()),
+	}
+
+	model, cmd := h.spawnPlannersForTask(planFile, "plan prompt", "build rollback plan")
+	require.NotNil(t, cmd)
+	updated := model.(*home)
+	instances := append([]*session.Instance(nil), updated.nav.GetInstances()...)
+	require.Len(t, instances, 2)
+	require.Equal(t, 1, updated.plannerFanoutSeq)
+	startGroupID := "planner:" + planFile + ":1"
+
+	// A successful sibling may report before another profile's async start fails.
+	model, _ = updated.Update(instanceStartedMsg{instance: instances[0], startGroupID: startGroupID})
+	updated = model.(*home)
+	require.Len(t, updated.allInstances, 1)
+
+	model, _ = updated.Update(instanceStartedMsg{instance: instances[1], err: errors.New("start failed"), startGroupID: startGroupID})
+	updated = model.(*home)
+	assert.Empty(t, updated.nav.GetInstances(), "start failure must roll back all planner siblings")
+	assert.Empty(t, updated.allInstances, "started siblings must be removed from persistence")
+	assert.Empty(t, updated.instanceFinalizers, "queued sibling finalizers must be dropped")
+
+	// If a sibling command reports success after rollback, it must not resurrect
+	// the fan-out and leave aggregation waiting for the failed profile.
+	model, _ = updated.Update(instanceStartedMsg{instance: instances[0], startGroupID: startGroupID})
+	updated = model.(*home)
+	assert.Empty(t, updated.nav.GetInstances())
+	assert.Empty(t, updated.allInstances)
+	assert.Empty(t, updated.instanceFinalizers)
 }
 
 func TestStartOverCompletedMsgSpawnsReplacementAgentsInUpdate(t *testing.T) {
