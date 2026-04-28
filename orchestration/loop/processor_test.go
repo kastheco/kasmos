@@ -180,6 +180,9 @@ func TestProcessor_ProcessFSMSignals_PlanStart_EmitsSpawnPlannerAction(t *testin
 	spawn, ok := actions[0].(SpawnPlannerAction)
 	require.True(t, ok, "expected SpawnPlannerAction, got %T", actions[0])
 	assert.Equal(t, "my-plan.md", spawn.PlanFile)
+	assert.Equal(t, "planner", spawn.PlannerProfile)
+	assert.True(t, spawn.Primary)
+	assert.False(t, spawn.DraftMode)
 
 	// FSM must have transitioned ready → planning.
 	entry, err := store.Get("test", "my-plan.md")
@@ -187,28 +190,42 @@ func TestProcessor_ProcessFSMSignals_PlanStart_EmitsSpawnPlannerAction(t *testin
 	assert.Equal(t, taskstore.StatusPlanning, entry.Status)
 }
 
-func TestProcessor_ProcessFSMSignals_PlanStart_ParallelBaselineEmitsClearArchitectBaseline(t *testing.T) {
+func TestProcessor_ProcessFSMSignals_PlanStart_DraftModeEmitsClearAndMultiplePlanners(t *testing.T) {
 	store := taskstore.NewTestStore(t)
 	require.NoError(t, store.Create("test", taskstore.TaskEntry{
 		Filename: "my-plan.md",
 		Status:   taskstore.StatusReady,
 	}))
 
-	p := NewProcessor(ProcessorConfig{Store: store, Project: "test", ParallelPlannerArchitect: true})
+	p := NewProcessor(ProcessorConfig{
+		Store:            store,
+		Project:          "test",
+		PlannerDraftMode: true,
+		PlannerProfiles:  []string{"planner", "planner-alt"},
+	})
 	actions := p.ProcessFSMSignals([]taskfsm.Signal{
 		{Event: taskfsm.PlanStart, TaskFile: "my-plan.md"},
 	})
 
+	// Expect: ClearPlannerDraftsAction + SpawnPlannerAction for each profile.
 	require.Len(t, actions, 3)
-	clear, ok := actions[0].(ClearArchitectBaselineAction)
-	require.True(t, ok, "expected ClearArchitectBaselineAction first, got %T", actions[0])
+	clear, ok := actions[0].(ClearPlannerDraftsAction)
+	require.True(t, ok, "expected ClearPlannerDraftsAction first, got %T", actions[0])
 	assert.Equal(t, "my-plan.md", clear.PlanFile)
-	spawnPlanner, ok := actions[1].(SpawnPlannerAction)
+
+	spawnPrimary, ok := actions[1].(SpawnPlannerAction)
 	require.True(t, ok, "expected SpawnPlannerAction second, got %T", actions[1])
-	assert.Equal(t, "my-plan.md", spawnPlanner.PlanFile)
-	spawnBaseline, ok := actions[2].(SpawnArchitectBaselineAction)
-	require.True(t, ok, "expected SpawnArchitectBaselineAction third, got %T", actions[2])
-	assert.Equal(t, "my-plan.md", spawnBaseline.PlanFile)
+	assert.Equal(t, "my-plan.md", spawnPrimary.PlanFile)
+	assert.Equal(t, "planner", spawnPrimary.PlannerProfile)
+	assert.True(t, spawnPrimary.Primary, "first profile must be primary")
+	assert.True(t, spawnPrimary.DraftMode)
+
+	spawnAlt, ok := actions[2].(SpawnPlannerAction)
+	require.True(t, ok, "expected SpawnPlannerAction third, got %T", actions[2])
+	assert.Equal(t, "my-plan.md", spawnAlt.PlanFile)
+	assert.Equal(t, "planner-alt", spawnAlt.PlannerProfile)
+	assert.False(t, spawnAlt.Primary, "non-first profile must not be primary")
+	assert.True(t, spawnAlt.DraftMode)
 }
 
 func TestProcessor_ProcessFSMSignals_PlanStart_PreAppliedRunsWhenAlreadyPlanning(t *testing.T) {
@@ -227,26 +244,40 @@ func TestProcessor_ProcessFSMSignals_PlanStart_PreAppliedRunsWhenAlreadyPlanning
 	})
 
 	require.Len(t, actions, 1)
-	_, ok := actions[0].(SpawnPlannerAction)
+	spawn, ok := actions[0].(SpawnPlannerAction)
 	assert.True(t, ok, "pre-applied plan_start must still emit SpawnPlannerAction, got %T", actions[0])
+	assert.Equal(t, "planner", spawn.PlannerProfile)
+	assert.True(t, spawn.Primary)
+	assert.False(t, spawn.DraftMode)
 }
 
-func TestProcessor_ProcessFSMSignals_PlanStart_PreAppliedParallelBaselineEmitsClearArchitectBaseline(t *testing.T) {
+func TestProcessor_ProcessFSMSignals_PlanStart_PreAppliedDraftModeEmitsClearAndMultiplePlanners(t *testing.T) {
 	store := taskstore.NewTestStore(t)
 	require.NoError(t, store.Create("test", taskstore.TaskEntry{
 		Filename: "my-plan.md",
 		Status:   taskstore.StatusPlanning,
 	}))
 
-	p := NewProcessor(ProcessorConfig{Store: store, Project: "test", ParallelPlannerArchitect: true})
+	p := NewProcessor(ProcessorConfig{
+		Store:            store,
+		Project:          "test",
+		PlannerDraftMode: true,
+		PlannerProfiles:  []string{"planner", "planner-alt"},
+	})
 	actions := p.ProcessFSMSignals([]taskfsm.Signal{
 		{Event: taskfsm.PlanStart, TaskFile: "my-plan.md", PreApplied: true},
 	})
 
 	require.Len(t, actions, 3)
-	assert.IsType(t, ClearArchitectBaselineAction{}, actions[0])
-	assert.IsType(t, SpawnPlannerAction{}, actions[1])
-	assert.IsType(t, SpawnArchitectBaselineAction{}, actions[2])
+	assert.IsType(t, ClearPlannerDraftsAction{}, actions[0])
+	spawnPrimary, ok := actions[1].(SpawnPlannerAction)
+	require.True(t, ok)
+	assert.True(t, spawnPrimary.Primary)
+	assert.True(t, spawnPrimary.DraftMode)
+	spawnAlt, ok := actions[2].(SpawnPlannerAction)
+	require.True(t, ok)
+	assert.False(t, spawnAlt.Primary)
+	assert.True(t, spawnAlt.DraftMode)
 }
 
 func TestProcessor_ProcessFSMSignals_PlannerFinished(t *testing.T) {
@@ -1103,4 +1134,249 @@ func TestProcessor_ProcessFSMSignals_UnmarkedStaleSignalsAreDropped(t *testing.T
 			assert.Empty(t, actions, "unmarked stale signal must be dropped even when task is in the post-event target state")
 		})
 	}
+}
+
+// TestProcessor_ProcessPlannerDraftSignals_LegacyModeIgnoresSignals verifies
+// that when PlannerDraftMode is false, planner_draft_finished signals are ignored.
+func TestProcessor_ProcessPlannerDraftSignals_LegacyModeIgnoresSignals(t *testing.T) {
+	store := taskstore.NewTestStore(t)
+	require.NoError(t, store.Create("test", taskstore.TaskEntry{
+		Filename: "my-plan.md",
+		Status:   taskstore.StatusPlanning,
+	}))
+
+	p := NewProcessor(ProcessorConfig{Store: store, Project: "test"})
+	actions := p.ProcessPlannerDraftSignals([]taskfsm.PlannerDraftSignal{
+		{TaskFile: "my-plan.md", PlannerID: "planner"},
+	})
+	assert.Empty(t, actions, "draft signals must be ignored in legacy mode")
+}
+
+// TestProcessor_ProcessPlannerDraftSignals_EmptyProfilesIgnoresSignals verifies
+// that when PlannerProfiles is empty (even with DraftMode), signals are ignored.
+func TestProcessor_ProcessPlannerDraftSignals_EmptyProfilesIgnoresSignals(t *testing.T) {
+	store := taskstore.NewTestStore(t)
+	require.NoError(t, store.Create("test", taskstore.TaskEntry{
+		Filename: "my-plan.md",
+		Status:   taskstore.StatusPlanning,
+	}))
+
+	p := NewProcessor(ProcessorConfig{
+		Store:            store,
+		Project:          "test",
+		PlannerDraftMode: true,
+		PlannerProfiles:  []string{}, // empty
+	})
+	actions := p.ProcessPlannerDraftSignals([]taskfsm.PlannerDraftSignal{
+		{TaskFile: "my-plan.md", PlannerID: "planner"},
+	})
+	assert.Empty(t, actions, "draft signals must be ignored when no profiles configured")
+}
+
+// TestProcessor_ProcessPlannerDraftSignals_UnknownProfileIsIgnored verifies that
+// a signal from an unrecognized planner profile produces no actions.
+func TestProcessor_ProcessPlannerDraftSignals_UnknownProfileIsIgnored(t *testing.T) {
+	store := taskstore.NewTestStore(t)
+	require.NoError(t, store.Create("test", taskstore.TaskEntry{
+		Filename: "my-plan.md",
+		Status:   taskstore.StatusPlanning,
+	}))
+
+	p := NewProcessor(ProcessorConfig{
+		Store:            store,
+		Project:          "test",
+		PlannerDraftMode: true,
+		PlannerProfiles:  []string{"planner", "planner-alt"},
+	})
+	actions := p.ProcessPlannerDraftSignals([]taskfsm.PlannerDraftSignal{
+		{TaskFile: "my-plan.md", PlannerID: "unknown-planner"},
+	})
+	assert.Empty(t, actions, "unknown profile must not produce actions")
+}
+
+// TestProcessor_ProcessPlannerDraftSignals_DuplicateProfileIsIgnored verifies
+// that a duplicate signal for an already-received profile produces no actions.
+func TestProcessor_ProcessPlannerDraftSignals_DuplicateProfileIsIgnored(t *testing.T) {
+	store := taskstore.NewTestStore(t)
+	require.NoError(t, store.Create("test", taskstore.TaskEntry{
+		Filename: "my-plan.md",
+		Status:   taskstore.StatusPlanning,
+	}))
+
+	p := NewProcessor(ProcessorConfig{
+		Store:            store,
+		Project:          "test",
+		PlannerDraftMode: true,
+		PlannerProfiles:  []string{"planner", "planner-alt"},
+	})
+
+	// First signal — not yet complete (still waiting for planner-alt).
+	actions := p.ProcessPlannerDraftSignals([]taskfsm.PlannerDraftSignal{
+		{TaskFile: "my-plan.md", PlannerID: "planner"},
+	})
+	assert.Empty(t, actions, "first signal alone must not trigger synthesis")
+
+	// Duplicate signal — must be ignored.
+	actions = p.ProcessPlannerDraftSignals([]taskfsm.PlannerDraftSignal{
+		{TaskFile: "my-plan.md", PlannerID: "planner"},
+	})
+	assert.Empty(t, actions, "duplicate signal must produce no actions")
+}
+
+// TestProcessor_ProcessPlannerDraftSignals_AllProfilesReceivedSynthesizesPlannerFinished
+// verifies that when all configured profiles emit draft signals, a synthesized
+// planner_finished action is produced.
+func TestProcessor_ProcessPlannerDraftSignals_AllProfilesReceivedSynthesizesPlannerFinished(t *testing.T) {
+	store := taskstore.NewTestStore(t)
+	require.NoError(t, store.Create("test", taskstore.TaskEntry{
+		Filename: "my-plan.md",
+		Status:   taskstore.StatusPlanning,
+	}))
+
+	p := NewProcessor(ProcessorConfig{
+		Store:            store,
+		Project:          "test",
+		PlannerDraftMode: true,
+		PlannerProfiles:  []string{"planner", "planner-alt"},
+	})
+
+	// First profile — incomplete.
+	actions := p.ProcessPlannerDraftSignals([]taskfsm.PlannerDraftSignal{
+		{TaskFile: "my-plan.md", PlannerID: "planner"},
+	})
+	assert.Empty(t, actions, "only first profile received — must not synthesize yet")
+
+	// Second (last) profile — should trigger synthesis.
+	actions = p.ProcessPlannerDraftSignals([]taskfsm.PlannerDraftSignal{
+		{TaskFile: "my-plan.md", PlannerID: "planner-alt"},
+	})
+	require.NotEmpty(t, actions, "all profiles received — must synthesize planner_finished")
+
+	var foundPlannerComplete bool
+	for _, a := range actions {
+		if _, ok := a.(PlannerCompleteAction); ok {
+			foundPlannerComplete = true
+		}
+	}
+	assert.True(t, foundPlannerComplete, "expected PlannerCompleteAction from synthesized planner_finished")
+
+	// FSM must have transitioned planning → ready.
+	entry, err := store.Get("test", "my-plan.md")
+	require.NoError(t, err)
+	assert.Equal(t, taskstore.StatusReady, entry.Status)
+}
+
+// TestProcessor_ProcessPlannerDraftSignals_SingleProfileSynthesesImmediately verifies
+// that a single configured profile synthesizes planner_finished on the first signal.
+func TestProcessor_ProcessPlannerDraftSignals_SingleProfileSynthesesImmediately(t *testing.T) {
+	store := taskstore.NewTestStore(t)
+	require.NoError(t, store.Create("test", taskstore.TaskEntry{
+		Filename: "my-plan.md",
+		Status:   taskstore.StatusPlanning,
+	}))
+
+	p := NewProcessor(ProcessorConfig{
+		Store:            store,
+		Project:          "test",
+		PlannerDraftMode: true,
+		PlannerProfiles:  []string{"planner"},
+	})
+
+	actions := p.ProcessPlannerDraftSignals([]taskfsm.PlannerDraftSignal{
+		{TaskFile: "my-plan.md", PlannerID: "planner"},
+	})
+	require.NotEmpty(t, actions, "single profile: first signal must trigger synthesis")
+
+	var foundPlannerComplete bool
+	for _, a := range actions {
+		if _, ok := a.(PlannerCompleteAction); ok {
+			foundPlannerComplete = true
+		}
+	}
+	assert.True(t, foundPlannerComplete, "expected PlannerCompleteAction")
+}
+
+// TestProcessor_ProcessPlannerDraftSignals_SignalAfterCompletionIgnored verifies
+// that a signal for an already-completed plan produces no actions.
+func TestProcessor_ProcessPlannerDraftSignals_SignalAfterCompletionIgnored(t *testing.T) {
+	store := taskstore.NewTestStore(t)
+	require.NoError(t, store.Create("test", taskstore.TaskEntry{
+		Filename: "my-plan.md",
+		Status:   taskstore.StatusPlanning,
+	}))
+
+	p := NewProcessor(ProcessorConfig{
+		Store:            store,
+		Project:          "test",
+		PlannerDraftMode: true,
+		PlannerProfiles:  []string{"planner"},
+	})
+
+	// Trigger synthesis with the single expected profile.
+	p.ProcessPlannerDraftSignals([]taskfsm.PlannerDraftSignal{
+		{TaskFile: "my-plan.md", PlannerID: "planner"},
+	})
+
+	// A subsequent signal for the same plan must be ignored.
+	actions := p.ProcessPlannerDraftSignals([]taskfsm.PlannerDraftSignal{
+		{TaskFile: "my-plan.md", PlannerID: "planner"},
+	})
+	assert.Empty(t, actions, "signal after completion must produce no actions")
+}
+
+// TestProcessor_ProcessPlannerDraftSignals_AutoAdvanceSynthesis verifies that
+// when AutoAdvance is enabled, the synthesized planner_finished also emits
+// AutoImplementAction.
+func TestProcessor_ProcessPlannerDraftSignals_AutoAdvanceSynthesis(t *testing.T) {
+	store := taskstore.NewTestStore(t)
+	require.NoError(t, store.Create("test", taskstore.TaskEntry{
+		Filename: "my-plan.md",
+		Status:   taskstore.StatusPlanning,
+	}))
+
+	p := NewProcessor(ProcessorConfig{
+		Store:            store,
+		Project:          "test",
+		PlannerDraftMode: true,
+		PlannerProfiles:  []string{"planner"},
+		AutoAdvance:      true,
+	})
+
+	actions := p.ProcessPlannerDraftSignals([]taskfsm.PlannerDraftSignal{
+		{TaskFile: "my-plan.md", PlannerID: "planner"},
+	})
+
+	require.Len(t, actions, 2, "expected PlannerCompleteAction + AutoImplementAction")
+	_, isPlannerComplete := actions[0].(PlannerCompleteAction)
+	assert.True(t, isPlannerComplete, "expected PlannerCompleteAction first, got %T", actions[0])
+	_, isAutoImpl := actions[1].(AutoImplementAction)
+	assert.True(t, isAutoImpl, "expected AutoImplementAction second, got %T", actions[1])
+}
+
+// TestProcessor_ProcessFSMSignals_PlanStart_DraftModeWithSingleProfile verifies
+// that draft mode with a single profile emits clear + one planner spawn.
+func TestProcessor_ProcessFSMSignals_PlanStart_DraftModeWithSingleProfile(t *testing.T) {
+	store := taskstore.NewTestStore(t)
+	require.NoError(t, store.Create("test", taskstore.TaskEntry{
+		Filename: "my-plan.md",
+		Status:   taskstore.StatusReady,
+	}))
+
+	p := NewProcessor(ProcessorConfig{
+		Store:            store,
+		Project:          "test",
+		PlannerDraftMode: true,
+		PlannerProfiles:  []string{"planner"},
+	})
+	actions := p.ProcessFSMSignals([]taskfsm.Signal{
+		{Event: taskfsm.PlanStart, TaskFile: "my-plan.md"},
+	})
+
+	require.Len(t, actions, 2, "draft mode with single profile: clear + one spawn")
+	assert.IsType(t, ClearPlannerDraftsAction{}, actions[0])
+	spawn, ok := actions[1].(SpawnPlannerAction)
+	require.True(t, ok)
+	assert.Equal(t, "planner", spawn.PlannerProfile)
+	assert.True(t, spawn.Primary)
+	assert.True(t, spawn.DraftMode)
 }

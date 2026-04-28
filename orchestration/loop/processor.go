@@ -11,6 +11,13 @@ import (
 	"github.com/kastheco/kasmos/session"
 )
 
+// plannerDraftAgg tracks aggregation state for one plan file in a multi-planner run.
+type plannerDraftAgg struct {
+	expectedProfiles map[string]bool // set of profiles that must report
+	receivedProfiles map[string]bool // set of profiles that have reported
+	done             bool            // true once synthesis has been triggered
+}
+
 func (p *Processor) taskEntry(planFile string) (taskstore.TaskEntry, bool) {
 	if p.config.Store == nil {
 		return taskstore.TaskEntry{}, false
@@ -80,7 +87,26 @@ type ProcessorConfig struct {
 	AutoReadinessReview bool
 	// ParallelPlannerArchitect starts an advisory architect-baseline session
 	// alongside planner work for plan_start signals.
+	//
+	// Deprecated: superseded by PlannerDraftMode + PlannerProfiles for the new
+	// multi-planner fan-out path. This field is retained for backward
+	// compatibility with existing daemon callers that set it in ProcessorConfig
+	// struct literals; the processor no longer acts on it.
 	ParallelPlannerArchitect bool
+	// PlannerProfiles is the ordered list of agent profile names that should
+	// be spawned in parallel when PlannerDraftMode is true. Each entry must
+	// reference a configured [agents.<profile>] section. When empty, the
+	// legacy single-planner path is used regardless of PlannerDraftMode.
+	PlannerProfiles []string
+	// PlannerDraftMode enables the multi-planner fan-out path. When true and
+	// PlannerProfiles is non-empty, plan_start clears the draft cache, spawns
+	// one planner per profile, and aggregates planner_draft_finished signals
+	// into a single synthesized planner_finished transition.
+	PlannerDraftMode bool
+	// CacheDir is the directory where planner draft files are stored. When set
+	// and PlannerDraftMode is enabled, ProcessPlannerDraftSignals seeds already-
+	// received profiles from on-disk cache on first call for a given plan file.
+	CacheDir string
 	// MaxReviewFixCycles is the maximum number of review-fix cycles allowed
 	// before emitting ReviewCycleLimitAction instead of SpawnCoderAction.
 	// Zero or negative means unlimited.
@@ -110,6 +136,9 @@ type Processor struct {
 	// ImplementFinished signals are suppressed for plans in this set so that
 	// individual wave-task agents don't prematurely trigger the reviewing state.
 	activeWaveOrchs map[string]bool
+	// plannerDraftAggs tracks per-plan aggregation state for multi-planner runs.
+	// Keyed by plan file.
+	plannerDraftAggs map[string]*plannerDraftAgg
 }
 
 // NewProcessor creates a Processor backed by the given store and project.
@@ -123,6 +152,7 @@ func NewProcessor(cfg ProcessorConfig) *Processor {
 		fsm:               fsm,
 		waveOrchestrators: make(map[string]*orchestration.WaveOrchestrator),
 		activeWaveOrchs:   make(map[string]bool),
+		plannerDraftAggs:  make(map[string]*plannerDraftAgg),
 	}
 }
 
@@ -408,15 +438,27 @@ func (p *Processor) ProcessFSMSignals(signals []taskfsm.Signal) []Action {
 			}
 
 		case taskfsm.PlanStart:
-			if p.config.ParallelPlannerArchitect {
-				actions = append(actions,
-					ClearArchitectBaselineAction{PlanFile: sig.TaskFile},
-					SpawnPlannerAction{PlanFile: sig.TaskFile},
-					SpawnArchitectBaselineAction{PlanFile: sig.TaskFile},
-				)
+			if p.config.PlannerDraftMode && len(p.config.PlannerProfiles) > 0 {
+				// Multi-planner draft mode: clear stale caches, then spawn one
+				// planner per configured profile. Only the first profile is primary.
+				actions = append(actions, ClearPlannerDraftsAction{PlanFile: sig.TaskFile})
+				for i, profile := range p.config.PlannerProfiles {
+					actions = append(actions, SpawnPlannerAction{
+						PlanFile:       sig.TaskFile,
+						PlannerProfile: profile,
+						Primary:        i == 0,
+						DraftMode:      true,
+					})
+				}
 				break
 			}
-			actions = append(actions, SpawnPlannerAction{PlanFile: sig.TaskFile})
+			// Legacy single-planner path (or draft mode with no profiles configured).
+			actions = append(actions, SpawnPlannerAction{
+				PlanFile:       sig.TaskFile,
+				PlannerProfile: "planner",
+				Primary:        true,
+				DraftMode:      false,
+			})
 		}
 	}
 	return actions
@@ -639,12 +681,94 @@ func (p *Processor) ProcessElaborationSignals(signals []taskfsm.ElaborationSigna
 
 // ProcessPlannerDraftSignals collects planner-draft-finished signals and
 // aggregates them toward a synthesized planner_finished transition once all
-// configured parallel planners have reported their drafts. The full aggregation
-// logic is implemented in Wave 2; this stub ensures the signal type participates
-// in Tick ordering from the start.
+// configured parallel planners have reported their drafts.
+//
+// When all expected profiles have reported, this calls ProcessFSMSignals with a
+// synthesized PlannerFinished signal so that the existing downstream behavior
+// (PlannerCompleteAction, AutoImplementAction) fires in the same tick.
+//
+// Signals with unknown profiles, duplicate profiles, or signals for already-
+// completed plans produce no actions. In legacy single-planner mode
+// (PlannerDraftMode=false or PlannerProfiles empty), all draft signals are
+// ignored — PlannerFinished arrives directly via ProcessFSMSignals.
 func (p *Processor) ProcessPlannerDraftSignals(signals []taskfsm.PlannerDraftSignal) []Action {
-	// Aggregation and synthesis logic is wired in a later wave.
-	return nil
+	if !p.config.PlannerDraftMode || len(p.config.PlannerProfiles) == 0 {
+		// Not in multi-planner mode; planner_finished comes directly via FSM.
+		return nil
+	}
+
+	var actions []Action
+	for _, sig := range signals {
+		agg := p.getOrInitDraftAgg(sig.TaskFile)
+		if agg.done {
+			// Already synthesized for this plan — ignore further signals.
+			continue
+		}
+		// Seed from on-disk cache before evaluating the current signal so that
+		// a daemon/TUI restart can recover already-written drafts.
+		if p.config.CacheDir != "" {
+			p.seedDraftAggFromCache(agg, sig.TaskFile)
+		}
+		// Unknown profile — ignore.
+		if !agg.expectedProfiles[sig.PlannerID] {
+			continue
+		}
+		// Duplicate — ignore.
+		if agg.receivedProfiles[sig.PlannerID] {
+			continue
+		}
+		agg.receivedProfiles[sig.PlannerID] = true
+
+		if len(agg.receivedProfiles) < len(agg.expectedProfiles) {
+			// Still waiting for more profiles.
+			continue
+		}
+
+		// All expected drafts received: synthesize planner_finished.
+		agg.done = true
+		synthesized := p.ProcessFSMSignals([]taskfsm.Signal{{
+			TaskFile: sig.TaskFile,
+			Event:    taskfsm.PlannerFinished,
+		}})
+		actions = append(actions, synthesized...)
+	}
+	return actions
+}
+
+// getOrInitDraftAgg returns the existing aggregation state for a plan file, or
+// creates and registers a fresh one based on the configured PlannerProfiles.
+func (p *Processor) getOrInitDraftAgg(planFile string) *plannerDraftAgg {
+	if agg, ok := p.plannerDraftAggs[planFile]; ok {
+		return agg
+	}
+	expected := make(map[string]bool, len(p.config.PlannerProfiles))
+	for _, profile := range p.config.PlannerProfiles {
+		expected[profile] = true
+	}
+	agg := &plannerDraftAgg{
+		expectedProfiles: expected,
+		receivedProfiles: make(map[string]bool),
+	}
+	p.plannerDraftAggs[planFile] = agg
+	return agg
+}
+
+// seedDraftAggFromCache reads on-disk planner draft cache entries and marks
+// any profiles found there as already received in agg. This allows a restarted
+// processor to recover aggregation progress without reprocessing gateway rows.
+func (p *Processor) seedDraftAggFromCache(agg *plannerDraftAgg, planFile string) {
+	if agg.done {
+		return
+	}
+	entries, err := orchestration.ListPlannerDraftCaches(p.config.CacheDir, planFile)
+	if err != nil || len(entries) == 0 {
+		return
+	}
+	for _, entry := range entries {
+		if agg.expectedProfiles[entry.Profile] {
+			agg.receivedProfiles[entry.Profile] = true
+		}
+	}
 }
 
 // shouldCreatePR returns true when a plan entry is eligible for automatic PR

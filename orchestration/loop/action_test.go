@@ -13,6 +13,7 @@ func TestActionType_String(t *testing.T) {
 	}{
 		{SpawnReviewerAction{PlanFile: "foo.md"}, "spawn_reviewer"},
 		{SpawnCoderAction{PlanFile: "foo.md"}, "spawn_coder"},
+		{ClearPlannerDraftsAction{PlanFile: "foo.md"}, "clear_planner_drafts"},
 		{ClearArchitectBaselineAction{PlanFile: "foo.md"}, "clear_architect_baseline"},
 		{SpawnArchitectBaselineAction{PlanFile: "foo.md"}, "spawn_architect_baseline"},
 		{SpawnFixerAction{PlanFile: "foo.md"}, "spawn_fixer"},
@@ -21,6 +22,8 @@ func TestActionType_String(t *testing.T) {
 		{AdvanceWaveAction{PlanFile: "foo.md", Wave: 2}, "advance_wave"},
 		{CreatePRAction{PlanFile: "foo.md"}, "create_pr"},
 		{PlannerCompleteAction{PlanFile: "foo.md"}, "planner_complete"},
+		{SpawnPlannerAction{PlanFile: "foo.md", PlannerProfile: "planner", Primary: true, DraftMode: false}, "spawn_planner"},
+		{SpawnPlannerAction{PlanFile: "foo.md", PlannerProfile: "planner-alt", Primary: false, DraftMode: true}, "spawn_planner"},
 	}
 	for _, tt := range tests {
 		assert.Equal(t, tt.kind, tt.action.Kind())
