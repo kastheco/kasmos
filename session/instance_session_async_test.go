@@ -22,9 +22,12 @@ func (h *testPtyHandle) Close() error {
 	return nil
 }
 
-type testPtyFactory struct{}
+type testPtyFactory struct {
+	startCount int
+}
 
 func (f *testPtyFactory) Start(_ *exec.Cmd) (tmux.PtyHandle, error) {
+	f.startCount++
 	file, err := os.CreateTemp("", "kas-pty-*")
 	if err != nil {
 		return nil, err
