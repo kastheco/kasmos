@@ -327,6 +327,16 @@ func (i *Instance) setProgressFunc(fn func(int, string)) {
 	}
 }
 
+// applyResourceControlsToSession forwards the resolved resource-control policy to the
+// execution session. For tmux-backed sessions this arms the nice/ionice wrapper for
+// Start(); for SDK sessions it is a no-op.
+func (i *Instance) applyResourceControlsToSession() {
+	if i.executionSession == nil {
+		return
+	}
+	i.executionSession.SetResourceControls(i.ResourceControls)
+}
+
 // applySDKRetentionToSession forwards transcript limits to the execution session
 // when SDKTranscriptLimitsSet is true and the session implements rendererRetentionSetter.
 // No-op for tmux-backed sessions (which do not implement the interface).
@@ -373,6 +383,7 @@ func (i *Instance) Start(firstTimeSetup bool) error {
 		i.executionSession.SetAgentType(i.AgentType)
 		i.executionSession.SetNoFlicker(i.ClaudeNoFlicker)
 		i.executionSession.SetSDKSpeedTier(i.SDKSpeedTier)
+		i.applyResourceControlsToSession()
 		i.applySDKRetentionToSession()
 		i.setExecutionTaskEnv()
 		i.configureSessionTitle()
@@ -461,6 +472,7 @@ func (i *Instance) StartOnMainBranch() error {
 		i.executionSession.SetAgentType(i.AgentType)
 		i.executionSession.SetNoFlicker(i.ClaudeNoFlicker)
 		i.executionSession.SetSDKSpeedTier(i.SDKSpeedTier)
+		i.applyResourceControlsToSession()
 		i.applySDKRetentionToSession()
 		i.setExecutionTaskEnv()
 		i.configureSessionTitle()
@@ -518,6 +530,7 @@ func (i *Instance) StartOnBranch(branch string) error {
 		i.executionSession.SetAgentType(i.AgentType)
 		i.executionSession.SetNoFlicker(i.ClaudeNoFlicker)
 		i.executionSession.SetSDKSpeedTier(i.SDKSpeedTier)
+		i.applyResourceControlsToSession()
 		i.applySDKRetentionToSession()
 		i.setExecutionTaskEnv()
 		i.configureSessionTitle()
@@ -591,6 +604,7 @@ func (i *Instance) StartInSharedWorktree(worktree *git.GitWorktree, branch strin
 		i.executionSession = i.prepareExecutionSession()
 		i.executionSession.SetAgentType(i.AgentType)
 		i.executionSession.SetSDKSpeedTier(i.SDKSpeedTier)
+		i.applyResourceControlsToSession()
 		i.applySDKRetentionToSession()
 		i.setExecutionTaskEnv()
 		i.configureSessionTitle()
@@ -765,6 +779,7 @@ func (i *Instance) Restart() error {
 		i.executionSession = i.resetExecutionSession()
 		i.executionSession.SetAgentType(i.AgentType)
 		i.executionSession.SetSDKSpeedTier(i.SDKSpeedTier)
+		i.applyResourceControlsToSession()
 		i.applySDKRetentionToSession()
 		i.setExecutionTaskEnv()
 		i.configureSessionTitle()
@@ -841,6 +856,7 @@ func (i *Instance) Resume() error {
 				i.executionSession = i.resetExecutionSession()
 				i.executionSession.SetAgentType(i.AgentType)
 				i.executionSession.SetSDKSpeedTier(i.SDKSpeedTier)
+				i.applyResourceControlsToSession()
 				i.applySDKRetentionToSession()
 				i.setExecutionTaskEnv()
 				i.configureSessionTitle()
@@ -865,6 +881,7 @@ func (i *Instance) Resume() error {
 			i.executionSession = i.resetExecutionSession()
 			i.executionSession.SetAgentType(i.AgentType)
 			i.executionSession.SetSDKSpeedTier(i.SDKSpeedTier)
+			i.applyResourceControlsToSession()
 			i.applySDKRetentionToSession()
 			i.setExecutionTaskEnv()
 			i.configureSessionTitle()

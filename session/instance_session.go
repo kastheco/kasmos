@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kastheco/kasmos/config"
 	"github.com/kastheco/kasmos/log"
 	"github.com/kastheco/kasmos/session/git"
 	"github.com/kastheco/kasmos/session/sdk"
@@ -300,6 +301,7 @@ func (deadExecutionSession) SetProject(string)                            {}
 func (deadExecutionSession) SetSessionTitle(string)                       {}
 func (deadExecutionSession) SetTitleFunc(func(string, time.Time, string)) {}
 func (deadExecutionSession) SetSDKSpeedTier(string)                       {}
+func (deadExecutionSession) SetResourceControls(config.ResolvedResourceControls) {}
 
 // SendKeys sends raw key sequences to the pane.
 // Returns an error if the instance is not started or is paused.

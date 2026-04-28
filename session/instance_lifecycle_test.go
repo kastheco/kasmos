@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/kastheco/kasmos/cmd/cmd_test"
+	"github.com/kastheco/kasmos/config"
 	"github.com/kastheco/kasmos/config/taskfsm"
 	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/kastheco/kasmos/internal/platform"
@@ -50,11 +51,12 @@ func newMockTmuxSession(name, program string, ptyFac tmux.PtyFactory, cmdExec cm
 }
 
 type scriptedExecutionSession struct {
-	sanitizedName string
-	startFn       func(workDir string) error
-	started       bool
-	initialPrompt string
-	speedTier     string
+	sanitizedName    string
+	startFn          func(workDir string) error
+	started          bool
+	initialPrompt    string
+	speedTier        string
+	resourceControls config.ResolvedResourceControls
 }
 
 func (s *scriptedExecutionSession) Start(workDir string) error {
@@ -103,7 +105,10 @@ func (s *scriptedExecutionSession) SetProject(string)              {}
 func (s *scriptedExecutionSession) SetSessionTitle(string)         {}
 func (s *scriptedExecutionSession) SetTitleFunc(func(workDir string, beforeStart time.Time, title string)) {
 }
-func (s *scriptedExecutionSession) SetSDKSpeedTier(tier string) { s.speedTier = tier }
+func (s *scriptedExecutionSession) SetSDKSpeedTier(tier string)                          { s.speedTier = tier }
+func (s *scriptedExecutionSession) SetResourceControls(rc config.ResolvedResourceControls) {
+	s.resourceControls = rc
+}
 
 func swapNewExecutionSession(t *testing.T, fn func(mode ExecutionMode, name, program string, skipPermissions bool) ExecutionSession) {
 	t.Helper()
@@ -1333,4 +1338,101 @@ func TestResume_SDKSpeedTier_SetOnFreshExecutionSession(t *testing.T) {
 	require.NoError(t, err)
 	capturedTier = sdkSession.speedTier
 	assert.Equal(t, "fast", capturedTier)
+}
+
+// TestStart_ResourceControls_SetOnExecutionSession verifies that ResourceControls
+// is forwarded to the execution session via SetResourceControls during Start.
+func TestStart_ResourceControls_SetOnExecutionSession(t *testing.T) {
+	swapProbeMCP(t, func() error { return nil })
+
+	sess := &scriptedExecutionSession{sanitizedName: "rc-start"}
+	swapNewExecutionSession(t, func(mode ExecutionMode, name, program string, skipPermissions bool) ExecutionSession {
+		return sess
+	})
+
+	interactiveRC, err := config.ResourcesConfig{Profile: "interactive"}.Resolve()
+	require.NoError(t, err)
+
+	inst := &Instance{
+		Title:            "rc-start",
+		Path:             t.TempDir(),
+		Program:          "claude",
+		ResourceControls: interactiveRC,
+		ResourceProfile:  "interactive",
+	}
+
+	err = inst.StartOnMainBranch()
+	require.NoError(t, err)
+	assert.Equal(t, interactiveRC, sess.resourceControls,
+		"ResourceControls must be forwarded to execution session via SetResourceControls")
+}
+
+// TestRestart_ResourceControls_ReappliedFromInstance verifies that Restart()
+// re-applies the instance's ResourceControls to the fresh execution session
+// rather than using stale defaults.
+func TestRestart_ResourceControls_ReappliedFromInstance(t *testing.T) {
+	swapProbeMCP(t, func() error { return nil })
+
+	interactiveRC, err := config.ResourcesConfig{Profile: "interactive"}.Resolve()
+	require.NoError(t, err)
+
+	var capturedSession *scriptedExecutionSession
+	swapNewExecutionSession(t, func(mode ExecutionMode, name, program string, skipPermissions bool) ExecutionSession {
+		capturedSession = &scriptedExecutionSession{sanitizedName: "rc-restart"}
+		capturedSession.started = false
+		return capturedSession
+	})
+
+	oldSession := &scriptedExecutionSession{sanitizedName: "rc-restart", started: true}
+	inst := &Instance{
+		Title:            "rc-restart",
+		Path:             t.TempDir(),
+		Program:          "claude",
+		ResourceControls: interactiveRC,
+		ResourceProfile:  "interactive",
+		Status:           Ready,
+		started:          true,
+		executionSession: oldSession,
+	}
+
+	err = inst.Restart()
+	require.NoError(t, err)
+	require.NotNil(t, capturedSession)
+	assert.Equal(t, interactiveRC, capturedSession.resourceControls,
+		"Restart must re-apply current ResourceControls to fresh execution session")
+}
+
+// TestResume_ResourceControls_ReappliedFromInstance verifies that Resume()
+// re-applies the instance's ResourceControls to a fresh execution session
+// instead of leaving it at the zero-value (normal) default.
+func TestResume_ResourceControls_ReappliedFromInstance(t *testing.T) {
+	swapProbeMCP(t, func() error { return nil })
+
+	interactiveRC, err := config.ResourcesConfig{Profile: "interactive"}.Resolve()
+	require.NoError(t, err)
+
+	var capturedSession *scriptedExecutionSession
+	swapNewExecutionSession(t, func(mode ExecutionMode, name, program string, skipPermissions bool) ExecutionSession {
+		capturedSession = &scriptedExecutionSession{sanitizedName: "rc-resume"}
+		capturedSession.started = false
+		return capturedSession
+	})
+
+	pausedSession := &scriptedExecutionSession{sanitizedName: "rc-resume", started: false}
+	inst := &Instance{
+		Title:            "rc-resume",
+		Path:             t.TempDir(),
+		Program:          "claude",
+		ResourceControls: interactiveRC,
+		ResourceProfile:  "interactive",
+		Status:           Paused,
+		started:          true,
+		executionSession: pausedSession,
+	}
+
+	err = inst.Resume()
+	require.NoError(t, err)
+	require.NotNil(t, capturedSession)
+	assert.Equal(t, interactiveRC, capturedSession.resourceControls,
+		"Resume must re-apply current ResourceControls to fresh execution session")
 }

@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/kastheco/kasmos/config"
 	"github.com/kastheco/kasmos/session/common"
 	"github.com/kastheco/kasmos/session/tmux"
 )
@@ -61,6 +62,7 @@ type ExecutionSessionIface interface {
 	SetSessionTitle(title string)
 	SetTitleFunc(fn func(workDir string, beforeStart time.Time, title string))
 	SetSDKSpeedTier(tier string)
+	SetResourceControls(rc config.ResolvedResourceControls)
 }
 
 // Session is the SDK execution backend.  It satisfies the parent package's
@@ -117,6 +119,10 @@ func (s *Session) SetInitialPrompt(prompt string) { s.initialPrompt = prompt }
 func (s *Session) SetNoFlicker(enabled bool)      { s.noFlicker = enabled }
 func (s *Session) SetSDKSpeedTier(tier string)    { s.speedTier = tier }
 func (s *Session) SetProject(project string)      { s.project = project }
+
+// SetResourceControls is a no-op for SDK sessions. Resource controls (nice,
+// ionice, build-concurrency env vars) apply only to tmux-backed sessions.
+func (s *Session) SetResourceControls(_ config.ResolvedResourceControls) {}
 func (s *Session) SetSessionTitle(title string)   { s.sessionTitle = title }
 func (s *Session) SetTitleFunc(fn func(workDir string, beforeStart time.Time, title string)) {
 	s.titleFunc = fn

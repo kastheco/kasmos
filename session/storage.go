@@ -44,6 +44,10 @@ type InstanceData struct {
 	SDKTranscriptLimitsSet bool   `json:"sdk_transcript_limits_set,omitempty"`
 	SDKTranscriptMaxBytes  int64  `json:"sdk_transcript_max_bytes,omitempty"`
 	SDKTranscriptMaxTurns  int64  `json:"sdk_transcript_max_turns,omitempty"`
+	// ResourceProfile is the display name of the active resource-control profile
+	// ("normal", "interactive", or "custom"). The full resolved policy is not
+	// persisted; it is re-applied from config at next launch/resume.
+	ResourceProfile string `json:"resource_profile,omitempty"`
 
 	Worktree GitWorktreeData `json:"worktree"`
 }
