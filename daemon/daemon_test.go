@@ -3,10 +3,12 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -842,6 +844,84 @@ permission_default = "bypass"
 	assert.Equal(t, "tmux", records[1].opts.ExecutionMode)
 	assert.True(t, records[1].opts.SkipPermissions)
 	assert.NoFileExists(t, filepath.Join(cacheDir, "feature.md-planner-old.md"))
+}
+
+// TestDaemon_StartPlan_PartialFanOutFailureCleansUpSiblings verifies that when
+// the second planner spawn errors, the daemon also kills the previously
+// successful spawn so the aggregator doesn't hang waiting on a draft that
+// will never arrive.
+func TestDaemon_StartPlan_PartialFanOutFailureCleansUpSiblings(t *testing.T) {
+	project := "proj"
+	repoPath := t.TempDir()
+	kasmosDir := filepath.Join(repoPath, ".kasmos")
+	require.NoError(t, os.MkdirAll(kasmosDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(kasmosDir, "config.toml"), []byte(`
+[orchestration]
+planners = ["planner-a", "planner-b"]
+
+[agents.planner-a]
+program = "codex"
+enabled = true
+
+[agents.planner-b]
+program = "opencode"
+enabled = true
+`), 0o644))
+
+	store := taskstore.NewTestStore(t)
+	require.NoError(t, store.Create(project, taskstore.TaskEntry{
+		Filename:    "feature.md",
+		Status:      taskstore.StatusPlanning,
+		Description: "ship feature",
+	}))
+
+	killed := make(chan string, 4)
+	cacheDir := filepath.Join(kasmosDir, "cache")
+	require.NoError(t, os.MkdirAll(cacheDir, 0o755))
+	var spawnCount int32
+	d := &Daemon{
+		repos:       NewRepoManager(),
+		logger:      slog.Default(),
+		broadcaster: api.NewEventBroadcaster(),
+		killAgent: func(repoPath, planFile, agentType string) error {
+			killed <- agentType
+			return nil
+		},
+		spawnPlanner: func(_ context.Context, opts loop.SpawnOpts) error {
+			n := atomic.AddInt32(&spawnCount, 1)
+			if n == 2 {
+				return errors.New("simulated spawn failure on second profile")
+			}
+			return nil
+		},
+	}
+	t.Cleanup(func() { d.broadcaster.Close() })
+	d.repos.repos = []RepoEntry{{
+		Path:             repoPath,
+		Project:          project,
+		Store:            store,
+		PlannerProfiles:  []string{"planner-a", "planner-b"},
+		PlannerDraftMode: true,
+		CacheDir:         cacheDir,
+	}}
+
+	require.NoError(t, d.StartPlan(project, "feature.md", "legacy", "legacy"))
+
+	// We expect at least two killAgent invocations: the pre-spawn cleanup of
+	// any prior planner and the post-failure cleanup of the partial fan-out.
+	var killedAgents []string
+	require.Eventually(t, func() bool {
+		for {
+			select {
+			case agentType := <-killed:
+				killedAgents = append(killedAgents, agentType)
+			default:
+				return len(killedAgents) >= 2
+			}
+		}
+	}, time.Second, 5*time.Millisecond)
+	assert.GreaterOrEqual(t, len(killedAgents), 2,
+		"daemon must kill the partial fan-out on spawn failure (initial kill + cleanup kill)")
 }
 
 func TestDaemon_ExecuteClearPlannerDraftsAction(t *testing.T) {

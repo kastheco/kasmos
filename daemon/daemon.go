@@ -651,6 +651,13 @@ func (d *Daemon) startPlanAsync(entry RepoEntry, planFile, prompt, program strin
 		for i, profile := range entry.PlannerProfiles {
 			if err := d.spawnPlannerForProfile(context.Background(), entry, planFile, profile, i == 0, true, "", ""); err != nil {
 				d.logger.Error("spawn planner failed", "project", entry.Project, "plan", planFile, "profile", profile, "err", err)
+				// Kill any already-spawned siblings so the partial set
+				// doesn't strand the task in planning — without this
+				// cleanup, ProcessPlannerDraftSignals waits forever for
+				// drafts that will never arrive.
+				if cleanupErr := killAgent(entry.Path, planFile, session.AgentTypePlanner); cleanupErr != nil {
+					d.logger.Error("clean up partial planner fan-out failed", "project", entry.Project, "plan", planFile, "err", cleanupErr)
+				}
 				return
 			}
 		}

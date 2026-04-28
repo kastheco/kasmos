@@ -1121,6 +1121,30 @@ func TestValidatePlannerProfiles(t *testing.T) {
 		assert.Contains(t, err.Error(), "[orchestration].planners")
 	})
 
+	t.Run("name with unsafe characters rejected", func(t *testing.T) {
+		// Names get interpolated verbatim into JSON payload and shell
+		// single-quoted commands; quotes and backslashes break both.
+		cases := []string{
+			`evil"name`,
+			`evil\name`,
+			`evil'name`,
+			`evil name`, // mid-string whitespace
+			`evil$name`,
+			`evil;name`,
+		}
+		for _, name := range cases {
+			cfg := &Config{
+				Planners: []string{name},
+				Profiles: map[string]AgentProfile{
+					name: {Program: "codex", Enabled: true},
+				},
+			}
+			err := cfg.ValidatePlannerProfiles()
+			require.Errorf(t, err, "expected name %q to be rejected", name)
+			assert.Contains(t, err.Error(), "invalid characters")
+		}
+	})
+
 	t.Run("enabled profile with empty program rejected", func(t *testing.T) {
 		// Without this guard, ResolveNamedProfile returns ok=false and the
 		// caller falls back to the default launcher, silently running the

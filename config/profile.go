@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 )
 
@@ -190,10 +191,22 @@ func (c *Config) PlannerProfileNames() []string {
 	return out
 }
 
+// plannerProfileNamePattern restricts planner profile names to a conservative
+// charset that is safe to interpolate into:
+//   - filesystem paths (cache filenames: .kasmos/cache/<plan>-planner-<profile>.md)
+//   - JSON payloads (planner_draft_finished payload: {"planner_id":"<profile>"})
+//   - shell single-quoted CLI fallbacks (kas signal emit ... '...')
+//
+// Allowed: ASCII letters, digits, '_', '-', '.'. The '..' substring is still
+// rejected separately so single dots in names (e.g. "v1.2") remain valid.
+var plannerProfileNamePattern = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
+
 // ValidatePlannerProfiles checks that each name in [orchestration].planners
 // refers to a known, enabled [agents.*] profile. It rejects:
 //   - empty names (after trimming)
-//   - names containing '/', '\', or ".."
+//   - names with characters outside [A-Za-z0-9._-] (unsafe for JSON/shell/path
+//     interpolation in planner prompts and cache filenames)
+//   - names containing ".."
 //   - duplicate names (after trimming)
 //   - names not present in [agents.*]
 //   - names that map to a disabled profile
@@ -209,8 +222,11 @@ func (c *Config) ValidatePlannerProfiles() error {
 		if trimmed == "" {
 			return fmt.Errorf("[orchestration].planners[%d]: empty planner profile name", i)
 		}
-		if strings.ContainsAny(trimmed, `/\`) || strings.Contains(trimmed, "..") {
-			return fmt.Errorf("[orchestration].planners: planner profile %q contains invalid characters ('/', '\\', or '..')", trimmed)
+		if !plannerProfileNamePattern.MatchString(trimmed) {
+			return fmt.Errorf("[orchestration].planners: planner profile %q contains invalid characters (allowed: letters, digits, '.', '_', '-')", trimmed)
+		}
+		if strings.Contains(trimmed, "..") {
+			return fmt.Errorf("[orchestration].planners: planner profile %q contains invalid character sequence '..'", trimmed)
 		}
 		if seen[trimmed] {
 			return fmt.Errorf("[orchestration].planners: duplicate planner profile %q", trimmed)
