@@ -253,6 +253,10 @@ type Config struct {
 	Enforcement map[string]bool `json:"enforcement,omitempty"`
 	// SDK holds SDK session transcript retention limits.
 	SDK SDKConfig `json:"sdk,omitempty"`
+	// Resources holds the raw resource-control config loaded from [resources] in config.toml.
+	// Use Resources.Resolve() to obtain the fully validated ResolvedResourceControls.
+	// An empty Profile (the default) resolves to the "normal" (no-op) profile.
+	Resources ResourcesConfig `json:"resources,omitempty"`
 }
 
 // BlueprintSkipThreshold returns the configured threshold for single-agent mode.
@@ -319,6 +323,7 @@ func DefaultConfig() *Config {
 			TranscriptMaxBytes: defaultSDKTranscriptMaxBytes,
 			TranscriptMaxTurns: defaultSDKTranscriptMaxTurns,
 		},
+		Resources: DefaultResourcesConfig(),
 	}
 	applyConfigDefaults(cfg)
 	return cfg
@@ -516,6 +521,10 @@ func configFromTOML(result *TOMLConfigResult) *Config {
 			}
 			cfg.SDK.TranscriptMaxTurns = v
 		}
+		// Resources — overlay the TOML block. An absent [resources] block leaves the
+		// default "normal" profile in place; a present block replaces it directly.
+		// Validation is deferred to Resources.Resolve() at call sites.
+		cfg.Resources = result.Resources
 	}
 	applyConfigDefaults(cfg)
 	return cfg
@@ -596,6 +605,8 @@ func configToTOML(cfg *Config) *TOMLConfig {
 		TranscriptMaxBytes: &maxBytes,
 		TranscriptMaxTurns: &maxTurns,
 	}
+	// Resources — only emit when a non-normal profile is set.
+	out.Resources = cfg.Resources
 	return out
 }
 

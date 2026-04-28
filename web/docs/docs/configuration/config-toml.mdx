@@ -131,6 +131,48 @@ See [sdk backend: transcript retention](../sdk-backend/logs-and-output.mdx#trans
 enabled = false
 ```
 
+## `[resources]` — agent resource controls
+
+Controls the CPU and I/O priority of kasmos-managed agent processes. The block is entirely optional — omitting it leaves default scheduling unchanged.
+
+| field | type | default | description |
+|-------|------|---------|-------------|
+| `profile` | string | `"normal"` | preset to apply: `normal` (no-op), `interactive`, or `custom` |
+| `nice` | int | (profile preset) | process niceness value: `0–19` (higher = lower priority). Negative values are rejected. |
+| `ionice_class` | string | (profile preset) | Linux I/O scheduling class: `none`, `best-effort`, or `idle`. `realtime` is rejected. |
+| `ionice_level` | int | (profile preset) | I/O priority level `0–7`; only valid for `ionice_class = "best-effort"` |
+| `build_jobs` | int | (profile preset) | `-j` parallelism hint injected into build tool environment; `0` = unset |
+| `go_package_parallelism` | int | (profile preset) | sets `GOFLAGS=-p=<n>` for `go build`/`go test`; `0` = unset |
+| `gomaxprocs` | int | (profile preset) | overrides `GOMAXPROCS` for agent processes; `0` = unset |
+| `max_parallel_wave_tasks` | int | (profile preset) | caps concurrent wave tasks; `0` = unset/unlimited |
+| `[resources.env]` | table | — | extra environment variables injected into every agent process; keys must be valid shell names and must not overwrite kasmos control variables |
+
+**profiles:**
+
+- `normal` (default) — no wrapper, no environment injection, no wave cap. Identical to omitting the block.
+- `interactive` — preset for latency-sensitive desktop workloads: `nice = 10`, `ionice_class = "best-effort"`, `ionice_level = 7`, `build_jobs = 1`, `go_package_parallelism = 1`, `gomaxprocs = 2`, `max_parallel_wave_tasks = 1`. Individual keys override the preset.
+- `custom` — starts from `normal` and enables only the keys you supply explicitly. At least one control key must be set.
+
+**minimal example (interactive preset):**
+
+```toml
+[resources]
+profile = "interactive"
+# optional overrides
+build_jobs = 1
+go_package_parallelism = 1
+max_parallel_wave_tasks = 1
+```
+
+**custom example:**
+
+```toml
+[resources]
+profile = "custom"
+nice = 15
+max_parallel_wave_tasks = 2
+```
+
 ## `[orchestration]` — wave orchestration tuning
 
 | field | type | default | description |

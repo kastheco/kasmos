@@ -99,6 +99,11 @@ type TOMLSDKConfig struct {
 	TranscriptMaxTurns *int64 `toml:"transcript_max_turns,omitempty"`
 }
 
+// TOMLResourcesConfig is the TOML-level representation of the [resources] table.
+// It is a type alias for ResourcesConfig — both use pointer fields to distinguish
+// omitted keys (nil) from explicit values, so no separate conversion is required.
+type TOMLResourcesConfig = ResourcesConfig
+
 // TOMLConfig is the top-level TOML file structure.
 type TOMLConfig struct {
 	Phases               map[string]string       `toml:"phases"`
@@ -108,6 +113,7 @@ type TOMLConfig struct {
 	Orchestration        TOMLOrchestrationConfig `toml:"orchestration"`
 	Keybinds             TOMLKeybindsConfig      `toml:"keybinds"`
 	SDK                  TOMLSDKConfig           `toml:"sdk"`
+	Resources            TOMLResourcesConfig     `toml:"resources"`
 	Enforcement          map[string]bool         `toml:"enforcement,omitempty"`
 	DatabaseURL          string                  `toml:"database_url,omitempty"`
 	DefaultProgram       string                  `toml:"default_program,omitempty"`
@@ -149,6 +155,9 @@ type TOMLConfigResult struct {
 	// SDK holds transcript retention limit pointers from the [sdk] TOML table.
 	// Nil fields mean the key was absent; configFromTOML applies runtime defaults.
 	SDK TOMLSDKConfig
+	// Resources holds the raw [resources] TOML table.
+	// An empty Profile field means the block was absent; configFromTOML treats it as "normal".
+	Resources ResourcesConfig
 }
 
 // IsEnforcementEnabled reports whether hook enforcement is active for the given harness.
@@ -204,7 +213,8 @@ func LoadTOMLConfigFrom(path string) (*TOMLConfigResult, error) {
 		ClaudeNoFlicker:          tc.ClaudeNoFlicker,
 		Hooks:                    tc.Hooks,
 		Enforcement:              tc.Enforcement,
-		SDK:                      tc.SDK, // nil pointers mean key absent; configFromTOML applies defaults
+		SDK:                      tc.SDK,       // nil pointers mean key absent; configFromTOML applies defaults
+		Resources:                tc.Resources, // empty Profile means block absent; treated as "normal"
 	}
 
 	for name, agent := range tc.Agents {
