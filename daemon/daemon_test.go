@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/kastheco/kasmos/cmd"
+	"github.com/kastheco/kasmos/config"
 	"github.com/kastheco/kasmos/config/taskfsm"
 	"github.com/kastheco/kasmos/config/taskparser"
 	"github.com/kastheco/kasmos/config/taskstore"
@@ -2047,6 +2048,40 @@ func TestDaemon_SpawnSolo_ReturnsBeforeSpawnCompletes(t *testing.T) {
 		t.Fatal("background solo spawn did not start")
 	}
 	close(release)
+}
+
+func TestDaemon_SpawnSolo_ForwardsRepoSDKTranscriptLimits(t *testing.T) {
+	project := "proj"
+	gotOpts := make(chan SpawnSoloOpts, 1)
+	d := &Daemon{
+		repos:       NewRepoManager(),
+		spawner:     NewTmuxSpawner(),
+		logger:      slog.Default(),
+		broadcaster: api.NewEventBroadcaster(),
+		spawnSolo: func(_ context.Context, opts SpawnSoloOpts) error {
+			gotOpts <- opts
+			return nil
+		},
+	}
+	d.repos.repos = []RepoEntry{{
+		Path:    "/tmp/proj",
+		Project: project,
+		SDK: config.SDKConfig{
+			TranscriptMaxBytes: 0,
+			TranscriptMaxTurns: 0,
+		},
+	}}
+
+	require.NoError(t, d.SpawnSolo(project, api.SpawnSoloRequest{Title: "my-solo", Program: "claude"}))
+
+	select {
+	case opts := <-gotOpts:
+		assert.True(t, opts.SDKTranscriptLimitsSet)
+		assert.Equal(t, int64(0), opts.SDKTranscriptMaxBytes)
+		assert.Equal(t, int64(0), opts.SDKTranscriptMaxTurns)
+	case <-time.After(time.Second):
+		t.Fatal("background solo spawn did not start")
+	}
 }
 
 func TestDaemon_SpawnSolo_ConflictWhileAsyncSpawnPending(t *testing.T) {

@@ -775,18 +775,21 @@ func (d *Daemon) startSoloAsync(entry RepoEntry, req api.SpawnSoloRequest) {
 		skip = skipPermissionsForAgent(entry.Path, req.AgentType)
 	}
 	opts := SpawnSoloOpts{
-		RepoPath:        entry.Path,
-		Project:         entry.Project,
-		Title:           req.Title,
-		Program:         req.Program,
-		Prompt:          req.Prompt,
-		TaskFile:        req.TaskFile,
-		AgentType:       req.AgentType,
-		SoloAgent:       req.SoloAgent,
-		Branch:          req.Branch,
-		WorkPath:        req.WorkPath,
-		SDKSpeedTier:    req.SDKSpeedTier,
-		SkipPermissions: skip,
+		RepoPath:               entry.Path,
+		Project:                entry.Project,
+		Title:                  req.Title,
+		Program:                req.Program,
+		Prompt:                 req.Prompt,
+		TaskFile:               req.TaskFile,
+		AgentType:              req.AgentType,
+		SoloAgent:              req.SoloAgent,
+		Branch:                 req.Branch,
+		WorkPath:               req.WorkPath,
+		SDKSpeedTier:           req.SDKSpeedTier,
+		SDKTranscriptLimitsSet: true,
+		SDKTranscriptMaxBytes:  entry.SDK.TranscriptMaxBytes,
+		SDKTranscriptMaxTurns:  entry.SDK.TranscriptMaxTurns,
+		SkipPermissions:        skip,
 	}
 	if err := spawnSolo(context.Background(), opts); err != nil {
 		d.logger.Error("spawn solo failed", "project", entry.Project, "title", req.Title, "err", err)

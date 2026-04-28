@@ -2,6 +2,7 @@ package sdk
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -222,6 +223,25 @@ func TestRendererRetention_ByteCap_TurnsEvicted(t *testing.T) {
 
 	s := r.Stats()
 	assert.Greater(t, s.EvictedTurns, int64(0), "some turns should have been evicted to stay under byte cap")
+}
+
+func TestRendererRetention_ByteCap_BoundsMixedFlatStructuredStats(t *testing.T) {
+	cap := int64(4096)
+	r := NewRenderer(WithRendererRetention(bytesOnly(cap)))
+	payload := strings.Repeat("x", 256) + "\n"
+
+	for i := range 80 {
+		id := fmt.Sprintf("t%d", i)
+		r.AddEvent(Event{Kind: EventTurnStarted, TurnID: id})
+		r.AddEvent(Event{Kind: EventUserPrompt, TurnID: id, Text: "run synthetic stream"})
+		r.AddEvent(Event{Kind: EventTextDelta, TurnID: id, Text: payload})
+		r.AddEvent(Event{Kind: EventTurnCompleted, TurnID: id})
+	}
+
+	s := r.Stats()
+	assert.Greater(t, s.EvictedTurns, int64(0), "structured history should be evicted")
+	assert.Greater(t, s.EvictedLines, int64(0), "flat history should be evicted")
+	assert.LessOrEqual(t, s.Bytes, cap+cap/4, "aggregate Stats().Bytes must settle within the accepted overhead")
 }
 
 // ---- flat line eviction ----

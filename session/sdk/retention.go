@@ -71,20 +71,12 @@ func (r *Renderer) Stats() RendererStats {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	curTurnBytes := int64(0)
-	if r.currentTurn != nil {
-		curTurnBytes = turnBytes(r.currentTurn)
-	}
-	partialBytes := int64(0)
-	if r.partial != "" {
-		partialBytes = flatLineBytes(r.partial)
-	}
 	sentinelOffset := int64(0)
 	if r.hasSentinelTurn {
 		sentinelOffset = 1
 	}
 	return RendererStats{
-		Bytes:         r.retainedFlatBytes + partialBytes + r.retainedTurnBytes + curTurnBytes,
+		Bytes:         r.aggregateBytesLocked(),
 		Lines:         int64(len(r.lines)),
 		Turns:         int64(len(r.turns)) - sentinelOffset,
 		MaxBytes:      r.retentionOpts.MaxBytes,
@@ -152,6 +144,18 @@ func turnBytes(t *PresentationTurn) int64 {
 	return b
 }
 
+func (r *Renderer) aggregateBytesLocked() int64 {
+	curTurnBytes := int64(0)
+	if r.currentTurn != nil {
+		curTurnBytes = turnBytes(r.currentTurn)
+	}
+	partialBytes := int64(0)
+	if r.partial != "" {
+		partialBytes = flatLineBytes(r.partial)
+	}
+	return r.retainedFlatBytes + partialBytes + r.retainedTurnBytes + curTurnBytes
+}
+
 // ---- retention enforcement ----
 
 // enforceRetentionLocked trims the renderer to stay within configured limits.
@@ -168,12 +172,8 @@ func (r *Renderer) enforceRetentionLocked() {
 	// Phase 1: evict oldest completed non-sentinel structured turns while over budget.
 	for {
 		completedCount := r.completedNonSentinelTurnCount()
-		curBytes := int64(0)
-		if r.currentTurn != nil {
-			curBytes = turnBytes(r.currentTurn)
-		}
 		overTurns := r.retentionOpts.MaxTurns > 0 && completedCount > r.retentionOpts.MaxTurns
-		overBytes := r.retentionOpts.MaxBytes > 0 && (r.retainedTurnBytes+curBytes) > r.retentionOpts.MaxBytes
+		overBytes := r.retentionOpts.MaxBytes > 0 && r.aggregateBytesLocked() > r.retentionOpts.MaxBytes
 		if !overTurns && !overBytes {
 			break
 		}
@@ -192,9 +192,9 @@ func (r *Renderer) enforceRetentionLocked() {
 		r.upsertSentinelTurnLocked()
 	}
 
-	// Phase 2: trim flat lines while flat bytes exceed the byte limit independently.
+	// Phase 2: trim flat lines while flat bytes or the aggregate footprint exceed the byte limit.
 	if r.retentionOpts.MaxBytes > 0 {
-		for r.retainedFlatBytes > r.retentionOpts.MaxBytes {
+		for r.retainedFlatBytes > r.retentionOpts.MaxBytes || r.aggregateBytesLocked() > r.retentionOpts.MaxBytes {
 			idx := r.firstEvictableFlatIdx()
 			if idx < 0 {
 				break
@@ -207,15 +207,14 @@ func (r *Renderer) enforceRetentionLocked() {
 			r.evictedBytes += lb
 			batchBytes += lb
 			r.lines = append(r.lines[:idx], r.lines[idx+1:]...)
-		}
-		if batchFlatLines > 0 {
 			r.upsertFlatMarkerLocked()
 		}
 	}
 
-	// Phase 3: if the current turn alone exceeds MaxBytes, truncate its oldest rows.
+	// Phase 3: if the current turn or aggregate footprint still exceeds MaxBytes,
+	// truncate the current turn's oldest rows as the last resort.
 	if r.retentionOpts.MaxBytes > 0 && r.currentTurn != nil {
-		for turnBytes(r.currentTurn) > r.retentionOpts.MaxBytes {
+		for turnBytes(r.currentTurn) > r.retentionOpts.MaxBytes || r.aggregateBytesLocked() > r.retentionOpts.MaxBytes {
 			if r.truncateCurrentTurnRowLocked() == 0 {
 				break
 			}

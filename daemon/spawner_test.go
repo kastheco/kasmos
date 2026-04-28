@@ -970,6 +970,32 @@ func TestTmuxSpawner_SpawnSolo_DefaultPath_CallsStartOnMain(t *testing.T) {
 	assert.Equal(t, "", running[0].PlanFile, "standalone instances have no plan file")
 }
 
+func TestTmuxSpawner_SpawnSolo_SDKTranscriptLimitsForwarded(t *testing.T) {
+	s := NewTmuxSpawner()
+	var capturedInst *session.Instance
+	s.startOnMain = func(inst *session.Instance) error {
+		capturedInst = inst
+		inst.MarkStartedForTest()
+		inst.SetStatus(session.Running)
+		return nil
+	}
+
+	err := s.SpawnSolo(context.Background(), SpawnSoloOpts{
+		RepoPath:               "/tmp/repo",
+		Project:                "proj",
+		Title:                  "limited-solo",
+		Program:                "claude",
+		SDKTranscriptLimitsSet: true,
+		SDKTranscriptMaxBytes:  0,
+		SDKTranscriptMaxTurns:  0,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, capturedInst)
+	assert.True(t, capturedInst.SDKTranscriptLimitsSet)
+	assert.Equal(t, int64(0), capturedInst.SDKTranscriptMaxBytes)
+	assert.Equal(t, int64(0), capturedInst.SDKTranscriptMaxTurns)
+}
+
 func TestTmuxSpawner_SpawnSolo_WithBranch_CallsStartOnBranch(t *testing.T) {
 	s := NewTmuxSpawner()
 	var capturedInst *session.Instance

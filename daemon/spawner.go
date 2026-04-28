@@ -57,6 +57,12 @@ type SpawnSoloOpts struct {
 	Branch       string
 	WorkPath     string
 	SDKSpeedTier string
+	// SDKTranscriptLimitsSet must be true to forward MaxBytes/MaxTurns to the renderer.
+	SDKTranscriptLimitsSet bool
+	// SDKTranscriptMaxBytes caps the SDK renderer's in-process byte usage (0 = no byte limit).
+	SDKTranscriptMaxBytes int64
+	// SDKTranscriptMaxTurns caps completed structured turns retained by the SDK renderer (0 = no turn limit).
+	SDKTranscriptMaxTurns int64
 	// SkipPermissions is resolved by the caller. Daemon.SpawnSolo handles
 	// nullable SpawnSoloRequest.SkipPermissions before creating these opts.
 	SkipPermissions bool
@@ -1008,16 +1014,17 @@ func (s *TmuxSpawner) SpawnSolo(ctx context.Context, opts SpawnSoloOpts) error {
 	}
 
 	inst, err := session.NewInstance(session.InstanceOptions{
-		Title:           opts.Title,
-		Path:            instPath,
-		Program:         opts.Program,
-		ExecutionMode:   session.ExecutionModeSDK,
-		TaskFile:        opts.TaskFile,
-		AgentType:       agentType,
-		SDKSpeedTier:    opts.SDKSpeedTier,
-		SkipPermissions: opts.SkipPermissions,
-		// Solo spawns do not carry repo-level transcript limits (no RepoEntry context).
-		// SDKTranscriptLimitsSet remains false — renderer uses its own defaults.
+		Title:                  opts.Title,
+		Path:                   instPath,
+		Program:                opts.Program,
+		ExecutionMode:          session.ExecutionModeSDK,
+		TaskFile:               opts.TaskFile,
+		AgentType:              agentType,
+		SDKSpeedTier:           opts.SDKSpeedTier,
+		SkipPermissions:        opts.SkipPermissions,
+		SDKTranscriptLimitsSet: opts.SDKTranscriptLimitsSet,
+		SDKTranscriptMaxBytes:  opts.SDKTranscriptMaxBytes,
+		SDKTranscriptMaxTurns:  opts.SDKTranscriptMaxTurns,
 	})
 	if err != nil {
 		s.releaseReservation(key)
