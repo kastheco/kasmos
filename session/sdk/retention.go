@@ -197,7 +197,13 @@ func (r *Renderer) enforceRetentionLocked() {
 		for r.retainedFlatBytes > r.retentionOpts.MaxBytes || r.aggregateBytesLocked() > r.retentionOpts.MaxBytes {
 			idx := r.firstEvictableFlatIdx()
 			if idx < 0 {
-				break
+				freed := r.truncatePartialLocked()
+				if freed == 0 {
+					break
+				}
+				r.evictedBytes += freed
+				batchBytes += freed
+				continue
 			}
 			line := r.lines[idx]
 			lb := flatLineBytes(line)
@@ -320,9 +326,11 @@ func (r *Renderer) upsertFlatMarkerLocked() {
 }
 
 // truncateCurrentTurnRowLocked removes the oldest removable row from
-// r.currentTurn to reclaim bytes. Skips the current open text row and repairs
-// currentTurnOpenTextRow if rows before it are removed. Returns 1 if a row was
-// removed, 0 if no safe removal was possible. Must be called with r.mu held.
+// r.currentTurn to reclaim bytes. It skips the current open text row while any
+// other row can be removed, then shortens that open text row as a last resort.
+// Repairs currentTurnOpenTextRow if rows before it are removed. Returns 1 if a
+// row was removed or shortened, 0 if no safe truncation was possible. Must be
+// called with r.mu held.
 func (r *Renderer) truncateCurrentTurnRowLocked() int64 {
 	turn := r.currentTurn
 	if turn == nil || len(turn.Rows) == 0 {
@@ -338,5 +346,34 @@ func (r *Renderer) truncateCurrentTurnRowLocked() int64 {
 		turn.Rows = append(turn.Rows[:i], turn.Rows[i+1:]...)
 		return 1
 	}
-	return 0
+	return r.truncateOpenTextRowLocked(turn)
+}
+
+func (r *Renderer) truncatePartialLocked() int64 {
+	if r.partial == "" {
+		return 0
+	}
+	oldBytes := flatLineBytes(r.partial)
+	nextLen := len(r.partial) / 2
+	r.partial = r.partial[nextLen:]
+	if r.partial == "" {
+		return oldBytes
+	}
+	return oldBytes - flatLineBytes(r.partial)
+}
+
+func (r *Renderer) truncateOpenTextRowLocked(turn *PresentationTurn) int64 {
+	if r.currentTurnOpenTextRow < 0 || r.currentTurnOpenTextRow >= len(turn.Rows) {
+		return 0
+	}
+	row := &turn.Rows[r.currentTurnOpenTextRow]
+	if row.Text == "" {
+		return 0
+	}
+	if len(row.Text) == 1 {
+		row.Text = ""
+		return 1
+	}
+	row.Text = row.Text[len(row.Text)/2:]
+	return 1
 }

@@ -283,6 +283,21 @@ func TestRendererRetention_FlatCap_MarkerNotDuplicated(t *testing.T) {
 	assert.Equal(t, 1, count, "flat eviction marker must not be duplicated")
 }
 
+func TestRendererRetention_FlatCap_OversizedPartialTrimmed(t *testing.T) {
+	cap := int64(1024)
+	r := NewRenderer(WithRendererRetention(bytesOnly(cap)))
+
+	r.AddEvent(Event{
+		Kind:   EventTextDelta,
+		TurnID: "t1",
+		Text:   strings.Repeat("x", 4096),
+	})
+
+	s := r.Stats()
+	assert.LessOrEqual(t, s.Bytes, cap, "oversized no-newline deltas must be trimmed under the aggregate cap")
+	assert.Less(t, len(r.Capture()), 4096, "flat partial capture must be shortened when it is the only flat data")
+}
+
 // ---- active-turn row truncation ----
 
 func TestRendererRetention_ActiveTurnTruncation_RowsRemoved(t *testing.T) {
@@ -316,6 +331,28 @@ func TestRendererRetention_ActiveTurnTruncation_TurnPreserved(t *testing.T) {
 		}
 	}
 	assert.True(t, found, "current turn must not be removed even when truncated")
+}
+
+func TestRendererRetention_ActiveTurnTruncation_OversizedOpenTextRowShortened(t *testing.T) {
+	cap := int64(1024)
+	r := NewRenderer(WithRendererRetention(bytesOnly(cap)))
+
+	r.AddEvent(Event{
+		Kind:   EventTextDelta,
+		TurnID: "t1",
+		Text:   strings.Repeat("x", 4096),
+	})
+
+	s := r.Stats()
+	assert.Greater(t, s.TruncatedRows, int64(0), "open text row content must be truncated as a last resort")
+	assert.LessOrEqual(t, s.Bytes, cap, "current-turn truncation must bring aggregate stats under the byte cap")
+
+	turns := r.CapturePresentation()
+	require.Len(t, turns, 1)
+	require.NotEmpty(t, turns[0].Rows)
+	last := turns[0].Rows[len(turns[0].Rows)-1]
+	assert.NotEmpty(t, last.Text, "truncation should keep the newest suffix of the oversized open row")
+	assert.Less(t, len(last.Text), 4096, "structured open text row must be shortened")
 }
 
 // ---- shell turn accounting ----
