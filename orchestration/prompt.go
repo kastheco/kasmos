@@ -238,7 +238,7 @@ func BuildPlannerPromptWithOptions(planFile, planName, description, project stri
 	sb.WriteString(fmt.Sprintf("%d. Signal draft completion:\n", step))
 	sb.WriteString(fmt.Sprintf("   - Prefer MCP `signal_create` (signal_type: \"planner-draft-finished\", plan_file: %q, project: %q, payload: %q)\n",
 		planFile, project, payload))
-	sb.WriteString(fmt.Sprintf("   - If MCP is unavailable, use `kas signal emit planner_draft_finished %s '%s'`\n", planFile, payload))
+	sb.WriteString(fmt.Sprintf("   - If MCP is unavailable, use `kas signal emit planner_draft_finished %s --payload '%s'`\n", planFile, payload))
 
 	sb.WriteString("\n## Constraints\n\n")
 	sb.WriteString(fmt.Sprintf("- Cache path: `%s`\n", cachePath))

@@ -195,7 +195,7 @@ func (c *Config) PlannerProfileNames() []string {
 // charset that is safe to interpolate into:
 //   - filesystem paths (cache filenames: .kasmos/cache/<plan>-planner-<profile>.md)
 //   - JSON payloads (planner_draft_finished payload: {"planner_id":"<profile>"})
-//   - shell single-quoted CLI fallbacks (kas signal emit ... '...')
+//   - shell single-quoted CLI payload fallbacks (kas signal emit ... --payload '...')
 //
 // Allowed: ASCII letters, digits, '_', '-', '.'. The '..' substring is still
 // rejected separately so single dots in names (e.g. "v1.2") remain valid.
