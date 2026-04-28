@@ -2,7 +2,6 @@ package tmux
 
 import (
 	"fmt"
-	"io"
 	"os/exec"
 	"strings"
 	"testing"
@@ -11,7 +10,6 @@ import (
 	"github.com/kastheco/kasmos/cmd/cmd_test"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/term"
 )
 
 func TestToKasTmuxName(t *testing.T) {
@@ -339,38 +337,6 @@ func TestRestore_LeavesPTYNil(t *testing.T) {
 	require.NoError(t, s.Restore())
 	assert.Nil(t, s.GetPTY(), "GetPTY should be nil after Restore (monitor-only, no attached PTY)")
 	assert.Nil(t, s.ptmxHandle, "ptmxHandle should be nil after Restore")
-}
-
-func withNonInteractiveAttachUnitHarness(t *testing.T) {
-	// serial: mutates tmux timing globals
-	t.Helper()
-	withFastTmuxTimings(t)
-
-	oldStdinFD := stdinFD
-	oldIsTTY := terminalIsTTY
-	oldMakeRaw := terminalMakeRaw
-	oldRestore := terminalRestore
-	oldDrain := drainStdin
-	oldSilence := outerTerminalSilence
-	oldOuterRestore := outerTerminalRestore
-	t.Cleanup(func() {
-		stdinFD = oldStdinFD
-		terminalIsTTY = oldIsTTY
-		terminalMakeRaw = oldMakeRaw
-		terminalRestore = oldRestore
-		drainStdin = oldDrain
-		outerTerminalSilence = oldSilence
-		outerTerminalRestore = oldOuterRestore
-	})
-
-	stdinFD = func() int { return 9 }
-	terminalIsTTY = func(int) bool { return false } // skip raw mode in tests
-	state := &term.State{}
-	terminalMakeRaw = func(int) (*term.State, error) { return state, nil }
-	terminalRestore = func(int, *term.State) error { return nil }
-	drainStdin = func(time.Duration) {}
-	outerTerminalSilence = func(io.Writer) {}
-	outerTerminalRestore = func(io.Writer) {}
 }
 
 func TestAttach_CreatesAndClosesAttachSessionHandles(t *testing.T) {
