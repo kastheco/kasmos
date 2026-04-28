@@ -1055,7 +1055,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							Title:              inst.Title,
 							PresentationTurns:  turns,
 							PresentationCached: true,
-							RendererStats:      presResp.Stats,
+							RendererStats:      rendererStatsFromDaemon(presResp.Stats),
 							TmuxAlive:          true,
 						})
 						continue
@@ -1078,6 +1078,11 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					continue
 				}
 				md := inst.CollectMetadata()
+				var rendererStats *sessionsdk.RendererStats
+				if session.NormalizeExecutionMode(inst.ExecutionMode) == session.ExecutionModeSDK {
+					stats := md.RendererStats
+					rendererStats = &stats
+				}
 				results = append(results, instanceMetadata{
 					Title:              inst.Title,
 					Content:            md.Content,
@@ -1087,6 +1092,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					CPUPercent:         md.CPUPercent,
 					MemMB:              md.MemMB,
 					ResourceUsageValid: md.ResourceUsageValid,
+					RendererStats:      rendererStats,
 					TmuxAlive:          md.TmuxAlive,
 					PermissionPrompt:   md.PermissionPrompt,
 				})
@@ -1797,18 +1803,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				inst.SetCachedPresentation(md.PresentationTurns)
 			}
 			if md.RendererStats != nil {
-				rs := md.RendererStats
-				inst.SetCachedRendererStats(sessionsdk.RendererStats{
-					Bytes:         rs.Bytes,
-					Lines:         rs.Lines,
-					Turns:         rs.Turns,
-					MaxBytes:      rs.MaxBytes,
-					MaxTurns:      rs.MaxTurns,
-					EvictedTurns:  rs.EvictedTurns,
-					EvictedLines:  rs.EvictedLines,
-					EvictedBytes:  rs.EvictedBytes,
-					TruncatedRows: rs.TruncatedRows,
-				})
+				inst.SetCachedRendererStats(*md.RendererStats)
 			}
 
 			if md.ContentCaptured {
@@ -3171,6 +3166,23 @@ type planRenderedMsg struct {
 	err      error
 }
 
+func rendererStatsFromDaemon(rs *daemonapi.RendererStats) *sessionsdk.RendererStats {
+	if rs == nil {
+		return nil
+	}
+	return &sessionsdk.RendererStats{
+		Bytes:         rs.Bytes,
+		Lines:         rs.Lines,
+		Turns:         rs.Turns,
+		MaxBytes:      rs.MaxBytes,
+		MaxTurns:      rs.MaxTurns,
+		EvictedTurns:  rs.EvictedTurns,
+		EvictedLines:  rs.EvictedLines,
+		EvictedBytes:  rs.EvictedBytes,
+		TruncatedRows: rs.TruncatedRows,
+	}
+}
+
 // instanceMetadata holds the results of polling a single instance's subprocess data.
 // Collected in a goroutine, applied to the model in Update.
 type instanceMetadata struct {
@@ -3179,10 +3191,9 @@ type instanceMetadata struct {
 	ContentCaptured    bool
 	PresentationTurns  []*sessionsdk.PresentationTurn
 	PresentationCached bool
-	// RendererStats carries the latest SDK renderer stats for daemon-managed
-	// SDK placeholder instances. Nil when stats are not available (tmux
-	// instances or daemon not reachable).
-	RendererStats      *daemonapi.RendererStats
+	// RendererStats carries the latest SDK renderer stats. Nil when stats are
+	// not available (tmux instances or daemon not reachable).
+	RendererStats      *sessionsdk.RendererStats
 	Updated            bool
 	HasPrompt          bool
 	CPUPercent         float64

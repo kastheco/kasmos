@@ -1387,6 +1387,9 @@ func (d *Daemon) monitorRunningInstances(ctx context.Context, e RepoEntry) {
 		}
 
 		md := inst.CollectMetadata()
+		if session.NormalizeExecutionMode(inst.ExecutionMode) == session.ExecutionModeSDK {
+			inst.SetCachedRendererStats(md.RendererStats)
+		}
 		wasAwaitingWork := inst.AwaitingWork
 		if md.TmuxAlive && inst.Exited {
 			inst.Exited = false

@@ -948,7 +948,7 @@ func TestDaemonSync_RendererStats_StoredOnInstance(t *testing.T) {
 		Title:              inst.Title,
 		PresentationTurns:  nil,
 		PresentationCached: true,
-		RendererStats:      &statsPayload,
+		RendererStats:      rendererStatsFromDaemon(&statsPayload),
 		TmuxAlive:          true,
 	}
 	_ = srv // fake server created for realistic environment; we inject md directly
@@ -969,6 +969,44 @@ func TestDaemonSync_RendererStats_StoredOnInstance(t *testing.T) {
 	assert.Equal(t, int64(2000), inst.RendererStats.MaxTurns)
 	assert.Equal(t, int64(2), inst.RendererStats.EvictedTurns)
 	assert.Equal(t, int64(512), inst.RendererStats.EvictedBytes)
+}
+
+func TestMetadataResult_LocalRendererStats_StoredOnInstance(t *testing.T) {
+	t.Parallel()
+
+	repoDir := t.TempDir()
+	inst, err := session.NewInstance(session.InstanceOptions{
+		Title:         "local-sdk-agent",
+		Path:          repoDir,
+		Program:       "opencode",
+		ExecutionMode: session.ExecutionModeSDK,
+	})
+	require.NoError(t, err)
+
+	stats := sessionsdk.RendererStats{
+		Bytes:         4096,
+		Lines:         80,
+		Turns:         6,
+		MaxBytes:      8 << 20,
+		MaxTurns:      3000,
+		EvictedTurns:  4,
+		EvictedLines:  12,
+		EvictedBytes:  1024,
+		TruncatedRows: 2,
+	}
+
+	h := newTestHome()
+	h.activeRepoPath = repoDir
+	h.allInstances = append(h.allInstances, inst)
+	_ = h.nav.AddInstance(inst)
+
+	_, _ = h.Update(metadataResultMsg{Results: []instanceMetadata{{
+		Title:         inst.Title,
+		RendererStats: &stats,
+		TmuxAlive:     true,
+	}}})
+
+	assert.Equal(t, stats, inst.RendererStats)
 }
 
 // newFakePresServer creates a test HTTP server that serves the given presentation
