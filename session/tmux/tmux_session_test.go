@@ -341,7 +341,7 @@ func TestRestore_LeavesPTYNil(t *testing.T) {
 	assert.Nil(t, s.ptmxHandle, "ptmxHandle should be nil after Restore")
 }
 
-func TestAttach_CreatesAttachSessionHandle(t *testing.T) {
+func TestAttach_CreatesAndClosesAttachSessionHandles(t *testing.T) {
 	// serial: mutates tmux timing globals
 	withFastTmuxTimings(t)
 	oldStdinFD := stdinFD
@@ -375,26 +375,29 @@ func TestAttach_CreatesAttachSessionHandle(t *testing.T) {
 	require.NoError(t, s.Restore())
 	require.Nil(t, s.GetPTY(), "GetPTY must be nil before Attach")
 
-	ch, err := s.Attach()
-	require.NoError(t, err)
-	require.NotNil(t, ch)
+	for i := 0; i < 3; i++ {
+		ch, err := s.Attach()
+		require.NoError(t, err, "attach cycle %d", i+1)
+		require.NotNil(t, ch)
 
-	// Attach creates exactly one PTY handle for attach-session.
-	require.Len(t, ptyFactory.cmds, 1)
-	assert.Contains(t, commandString(ptyFactory.cmds[0]), "attach-session")
-	assert.Contains(t, commandString(ptyFactory.cmds[0]), "kas_test-attach-handle")
+		require.Len(t, ptyFactory.cmds, i+1)
+		assert.Contains(t, commandString(ptyFactory.cmds[i]), "attach-session")
+		assert.Contains(t, commandString(ptyFactory.cmds[i]), "kas_test-attach-handle")
+		assert.NotNil(t, s.GetPTY(), "GetPTY should be non-nil during active attach")
+		assert.NotNil(t, s.ptmxHandle, "ptmxHandle should be set during active attach")
 
-	// PTY is set during active attach.
-	assert.NotNil(t, s.GetPTY(), "GetPTY should be non-nil during active attach")
-	assert.NotNil(t, s.ptmxHandle, "ptmxHandle should be set during active attach")
+		s.Detach()
+		select {
+		case <-ch:
+		case <-time.After(detachWaitTimeout):
+			t.Fatalf("detach did not close attach channel for cycle %d", i+1)
+		}
 
-	s.Detach()
-
-	// After Detach, PTY is nil and handle is reaped.
-	assert.Nil(t, s.GetPTY(), "GetPTY should be nil after Detach")
-	assert.Nil(t, s.ptmxHandle, "ptmxHandle should be nil after Detach")
-	// The attach-session handle must have been closed.
-	assert.True(t, ptyFactory.handles[0].closed, "attach-session PTY handle should be closed after Detach")
+		assert.Nil(t, s.GetPTY(), "GetPTY should be nil after Detach")
+		assert.Nil(t, s.ptmxHandle, "ptmxHandle should be nil after Detach")
+		require.Len(t, ptyFactory.handles, i+1)
+		assert.True(t, ptyFactory.handles[i].closed, "attach-session PTY handle should be closed after Detach")
+	}
 }
 
 func TestDetach_DoesNotCallRestore(t *testing.T) {
