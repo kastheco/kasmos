@@ -63,6 +63,7 @@ func (r *Renderer) SetRetention(opts RendererRetentionOptions) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.retentionOpts = opts
+	r.enforceRetentionLocked()
 }
 
 // Stats returns a point-in-time snapshot of byte and eviction accounting.

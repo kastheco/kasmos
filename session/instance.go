@@ -206,6 +206,9 @@ func (i *Instance) ToInstanceData() InstanceData {
 		ReviewCycle:            i.ReviewCycle,
 		ClaudeNoFlicker:        i.ClaudeNoFlicker,
 		SDKSpeedTier:           i.SDKSpeedTier,
+		SDKTranscriptLimitsSet: i.SDKTranscriptLimitsSet,
+		SDKTranscriptMaxBytes:  i.SDKTranscriptMaxBytes,
+		SDKTranscriptMaxTurns:  i.SDKTranscriptMaxTurns,
 	}
 
 	if i.gitWorktree != nil {
@@ -289,6 +292,9 @@ func FromInstanceData(data InstanceData) (*Instance, error) {
 		ReviewCycle:            data.ReviewCycle,
 		ClaudeNoFlicker:        data.ClaudeNoFlicker,
 		SDKSpeedTier:           sdkSpeedTier,
+		SDKTranscriptLimitsSet: data.SDKTranscriptLimitsSet,
+		SDKTranscriptMaxBytes:  data.SDKTranscriptMaxBytes,
+		SDKTranscriptMaxTurns:  data.SDKTranscriptMaxTurns,
 		sharedWorktree:         sharedWorktree,
 		gitWorktree:            restoredWorktree,
 	}
@@ -414,9 +420,11 @@ type InstanceOptions struct {
 	SDKSpeedTier string
 	// SDKTranscriptLimitsSet must be true to forward MaxBytes/MaxTurns to the renderer.
 	SDKTranscriptLimitsSet bool
-	// SDKTranscriptMaxBytes caps the SDK renderer's in-process byte usage (0 = renderer default).
+	// SDKTranscriptMaxBytes caps the SDK renderer's in-process byte usage (0 = unlimited).
+	// A zero value only takes effect when SDKTranscriptLimitsSet is true.
 	SDKTranscriptMaxBytes int64
-	// SDKTranscriptMaxTurns caps the number of completed turns retained by the renderer (0 = renderer default).
+	// SDKTranscriptMaxTurns caps completed turns retained by the renderer (0 = unlimited).
+	// A zero value only takes effect when SDKTranscriptLimitsSet is true.
 	SDKTranscriptMaxTurns int64
 }
 

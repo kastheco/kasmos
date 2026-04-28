@@ -41,6 +41,9 @@ type InstanceData struct {
 	ReviewCycle            int    `json:"review_cycle,omitempty"`
 	ClaudeNoFlicker        bool   `json:"claude_no_flicker,omitempty"`
 	SDKSpeedTier           string `json:"sdk_speed_tier,omitempty"`
+	SDKTranscriptLimitsSet bool   `json:"sdk_transcript_limits_set,omitempty"`
+	SDKTranscriptMaxBytes  int64  `json:"sdk_transcript_max_bytes,omitempty"`
+	SDKTranscriptMaxTurns  int64  `json:"sdk_transcript_max_turns,omitempty"`
 
 	Worktree GitWorktreeData `json:"worktree"`
 }

@@ -249,3 +249,34 @@ func TestInstanceData_SDKSpeedTier_RoundTrip(t *testing.T) {
 		assert.NotContains(t, string(raw), "sdk_speed_tier")
 	})
 }
+
+func TestInstanceData_SDKTranscriptLimits_RoundTrip(t *testing.T) {
+	data := InstanceData{
+		Title:                  "retained-codex",
+		Path:                   "/tmp/repo",
+		Branch:                 "plan/retained-codex",
+		Status:                 Paused,
+		Program:                "codex",
+		ExecutionMode:          ExecutionModeSDK,
+		SDKTranscriptLimitsSet: true,
+		SDKTranscriptMaxBytes:  0,
+		SDKTranscriptMaxTurns:  250,
+		Worktree: GitWorktreeData{
+			RepoPath:     "/tmp/repo",
+			WorktreePath: "/tmp/repo/.worktrees/retained-codex",
+			SessionName:  "retained-codex",
+			BranchName:   "plan/retained-codex",
+		},
+	}
+
+	raw, err := json.Marshal(data)
+	require.NoError(t, err)
+	assert.Contains(t, string(raw), `"sdk_transcript_limits_set":true`)
+	assert.Contains(t, string(raw), `"sdk_transcript_max_turns":250`)
+
+	var restored InstanceData
+	require.NoError(t, json.Unmarshal(raw, &restored))
+	assert.True(t, restored.SDKTranscriptLimitsSet)
+	assert.Equal(t, int64(0), restored.SDKTranscriptMaxBytes)
+	assert.Equal(t, int64(250), restored.SDKTranscriptMaxTurns)
+}

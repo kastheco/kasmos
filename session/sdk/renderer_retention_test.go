@@ -542,3 +542,19 @@ func TestRendererRetention_SetRetention_CanBeCalledAfterEvents(t *testing.T) {
 	assert.Equal(t, int64(9999999), s.MaxBytes)
 	assert.Equal(t, int64(500), s.MaxTurns)
 }
+
+func TestRendererRetention_SetRetention_EnforcesLoweredLimitsImmediately(t *testing.T) {
+	r := NewRenderer(WithRendererRetention(noRetention()))
+	for i := range 8 {
+		completeTurn(r, fmt.Sprintf("t%d", i))
+	}
+	before := r.Stats()
+	require.Greater(t, before.Turns, int64(1))
+
+	r.SetRetention(RendererRetentionOptions{MaxBytes: 0, MaxTurns: 1})
+
+	after := r.Stats()
+	assert.Equal(t, int64(1), after.MaxTurns)
+	assert.Equal(t, int64(1), after.Turns)
+	assert.Greater(t, after.EvictedTurns, int64(0))
+}
