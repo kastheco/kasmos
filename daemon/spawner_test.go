@@ -1204,9 +1204,9 @@ func TestTmuxSpawner_SpawnSolo_ResourceControlsForwarded(t *testing.T) {
 	}
 
 	rc := config.ResolvedResourceControls{
-		Enabled:  true,
-		Profile:  "interactive",
-		Nice:     10,
+		Enabled:   true,
+		Profile:   "interactive",
+		Nice:      10,
 		BuildJobs: 1,
 	}
 	err := s.SpawnSolo(context.Background(), SpawnSoloOpts{
@@ -1315,8 +1315,8 @@ func TestTmuxSpawner_SpawnWaveTask_ResourceControlsForwarded(t *testing.T) {
 	}
 
 	rc := config.ResolvedResourceControls{
-		Enabled:  true,
-		Profile:  "interactive",
+		Enabled:   true,
+		Profile:   "interactive",
 		BuildJobs: 1,
 	}
 	opts := loop.SpawnOpts{

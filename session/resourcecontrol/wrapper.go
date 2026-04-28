@@ -46,24 +46,24 @@ func WithWarnOnce(fn func(string, ...any)) Option {
 }
 
 // New constructs a Wrapper for the given resolved policy.
-func New(policy config.ResolvedResourceControls, opts ...Option) Wrapper {
-	w := Wrapper{
+func New(policy config.ResolvedResourceControls, opts ...Option) *Wrapper {
+	w := &Wrapper{
 		policy:   policy,
 		lookPath: exec.LookPath,
 		warned:   make(map[string]bool),
 	}
 	w.warnOnce = w.defaultWarnOnce
 	for _, o := range opts {
-		o(&w)
+		o(w)
 	}
 	return w
 }
 
 // Enabled reports whether the policy is active (i.e. profile != "normal").
-func (w Wrapper) Enabled() bool { return w.policy.Enabled }
+func (w *Wrapper) Enabled() bool { return w.policy.Enabled }
 
 // Profile returns the canonical profile name ("normal", "interactive", or "custom").
-func (w Wrapper) Profile() string { return w.policy.Profile }
+func (w *Wrapper) Profile() string { return w.policy.Profile }
 
 // WrapShellCommand returns the input shell command unchanged when the policy is
 // disabled. When enabled, it prepends the platform-appropriate process-wrapper

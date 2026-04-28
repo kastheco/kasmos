@@ -105,7 +105,7 @@ func (s *scriptedExecutionSession) SetProject(string)              {}
 func (s *scriptedExecutionSession) SetSessionTitle(string)         {}
 func (s *scriptedExecutionSession) SetTitleFunc(func(workDir string, beforeStart time.Time, title string)) {
 }
-func (s *scriptedExecutionSession) SetSDKSpeedTier(tier string)                          { s.speedTier = tier }
+func (s *scriptedExecutionSession) SetSDKSpeedTier(tier string) { s.speedTier = tier }
 func (s *scriptedExecutionSession) SetResourceControls(rc config.ResolvedResourceControls) {
 	s.resourceControls = rc
 }

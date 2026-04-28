@@ -126,7 +126,7 @@ func (s *Session) SetProject(project string)      { s.project = project }
 // SetResourceControls stores the resolved resource-control policy.
 // The policy is applied when the session starts (argv wrapping, build env).
 func (s *Session) SetResourceControls(rc config.ResolvedResourceControls) { s.resourceControls = rc }
-func (s *Session) SetSessionTitle(title string)   { s.sessionTitle = title }
+func (s *Session) SetSessionTitle(title string)                           { s.sessionTitle = title }
 func (s *Session) SetTitleFunc(fn func(workDir string, beforeStart time.Time, title string)) {
 	s.titleFunc = fn
 }

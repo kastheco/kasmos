@@ -199,8 +199,8 @@ func TestResourcesConfigResolve(t *testing.T) {
 		{
 			name: "env with valid key is accepted",
 			cfg: ResourcesConfig{
-				Profile:   "interactive",
-				Env:       map[string]string{"MY_CUSTOM_VAR": "hello"},
+				Profile: "interactive",
+				Env:     map[string]string{"MY_CUSTOM_VAR": "hello"},
 			},
 			wantCheck: func(t *testing.T, r ResolvedResourceControls) {
 				t.Helper()
