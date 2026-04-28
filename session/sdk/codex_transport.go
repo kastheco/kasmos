@@ -64,8 +64,13 @@ const (
 	codexNotifyCommandExecOutputDelta         = "item/commandExecution/outputDelta"
 	codexNotifyCommandExecTerminalInteraction = "item/commandExecution/terminalInteraction"
 	codexNotifyFileChangeOutputDelta          = "item/fileChange/outputDelta"
+	codexNotifyAutoApprovalReviewStarted      = "item/autoApprovalReview/started"
+	codexNotifyAutoApprovalReviewCompleted    = "item/autoApprovalReview/completed"
+	codexNotifyAutoApprovalReviewStartedAlt   = "item/autoApproval/Review/started"
+	codexNotifyAutoApprovalReviewCompletedAlt = "item/autoApproval/Review/completed"
 	codexNotifyHookStarted                    = "hook/started"
 	codexNotifyHookCompleted                  = "hook/completed"
+	codexNotifyGuardianWarning                = "guardianWarning"
 
 	// Server -> client requests.
 	codexRequestCommandApproval     = "item/commandExecution/requestApproval"
@@ -612,6 +617,10 @@ func (t *CodexTransport) translateNotification(n Notification) (*Event, error) {
 		codexNotifyCommandExecOutputDelta,
 		codexNotifyCommandExecTerminalInteraction,
 		codexNotifyFileChangeOutputDelta,
+		codexNotifyAutoApprovalReviewStarted,
+		codexNotifyAutoApprovalReviewCompleted,
+		codexNotifyAutoApprovalReviewStartedAlt,
+		codexNotifyAutoApprovalReviewCompletedAlt,
 		codexNotifyHookStarted,
 		codexNotifyHookCompleted:
 		return nil, nil
@@ -693,7 +702,7 @@ func (t *CodexTransport) translateNotification(n Notification) (*Event, error) {
 			Timestamp: now,
 		}, nil
 
-	case codexNotifyWarning:
+	case codexNotifyWarning, codexNotifyGuardianWarning:
 		return codexWarningEvent(n.Params, now), nil
 
 	default:

@@ -636,7 +636,24 @@ func TestCodexTransport_BenignNotifications_AreSilentlyIgnored(t *testing.T) {
 	srv.pushNotification(codexNotifyHookCompleted, map[string]any{"hook": "completed"})
 	srv.pushNotification(codexNotifyFileChangeOutputDelta, map[string]any{"itemId": "item-1"})
 	srv.pushNotification(codexNotifyCommandExecTerminalInteraction, map[string]any{"itemId": "item-2"})
+	srv.pushNotification(codexNotifyAutoApprovalReviewStarted, map[string]any{"itemId": "item-3"})
+	srv.pushNotification(codexNotifyAutoApprovalReviewCompleted, map[string]any{"itemId": "item-3"})
+	srv.pushNotification(codexNotifyAutoApprovalReviewStartedAlt, map[string]any{"itemId": "item-4"})
+	srv.pushNotification(codexNotifyAutoApprovalReviewCompletedAlt, map[string]any{"itemId": "item-4"})
 
+	assert.Empty(t, collectEvents(t, ct.Events(), 150*time.Millisecond))
+}
+
+func TestCodexTransport_GuardianWarning_EmitsWarningEvent(t *testing.T) {
+	ct, srv := newStartedCodexTransport(t)
+
+	srv.pushNotification(codexNotifyGuardianWarning, map[string]any{
+		"message":  "auto approval needs review",
+		"threadId": "thread-1",
+	})
+
+	ev := waitForEvent(t, ct.Events(), EventWarning, time.Second)
+	assert.Equal(t, "auto approval needs review", ev.Text)
 	assert.Empty(t, collectEvents(t, ct.Events(), 150*time.Millisecond))
 }
 
