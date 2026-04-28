@@ -158,6 +158,24 @@ func TestWrapper_WrapExec_NiceMissing(t *testing.T) {
 	require.NotEmpty(t, *warnMsgs, "expected a warning about missing nice")
 }
 
+func TestWrapper_WrapShellCommand_NiceMissing(t *testing.T) {
+	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
+		t.Skip("platform uses no-op wrapper")
+	}
+	policy := config.ResolvedResourceControls{
+		Enabled: true,
+		Profile: "custom",
+		Nice:    10,
+		Env:     map[string]string{},
+	}
+	warns, warnMsgs := captureWarns()
+	w := New(policy, WithLookPath(stubLookPath(map[string]string{})), WithWarnOnce(warns))
+
+	got := w.WrapShellCommand("go build ./...")
+	assert.Equal(t, "go build ./...", got)
+	require.NotEmpty(t, *warnMsgs, "expected a warning about missing nice")
+}
+
 // ---- Linux-specific tests ----
 
 func TestWrapper_Linux_NiceAndIonice(t *testing.T) {
@@ -216,6 +234,21 @@ func TestWrapper_Linux_MissingIoniceFallback(t *testing.T) {
 
 	// Warning should have been emitted (once) about missing ionice.
 	assert.NotEmpty(t, *warnMsgs)
+}
+
+func TestWrapper_Linux_ShellMissingNiceFallsBackToIoniceOnly(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("linux-only test")
+	}
+	warns, warnMsgs := captureWarns()
+	lookup := stubLookPath(map[string]string{
+		"ionice": "/usr/bin/ionice",
+	})
+	w := New(interactivePolicy, WithLookPath(lookup), WithWarnOnce(warns))
+
+	cmd := w.WrapShellCommand("go test ./...")
+	assert.Equal(t, "ionice -c 2 -n 7 go test ./...", cmd)
+	require.NotEmpty(t, *warnMsgs, "expected a warning about missing nice")
 }
 
 func TestWrapper_Linux_WarnEmittedOnce(t *testing.T) {

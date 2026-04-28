@@ -225,7 +225,7 @@ func TestMergeEnv_PolicyEnvAppliedLast(t *testing.T) {
 	assert.Equal(t, "from-policy", m["EXTRA_VAR"])
 }
 
-func TestMergeEnv_PolicyEnvNotOverwriteExisting(t *testing.T) {
+func TestMergeEnv_PolicyEnvOverridesExisting(t *testing.T) {
 	p := buildPolicy(func(r *config.ResolvedResourceControls) {
 		r.Env = map[string]string{"EXTRA_VAR": "from-policy"}
 	})
@@ -233,7 +233,7 @@ func TestMergeEnv_PolicyEnvNotOverwriteExisting(t *testing.T) {
 	env := []string{"EXTRA_VAR=already-set"}
 	result := w.MergeEnv(env)
 	m := envMap(result)
-	assert.Equal(t, "already-set", m["EXTRA_VAR"])
+	assert.Equal(t, "from-policy", m["EXTRA_VAR"])
 }
 
 func TestMergeEnv_OriginalSliceUnmodified(t *testing.T) {
@@ -269,4 +269,41 @@ func TestInlineEnvAssignments_ShellSafeValues(t *testing.T) {
 		assert.NotContains(t, v, "|", "value for %s contains pipe", k)
 		assert.NotContains(t, v, "&", "value for %s contains ampersand", k)
 	}
+}
+
+func TestInlineEnvAssignmentsFrom_PreservesExistingGeneratedEnv(t *testing.T) {
+	p := buildPolicy(func(r *config.ResolvedResourceControls) {
+		r.BuildJobs = 2
+		r.GoPackageParallelism = 3
+	})
+	w := New(p)
+
+	assignments := w.InlineEnvAssignmentsFrom([]string{
+		"MAKEFLAGS=-j99",
+		"GOFLAGS=-p=8 -race",
+	})
+
+	joined := strings.Join(assignments, " ")
+	assert.NotContains(t, joined, "MAKEFLAGS=", "existing MAKEFLAGS must not be overridden")
+	assert.NotContains(t, joined, "GOFLAGS=", "existing GOFLAGS -p must not be overridden")
+	assert.Contains(t, joined, "KASMOS_RESOURCE_PROFILE=interactive")
+	assert.Contains(t, joined, "KASMOS_BUILD_JOBS=2")
+}
+
+func TestInlineEnvAssignmentsFrom_PolicyEnvOverridesAndQuotes(t *testing.T) {
+	p := buildPolicy(func(r *config.ResolvedResourceControls) {
+		r.BuildJobs = 2
+		r.Env = map[string]string{
+			"MAKEFLAGS": "-j7 load='safe value'",
+			"EXTRA_VAR": "hello world; still one value",
+		}
+	})
+	w := New(p)
+
+	assignments := w.InlineEnvAssignmentsFrom([]string{"MAKEFLAGS=-j99"})
+	joined := strings.Join(assignments, " ")
+
+	assert.Contains(t, joined, "MAKEFLAGS='-j7 load='\\''safe value'\\'''")
+	assert.Contains(t, joined, "EXTRA_VAR='hello world; still one value'")
+	assert.NotContains(t, joined, "MAKEFLAGS=-j99")
 }

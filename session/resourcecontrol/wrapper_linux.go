@@ -17,19 +17,37 @@ var ioniceClassNum = map[string]int{
 // platformShellPrefix returns a shell-safe nice/ionice prefix string on Linux.
 func (w *Wrapper) platformShellPrefix() string {
 	p := w.policy
-	niceStr := fmt.Sprintf("nice -n %d", p.Nice)
+	_, niceErr := w.lookPath("nice")
+	niceStr := ""
+	if niceErr == nil {
+		niceStr = fmt.Sprintf("nice -n %d", p.Nice)
+	}
 
 	if p.IoniceClass == "" || p.IoniceClass == "none" {
+		if niceErr != nil {
+			w.emitWarn("nice not found in PATH; running command without resource wrapper")
+			return ""
+		}
 		return niceStr
 	}
 
 	if _, err := w.lookPath("ionice"); err != nil {
+		if niceErr != nil {
+			w.emitWarn("nice not found in PATH; running command without resource wrapper")
+			return ""
+		}
 		w.emitWarn("ionice not found in PATH; falling back to nice only (install util-linux for I/O scheduling)")
 		return niceStr
 	}
 
 	classNum := ioniceClassNum[p.IoniceClass]
-	parts := []string{niceStr, fmt.Sprintf("ionice -c %d", classNum)}
+	parts := make([]string, 0, 2)
+	if niceStr != "" {
+		parts = append(parts, niceStr)
+	} else {
+		w.emitWarn("nice not found in PATH; falling back to ionice only")
+	}
+	parts = append(parts, fmt.Sprintf("ionice -c %d", classNum))
 	if p.IoniceClass == "best-effort" && p.IoniceLevel > 0 {
 		parts = append(parts, fmt.Sprintf("-n %d", p.IoniceLevel))
 	}

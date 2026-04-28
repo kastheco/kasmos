@@ -101,7 +101,7 @@ func TestResourcesConfigResolve(t *testing.T) {
 		{
 			name:    "custom with no control keys is invalid",
 			cfg:     ResourcesConfig{Profile: "custom"},
-			wantErr: "at least one explicit control key",
+			wantErr: "non-zero/non-empty control key",
 		},
 		{
 			name:    "invalid profile name",
@@ -137,6 +137,18 @@ func TestResourcesConfigResolve(t *testing.T) {
 			},
 			wantCheck: func(t *testing.T, r ResolvedResourceControls) {
 				t.Helper()
+				assert.Equal(t, 3, r.IoniceLevel)
+			},
+		},
+		{
+			name: "interactive ionice_level override uses preset best-effort class",
+			cfg: ResourcesConfig{
+				Profile:     "interactive",
+				IoniceLevel: intPtr(3),
+			},
+			wantCheck: func(t *testing.T, r ResolvedResourceControls) {
+				t.Helper()
+				assert.Equal(t, "best-effort", r.IoniceClass)
 				assert.Equal(t, 3, r.IoniceLevel)
 			},
 		},
@@ -179,7 +191,7 @@ func TestResourcesConfigResolve(t *testing.T) {
 			wantErr: "resources.max_parallel_wave_tasks",
 		},
 		{
-			name: "zero values are valid (unset semantics)",
+			name: "custom with only zero values is invalid",
 			cfg: ResourcesConfig{
 				Profile:              "custom",
 				BuildJobs:            intPtr(0),
@@ -187,14 +199,7 @@ func TestResourcesConfigResolve(t *testing.T) {
 				GOMAXPROCS:           intPtr(0),
 				MaxParallelWaveTasks: intPtr(0),
 			},
-			wantCheck: func(t *testing.T, r ResolvedResourceControls) {
-				t.Helper()
-				assert.True(t, r.Enabled)
-				assert.Equal(t, 0, r.BuildJobs)
-				assert.Equal(t, 0, r.GoPackageParallelism)
-				assert.Equal(t, 0, r.GOMAXPROCS)
-				assert.Equal(t, 0, r.MaxParallelWaveTasks)
-			},
+			wantErr: "non-zero/non-empty control key",
 		},
 		{
 			name: "env with valid key is accepted",

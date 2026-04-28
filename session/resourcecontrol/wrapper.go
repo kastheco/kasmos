@@ -168,15 +168,15 @@ func (w *Wrapper) MergeEnv(env []string) []string {
 		}
 	}
 
-	// Apply policy.Env last; these are additional user-specified vars.
-	// Sort keys for determinism.
+	// Apply policy.Env last; these are user-specified overrides, so they win
+	// over both inherited env and generated build-concurrency values.
 	pEnvKeys := make([]string, 0, len(p.Env))
 	for k := range p.Env {
 		pEnvKeys = append(pEnvKeys, k)
 	}
 	sort.Strings(pEnvKeys)
 	for _, k := range pEnvKeys {
-		addIfAbsent(k, p.Env[k])
+		set(k, p.Env[k])
 	}
 
 	return out
@@ -190,43 +190,55 @@ func (w *Wrapper) MergeEnv(env []string) []string {
 // Callers that need to merge into an existing env slice should use [MergeEnv]
 // instead, which handles "already present" and GOFLAGS append logic correctly.
 func (w *Wrapper) InlineEnvAssignments() []string {
+	return w.InlineEnvAssignmentsFrom(nil)
+}
+
+// InlineEnvAssignmentsFrom returns shell-safe assignments for env values that
+// this wrapper adds or overrides relative to env. Existing build env values are
+// preserved, while policy.Env overrides are emitted because they intentionally
+// win over inherited values.
+func (w *Wrapper) InlineEnvAssignmentsFrom(env []string) []string {
 	if !w.policy.Enabled {
 		return nil
 	}
-	p := w.policy
-	var out []string
-
-	// Always set the profile marker.
-	out = append(out, "KASMOS_RESOURCE_PROFILE="+p.Profile)
-
-	if p.BuildJobs > 0 {
-		jobStr := fmt.Sprintf("%d", p.BuildJobs)
-		out = append(out, "KASMOS_BUILD_JOBS="+jobStr)
-		for _, k := range commonJobVarNames {
-			out = append(out, k+"="+jobStr)
+	existing := make(map[string]string, len(env))
+	for _, kv := range env {
+		k, v, ok := strings.Cut(kv, "=")
+		if ok {
+			existing[k] = v
 		}
-		out = append(out, fmt.Sprintf("MAKEFLAGS=-j%d", p.BuildJobs))
 	}
-
-	if p.GOMAXPROCS > 0 {
-		out = append(out, fmt.Sprintf("GOMAXPROCS=%d", p.GOMAXPROCS))
-	}
-
-	if p.GoPackageParallelism > 0 {
-		out = append(out, fmt.Sprintf("GOFLAGS=-p=%d", p.GoPackageParallelism))
-	}
-
-	// Apply policy.Env last; sort keys for determinism.
-	pEnvKeys := make([]string, 0, len(p.Env))
-	for k := range p.Env {
-		pEnvKeys = append(pEnvKeys, k)
-	}
-	sort.Strings(pEnvKeys)
-	for _, k := range pEnvKeys {
-		out = append(out, k+"="+p.Env[k])
+	merged := w.MergeEnv(env)
+	var out []string
+	for _, kv := range merged {
+		k, v, ok := strings.Cut(kv, "=")
+		if !ok {
+			continue
+		}
+		if current, existed := existing[k]; existed && current == v {
+			continue
+		}
+		out = append(out, k+"="+shellQuoteEnvValue(v))
 	}
 
 	return out
+}
+
+func shellQuoteEnvValue(v string) string {
+	if v == "" {
+		return "''"
+	}
+	for _, r := range v {
+		if (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			continue
+		}
+		switch r {
+		case '_', '@', '%', '+', '=', ':', ',', '.', '/', '-':
+			continue
+		}
+		return "'" + strings.ReplaceAll(v, "'", "'\\''") + "'"
+	}
+	return v
 }
 
 // goflagsHasP reports whether the GOFLAGS value string contains a -p flag.

@@ -307,6 +307,55 @@ func TestStart_InteractiveProfile_CommandShape(t *testing.T) {
 	assert.Greater(t, niceIdx, profileIdx, "nice must follow wrapper env assignments")
 }
 
+func TestStart_InteractiveProfile_PreservesExistingBuildEnv(t *testing.T) {
+	// serial: mutates tmux timing globals and process env
+	withFastTmuxTimings(t)
+	t.Setenv("MAKEFLAGS", "-j99")
+	t.Setenv("GOFLAGS", "-p=8 -race")
+	ptyFactory := NewMockPtyFactory(t)
+	cmdExec, _ := makeTestCmdExecForResourceControls(t)
+
+	workdir := t.TempDir()
+	session := newTmuxSession("test-rc-existing-env", "claude", false, ptyFactory, cmdExec)
+	session.SetResourceControls(interactiveProfile())
+
+	err := session.Start(workdir)
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, len(ptyFactory.cmds), 1)
+
+	cmdStr := commandString(ptyFactory.cmds[0])
+	assert.NotContains(t, cmdStr, "MAKEFLAGS=", "tmux inline env must preserve existing MAKEFLAGS")
+	assert.NotContains(t, cmdStr, "GOFLAGS=", "tmux inline env must preserve existing GOFLAGS -p")
+	assert.Contains(t, cmdStr, "KASMOS_RESOURCE_PROFILE=interactive")
+}
+
+func TestStart_InteractiveProfile_PolicyEnvOverridesAndQuotes(t *testing.T) {
+	// serial: mutates tmux timing globals and process env
+	withFastTmuxTimings(t)
+	t.Setenv("MAKEFLAGS", "-j99")
+	ptyFactory := NewMockPtyFactory(t)
+	cmdExec, _ := makeTestCmdExecForResourceControls(t)
+
+	policy := interactiveProfile()
+	policy.Env = map[string]string{
+		"MAKEFLAGS": "-j7 load='safe value'",
+		"EXTRA_VAR": "hello world; still one value",
+	}
+
+	workdir := t.TempDir()
+	session := newTmuxSession("test-rc-policy-env", "claude", false, ptyFactory, cmdExec)
+	session.SetResourceControls(policy)
+
+	err := session.Start(workdir)
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, len(ptyFactory.cmds), 1)
+
+	cmdStr := commandString(ptyFactory.cmds[0])
+	assert.Contains(t, cmdStr, "MAKEFLAGS='-j7 load='\\''safe value'\\'''")
+	assert.Contains(t, cmdStr, "EXTRA_VAR='hello world; still one value'")
+	assert.NotContains(t, cmdStr, "MAKEFLAGS=-j99")
+}
+
 // TestStart_NormalProfile_NoResourceProfileTmuxEnv verifies that the normal profile
 // does NOT inject KASMOS_RESOURCE_PROFILE via tmux set-environment.
 func TestStart_NormalProfile_NoResourceProfileTmuxEnv(t *testing.T) {

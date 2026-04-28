@@ -415,7 +415,7 @@ func (t *TmuxSession) Start(workDir string) error {
 	// and collect build-concurrency env assignments to prepend at the left.
 	rcWrapper := resourcecontrol.New(t.resourceControls)
 	program = rcWrapper.WrapShellCommand(program)
-	if envAssignments := rcWrapper.InlineEnvAssignments(); len(envAssignments) > 0 {
+	if envAssignments := rcWrapper.InlineEnvAssignmentsFrom(os.Environ()); len(envAssignments) > 0 {
 		program = strings.Join(envAssignments, " ") + " " + program
 	}
 

@@ -2203,6 +2203,13 @@ func (m *home) resolvedResourceControls() config.ResolvedResourceControls {
 	}
 	rc, err := m.appConfig.Resources.Resolve()
 	if err != nil {
+		msg := "invalid [resources] config: " + err.Error()
+		if log.WarningLog != nil {
+			log.WarningLog.Print(msg)
+		}
+		if m.toastManager != nil {
+			m.toastManager.Error(msg)
+		}
 		return config.ResolvedResourceControls{}
 	}
 	return rc

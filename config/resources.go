@@ -94,7 +94,9 @@ func (c ResourcesConfig) Resolve() (ResolvedResourceControls, error) {
 		return ResolvedResourceControls{}, fmt.Errorf("config: resources.profile %q is not a recognised profile; accepted values: normal, interactive, custom", profile)
 	}
 
-	// Validate all explicitly supplied fields before applying profile logic.
+	// Validate field ranges before applying profile logic. Cross-field validation
+	// runs after preset resolution so interactive overrides are checked against
+	// the effective ionice class, not the omitted raw class.
 	if err := validateResourceFields(c); err != nil {
 		return ResolvedResourceControls{}, err
 	}
@@ -107,7 +109,11 @@ func (c ResourcesConfig) Resolve() (ResolvedResourceControls, error) {
 			Env:     map[string]string{},
 		}, nil
 	case "interactive":
-		return interactiveResolve(c), nil
+		r := interactiveResolve(c)
+		if err := validateResolvedIonice(r, c.IoniceLevel != nil); err != nil {
+			return ResolvedResourceControls{}, err
+		}
+		return r, nil
 	case "custom":
 		return customResolve(c)
 	}
@@ -135,6 +141,12 @@ func interactiveResolve(c ResourcesConfig) ResolvedResourceControls {
 	}
 	if c.IoniceClass != nil {
 		r.IoniceClass = *c.IoniceClass
+		if r.IoniceClass == "none" {
+			r.IoniceClass = ""
+		}
+		if r.IoniceClass == "" || r.IoniceClass == "idle" {
+			r.IoniceLevel = 0
+		}
 	}
 	if c.IoniceLevel != nil {
 		r.IoniceLevel = *c.IoniceLevel
@@ -168,31 +180,34 @@ func customResolve(c ResourcesConfig) (ResolvedResourceControls, error) {
 	anySet := false
 	if c.Nice != nil {
 		r.Nice = *c.Nice
-		anySet = true
+		anySet = anySet || *c.Nice != 0
 	}
 	if c.IoniceClass != nil {
 		r.IoniceClass = *c.IoniceClass
-		anySet = true
+		if r.IoniceClass == "none" {
+			r.IoniceClass = ""
+		}
+		anySet = anySet || (r.IoniceClass != "" && r.IoniceClass != "none")
 	}
 	if c.IoniceLevel != nil {
 		r.IoniceLevel = *c.IoniceLevel
-		anySet = true
+		anySet = anySet || *c.IoniceLevel != 0
 	}
 	if c.BuildJobs != nil {
 		r.BuildJobs = *c.BuildJobs
-		anySet = true
+		anySet = anySet || *c.BuildJobs != 0
 	}
 	if c.GoPackageParallelism != nil {
 		r.GoPackageParallelism = *c.GoPackageParallelism
-		anySet = true
+		anySet = anySet || *c.GoPackageParallelism != 0
 	}
 	if c.GOMAXPROCS != nil {
 		r.GOMAXPROCS = *c.GOMAXPROCS
-		anySet = true
+		anySet = anySet || *c.GOMAXPROCS != 0
 	}
 	if c.MaxParallelWaveTasks != nil {
 		r.MaxParallelWaveTasks = *c.MaxParallelWaveTasks
-		anySet = true
+		anySet = anySet || *c.MaxParallelWaveTasks != 0
 	}
 	for k, v := range c.Env {
 		r.Env[k] = v
@@ -200,8 +215,11 @@ func customResolve(c ResourcesConfig) (ResolvedResourceControls, error) {
 	}
 	if !anySet {
 		return ResolvedResourceControls{}, fmt.Errorf(
-			"config: resources profile \"custom\" requires at least one explicit control key (nice, ionice_class, build_jobs, go_package_parallelism, gomaxprocs, max_parallel_wave_tasks, or env)",
+			"config: resources profile \"custom\" requires at least one non-zero/non-empty control key (nice, ionice_class, build_jobs, go_package_parallelism, gomaxprocs, max_parallel_wave_tasks, or env)",
 		)
+	}
+	if err := validateResolvedIonice(r, c.IoniceLevel != nil); err != nil {
+		return ResolvedResourceControls{}, err
 	}
 	return r, nil
 }
@@ -229,15 +247,8 @@ func validateResourceFields(c ResourcesConfig) error {
 
 	if c.IoniceLevel != nil {
 		level := *c.IoniceLevel
-		switch ioniceClass {
-		case "best-effort":
-			if level < 0 || level > 7 {
-				return fmt.Errorf("config: resources.ionice_level %d is out of range for best-effort class; accepted range: 0–7", level)
-			}
-		case "idle", "none", "":
-			if level != 0 {
-				return fmt.Errorf("config: resources.ionice_level is only valid for ionice_class \"best-effort\"; current class is %q", ioniceClass)
-			}
+		if level < 0 || level > 7 {
+			return fmt.Errorf("config: resources.ionice_level %d is out of range; accepted range: 0–7", level)
 		}
 	}
 
@@ -263,5 +274,28 @@ func validateResourceFields(c ResourcesConfig) error {
 		}
 	}
 
+	return nil
+}
+
+func validateResolvedIonice(r ResolvedResourceControls, ioniceLevelExplicit bool) error {
+	switch r.IoniceClass {
+	case "", "none":
+		if ioniceLevelExplicit && r.IoniceLevel != 0 {
+			return fmt.Errorf("config: resources.ionice_level is only valid for ionice_class \"best-effort\"; current class is %q", r.IoniceClass)
+		}
+		if r.IoniceLevel != 0 {
+			return fmt.Errorf("config: resources.ionice_level must be 0 when ionice_class is %q", r.IoniceClass)
+		}
+	case "best-effort":
+		if r.IoniceLevel < 0 || r.IoniceLevel > 7 {
+			return fmt.Errorf("config: resources.ionice_level %d is out of range for best-effort class; accepted range: 0–7", r.IoniceLevel)
+		}
+	case "idle":
+		if r.IoniceLevel != 0 {
+			return fmt.Errorf("config: resources.ionice_level is only valid for ionice_class \"best-effort\"; current class is %q", r.IoniceClass)
+		}
+	default:
+		return fmt.Errorf("config: resources.ionice_class %q is not a recognised class; accepted values: none, best-effort, idle", r.IoniceClass)
+	}
 	return nil
 }

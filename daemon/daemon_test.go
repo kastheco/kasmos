@@ -2461,6 +2461,7 @@ func TestDaemonStateAdapter_ListInstances_IncludesSoloAgentFields(t *testing.T) 
 		SoloAgent:       true,
 		SDKSpeedTier:    "fast",
 		SkipPermissions: true,
+		ResourceProfile: "interactive",
 		Status:          session.Loading,
 	}
 	spawner.mu.Lock()
@@ -2475,6 +2476,7 @@ func TestDaemonStateAdapter_ListInstances_IncludesSoloAgentFields(t *testing.T) 
 	require.Len(t, statuses, 1)
 	assert.True(t, statuses[0].SoloAgent)
 	assert.Equal(t, "fast", statuses[0].SDKSpeedTier)
+	assert.Equal(t, "interactive", statuses[0].ResourceProfile)
 	require.NotNil(t, statuses[0].SkipPermissions)
 	assert.True(t, *statuses[0].SkipPermissions)
 	assert.Equal(t, "sdk-solo-agent", statuses[0].Title)

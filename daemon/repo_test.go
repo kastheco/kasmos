@@ -258,7 +258,8 @@ func TestSDKTranscriptRetention_ResolveRepoConfig(t *testing.T) {
 
 	t.Run("no project config — default SDK limits apply", func(t *testing.T) {
 		rm := newTestRepoManager(t)
-		_, _, _, _, _, sdk, _ := rm.resolveRepoConfig(t.TempDir())
+		_, _, _, _, _, sdk, _, err := rm.resolveRepoConfig(t.TempDir())
+		require.NoError(t, err)
 		assert.Equal(t, defaults.TranscriptMaxBytes, sdk.TranscriptMaxBytes)
 		assert.Equal(t, defaults.TranscriptMaxTurns, sdk.TranscriptMaxTurns)
 	})
@@ -275,7 +276,8 @@ transcript_max_turns = 500
 		require.NoError(t, os.WriteFile(filepath.Join(kasmosDir, "config.toml"), []byte(content), 0o644))
 
 		rm := newTestRepoManager(t)
-		_, _, _, _, _, sdk, _ := rm.resolveRepoConfig(repoDir)
+		_, _, _, _, _, sdk, _, err := rm.resolveRepoConfig(repoDir)
+		require.NoError(t, err)
 		assert.Equal(t, int64(1<<20), sdk.TranscriptMaxBytes)
 		assert.Equal(t, int64(500), sdk.TranscriptMaxTurns)
 	})
@@ -292,7 +294,8 @@ transcript_max_turns = 0
 		require.NoError(t, os.WriteFile(filepath.Join(kasmosDir, "config.toml"), []byte(content), 0o644))
 
 		rm := newTestRepoManager(t)
-		_, _, _, _, _, sdk, _ := rm.resolveRepoConfig(repoDir)
+		_, _, _, _, _, sdk, _, err := rm.resolveRepoConfig(repoDir)
+		require.NoError(t, err)
 		assert.Equal(t, int64(0), sdk.TranscriptMaxBytes, "explicit zero must disable byte limit")
 		assert.Equal(t, int64(0), sdk.TranscriptMaxTurns, "explicit zero must disable turn limit")
 	})
@@ -309,10 +312,30 @@ transcript_max_turns = -50
 		require.NoError(t, os.WriteFile(filepath.Join(kasmosDir, "config.toml"), []byte(content), 0o644))
 
 		rm := newTestRepoManager(t)
-		_, _, _, _, _, sdk, _ := rm.resolveRepoConfig(repoDir)
+		_, _, _, _, _, sdk, _, err := rm.resolveRepoConfig(repoDir)
+		require.NoError(t, err)
 		assert.Equal(t, int64(0), sdk.TranscriptMaxBytes, "negative must clamp to 0")
 		assert.Equal(t, int64(0), sdk.TranscriptMaxTurns, "negative must clamp to 0")
 	})
+}
+
+func TestRepoManager_Add_InvalidResourcesConfigFails(t *testing.T) {
+	repoDir := t.TempDir()
+	kasmosDir := filepath.Join(repoDir, ".kasmos")
+	require.NoError(t, os.MkdirAll(kasmosDir, 0o755))
+	content := `
+[resources]
+profile = "custom"
+build_jobs = 0
+go_package_parallelism = 0
+`
+	require.NoError(t, os.WriteFile(filepath.Join(kasmosDir, "config.toml"), []byte(content), 0o644))
+
+	rm := newTestRepoManager(t)
+	err := rm.Add(repoDir)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid project [resources] config")
+	assert.Empty(t, rm.List(), "invalid resources config must not register the repo with a downgraded profile")
 }
 
 // TestSDKTranscriptRetention_RepoEntryPropagated verifies that the SDK limits

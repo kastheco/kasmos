@@ -488,6 +488,50 @@ func TestUpdateInfoPane_SDKFastInstance(t *testing.T) {
 	assert.Contains(t, output, "fast")
 }
 
+func TestUpdateInfoPane_ResourceProfileFromSelectedInstance(t *testing.T) {
+	t.Parallel()
+	sp := spinner.New(spinner.WithSpinner(spinner.Dot))
+	h := &home{
+		ctx:            context.Background(),
+		state:          stateDefault,
+		appConfig:      config.DefaultConfig(),
+		nav:            ui.NewNavigationPanel(&sp),
+		menu:           ui.NewMenu(),
+		auditPane:      ui.NewAuditPane(),
+		tabbedWindow:   ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewInfoPane()),
+		toastManager:   overlay.NewToastManager(&sp),
+		overlays:       overlay.NewManager(),
+		activeRepoPath: t.TempDir(),
+	}
+
+	inst, err := session.NewInstance(session.InstanceOptions{
+		Title:     "profiled-agent",
+		Path:      t.TempDir(),
+		Program:   "codex",
+		AgentType: session.AgentTypeMaster,
+		ResourceControls: config.ResolvedResourceControls{
+			Enabled: true,
+			Profile: "interactive",
+		},
+	})
+	require.NoError(t, err)
+
+	h.nav.SetData(nil, []*session.Instance{inst}, nil, nil, nil)
+	require.True(t, h.nav.SelectInstance(inst))
+
+	h.updateInfoPane()
+
+	data := h.tabbedWindow.GetInfoData()
+	assert.Equal(t, "interactive", data.ResourceProfile)
+
+	pane := ui.NewInfoPane()
+	pane.SetSize(70, 30)
+	pane.SetData(data)
+	output := pane.String()
+	assert.Contains(t, output, "profile")
+	assert.Contains(t, output, "interactive")
+}
+
 // TestUpdateInfoPane_RendererStats verifies that updateInfoPane copies RendererStats
 // from the selected instance into the InfoData transcript fields.
 func TestUpdateInfoPane_RendererStats(t *testing.T) {
