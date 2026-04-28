@@ -277,6 +277,7 @@ export default function InstancesPage() {
 
   // Determine preview path: terminal (tmux) vs structured (AgentPreview).
   const isTerminalInstance = usesTerminalPreview(selectedInstance);
+  const suspendTerminalPolling = shouldSuspendTerminalPolling(captureError);
 
   // Capture poll logic.
   const doPoll = useCallback(async () => {
@@ -324,7 +325,7 @@ export default function InstancesPage() {
       !project ||
       !selectedTitle ||
       isPausedTerminal ||
-      shouldSuspendTerminalPolling(captureError)
+      suspendTerminalPolling
     ) return;
 
     let cancelled = false;
@@ -359,7 +360,7 @@ export default function InstancesPage() {
         pollTimerRef.current = null;
       }
     };
-  }, [isTerminalInstance, isFollowing, project, selectedTitle, depth, doPoll, captureError, selectedInstance?.status]);
+  }, [isTerminalInstance, isFollowing, project, selectedTitle, depth, doPoll, suspendTerminalPolling, selectedInstance?.status]);
 
   // Reset capture state when selected instance changes.
   useEffect(() => {
