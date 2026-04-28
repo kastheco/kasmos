@@ -208,3 +208,120 @@ func TestEmitGatewaySignal_CanonicalizesStoredSignalType(t *testing.T) {
 	require.Len(t, signals, 1)
 	assert.Equal(t, "elaborator_finished", signals[0].SignalType)
 }
+
+func TestCanonicalGatewaySignalType_PlannerDraftFinished(t *testing.T) {
+	got, err := CanonicalGatewaySignalType("planner_draft_finished")
+	require.NoError(t, err)
+	assert.Equal(t, "planner_draft_finished", got)
+
+	got, err = CanonicalGatewaySignalType("planner-draft-finished")
+	require.NoError(t, err)
+	assert.Equal(t, "planner_draft_finished", got)
+}
+
+func TestGatewaySignalTypeForEvent_DoesNotMapPlannerDraftFinished(t *testing.T) {
+	// planner_draft_finished is intentionally not an FSM event and must not be
+	// returned by GatewaySignalTypeForEvent.
+	for _, event := range []Event{PlanStart, PlannerFinished, ImplementFinished,
+		ReviewApproved, ReviewChangesRequested, VerifyApproved, VerifyFailed,
+		ArchitectFinished} {
+		got, err := GatewaySignalTypeForEvent(event)
+		require.NoError(t, err)
+		assert.NotEqual(t, "planner_draft_finished", got)
+	}
+}
+
+func TestNormalizeGatewaySignalPayload_PlannerDraftFinished(t *testing.T) {
+	tests := []struct {
+		name      string
+		payload   string
+		wantErr   bool
+		errSubstr string
+		wantOut   string
+	}{
+		{
+			name:      "empty payload rejected",
+			payload:   "",
+			wantErr:   true,
+			errSubstr: "requires JSON with a non-empty planner_id",
+		},
+		{
+			name:      "malformed JSON rejected",
+			payload:   "not-json",
+			wantErr:   true,
+			errSubstr: "must be valid JSON",
+		},
+		{
+			name:      "array payload rejected",
+			payload:   `["planner_x"]`,
+			wantErr:   true,
+			errSubstr: "must be valid JSON",
+		},
+		{
+			name:      "non-string planner_id rejected",
+			payload:   `{"planner_id":42}`,
+			wantErr:   true,
+			errSubstr: "planner_id must be a string",
+		},
+		{
+			name:      "empty string planner_id rejected",
+			payload:   `{"planner_id":""}`,
+			wantErr:   true,
+			errSubstr: "planner_id must not be empty",
+		},
+		{
+			name:    "valid payload accepted",
+			payload: `{"planner_id":"planner_x"}`,
+			wantOut: `{"planner_id":"planner_x"}`,
+		},
+		{
+			name:    "valid payload with extra fields accepted",
+			payload: `{"planner_id":"alpha","extra":"ignored"}`,
+			wantOut: `{"planner_id":"alpha","extra":"ignored"}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := NormalizeGatewaySignalPayload("planner_draft_finished", tt.payload)
+			if tt.wantErr {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errSubstr)
+				return
+			}
+			require.NoError(t, err)
+			assert.JSONEq(t, tt.wantOut, got)
+		})
+	}
+}
+
+func TestNormalizeGatewaySignalPayload_PlannerDraftFinished_HyphenAlias(t *testing.T) {
+	got, err := NormalizeGatewaySignalPayload("planner-draft-finished", `{"planner_id":"planner_x"}`)
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"planner_id":"planner_x"}`, got)
+}
+
+func TestEmitGatewaySignal_PlannerDraftFinished(t *testing.T) {
+	gw, err := taskstore.NewSQLiteSignalGateway(":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = gw.Close() })
+
+	err = EmitGatewaySignal(gw, "proj", "planner_draft_finished", "my-feature", `{"planner_id":"planner_x"}`)
+	require.NoError(t, err)
+
+	signals, err := gw.List("proj", taskstore.SignalPending)
+	require.NoError(t, err)
+	require.Len(t, signals, 1)
+	assert.Equal(t, "planner_draft_finished", signals[0].SignalType)
+	assert.JSONEq(t, `{"planner_id":"planner_x"}`, signals[0].Payload)
+	assert.Equal(t, "my-feature", signals[0].PlanFile)
+}
+
+func TestEmitGatewaySignal_PlannerDraftFinished_RejectsEmptyPayload(t *testing.T) {
+	gw, err := taskstore.NewSQLiteSignalGateway(":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = gw.Close() })
+
+	err = EmitGatewaySignal(gw, "proj", "planner_draft_finished", "my-feature", "")
+	assert.Error(t, err)
+}

@@ -650,3 +650,58 @@ func TestNewSignalEmitCmd_Structure(t *testing.T) {
 	assert.Equal(t, "emit <signal-type> <plan-file>", cmd.Use)
 	assert.NotNil(t, cmd.Flags().Lookup("payload"), "--payload flag should exist on emit command")
 }
+
+func TestExecuteSignalEmit_PlannerDraftFinished(t *testing.T) {
+	gw, err := taskstore.NewSQLiteSignalGateway(":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = gw.Close() })
+
+	payload := `{"planner_id":"planner_x"}`
+	err = executeSignalEmit(gw, "proj", "planner_draft_finished", "my-feature", payload)
+	require.NoError(t, err)
+
+	signals, err := gw.List("proj", taskstore.SignalPending)
+	require.NoError(t, err)
+	require.Len(t, signals, 1)
+	assert.Equal(t, "planner_draft_finished", signals[0].SignalType)
+	assert.JSONEq(t, payload, signals[0].Payload)
+}
+
+func TestExecuteSignalEmit_PlannerDraftFinished_HyphenAlias(t *testing.T) {
+	gw, err := taskstore.NewSQLiteSignalGateway(":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = gw.Close() })
+
+	err = executeSignalEmit(gw, "proj", "planner-draft-finished", "my-feature", `{"planner_id":"alpha"}`)
+	require.NoError(t, err)
+
+	signals, err := gw.List("proj", taskstore.SignalPending)
+	require.NoError(t, err)
+	require.Len(t, signals, 1)
+	assert.Equal(t, "planner_draft_finished", signals[0].SignalType)
+}
+
+func TestNormalizeSignalPayload_PlannerDraftFinished(t *testing.T) {
+	// Valid payload passes through.
+	payload, err := normalizeSignalPayload("planner_draft_finished", `{"planner_id":"planner_x"}`)
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"planner_id":"planner_x"}`, payload)
+
+	// Empty payload rejected.
+	_, err = normalizeSignalPayload("planner_draft_finished", "")
+	assert.Error(t, err)
+
+	// Non-string planner_id rejected.
+	_, err = normalizeSignalPayload("planner_draft_finished", `{"planner_id":42}`)
+	assert.Error(t, err)
+
+	// Empty string planner_id rejected.
+	_, err = normalizeSignalPayload("planner_draft_finished", `{"planner_id":""}`)
+	assert.Error(t, err)
+}
+
+func TestNewSignalEmitCmd_LongTextMentionsPlannerDraftFinished(t *testing.T) {
+	cmd := newSignalEmitCmd()
+	assert.Contains(t, cmd.Long, "planner_draft_finished")
+	assert.Contains(t, cmd.Long, "planner_id")
+}

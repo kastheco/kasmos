@@ -637,6 +637,16 @@ func (p *Processor) ProcessElaborationSignals(signals []taskfsm.ElaborationSigna
 	return actions
 }
 
+// ProcessPlannerDraftSignals collects planner-draft-finished signals and
+// aggregates them toward a synthesized planner_finished transition once all
+// configured parallel planners have reported their drafts. The full aggregation
+// logic is implemented in Wave 2; this stub ensures the signal type participates
+// in Tick ordering from the start.
+func (p *Processor) ProcessPlannerDraftSignals(signals []taskfsm.PlannerDraftSignal) []Action {
+	// Aggregation and synthesis logic is wired in a later wave.
+	return nil
+}
+
 // shouldCreatePR returns true when a plan entry is eligible for automatic PR
 // creation: the review has been approved, the plan is on a branch, and no PR
 // has been opened yet.

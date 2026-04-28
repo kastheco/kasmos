@@ -29,6 +29,10 @@ type wavePayload struct {
 	WaveNumber int `json:"wave_number"`
 }
 
+type plannerDraftPayload struct {
+	PlannerID string `json:"planner_id"`
+}
+
 // ScanGateway claims all pending signals for the given project from gw,
 // converts them into a ScanResult that Processor.Tick can consume, and returns
 // the claimed row IDs so the caller can mark them done after processing.
@@ -178,6 +182,19 @@ func ConvertSignalEntry(entry *taskstore.SignalEntry, result *ScanResult) error 
 	case string(taskfsm.ArchitectFinished):
 		result.ElaborationSignals = append(result.ElaborationSignals, taskfsm.ElaborationSignal{
 			TaskFile: entry.PlanFile,
+		})
+
+	case "planner_draft_finished":
+		var p plannerDraftPayload
+		if err := json.Unmarshal([]byte(entry.Payload), &p); err != nil {
+			return fmt.Errorf("decode planner draft payload: %w", err)
+		}
+		if p.PlannerID == "" {
+			return fmt.Errorf("planner_draft_finished: planner_id must not be empty")
+		}
+		result.PlannerDraftSignals = append(result.PlannerDraftSignals, taskfsm.PlannerDraftSignal{
+			TaskFile:  entry.PlanFile,
+			PlannerID: p.PlannerID,
 		})
 
 	default:

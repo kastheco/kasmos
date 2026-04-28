@@ -324,9 +324,12 @@ func newSignalEmitCmd() *cobra.Command {
 signal type and plan file. This is the primary mechanism for agents to signal
 completion of a lifecycle phase.
 
-Valid signal types: planner_finished, implement_finished, review_approved,
-review_changes_requested, verify_approved, verify_failed, implement_task_finished,
-implement_wave, architect_finished (wire alias: elaborator_finished)
+Valid signal types: planner_finished, planner_draft_finished, implement_finished,
+review_approved, review_changes_requested, verify_approved, verify_failed,
+implement_task_finished, implement_wave, architect_finished (wire alias: elaborator_finished)
+
+planner_draft_finished requires a JSON payload with a non-empty planner_id:
+  kas signal emit planner_draft_finished my-feature '{"planner_id":"planner_x"}'
 
 Deprecated aliases: readiness_approved / master_approved (→ verify_approved),
 readiness_changes_requested / readiness_changes (→ verify_failed)`,

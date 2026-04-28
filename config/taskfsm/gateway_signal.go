@@ -16,6 +16,7 @@ const ArchitectFinished Event = "architect_finished"
 var validGatewaySignalTypes = map[string]struct{}{
 	"plan_start":               {},
 	"planner_finished":         {},
+	"planner_draft_finished":   {},
 	"implement_finished":       {},
 	"review_approved":          {},
 	"review_changes_requested": {},
@@ -29,7 +30,7 @@ var validGatewaySignalTypes = map[string]struct{}{
 }
 
 func gatewaySignalTypeError(raw string) error {
-	return fmt.Errorf("unknown signal type %q; valid types: plan_start, planner_finished, implement_finished, review_approved, review_changes_requested, verify_approved, verify_failed, advance_wave, retry_wave, implement_task_finished, implement_wave, architect_finished (wire alias: elaborator_finished)", raw)
+	return fmt.Errorf("unknown signal type %q; valid types: plan_start, planner_finished, planner_draft_finished, implement_finished, review_approved, review_changes_requested, verify_approved, verify_failed, advance_wave, retry_wave, implement_task_finished, implement_wave, architect_finished (wire alias: elaborator_finished)", raw)
 }
 
 // CanonicalGatewaySignalType normalizes accepted signal-type aliases to the
@@ -41,7 +42,7 @@ func gatewaySignalTypeError(raw string) error {
 func CanonicalGatewaySignalType(raw string) (string, error) {
 	normalized := strings.ReplaceAll(strings.TrimSpace(raw), "-", "_")
 	switch normalized {
-	case string(PlanStart), string(PlannerFinished), string(ImplementFinished), string(ReviewApproved), string(ReviewChangesRequested), "implement_task_finished", "implement_wave", "advance_wave", "retry_wave":
+	case string(PlanStart), string(PlannerFinished), "planner_draft_finished", string(ImplementFinished), string(ReviewApproved), string(ReviewChangesRequested), "implement_task_finished", "implement_wave", "advance_wave", "retry_wave":
 		return normalized, nil
 	case "review_changes":
 		return string(ReviewChangesRequested), nil
@@ -133,6 +134,23 @@ func NormalizeGatewaySignalPayload(signalType, payload string) (string, error) {
 		}
 		if wn != math.Trunc(wn) {
 			return "", fmt.Errorf("implement_wave: wave_number must be a whole number")
+		}
+		return payload, nil
+
+	case "planner_draft_finished":
+		if payload == "" {
+			return "", fmt.Errorf("planner_draft_finished requires JSON with a non-empty planner_id")
+		}
+		var m map[string]any
+		if err := json.Unmarshal([]byte(payload), &m); err != nil {
+			return "", fmt.Errorf("planner_draft_finished: payload must be valid JSON: %w", err)
+		}
+		pid, ok := m["planner_id"].(string)
+		if !ok {
+			return "", fmt.Errorf("planner_draft_finished: planner_id must be a string")
+		}
+		if pid == "" {
+			return "", fmt.Errorf("planner_draft_finished: planner_id must not be empty")
 		}
 		return payload, nil
 

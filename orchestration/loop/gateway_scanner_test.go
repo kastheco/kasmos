@@ -147,3 +147,89 @@ func TestConvertSignalEntry_AcceptsArchitectSignalAliasesAtGatewayBoundary(t *te
 	assert.Equal(t, "legacy-plan", result.ElaborationSignals[0].TaskFile)
 	assert.Equal(t, "canonical-plan", result.ElaborationSignals[1].TaskFile)
 }
+
+func TestConvertSignalEntry_PlannerDraftFinished(t *testing.T) {
+	t.Parallel()
+
+	t.Run("valid payload decoded into PlannerDraftSignals", func(t *testing.T) {
+		var result ScanResult
+		entry := &taskstore.SignalEntry{
+			PlanFile:   "my-feature",
+			SignalType: "planner_draft_finished",
+			Payload:    `{"planner_id":"planner_x"}`,
+		}
+		require.NoError(t, ConvertSignalEntry(entry, &result))
+		require.Len(t, result.PlannerDraftSignals, 1)
+		assert.Equal(t, "my-feature", result.PlannerDraftSignals[0].TaskFile)
+		assert.Equal(t, "planner_x", result.PlannerDraftSignals[0].PlannerID)
+		assert.Empty(t, result.FSMSignals)
+	})
+
+	t.Run("empty planner_id rejected", func(t *testing.T) {
+		var result ScanResult
+		entry := &taskstore.SignalEntry{
+			PlanFile:   "my-feature",
+			SignalType: "planner_draft_finished",
+			Payload:    `{"planner_id":""}`,
+		}
+		err := ConvertSignalEntry(entry, &result)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "planner_id must not be empty")
+		assert.Empty(t, result.PlannerDraftSignals)
+	})
+
+	t.Run("malformed JSON payload rejected", func(t *testing.T) {
+		var result ScanResult
+		entry := &taskstore.SignalEntry{
+			PlanFile:   "my-feature",
+			SignalType: "planner_draft_finished",
+			Payload:    "not-json",
+		}
+		err := ConvertSignalEntry(entry, &result)
+		require.Error(t, err)
+		assert.Empty(t, result.PlannerDraftSignals)
+	})
+
+	t.Run("hyphen alias normalizes to planner_draft_finished", func(t *testing.T) {
+		var result ScanResult
+		entry := &taskstore.SignalEntry{
+			PlanFile:   "my-feature",
+			SignalType: "planner-draft-finished",
+			Payload:    `{"planner_id":"alpha"}`,
+		}
+		require.NoError(t, ConvertSignalEntry(entry, &result))
+		require.Len(t, result.PlannerDraftSignals, 1)
+		assert.Equal(t, "alpha", result.PlannerDraftSignals[0].PlannerID)
+	})
+
+	t.Run("multiple drafts accumulate in PlannerDraftSignals", func(t *testing.T) {
+		var result ScanResult
+		entries := []*taskstore.SignalEntry{
+			{PlanFile: "feature", SignalType: "planner_draft_finished", Payload: `{"planner_id":"planner_a"}`},
+			{PlanFile: "feature", SignalType: "planner_draft_finished", Payload: `{"planner_id":"planner_b"}`},
+		}
+		for _, e := range entries {
+			require.NoError(t, ConvertSignalEntry(e, &result))
+		}
+		require.Len(t, result.PlannerDraftSignals, 2)
+		assert.Equal(t, "planner_a", result.PlannerDraftSignals[0].PlannerID)
+		assert.Equal(t, "planner_b", result.PlannerDraftSignals[1].PlannerID)
+	})
+}
+
+func TestScanGateway_PlannerDraftFinished(t *testing.T) {
+	gw := newTestGateway(t)
+	require.NoError(t, gw.Create("proj", taskstore.SignalEntry{
+		PlanFile:   "my-feature",
+		SignalType: "planner_draft_finished",
+		Payload:    `{"planner_id":"planner_x"}`,
+	}))
+
+	result, ids, err := ScanGateway(gw, "proj", "daemon:test")
+	require.NoError(t, err)
+	require.Len(t, ids, 1)
+	require.Len(t, result.PlannerDraftSignals, 1)
+	assert.Equal(t, "my-feature", result.PlannerDraftSignals[0].TaskFile)
+	assert.Equal(t, "planner_x", result.PlannerDraftSignals[0].PlannerID)
+	assert.Empty(t, result.FSMSignals)
+}

@@ -10,10 +10,11 @@ import (
 // active worktrees. Signals are deduplicated by key so that the same sentinel
 // file written in both the main repo and a worktree is only processed once.
 type ScanResult struct {
-	FSMSignals         []taskfsm.Signal
-	TaskSignals        []taskfsm.TaskSignal
-	WaveSignals        []taskfsm.WaveSignal
-	ElaborationSignals []taskfsm.ElaborationSignal
+	FSMSignals          []taskfsm.Signal
+	TaskSignals         []taskfsm.TaskSignal
+	WaveSignals         []taskfsm.WaveSignal
+	ElaborationSignals  []taskfsm.ElaborationSignal
+	PlannerDraftSignals []taskfsm.PlannerDraftSignal
 }
 
 // ScanAllSignals reads signal files from the project's own signals directory
@@ -93,11 +94,15 @@ func ScanAllSignals(repoRoot string, worktreePaths []string) ScanResult {
 	}
 }
 
-// Tick is a convenience method that runs all four signal-processing passes on a
+// Tick is a convenience method that runs all signal-processing passes on a
 // pre-scanned ScanResult and returns the concatenated list of actions for the
 // caller to execute. It is the primary entry point for the daemon's event loop.
+//
+// PlannerDraftSignals are processed first so that a batch containing draft rows
+// can synthesize the single planner_finished action during the same tick.
 func (p *Processor) Tick(scan ScanResult) []Action {
 	var actions []Action
+	actions = append(actions, p.ProcessPlannerDraftSignals(scan.PlannerDraftSignals)...)
 	actions = append(actions, p.ProcessFSMSignals(scan.FSMSignals)...)
 	actions = append(actions, p.ProcessTaskSignals(scan.TaskSignals)...)
 	actions = append(actions, p.ProcessWaveSignals(scan.WaveSignals)...)
