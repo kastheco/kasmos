@@ -3,10 +3,12 @@ package sdk
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/kastheco/kasmos/config"
 	"github.com/kastheco/kasmos/session/tmux"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -522,7 +524,7 @@ var _ interface {
 // stubShellRunner is a test seam for RunShellCommand that avoids spawning a
 // real subprocess.
 func stubShellRunner(exitCode int, output string, truncated bool, runErr error) shellRunner {
-	return func(_ context.Context, _, _ string, _ []string) (int, string, bool, error) {
+	return func(_ context.Context, _, _ string, _ []string, _ []string) (int, string, bool, error) {
 		return exitCode, output, truncated, runErr
 	}
 }
@@ -602,4 +604,88 @@ func TestRunShellCommand_DoesNotInterruptOpenAgentTurn(t *testing.T) {
 	agentTurn := turns[0]
 	assert.False(t, agentTurn.Interrupted, "open agent turn must not be interrupted by RunShellCommand")
 	assert.Equal(t, "agent-turn-1", agentTurn.ID)
+}
+
+// --- Resource controls tests ---
+
+// captureShellRunner records the shell, args, and env passed to it.
+type captureShellRunner struct {
+	shell string
+	args  []string
+	env   []string
+}
+
+func (c *captureShellRunner) runner() shellRunner {
+	return func(_ context.Context, _, shell string, args []string, env []string) (int, string, bool, error) {
+		c.shell = shell
+		c.args = args
+		c.env = env
+		return 0, "", false, nil
+	}
+}
+
+func TestSDKSession_RunShellCommand_NormalProfile_NoResourceEnv(t *testing.T) {
+	orig := runCommandSeam
+	cap := &captureShellRunner{}
+	runCommandSeam = cap.runner()
+	t.Cleanup(func() { runCommandSeam = orig })
+
+	s, _ := startedSession(t)
+	// resourceControls is zero-value (Enabled=false, Profile="")
+	err := s.RunShellCommand(context.Background(), "echo hi")
+	require.NoError(t, err)
+
+	// Normal profile: no KASMOS_RESOURCE_PROFILE in env
+	for _, kv := range cap.env {
+		assert.False(t, strings.HasPrefix(kv, "KASMOS_RESOURCE_PROFILE="),
+			"normal profile must not set KASMOS_RESOURCE_PROFILE, got %q", kv)
+	}
+}
+
+func TestSDKSession_RunShellCommand_InteractiveProfile_WrapsAndInjectsEnv(t *testing.T) {
+	orig := runCommandSeam
+	cap := &captureShellRunner{}
+	runCommandSeam = cap.runner()
+	t.Cleanup(func() { runCommandSeam = orig })
+
+	s, _ := startedSession(t)
+	s.SetResourceControls(config.ResolvedResourceControls{
+		Enabled:   true,
+		Profile:   "interactive",
+		BuildJobs: 1,
+		Env:       map[string]string{},
+	})
+	err := s.RunShellCommand(context.Background(), "go build ./...")
+	require.NoError(t, err)
+
+	// KASMOS_RESOURCE_PROFILE must be set.
+	hasProfile := false
+	for _, kv := range cap.env {
+		if kv == "KASMOS_RESOURCE_PROFILE=interactive" {
+			hasProfile = true
+		}
+	}
+	assert.True(t, hasProfile, "interactive profile must set KASMOS_RESOURCE_PROFILE=interactive in env")
+}
+
+func TestSDKSession_SetResourceControls_PropagatesViaLaunchConfig(t *testing.T) {
+	var capturedCfg LaunchConfig
+	orig := transportFactory
+	transportFactory = func(_ string) (Transport, bool) {
+		mt := newMockTransport()
+		return &captureCfgTransport{Transport: mt, onStart: func(cfg LaunchConfig) { capturedCfg = cfg }}, true
+	}
+	defer func() { transportFactory = orig }()
+
+	rc := config.ResolvedResourceControls{
+		Enabled: true,
+		Profile: "interactive",
+		Env:     map[string]string{},
+	}
+	s := New("name", "claude", false)
+	s.SetResourceControls(rc)
+	require.NoError(t, s.Start(t.TempDir()))
+
+	assert.True(t, capturedCfg.ResourceControls.Enabled)
+	assert.Equal(t, "interactive", capturedCfg.ResourceControls.Profile)
 }

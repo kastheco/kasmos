@@ -590,3 +590,306 @@ func TestWaveOrchestrator_PersistsSubtaskStatus(t *testing.T) {
 	assert.Equal(t, taskstore.SubtaskStatusComplete, subtasks[0].Status)
 	assert.Equal(t, taskstore.SubtaskStatusFailed, subtasks[1].Status)
 }
+
+// TestStartNextWaveLimited_ZeroLimit delegates to unlimited behavior.
+func TestStartNextWaveLimited_ZeroLimit(t *testing.T) {
+	plan := &taskparser.Plan{
+		Waves: []taskparser.Wave{
+			{Number: 1, Tasks: []taskparser.Task{
+				{Number: 1, Title: "T1"},
+				{Number: 2, Title: "T2"},
+				{Number: 3, Title: "T3"},
+			}},
+		},
+	}
+	orch := NewWaveOrchestrator("plan", plan)
+	tasks, err := orch.StartNextWaveLimited(0)
+	require.NoError(t, err)
+	assert.Len(t, tasks, 3, "limit=0 must start all tasks")
+	assert.Equal(t, WaveStateRunning, orch.State())
+	assert.True(t, orch.IsTaskRunning(1))
+	assert.True(t, orch.IsTaskRunning(2))
+	assert.True(t, orch.IsTaskRunning(3))
+}
+
+// TestStartNextWaveLimited_LimitOne only starts first task, others pending.
+func TestStartNextWaveLimited_LimitOne(t *testing.T) {
+	plan := &taskparser.Plan{
+		Waves: []taskparser.Wave{
+			{Number: 1, Tasks: []taskparser.Task{
+				{Number: 1, Title: "T1"},
+				{Number: 2, Title: "T2"},
+				{Number: 3, Title: "T3"},
+			}},
+		},
+	}
+	orch := NewWaveOrchestrator("plan", plan)
+	tasks, err := orch.StartNextWaveLimited(1)
+	require.NoError(t, err)
+	require.Len(t, tasks, 1, "limit=1 must start exactly one task")
+	assert.Equal(t, 1, tasks[0].Number)
+	assert.Equal(t, WaveStateRunning, orch.State())
+
+	assert.True(t, orch.IsTaskRunning(1))
+	assert.False(t, orch.IsTaskRunning(2))
+	assert.False(t, orch.IsTaskRunning(3))
+	assert.False(t, orch.IsTaskComplete(2))
+	assert.False(t, orch.IsTaskFailed(2))
+	assert.Equal(t, 1, orch.ActiveTaskCount())
+}
+
+// TestStartNextWaveLimited_PendingDoesNotCompleteWave ensures wave stays running while pending tasks exist.
+func TestStartNextWaveLimited_PendingDoesNotCompleteWave(t *testing.T) {
+	plan := &taskparser.Plan{
+		Waves: []taskparser.Wave{
+			{Number: 1, Tasks: []taskparser.Task{
+				{Number: 1, Title: "T1"},
+				{Number: 2, Title: "T2"},
+				{Number: 3, Title: "T3"},
+			}},
+		},
+	}
+	orch := NewWaveOrchestrator("plan", plan)
+	tasks, err := orch.StartNextWaveLimited(1)
+	require.NoError(t, err)
+	require.Len(t, tasks, 1)
+
+	// Completing task 1 should NOT complete the wave — tasks 2 and 3 are pending.
+	orch.MarkTaskComplete(1)
+	assert.Equal(t, WaveStateRunning, orch.State(), "wave must stay running while pending tasks remain")
+	assert.False(t, orch.IsCurrentWaveComplete())
+}
+
+// TestStartPendingTasks_LaunchesUpToCapacity verifies that pending tasks are launched as capacity opens.
+func TestStartPendingTasks_LaunchesUpToCapacity(t *testing.T) {
+	plan := &taskparser.Plan{
+		Waves: []taskparser.Wave{
+			{Number: 1, Tasks: []taskparser.Task{
+				{Number: 1, Title: "T1"},
+				{Number: 2, Title: "T2"},
+				{Number: 3, Title: "T3"},
+			}},
+		},
+	}
+	orch := NewWaveOrchestrator("plan", plan)
+	_, err := orch.StartNextWaveLimited(1)
+	require.NoError(t, err)
+	assert.Equal(t, 1, orch.ActiveTaskCount())
+
+	// Complete task 1 — now capacity opens.
+	orch.MarkTaskComplete(1)
+	assert.Equal(t, WaveStateRunning, orch.State())
+
+	pending, err := orch.StartPendingTasks(1)
+	require.NoError(t, err)
+	require.Len(t, pending, 1)
+	assert.Equal(t, 2, pending[0].Number)
+	assert.True(t, orch.IsTaskRunning(2))
+	assert.Equal(t, 1, orch.ActiveTaskCount())
+}
+
+// TestStartPendingTasks_FullDrainWithLimit1 simulates a 3-task wave with limit=1 draining sequentially.
+func TestStartPendingTasks_FullDrainWithLimit1(t *testing.T) {
+	plan := &taskparser.Plan{
+		Waves: []taskparser.Wave{
+			{Number: 1, Tasks: []taskparser.Task{
+				{Number: 1, Title: "T1"},
+				{Number: 2, Title: "T2"},
+				{Number: 3, Title: "T3"},
+			}},
+		},
+	}
+	orch := NewWaveOrchestrator("plan", plan)
+	launched, err := orch.StartNextWaveLimited(1)
+	require.NoError(t, err)
+	require.Len(t, launched, 1)
+
+	// T1 completes → T2 launched
+	orch.MarkTaskComplete(1)
+	require.Equal(t, WaveStateRunning, orch.State())
+	pending, err := orch.StartPendingTasks(1)
+	require.NoError(t, err)
+	require.Len(t, pending, 1)
+	assert.Equal(t, 2, pending[0].Number)
+
+	// T2 completes → T3 launched
+	orch.MarkTaskComplete(2)
+	require.Equal(t, WaveStateRunning, orch.State())
+	pending, err = orch.StartPendingTasks(1)
+	require.NoError(t, err)
+	require.Len(t, pending, 1)
+	assert.Equal(t, 3, pending[0].Number)
+
+	// T3 completes → wave done
+	orch.MarkTaskComplete(3)
+	assert.Equal(t, WaveStateAllComplete, orch.State())
+}
+
+// TestStartPendingTasks_NoOpWhenNotRunning returns nil outside WaveStateRunning.
+func TestStartPendingTasks_NoOpWhenNotRunning(t *testing.T) {
+	plan := &taskparser.Plan{
+		Waves: []taskparser.Wave{
+			{Number: 1, Tasks: []taskparser.Task{{Number: 1, Title: "T1"}}},
+		},
+	}
+	orch := NewWaveOrchestrator("plan", plan)
+	// State is Idle — StartPendingTasks must be a no-op.
+	pending, err := orch.StartPendingTasks(1)
+	require.NoError(t, err)
+	assert.Empty(t, pending)
+}
+
+// TestStartPendingTasks_FullyAtCapacity returns nil when no slots are free.
+func TestStartPendingTasks_FullyAtCapacity(t *testing.T) {
+	plan := &taskparser.Plan{
+		Waves: []taskparser.Wave{
+			{Number: 1, Tasks: []taskparser.Task{
+				{Number: 1, Title: "T1"},
+				{Number: 2, Title: "T2"},
+			}},
+		},
+	}
+	orch := NewWaveOrchestrator("plan", plan)
+	launched, err := orch.StartNextWaveLimited(1)
+	require.NoError(t, err)
+	require.Len(t, launched, 1)
+
+	// Active = 1, limit = 1 → no capacity.
+	pending, err := orch.StartPendingTasks(1)
+	require.NoError(t, err)
+	assert.Empty(t, pending, "no slots free while task 1 is running")
+}
+
+// TestStartPendingTasks_FailureStillOpensCapacity confirms a failed task releases a slot.
+func TestStartPendingTasks_FailureStillOpensCapacity(t *testing.T) {
+	plan := &taskparser.Plan{
+		Waves: []taskparser.Wave{
+			{Number: 1, Tasks: []taskparser.Task{
+				{Number: 1, Title: "T1"},
+				{Number: 2, Title: "T2"},
+				{Number: 3, Title: "T3"},
+			}},
+		},
+	}
+	orch := NewWaveOrchestrator("plan", plan)
+	launched, err := orch.StartNextWaveLimited(1)
+	require.NoError(t, err)
+	require.Len(t, launched, 1)
+
+	// T1 fails → capacity opens despite not being a success.
+	orch.MarkTaskFailed(1)
+	require.Equal(t, WaveStateRunning, orch.State(), "wave stays running while pending tasks exist")
+
+	pending, err := orch.StartPendingTasks(1)
+	require.NoError(t, err)
+	require.Len(t, pending, 1)
+	assert.Equal(t, 2, pending[0].Number)
+}
+
+// TestStartNextWaveLimited_DoesNotAdvanceToNextWaveWhilePending verifies that
+// completing all running tasks is not enough to declare the wave complete when
+// pending tasks remain.
+func TestStartNextWaveLimited_DoesNotAdvanceToNextWaveWhilePending(t *testing.T) {
+	plan := &taskparser.Plan{
+		Waves: []taskparser.Wave{
+			{Number: 1, Tasks: []taskparser.Task{
+				{Number: 1, Title: "T1"},
+				{Number: 2, Title: "T2"},
+			}},
+			{Number: 2, Tasks: []taskparser.Task{
+				{Number: 3, Title: "T3"},
+			}},
+		},
+	}
+	orch := NewWaveOrchestrator("plan", plan)
+	_, err := orch.StartNextWaveLimited(1)
+	require.NoError(t, err)
+
+	// Complete the only running task — pending T2 means wave is not done.
+	orch.MarkTaskComplete(1)
+	assert.Equal(t, WaveStateRunning, orch.State(), "wave must not advance while pending tasks remain")
+	assert.Equal(t, 1, orch.CurrentWaveNumber(), "must still be on wave 1")
+}
+
+// TestActiveTaskCount tracks running count across state transitions.
+func TestActiveTaskCount(t *testing.T) {
+	plan := &taskparser.Plan{
+		Waves: []taskparser.Wave{
+			{Number: 1, Tasks: []taskparser.Task{
+				{Number: 1, Title: "T1"},
+				{Number: 2, Title: "T2"},
+			}},
+		},
+	}
+	orch := NewWaveOrchestrator("plan", plan)
+	assert.Equal(t, 0, orch.ActiveTaskCount())
+
+	orch.StartNextWave()
+	assert.Equal(t, 2, orch.ActiveTaskCount())
+
+	orch.MarkTaskComplete(1)
+	assert.Equal(t, 1, orch.ActiveTaskCount())
+
+	orch.MarkTaskFailed(2)
+	assert.Equal(t, 0, orch.ActiveTaskCount())
+}
+
+// TestApplyParallelismLimit_TrimsRunningToLimit verifies that excess running tasks
+// are moved back to pending so only `limit` tasks remain active.
+func TestApplyParallelismLimit_TrimsRunningToLimit(t *testing.T) {
+	plan := &taskparser.Plan{
+		Waves: []taskparser.Wave{
+			{Number: 1, Tasks: []taskparser.Task{
+				{Number: 1, Title: "T1"},
+				{Number: 2, Title: "T2"},
+				{Number: 3, Title: "T3"},
+			}},
+		},
+	}
+	orch := NewWaveOrchestrator("plan", plan)
+	orch.StartNextWave() // marks all three as running
+
+	assert.Equal(t, 3, orch.ActiveTaskCount())
+
+	launched := orch.ApplyParallelismLimit(1)
+	require.Len(t, launched, 1)
+	assert.Equal(t, 1, launched[0].Number)
+	assert.Equal(t, 1, orch.ActiveTaskCount())
+	assert.True(t, orch.IsTaskRunning(1))
+	// T2 and T3 should be pending — not running, not complete, not failed.
+	assert.False(t, orch.IsTaskRunning(2))
+	assert.False(t, orch.IsTaskComplete(2))
+	assert.False(t, orch.IsTaskFailed(2))
+}
+
+// TestApplyParallelismLimit_NoOpWhenZeroLimit returns all running tasks unchanged.
+func TestApplyParallelismLimit_NoOpWhenZeroLimit(t *testing.T) {
+	plan := &taskparser.Plan{
+		Waves: []taskparser.Wave{
+			{Number: 1, Tasks: []taskparser.Task{
+				{Number: 1, Title: "T1"},
+				{Number: 2, Title: "T2"},
+			}},
+		},
+	}
+	orch := NewWaveOrchestrator("plan", plan)
+	orch.StartNextWave()
+
+	launched := orch.ApplyParallelismLimit(0)
+	assert.Len(t, launched, 2)
+	assert.Equal(t, 2, orch.ActiveTaskCount())
+}
+
+func TestApplyParallelismLimit_NoOpWhenAllCompleteAndWaveExhausted(t *testing.T) {
+	plan := &taskparser.Plan{Waves: []taskparser.Wave{
+		{Number: 1, Tasks: []taskparser.Task{{Number: 1, Title: "T1"}}},
+	}}
+	orch := NewWaveOrchestrator("plan", plan)
+	orch.state = WaveStateAllComplete
+	orch.currentWave = len(plan.Waves)
+
+	require.NotPanics(t, func() {
+		launched := orch.ApplyParallelismLimit(1)
+		assert.Empty(t, launched)
+	})
+}

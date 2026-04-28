@@ -280,3 +280,43 @@ func TestInstanceData_SDKTranscriptLimits_RoundTrip(t *testing.T) {
 	assert.Equal(t, int64(0), restored.SDKTranscriptMaxBytes)
 	assert.Equal(t, int64(250), restored.SDKTranscriptMaxTurns)
 }
+
+// TestInstanceData_ResourceProfile_RoundTrip verifies that ResourceProfile is
+// serialised and deserialised correctly and that the full resolved policy is
+// NOT stored (i.e. nice/env values are not emitted in the JSON).
+func TestInstanceData_ResourceProfile_RoundTrip(t *testing.T) {
+	t.Parallel()
+
+	data := InstanceData{
+		Title:           "test-rc",
+		Program:         "claude",
+		ResourceProfile: "interactive",
+	}
+
+	raw, err := json.Marshal(data)
+	require.NoError(t, err)
+	assert.Contains(t, string(raw), `"resource_profile":"interactive"`)
+	// Full resolved policy values must not appear in JSON.
+	assert.NotContains(t, string(raw), `"nice"`, "resolved nice value must not be persisted")
+	assert.NotContains(t, string(raw), `"ionice"`, "resolved ionice value must not be persisted")
+
+	var restored InstanceData
+	require.NoError(t, json.Unmarshal(raw, &restored))
+	assert.Equal(t, "interactive", restored.ResourceProfile)
+}
+
+// TestInstanceData_ResourceProfile_OmitNormal verifies that the normal profile
+// ("") is omitted from JSON (omitempty) to avoid polluting existing state files.
+func TestInstanceData_ResourceProfile_OmitNormal(t *testing.T) {
+	t.Parallel()
+
+	data := InstanceData{
+		Title:   "test-rc-normal",
+		Program: "claude",
+		// ResourceProfile zero value ("") represents normal / no-op.
+	}
+
+	raw, err := json.Marshal(data)
+	require.NoError(t, err)
+	assert.NotContains(t, string(raw), `resource_profile`, "zero-value ResourceProfile must be omitted")
+}

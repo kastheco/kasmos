@@ -1608,6 +1608,17 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					inst.SetStatus(session.Ready)
 					break
 				}
+				// Under limited parallelism, completing a task may open capacity
+				// for pending tasks. Launch any that are now eligible.
+				if orch.State() == orchestration.WaveStateRunning {
+					if taskEntry, ok := m.taskState.Entry(ts.TaskFile); ok {
+						mdl, pendingCmd := m.startPendingWaveTasks(orch, taskEntry)
+						m = mdl.(*home)
+						if pendingCmd != nil {
+							signalCmds = append(signalCmds, pendingCmd)
+						}
+					}
+				}
 				taskfsm.ConsumeTaskSignal(ts)
 			}
 

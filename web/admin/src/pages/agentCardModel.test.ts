@@ -386,4 +386,33 @@ assertEqual(deslugify(undefined), "", "deslugify undefined");
   assertEqual(groups[0].key, "ready", "unknown task_file falls back to ready bucket");
 }
 
+// --- resource_profile mapping --------------------------------------------------
+
+{
+  // Non-normal profile is forwarded to the card model.
+  const inst: InstanceEntry = {
+    title: "plan-coder",
+    status: "running",
+    branch: "plan/feature",
+    program: "claude",
+    task_file: "feature",
+    agent_type: "coder",
+    resource_profile: "interactive",
+  };
+  const card = toAgentCardModel(inst);
+  assertEqual(card.resourceProfile, "interactive", "resource_profile forwarded to card");
+}
+
+{
+  // Absent resource_profile maps to undefined (not an empty string).
+  const inst: InstanceEntry = {
+    title: "plan-coder",
+    status: "running",
+    branch: "",
+    program: "claude",
+  };
+  const card = toAgentCardModel(inst);
+  assertEqual(card.resourceProfile, undefined, "absent resource_profile maps to undefined");
+}
+
 console.log("agentCardModel.test.ts ok");

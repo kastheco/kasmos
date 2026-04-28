@@ -81,7 +81,7 @@ kas daemon status
 
 Connects to the daemon control socket and calls `GET /v1/status`. Prints `daemon not running` if the socket is unreachable.
 
-The daemon also serves instance metadata to the tui and live-preview bridge on `GET /v1/repos/{project}/instances`. Daemon-spawned rows include `execution_mode`, `sdk_speed_tier`, and `skip_permissions` so clients can resume or display sdk/tmux sessions using the same resolved profile defaults the daemon used when spawning them. Older daemons omit `skip_permissions`; newer clients treat that omission as the legacy daemon default (`true`, bypass permissions).
+The daemon also serves instance metadata to the tui and live-preview bridge on `GET /v1/repos/{project}/instances`. Daemon-spawned rows include `execution_mode`, `sdk_speed_tier`, `skip_permissions`, and `resource_profile` so clients can resume or display sdk/tmux sessions using the same resolved profile defaults and resource-control profile the daemon used when spawning them. `resource_profile` is omitted for the normal/no-op resource profile. Older daemons omit `skip_permissions`; newer clients treat that omission as the legacy daemon default (`true`, bypass permissions).
 
 The control API event stream is available at `GET /v1/events` and is consumed by `kas monitor`. Event JSON uses Go time encoding, so `timestamp` values may include fractional seconds. Event payloads can also include structured `detail` data for wave and agent outcomes; JSON consumers should preserve that field instead of parsing only the human message.
 

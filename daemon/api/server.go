@@ -103,6 +103,10 @@ type InstanceStatus struct {
 	// spawn time. A nil pointer means the daemon omitted the field, which lets
 	// newer clients distinguish legacy daemons from an explicit false.
 	SkipPermissions *bool `json:"skip_permissions,omitempty"`
+	// ResourceProfile is the active resource-control profile name ("interactive",
+	// "custom", …). Omitted when empty or "normal" so the wire stays clean for
+	// the common no-op case.
+	ResourceProfile string `json:"resource_profile,omitempty"`
 }
 
 // ResolvedSkipPermissions returns the effective skip-permissions value for a

@@ -17,6 +17,7 @@ import (
 	"github.com/kastheco/kasmos/internal/cmdexec"
 	"github.com/kastheco/kasmos/internal/opencodesession"
 	"github.com/kastheco/kasmos/log"
+	"github.com/kastheco/kasmos/session/resourcecontrol"
 	"golang.org/x/term"
 )
 
@@ -89,6 +90,9 @@ type TmuxSession struct {
 	// noFlicker controls whether CLAUDE_CODE_NO_FLICKER is set to 1 or 0.
 	// Defaults to false (0) so prompt detection works correctly in spawned agents.
 	noFlicker bool
+	// resourceControls holds the resolved resource-control policy set by SetResourceControls.
+	// Applied in Start() to wrap the agent command with nice/ionice and inject env vars.
+	resourceControls config.ResolvedResourceControls
 	// ProgressFunc is called with (stage, description) during Start() to report progress.
 	ProgressFunc func(stage int, desc string)
 	// promptFile is the path to a temporary file containing the initial prompt.
@@ -241,6 +245,13 @@ func (t *TmuxSession) SetNoFlicker(enabled bool) {
 // Must be called before Start(). An empty string disables the injection.
 func (t *TmuxSession) SetProject(project string) {
 	t.project = project
+}
+
+// SetResourceControls stores the resolved resource policy applied during Start().
+// The wrapper wraps the agent command with nice/ionice and prepends build-concurrency
+// env vars. Must be called before Start().
+func (t *TmuxSession) SetResourceControls(rc config.ResolvedResourceControls) {
+	t.resourceControls = rc
 }
 
 // reportProgress calls ProgressFunc if set.
@@ -400,6 +411,14 @@ func (t *TmuxSession) Start(workDir string) error {
 		}
 	}
 
+	// Apply resource-control wrapper: wrap the program command with nice/ionice
+	// and collect build-concurrency env assignments to prepend at the left.
+	rcWrapper := resourcecontrol.New(t.resourceControls)
+	program = rcWrapper.WrapShellCommand(program)
+	if envAssignments := rcWrapper.InlineEnvAssignmentsFrom(os.Environ()); len(envAssignments) > 0 {
+		program = strings.Join(envAssignments, " ") + " " + program
+	}
+
 	// Prepend KASMOS_MANAGED=1 so the agent process sees it from startup.
 	program = "KASMOS_MANAGED=1 " + program
 
@@ -496,6 +515,14 @@ func (t *TmuxSession) Start(workDir string) error {
 		projectEnvCmd := exec.Command("tmux", "set-environment", "-t", t.sanitizedName, "KASMOS_PROJECT", t.project)
 		if err := t.cmdExec.Run(projectEnvCmd); err != nil {
 			log.InfoLog.Printf("Warning: failed to set KASMOS_PROJECT env for session %s: %v", t.sanitizedName, err)
+		}
+	}
+	// Inject KASMOS_RESOURCE_PROFILE for non-normal profiles so attached interactive
+	// shells inherit the profile name alongside the process-level env assignments.
+	if t.resourceControls.Enabled {
+		profileEnvCmd := exec.Command("tmux", "set-environment", "-t", t.sanitizedName, "KASMOS_RESOURCE_PROFILE", t.resourceControls.Profile)
+		if err := t.cmdExec.Run(profileEnvCmd); err != nil {
+			log.InfoLog.Printf("Warning: failed to set KASMOS_RESOURCE_PROFILE env for session %s: %v", t.sanitizedName, err)
 		}
 	}
 

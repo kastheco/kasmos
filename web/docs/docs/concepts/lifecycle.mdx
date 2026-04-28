@@ -45,7 +45,7 @@ while `status` is the coarse lifecycle stage, tasks in the `implementing` and ad
 
 the `planner_finished` event writes `ExecutionState{Phase: "planned"}`. all other events leave the phase empty; the orchestration engine writes it directly as agent sessions advance.
 
-agent spawn options are resolved alongside these phase actions, not stored in signal payloads. for daemon-managed lifecycle spawns, `permission_default` inherits to `SkipPermissions=true` unless the role profile explicitly says `"prompt"` or `"bypass"`; local tui spawns inherit to prompt. the resolved value follows the instance through daemon status and live-preview records so pause/resume/restart paths do not guess.
+agent spawn options are resolved alongside these phase actions, not stored in signal payloads. for daemon-managed lifecycle spawns, `permission_default` inherits to `SkipPermissions=true` unless the role profile explicitly says `"prompt"` or `"bypass"`; local tui spawns inherit to prompt. the repo `[resources]` block is also resolved at spawn time and forwarded as `ResourceControls`, so agents and sdk shell commands inherit the same wrapper and build-env policy. the resolved permission value and non-normal resource profile follow the instance through daemon status and live-preview records so pause/resume/restart paths do not guess.
 
 ### draft-ready vs planned-ready
 

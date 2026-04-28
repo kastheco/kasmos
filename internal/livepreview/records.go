@@ -89,6 +89,9 @@ type Record struct {
 	SDKTranscriptLimitsSet bool   `json:"sdk_transcript_limits_set,omitempty"`
 	SDKTranscriptMaxBytes  int64  `json:"sdk_transcript_max_bytes,omitempty"`
 	SDKTranscriptMaxTurns  int64  `json:"sdk_transcript_max_turns,omitempty"`
+	// ResourceProfile is the display name of the active resource-control profile.
+	// Persisted for display; the full resolved policy is not persisted.
+	ResourceProfile string `json:"resource_profile,omitempty"`
 
 	Worktree Worktree `json:"worktree"`
 }

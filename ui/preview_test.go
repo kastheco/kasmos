@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"github.com/kastheco/kasmos/cmd/cmd_test"
+	"github.com/kastheco/kasmos/config"
 	"github.com/kastheco/kasmos/log"
 	"github.com/kastheco/kasmos/session"
 	"github.com/kastheco/kasmos/session/sdk"
@@ -642,19 +643,20 @@ func (f *fakeSDKSession) HasUpdated() (bool, bool) { return false, false }
 func (f *fakeSDKSession) HasUpdatedWithContent() (bool, bool, string, bool) {
 	return false, false, "", false
 }
-func (f *fakeSDKSession) GetPanePID() (int, error)                     { return 0, fmt.Errorf("no pane") }
-func (f *fakeSDKSession) Attach() (chan struct{}, error)               { return nil, nil }
-func (f *fakeSDKSession) DetachSafely() error                          { return nil }
-func (f *fakeSDKSession) SetDetachedSize(int, int) error               { return nil }
-func (f *fakeSDKSession) GetSanitizedName() string                     { return "" }
-func (f *fakeSDKSession) SetAgentType(string)                          {}
-func (f *fakeSDKSession) SetInitialPrompt(string)                      {}
-func (f *fakeSDKSession) SetNoFlicker(bool)                            {}
-func (f *fakeSDKSession) SetTaskEnv(int, int, int)                     {}
-func (f *fakeSDKSession) SetProject(string)                            {}
-func (f *fakeSDKSession) SetSessionTitle(string)                       {}
-func (f *fakeSDKSession) SetTitleFunc(func(string, time.Time, string)) {}
-func (f *fakeSDKSession) SetSDKSpeedTier(string)                       {}
+func (f *fakeSDKSession) GetPanePID() (int, error)                            { return 0, fmt.Errorf("no pane") }
+func (f *fakeSDKSession) Attach() (chan struct{}, error)                      { return nil, nil }
+func (f *fakeSDKSession) DetachSafely() error                                 { return nil }
+func (f *fakeSDKSession) SetDetachedSize(int, int) error                      { return nil }
+func (f *fakeSDKSession) GetSanitizedName() string                            { return "" }
+func (f *fakeSDKSession) SetAgentType(string)                                 {}
+func (f *fakeSDKSession) SetInitialPrompt(string)                             {}
+func (f *fakeSDKSession) SetNoFlicker(bool)                                   {}
+func (f *fakeSDKSession) SetTaskEnv(int, int, int)                            {}
+func (f *fakeSDKSession) SetProject(string)                                   {}
+func (f *fakeSDKSession) SetSessionTitle(string)                              {}
+func (f *fakeSDKSession) SetTitleFunc(func(string, time.Time, string))        {}
+func (f *fakeSDKSession) SetSDKSpeedTier(string)                              {}
+func (f *fakeSDKSession) SetResourceControls(config.ResolvedResourceControls) {}
 
 // CapturePresentation implements the optional presentationProvider interface.
 func (f *fakeSDKSession) CapturePresentation() []*sdk.PresentationTurn {

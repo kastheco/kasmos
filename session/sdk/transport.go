@@ -11,6 +11,7 @@ package sdk
 import (
 	"context"
 
+	"github.com/kastheco/kasmos/config"
 	"github.com/kastheco/kasmos/session/tmux"
 )
 
@@ -49,6 +50,10 @@ type LaunchConfig struct {
 	// variables (e.g. CLAUDE_CODE_NO_FLICKER) without modifying the generic
 	// buildEnv helper in process.go.
 	ExtraEnv []string
+	// ResourceControls is the resolved resource-control policy for this session.
+	// When the policy is enabled (profile != "normal"), the process wrapper
+	// applies nice/ionice to the agent argv and injects build-concurrency env vars.
+	ResourceControls config.ResolvedResourceControls
 }
 
 // Transport is the bidirectional control interface over an SDK-driven agent

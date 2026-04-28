@@ -510,15 +510,16 @@ func TestDaemonSync_WaveTaskIndexAndCountPropagatedFromDaemonStatus(t *testing.T
 	listDaemonInstances = func(project string) ([]api.InstanceStatus, error) {
 		require.Equal(t, "test", project)
 		status := api.InstanceStatus{
-			Title:         "feature-W1-T2",
-			Plan:          planFile,
-			Role:          session.AgentTypeCoder,
-			Active:        true,
-			Program:       "opencode",
-			TaskNumber:    2,
-			WaveNumber:    1,
-			WaveTaskIndex: 2,
-			WaveTaskCount: 3,
+			Title:           "feature-W1-T2",
+			Plan:            planFile,
+			Role:            session.AgentTypeCoder,
+			Active:          true,
+			Program:         "opencode",
+			TaskNumber:      2,
+			WaveNumber:      1,
+			WaveTaskIndex:   2,
+			WaveTaskCount:   3,
+			ResourceProfile: "interactive",
 		}
 		if phase == 0 {
 			status.Loading = true
@@ -547,6 +548,7 @@ func TestDaemonSync_WaveTaskIndexAndCountPropagatedFromDaemonStatus(t *testing.T
 			return nil, err
 		}
 		inst.MarkStartedForTest()
+		inst.ResourceProfile = data.ResourceProfile
 		inst.SetStatus(session.Running)
 		return inst, nil
 	}
@@ -562,6 +564,7 @@ func TestDaemonSync_WaveTaskIndexAndCountPropagatedFromDaemonStatus(t *testing.T
 	assert.Equal(t, session.Loading, loading.Status)
 	assert.Equal(t, 2, loading.WaveTaskIndex, "loading placeholder must carry WaveTaskIndex")
 	assert.Equal(t, 3, loading.WaveTaskCount, "loading placeholder must carry WaveTaskCount")
+	assert.Equal(t, "interactive", loading.ResourceProfile, "loading placeholder must carry ResourceProfile")
 
 	model, _ := h.Update(msg)
 	updated := model.(*home)
@@ -569,6 +572,7 @@ func TestDaemonSync_WaveTaskIndexAndCountPropagatedFromDaemonStatus(t *testing.T
 	placeholder := updated.nav.GetInstances()[0]
 	assert.Equal(t, 2, placeholder.WaveTaskIndex)
 	assert.Equal(t, 3, placeholder.WaveTaskCount)
+	assert.Equal(t, "interactive", placeholder.ResourceProfile)
 
 	// Phase 1: full restore — exercises daemonInstanceData → restoreInstanceFromData path.
 	phase = 1
@@ -583,6 +587,7 @@ func TestDaemonSync_WaveTaskIndexAndCountPropagatedFromDaemonStatus(t *testing.T
 	assert.Equal(t, session.Running, live.Status)
 	assert.Equal(t, 2, live.WaveTaskIndex, "restored instance must carry WaveTaskIndex")
 	assert.Equal(t, 3, live.WaveTaskCount, "restored instance must carry WaveTaskCount")
+	assert.Equal(t, "interactive", live.ResourceProfile, "restored instance must carry ResourceProfile")
 }
 
 func TestDaemonSync_SDKPlaceholderCachesPresentationFromDaemon(t *testing.T) {
@@ -603,12 +608,13 @@ func TestDaemonSync_SDKPlaceholderCachesPresentationFromDaemon(t *testing.T) {
 	listDaemonInstances = func(project string) ([]api.InstanceStatus, error) {
 		require.Equal(t, "test", project)
 		return []api.InstanceStatus{{
-			Title:         "sdk-agent",
-			Plan:          planFile,
-			Role:          session.AgentTypeMaster,
-			Active:        true,
-			Program:       "codex",
-			ExecutionMode: string(session.ExecutionModeSDK),
+			Title:           "sdk-agent",
+			Plan:            planFile,
+			Role:            session.AgentTypeMaster,
+			Active:          true,
+			Program:         "codex",
+			ExecutionMode:   string(session.ExecutionModeSDK),
+			ResourceProfile: "interactive",
 		}}, nil
 	}
 
@@ -644,6 +650,7 @@ func TestDaemonSync_SDKPlaceholderCachesPresentationFromDaemon(t *testing.T) {
 	placeholder := updated.nav.GetInstances()[0]
 	assert.False(t, placeholder.Started())
 	assert.Equal(t, session.ExecutionModeSDK, session.NormalizeExecutionMode(placeholder.ExecutionMode))
+	assert.Equal(t, "interactive", placeholder.ResourceProfile)
 	assert.Nil(t, placeholder.CapturePresentation(), "first tick restores the placeholder before metadata is available")
 
 	_, cmd = updated.Update(tickUpdateMetadataMessage{})

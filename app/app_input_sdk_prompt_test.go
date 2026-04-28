@@ -6,6 +6,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/kastheco/kasmos/config"
 	"github.com/kastheco/kasmos/session"
 	"github.com/kastheco/kasmos/session/tmux"
 	"github.com/stretchr/testify/assert"
@@ -41,19 +42,20 @@ func (r *recordingExecutionSession) HasUpdated() (bool, bool) { return false, fa
 func (r *recordingExecutionSession) HasUpdatedWithContent() (bool, bool, string, bool) {
 	return false, false, "", false
 }
-func (r *recordingExecutionSession) GetPanePID() (int, error)                     { return 0, nil }
-func (r *recordingExecutionSession) Attach() (chan struct{}, error)               { return nil, nil }
-func (r *recordingExecutionSession) DetachSafely() error                          { return nil }
-func (r *recordingExecutionSession) SetDetachedSize(int, int) error               { return nil }
-func (r *recordingExecutionSession) GetSanitizedName() string                     { return "recording-session" }
-func (r *recordingExecutionSession) SetAgentType(string)                          {}
-func (r *recordingExecutionSession) SetInitialPrompt(string)                      {}
-func (r *recordingExecutionSession) SetNoFlicker(bool)                            {}
-func (r *recordingExecutionSession) SetTaskEnv(int, int, int)                     {}
-func (r *recordingExecutionSession) SetProject(string)                            {}
-func (r *recordingExecutionSession) SetSessionTitle(string)                       {}
-func (r *recordingExecutionSession) SetTitleFunc(func(string, time.Time, string)) {}
-func (r *recordingExecutionSession) SetSDKSpeedTier(string)                       {}
+func (r *recordingExecutionSession) GetPanePID() (int, error)                            { return 0, nil }
+func (r *recordingExecutionSession) Attach() (chan struct{}, error)                      { return nil, nil }
+func (r *recordingExecutionSession) DetachSafely() error                                 { return nil }
+func (r *recordingExecutionSession) SetDetachedSize(int, int) error                      { return nil }
+func (r *recordingExecutionSession) GetSanitizedName() string                            { return "recording-session" }
+func (r *recordingExecutionSession) SetAgentType(string)                                 {}
+func (r *recordingExecutionSession) SetInitialPrompt(string)                             {}
+func (r *recordingExecutionSession) SetNoFlicker(bool)                                   {}
+func (r *recordingExecutionSession) SetTaskEnv(int, int, int)                            {}
+func (r *recordingExecutionSession) SetProject(string)                                   {}
+func (r *recordingExecutionSession) SetSessionTitle(string)                              {}
+func (r *recordingExecutionSession) SetTitleFunc(func(string, time.Time, string))        {}
+func (r *recordingExecutionSession) SetSDKSpeedTier(string)                              {}
+func (r *recordingExecutionSession) SetResourceControls(config.ResolvedResourceControls) {}
 func (r *recordingExecutionSession) SendPromptWithLocalImages(prompt string, imagePaths []string) error {
 	r.localImagePrompts = append(r.localImagePrompts, prompt)
 	r.localImagePathSets = append(r.localImagePathSets, append([]string(nil), imagePaths...))

@@ -883,6 +883,61 @@ func TestInfoPane_TranscriptRow_WithTruncations(t *testing.T) {
 	assert.Contains(t, plain, "2 truncated")
 }
 
+// TestInfoPane_ResourceProfile_Interactive verifies that the "profile" row is
+// rendered when ResourceProfile is "interactive".
+func TestInfoPane_ResourceProfile_Interactive(t *testing.T) {
+	pane := NewInfoPane()
+	pane.SetSize(70, 30)
+	pane.SetData(InfoData{
+		HasInstance:     true,
+		Title:           "my-agent",
+		Program:         "claude",
+		Status:          "running",
+		ExecutionMode:   "sdk",
+		ResourceProfile: "interactive",
+	})
+
+	output := pane.String()
+	plain := stripANSI(output)
+	assert.Contains(t, plain, "profile", "profile label must appear for non-normal profile")
+	assert.Contains(t, plain, "interactive", "profile value must appear")
+}
+
+// TestInfoPane_ResourceProfile_HiddenForNormal verifies that the "profile" row
+// is suppressed when ResourceProfile is "normal".
+func TestInfoPane_ResourceProfile_HiddenForNormal(t *testing.T) {
+	pane := NewInfoPane()
+	pane.SetSize(70, 30)
+	pane.SetData(InfoData{
+		HasInstance:     true,
+		Title:           "my-agent",
+		Program:         "claude",
+		Status:          "running",
+		ExecutionMode:   "sdk",
+		ResourceProfile: "normal",
+	})
+
+	output := pane.String()
+	assert.NotContains(t, output, "profile", "profile row must not appear for normal profile")
+}
+
+// TestInfoPane_ResourceProfile_HiddenWhenEmpty verifies that the "profile" row
+// is suppressed when ResourceProfile is empty (the default / zero-value).
+func TestInfoPane_ResourceProfile_HiddenWhenEmpty(t *testing.T) {
+	pane := NewInfoPane()
+	pane.SetSize(70, 30)
+	pane.SetData(InfoData{
+		HasInstance:   true,
+		Title:         "my-agent",
+		Program:       "claude",
+		Status:        "running",
+		ExecutionMode: "sdk",
+	})
+
+	output := pane.String()
+	assert.NotContains(t, output, "profile", "profile row must not appear when ResourceProfile is empty")
+}
+
 // TestFormatBytesShort exercises the byte formatter helper.
 func TestFormatBytesShort(t *testing.T) {
 	tests := []struct {

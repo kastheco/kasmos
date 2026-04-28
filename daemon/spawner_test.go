@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/kastheco/kasmos/cmd"
+	"github.com/kastheco/kasmos/config"
 	"github.com/kastheco/kasmos/config/taskparser"
 	"github.com/kastheco/kasmos/orchestration"
 	"github.com/kastheco/kasmos/orchestration/loop"
@@ -1190,6 +1191,39 @@ func TestInstanceKeyForStandalone(t *testing.T) {
 	assert.NotEqual(t, instanceKeyForStandalone("/repo-a", "agent"), instanceKeyForStandalone("/repo-b", "agent"))
 }
 
+// TestTmuxSpawner_SpawnSolo_ResourceControlsForwarded verifies that
+// ResourceControls from SpawnSoloOpts is propagated into the created Instance.
+func TestTmuxSpawner_SpawnSolo_ResourceControlsForwarded(t *testing.T) {
+	s := NewTmuxSpawner()
+	var capturedInst *session.Instance
+	s.startOnMain = func(inst *session.Instance) error {
+		capturedInst = inst
+		inst.MarkStartedForTest()
+		inst.SetStatus(session.Running)
+		return nil
+	}
+
+	rc := config.ResolvedResourceControls{
+		Enabled:   true,
+		Profile:   "interactive",
+		Nice:      10,
+		BuildJobs: 1,
+	}
+	err := s.SpawnSolo(context.Background(), SpawnSoloOpts{
+		RepoPath:         "/tmp/repo",
+		Project:          "proj",
+		Title:            "rc-solo",
+		Program:          "claude",
+		ResourceControls: rc,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, capturedInst)
+	assert.Equal(t, "interactive", capturedInst.ResourceProfile,
+		"ResourceProfile must be set from ResourceControls")
+	assert.Equal(t, rc, capturedInst.ResourceControls,
+		"ResourceControls must be forwarded to the instance")
+}
+
 // TestTmuxSpawner_SpawnWaveTask_SDKTranscriptLimitsForwarded verifies that
 // SDKTranscriptLimitsSet and the byte/turn caps are copied from SpawnOpts into
 // the Instance created by SpawnWaveTask. This ensures the daemon properly
@@ -1247,4 +1281,63 @@ func TestTmuxSpawner_SpawnWaveTask_SDKTranscriptLimitsForwarded(t *testing.T) {
 	assert.True(t, capturedInst.SDKTranscriptLimitsSet)
 	assert.Equal(t, int64(2<<20), capturedInst.SDKTranscriptMaxBytes)
 	assert.Equal(t, int64(100), capturedInst.SDKTranscriptMaxTurns)
+}
+
+// TestTmuxSpawner_SpawnWaveTask_ResourceControlsForwarded verifies that
+// ResourceControls from SpawnOpts is propagated into the Instance created by
+// SpawnWaveTask so each wave task agent inherits the repo resource policy.
+func TestTmuxSpawner_SpawnWaveTask_ResourceControlsForwarded(t *testing.T) {
+	repoPath := t.TempDir()
+	runGit := func(args ...string) {
+		t.Helper()
+		c := exec.Command("git", append([]string{"-C", repoPath}, args...)...)
+		out, err := c.CombinedOutput()
+		require.NoErrorf(t, err, "git %v failed: %s", args, string(out))
+	}
+	runGit("init")
+	runGit("config", "user.email", "test@example.com")
+	runGit("config", "user.name", "Test User")
+	require.NoError(t, os.WriteFile(filepath.Join(repoPath, "f.txt"), []byte("x\n"), 0o644))
+	runGit("add", "f.txt")
+	runGit("commit", "-m", "init")
+	runGit("checkout", "-b", "plan/feature")
+	runGit("checkout", "-")
+
+	s := NewTmuxSpawner()
+	var capturedInst *session.Instance
+	release := make(chan struct{})
+	s.startInShared = func(inst *session.Instance, _ *gitpkg.GitWorktree, _ string) error {
+		capturedInst = inst
+		<-release
+		inst.MarkStartedForTest()
+		inst.SetStatus(session.Running)
+		return nil
+	}
+
+	rc := config.ResolvedResourceControls{
+		Enabled:   true,
+		Profile:   "interactive",
+		BuildJobs: 1,
+	}
+	opts := loop.SpawnOpts{
+		PlanFile:         "feature.md",
+		RepoPath:         repoPath,
+		Project:          "proj",
+		Branch:           "plan/feature",
+		Program:          "true",
+		Wave:             1,
+		ResourceControls: rc,
+	}
+	task := taskparser.Task{Number: 1, Title: "add feature"}
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- s.SpawnWaveTask(context.Background(), opts, task, "do the thing", 1, 1)
+	}()
+	require.Eventually(t, func() bool { return capturedInst != nil }, 2*time.Second, 10*time.Millisecond)
+	close(release)
+	require.NoError(t, <-errCh)
+
+	assert.Equal(t, "interactive", capturedInst.ResourceProfile,
+		"ResourceProfile must be set from ResourceControls")
 }

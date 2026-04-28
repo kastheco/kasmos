@@ -26,7 +26,7 @@ flowchart LR
 
     E --> F[UpdatePlan called\norchestrator → Idle\nwave 1 starts\nStartNextWave → WaveStateRunning]
 
-    F --> G[N coder agents spawned in parallel\none per task in wave\nshared worktree branch]
+    F --> G[coder agents spawned for wave\ndefault: all tasks start concurrently\noptional cap: max_parallel_wave_tasks\nshared worktree branch]
 
     G --> H{all tasks in wave\ncomplete or failed?}
     H -- "more tasks running" --> H
@@ -118,7 +118,9 @@ sequenceDiagram
 
     Note over D: ProcessElaborationSignals: UpdatePlan to WaveStateIdle, StartNextWave to WaveStateRunning, ExecutionPhase = wave_running (wave 1)
 
-    par Wave 1 — parallel coder agents (shared worktree)
+    Note over D: default: all wave tasks start concurrently; set max_parallel_wave_tasks in [resources] to cap concurrency (see §7)
+
+    par Wave 1 — parallel coder agents (shared worktree, default: all at once)
         D->>C1: spawn W1-T1 (BuildTaskPrompt, preferred_model from architect meta)
         D->>C2: spawn W1-T2
         D->>C3: spawn W1-T3
@@ -282,11 +284,51 @@ Source: `config/taskfsm/` execution phase constants; sub-phase persistence in
 
 ---
 
+## 7. Limited parallelism (`max_parallel_wave_tasks`)
+
+By default, every task in a wave is launched concurrently. Setting
+`max_parallel_wave_tasks` in the `[resources]` config block caps how many coder
+agents run at the same time within a single wave.
+
+```toml
+[resources]
+profile = "interactive"
+max_parallel_wave_tasks = 1  # one agent at a time; overrides the profile preset
+```
+
+When the limit is active:
+
+1. **Wave start** — `StartNextWaveLimited(limit)` marks at most `limit` tasks as
+   running; the remainder are left in the `pending` state. Only the running
+   tasks get agent processes spawned for them.
+2. **Task completes or fails** — `StartPendingTasks(limit)` is called; it
+   computes available capacity as `limit − ActiveTaskCount()` and promotes
+   exactly that many pending tasks to running. The daemon calls this inside
+   `handleWaveTaskComplete`; the TUI calls it via `startPendingWaveTasks` after
+   processing a task-signal.
+3. **Wave completion** — `checkWaveComplete` only advances the wave state when
+   all tasks are terminal (complete or failed). Pending tasks count as
+   in-progress, so the wave stays in `WaveStateRunning` until every task has
+   been launched and finished.
+4. **Peer count** — each spawned batch uses `len(batch)` as its peer count, not
+   the full wave size. The total wave size is still visible in the prompt header
+   context.
+5. **Already-running path** — when `ProcessWaveSignals` has already called
+   `StartNextWave()` (marking all tasks running) before `startWaveTasks` is
+   entered, `ApplyParallelismLimit(limit)` is called to move excess running
+   tasks back to pending before any agents are spawned.
+
+The `interactive` preset sets `max_parallel_wave_tasks = 1` automatically.
+Setting the key to `0` (or omitting it on the `normal` profile) restores
+unlimited concurrent spawning.
+
+---
+
 ## real files
 
 | file | role |
 |------|------|
-| `orchestration/engine.go` | `WaveOrchestrator`, wave states, `ShouldBlueprintSkip`, `DetectFileConflicts` |
+| `orchestration/engine.go` | `WaveOrchestrator`, wave states, `ShouldBlueprintSkip`, `DetectFileConflicts`; limited-parallelism helpers `StartNextWaveLimited`, `StartPendingTasks`, `ApplyParallelismLimit`, `ActiveTaskCount` |
 | `orchestration/lifecycle_agents.go` | agent spec builders: `BuildArchitectAgentSpec`, `BuildReviewerAgentSpec`, `BuildFixerAgentSpec`, `BuildMasterAgentSpec` |
 | `orchestration/loop/processor.go` | `ProcessElaborationSignals`, `ProcessTaskSignals`, `ProcessWaveSignals` |
 | `orchestration/cache.go` | `SaveArchitectMeta`, `LoadArchitectMeta` |

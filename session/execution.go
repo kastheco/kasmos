@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kastheco/kasmos/config"
 	"github.com/kastheco/kasmos/session/sdk"
 	"github.com/kastheco/kasmos/session/tmux"
 )
@@ -68,6 +69,10 @@ type ExecutionSession interface {
 	// recognised Codex tiers such as "fast" or "flex").
 	// Non-SDK backends (tmux) ignore this; SDK backends forward it to the transport.
 	SetSDKSpeedTier(tier string)
+	// SetResourceControls applies the resolved resource-control policy to the session.
+	// Must be called before Start(). SDK backends ignore it; tmux backends use it to
+	// wrap the agent command with nice/ionice and inject build-concurrency env vars.
+	SetResourceControls(rc config.ResolvedResourceControls)
 }
 
 // progressReporter is optionally implemented by session types that support
@@ -245,3 +250,8 @@ func (w *tmuxExecutionSession) SetProgressFunc(fn func(int, string)) {
 // SetSDKSpeedTier is a no-op for tmux-backed sessions.
 // Speed tiers apply only to SDK transports (e.g. Codex).
 func (w *tmuxExecutionSession) SetSDKSpeedTier(_ string) {}
+
+// SetResourceControls forwards the resource policy to the underlying TmuxSession.
+func (w *tmuxExecutionSession) SetResourceControls(rc config.ResolvedResourceControls) {
+	w.s.SetResourceControls(rc)
+}

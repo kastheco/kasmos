@@ -1,0 +1,176 @@
+---
+title: "interactive resource controls"
+---
+
+# interactive resource controls
+
+kasmos can run agent processes and their build commands at reduced CPU and I/O
+priority so they don't compete with latency-sensitive desktop workloads — games,
+video calls, streaming, or anything that needs consistent frame delivery. this is
+the **interactive** resource-control profile.
+
+## enabling the profile
+
+add a `[resources]` block to `.kasmos/config.toml`:
+
+```toml
+[resources]
+profile = "interactive"
+```
+
+restart the daemon (`systemctl --user restart kasmos`) or reopen the TUI for the
+change to take effect. agents started after the restart inherit the new settings;
+already-running agents are not affected.
+
+## what the interactive preset changes
+
+| setting | value | effect |
+|---------|-------|--------|
+| `nice` | `10` | cpu scheduler gives agents lower priority than normal foreground tasks |
+| `ionice_class` | `best-effort` | (linux only) agents share disk I/O bandwidth without blocking interactive reads/writes |
+| `ionice_level` | `7` | lowest priority within the `best-effort` class |
+| `build_jobs` | `1` | `-j 1` hint passed via `MAKEFLAGS`, `CARGO_BUILD_JOBS`, `CMAKE_BUILD_PARALLEL_LEVEL`, etc. |
+| `go_package_parallelism` | `1` | `GOFLAGS=-p=1` limits go package-level build parallelism |
+| `gomaxprocs` | `2` | `GOMAXPROCS=2` caps the go runtime thread pool inside agent processes |
+| `max_parallel_wave_tasks` | `1` | at most one wave-task coder agent runs at a time |
+
+you can override individual keys while keeping the rest of the preset:
+
+```toml
+[resources]
+profile = "interactive"
+gomaxprocs = 4               # allow more goroutines per agent
+max_parallel_wave_tasks = 2  # run two coders concurrently instead of one
+```
+
+## how the process wrapper works
+
+kasmos wraps each spawned agent command with `nice -n <value>`. on linux with
+`ionice` available, it also prepends `ionice -c <class> -n <level>`. the wrapped
+command is launched via tmux `new-window` (for `execution_mode = "tmux"`) or
+directly via `exec.Command` (for `execution_mode = "sdk"`), so every child
+process the agent spawns — compilers, formatters, linters, test runners —
+inherits the scheduler priority.
+
+if `nice` or `ionice` is not found on `PATH` at startup, kasmos logs a one-time
+warning and continues without that wrapper. the launch is not blocked.
+
+on macOS and other non-linux platforms, the `ionice` wrapper is skipped
+silently; `nice` still works.
+
+## how build env is injected
+
+before spawning an agent process, kasmos merges the following environment
+variables into the agent's environment:
+
+| variable | set when |
+|----------|----------|
+| `MAKEFLAGS=-j<n>` | `build_jobs > 0` |
+| `CARGO_BUILD_JOBS=<n>` | `build_jobs > 0` |
+| `CMAKE_BUILD_PARALLEL_LEVEL=<n>` | `build_jobs > 0` |
+| `BUNDLE_JOBS=<n>` | `build_jobs > 0` |
+| `UV_CONCURRENT_BUILDS=<n>` | `build_jobs > 0` |
+| `GOFLAGS=-p=<n>` | `go_package_parallelism > 0` |
+| `GOMAXPROCS=<n>` | `gomaxprocs > 0` |
+
+**existing values are respected.** if any of these variables is already set in
+the calling environment (e.g. from your shell profile or a `.envrc`), kasmos
+does **not** overwrite them. the injection only fills in unset keys. to force a
+specific value regardless, set it in the `[resources.env]` subtable:
+
+```toml
+[resources]
+profile = "interactive"
+
+[resources.env]
+MAKEFLAGS = "-j2"   # always wins, even if MAKEFLAGS is already set
+```
+
+## confirming the profile is active
+
+**TUI info pane:** open the TUI (`kas`), select a running instance, and open the
+info pane (default key `i`). when the active profile is not `normal`, a
+`profile` row appears showing the profile name.
+
+**daemon API / web admin:** the REST API response for each instance includes a
+`resource_profile` field. the admin SPA at `http://127.0.0.1:7433/admin/` shows
+this in the agent card. you can also inspect it with:
+
+```sh
+kas instance list
+```
+
+**process scheduler priority:** after an agent is running, verify the nice value
+in the kernel's view:
+
+```sh
+ps -o pid,ni,cmd -p <agent-pid>
+```
+
+the `ni` column shows the niceness. under the interactive preset it should be
+`10`. on linux you can also check I/O class:
+
+```sh
+ionice -p <agent-pid>
+```
+
+## wave parallelism and pending tasks
+
+by default, kasmos starts every task in a wave concurrently. when
+`max_parallel_wave_tasks` is set (directly or via the `interactive` preset), a
+cap is applied:
+
+1. when a wave starts, only the first `max_parallel_wave_tasks` tasks are
+   promoted to running and get agent processes spawned.
+2. the remaining tasks stay in a **pending** state — no agent process is created
+   for them yet.
+3. whenever a running task completes or fails, the next pending task is promoted
+   and its agent is spawned.
+4. the wave advances to the confirmation prompt only after every task — including
+   all pending ones — has been launched and finished.
+
+in the TUI task list, pending tasks appear with a `pending` sub-status while
+the wave is active. the wave card stays in the `implementing` column until all
+tasks are terminal.
+
+example: a wave has tasks T1–T5 and `max_parallel_wave_tasks = 2`. kasmos
+starts T1 and T2. when T1 finishes, T3 starts. when T2 finishes, T4 starts. and
+so on, so at most two coders run at any moment.
+
+to return to unlimited concurrency within the interactive profile:
+
+```toml
+[resources]
+profile = "interactive"
+max_parallel_wave_tasks = 0   # 0 = unlimited; restores default wave behavior
+```
+
+## rollback
+
+to stop applying resource controls, either remove the `[resources]` block
+entirely or switch to the `normal` profile:
+
+```toml
+[resources]
+profile = "normal"
+```
+
+restart the daemon or reopen the TUI. newly spawned agents launch without any
+nice wrapper, ionice wrapper, or build-env injection. already-running agents are
+**not** re-niced — the rollback only affects future spawns.
+
+## scope of this implementation
+
+this release intentionally does not include:
+
+- **runtime profile switching** — changing the profile requires a daemon restart.
+- **re-nicing running agents** — existing agent processes keep whatever niceness they were launched with.
+- **`/proc` I/O telemetry** — no per-agent disk I/O counters are collected or displayed.
+- **`kas guard` command** — no guard process or watchdog for resource enforcement.
+- **systemd cgroup scopes** — resource controls are applied via `nice`/`ionice`, not cgroups.
+
+## related
+
+- [`[resources]` config reference](../configuration/config-toml.mdx#resources--agent-resource-controls)
+- [concepts: waves](../concepts/waves.mdx) — how waves and task batches work
+- [running implementations](./running-implementations.mdx) — the normal wave-based implementation flow

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kastheco/kasmos/config"
 	"github.com/kastheco/kasmos/session/common"
 	"github.com/kastheco/kasmos/session/git"
 	"github.com/kastheco/kasmos/session/sdk"
@@ -152,6 +153,13 @@ type Instance struct {
 	// Runtime-only: not persisted. Used to enforce the stability window before auto-advancing.
 	CompletionPromptSince time.Time
 
+	// ResourceControls is the resolved resource-control policy for this instance.
+	// Not persisted; re-applied from InstanceOptions or current config on resume.
+	ResourceControls config.ResolvedResourceControls
+	// ResourceProfile is the display name of the active resource-control profile
+	// ("normal", "interactive", or "custom"). Persisted for UI display.
+	ResourceProfile string
+
 	// CPUPercent is the last sampled CPU utilisation of the agent process.
 	CPUPercent float64
 	// MemMB is the last sampled memory usage of the agent process in megabytes.
@@ -209,6 +217,7 @@ func (i *Instance) ToInstanceData() InstanceData {
 		SDKTranscriptLimitsSet: i.SDKTranscriptLimitsSet,
 		SDKTranscriptMaxBytes:  i.SDKTranscriptMaxBytes,
 		SDKTranscriptMaxTurns:  i.SDKTranscriptMaxTurns,
+		ResourceProfile:        i.ResourceProfile,
 	}
 
 	if i.gitWorktree != nil {
@@ -295,8 +304,12 @@ func FromInstanceData(data InstanceData) (*Instance, error) {
 		SDKTranscriptLimitsSet: data.SDKTranscriptLimitsSet,
 		SDKTranscriptMaxBytes:  data.SDKTranscriptMaxBytes,
 		SDKTranscriptMaxTurns:  data.SDKTranscriptMaxTurns,
-		sharedWorktree:         sharedWorktree,
-		gitWorktree:            restoredWorktree,
+		// ResourceProfile is restored from storage for display purposes.
+		// ResourceControls is intentionally left as zero value (normal/no-op).
+		// The caller is responsible for re-resolving the current policy before launch.
+		ResourceProfile: data.ResourceProfile,
+		sharedWorktree:  sharedWorktree,
+		gitWorktree:     restoredWorktree,
 	}
 
 	if instance.Paused() {
@@ -426,6 +439,9 @@ type InstanceOptions struct {
 	// SDKTranscriptMaxTurns caps completed turns retained by the renderer (0 = unlimited).
 	// A zero value only takes effect when SDKTranscriptLimitsSet is true.
 	SDKTranscriptMaxTurns int64
+	// ResourceControls sets the resource-control policy for the instance.
+	// A zero value (or Profile == "" or "normal") means no resource controls.
+	ResourceControls config.ResolvedResourceControls
 }
 
 // NewInstance constructs a new unstarted Instance from the given options.
@@ -473,6 +489,8 @@ func NewInstance(opts InstanceOptions) (*Instance, error) {
 		SDKTranscriptLimitsSet: opts.SDKTranscriptLimitsSet,
 		SDKTranscriptMaxBytes:  opts.SDKTranscriptMaxBytes,
 		SDKTranscriptMaxTurns:  opts.SDKTranscriptMaxTurns,
+		ResourceControls:       opts.ResourceControls,
+		ResourceProfile:        opts.ResourceControls.Profile,
 	}, nil
 }
 

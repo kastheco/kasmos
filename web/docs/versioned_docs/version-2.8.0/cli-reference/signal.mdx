@@ -12,7 +12,7 @@ kas signal <subcommand> [flags]
 
 Alias: `kas sig`
 
-Signals describe lifecycle progress only. Permission behavior for any agent spawned as a result of a signal is resolved later by the daemon or tui from `[agents.<role>].permission_default`; the resolved boolean is passed to the session runtime as `SkipPermissions`.
+Signals describe lifecycle progress only. Permission and resource-control behavior for any agent spawned as a result of a signal is resolved later by the daemon or tui from repo config. `[agents.<role>].permission_default` becomes `SkipPermissions`, and `[resources]` becomes the `ResourceControls` policy passed to the session runtime.
 
 ## signal types
 

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kastheco/kasmos/config"
 	"github.com/kastheco/kasmos/log"
 	"github.com/kastheco/kasmos/session/git"
 	"github.com/kastheco/kasmos/session/sdk"
@@ -287,19 +288,20 @@ func (deadExecutionSession) HasUpdated() (bool, bool) { return false, false }
 func (deadExecutionSession) HasUpdatedWithContent() (bool, bool, string, bool) {
 	return false, false, "", false
 }
-func (deadExecutionSession) GetPanePID() (int, error)                     { return 0, fmt.Errorf("no pane") }
-func (deadExecutionSession) Attach() (chan struct{}, error)               { return nil, nil }
-func (deadExecutionSession) DetachSafely() error                          { return nil }
-func (deadExecutionSession) SetDetachedSize(int, int) error               { return nil }
-func (deadExecutionSession) GetSanitizedName() string                     { return "" }
-func (deadExecutionSession) SetAgentType(string)                          {}
-func (deadExecutionSession) SetInitialPrompt(string)                      {}
-func (deadExecutionSession) SetNoFlicker(bool)                            {}
-func (deadExecutionSession) SetTaskEnv(int, int, int)                     {}
-func (deadExecutionSession) SetProject(string)                            {}
-func (deadExecutionSession) SetSessionTitle(string)                       {}
-func (deadExecutionSession) SetTitleFunc(func(string, time.Time, string)) {}
-func (deadExecutionSession) SetSDKSpeedTier(string)                       {}
+func (deadExecutionSession) GetPanePID() (int, error)                            { return 0, fmt.Errorf("no pane") }
+func (deadExecutionSession) Attach() (chan struct{}, error)                      { return nil, nil }
+func (deadExecutionSession) DetachSafely() error                                 { return nil }
+func (deadExecutionSession) SetDetachedSize(int, int) error                      { return nil }
+func (deadExecutionSession) GetSanitizedName() string                            { return "" }
+func (deadExecutionSession) SetAgentType(string)                                 {}
+func (deadExecutionSession) SetInitialPrompt(string)                             {}
+func (deadExecutionSession) SetNoFlicker(bool)                                   {}
+func (deadExecutionSession) SetTaskEnv(int, int, int)                            {}
+func (deadExecutionSession) SetProject(string)                                   {}
+func (deadExecutionSession) SetSessionTitle(string)                              {}
+func (deadExecutionSession) SetTitleFunc(func(string, time.Time, string))        {}
+func (deadExecutionSession) SetSDKSpeedTier(string)                              {}
+func (deadExecutionSession) SetResourceControls(config.ResolvedResourceControls) {}
 
 // SendKeys sends raw key sequences to the pane.
 // Returns an error if the instance is not started or is paused.

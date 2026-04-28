@@ -19,7 +19,7 @@ for agents, the primary way to emit signals is mcp `signal_create`, which writes
 
 the daemon exposes a unix domain socket control api so `kas daemon status`, `add`, and `remove` can reach it without restart.
 
-when the daemon spawns an agent, it resolves that role's `[agents.<role>].permission_default` from the repo-local `.kasmos/config.toml` before building `loop.SpawnOpts`. unset or `"inherit"` keeps the daemon's historical unattended default (`SkipPermissions=true`); `"prompt"` forces permission prompts, and `"bypass"` forces the harness bypass behavior. the resolved value is also surfaced through daemon instance status so tui and live-preview clients do not re-derive it.
+when the daemon spawns an agent, it resolves that role's `[agents.<role>].permission_default` from the repo-local `.kasmos/config.toml` before building `loop.SpawnOpts`. unset or `"inherit"` keeps the daemon's historical unattended default (`SkipPermissions=true`); `"prompt"` forces permission prompts, and `"bypass"` forces the harness bypass behavior. it also forwards the repo's resolved `[resources]` profile through `loop.SpawnOpts.ResourceControls` so planner, architect, coder, reviewer, fixer, master, and solo agents inherit the same process wrapper and build-env policy. the resolved permission value and non-normal resource profile are surfaced through daemon instance status so tui, live-preview, and web-admin clients do not re-derive them.
 
 ## when do you need the daemon?
 

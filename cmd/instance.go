@@ -70,6 +70,9 @@ type instanceRecord struct {
 	SoloAgent              bool   `json:"solo_agent,omitempty"`
 	QueuedPrompt           string `json:"queued_prompt,omitempty"`
 	ReviewCycle            int    `json:"review_cycle,omitempty"`
+	// ResourceProfile is the display name of the active resource-control profile.
+	// Persisted for display; the full resolved policy is not persisted.
+	ResourceProfile string `json:"resource_profile,omitempty"`
 
 	Worktree instanceWorktree `json:"worktree"`
 }

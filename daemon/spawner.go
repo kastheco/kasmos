@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/kastheco/kasmos/cmd"
+	"github.com/kastheco/kasmos/config"
 	"github.com/kastheco/kasmos/config/taskparser"
 	"github.com/kastheco/kasmos/config/taskstate"
 	"github.com/kastheco/kasmos/internal/initcmd/harness"
@@ -66,6 +67,9 @@ type SpawnSoloOpts struct {
 	// SkipPermissions is resolved by the caller. Daemon.SpawnSolo handles
 	// nullable SpawnSoloRequest.SkipPermissions before creating these opts.
 	SkipPermissions bool
+	// ResourceControls is the resolved resource-control policy forwarded to the
+	// instance. A zero value (Enabled=false) means the normal/no-op profile.
+	ResourceControls config.ResolvedResourceControls
 }
 
 // TmuxSpawner implements loop.AgentSpawner using tmux-backed sessions managed
@@ -703,6 +707,7 @@ func (s *TmuxSpawner) spawnOnMainBranch(_ context.Context, opts loop.SpawnOpts, 
 		SDKTranscriptLimitsSet: opts.SDKTranscriptLimitsSet,
 		SDKTranscriptMaxBytes:  opts.SDKTranscriptMaxBytes,
 		SDKTranscriptMaxTurns:  opts.SDKTranscriptMaxTurns,
+		ResourceControls:       opts.ResourceControls,
 	})
 	if err != nil {
 		s.releaseReservation(key)
@@ -868,6 +873,7 @@ func (s *TmuxSpawner) SpawnWaveTask(_ context.Context, opts loop.SpawnOpts, task
 		SDKTranscriptLimitsSet: opts.SDKTranscriptLimitsSet,
 		SDKTranscriptMaxBytes:  opts.SDKTranscriptMaxBytes,
 		SDKTranscriptMaxTurns:  opts.SDKTranscriptMaxTurns,
+		ResourceControls:       opts.ResourceControls,
 	})
 	if err != nil {
 		s.releaseReservation(key)
@@ -946,6 +952,7 @@ func (s *TmuxSpawner) spawnInSharedWorktreeReserved(_ context.Context, opts loop
 		SDKTranscriptLimitsSet: opts.SDKTranscriptLimitsSet,
 		SDKTranscriptMaxBytes:  opts.SDKTranscriptMaxBytes,
 		SDKTranscriptMaxTurns:  opts.SDKTranscriptMaxTurns,
+		ResourceControls:       opts.ResourceControls,
 	})
 	if err != nil {
 		s.releaseReservation(key)
@@ -1025,6 +1032,7 @@ func (s *TmuxSpawner) SpawnSolo(ctx context.Context, opts SpawnSoloOpts) error {
 		SDKTranscriptLimitsSet: opts.SDKTranscriptLimitsSet,
 		SDKTranscriptMaxBytes:  opts.SDKTranscriptMaxBytes,
 		SDKTranscriptMaxTurns:  opts.SDKTranscriptMaxTurns,
+		ResourceControls:       opts.ResourceControls,
 	})
 	if err != nil {
 		s.releaseReservation(key)

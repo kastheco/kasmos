@@ -71,7 +71,7 @@ func TestDefaultShellRunner_UsesWorkDirAndPreservesNonZeroExit(t *testing.T) {
 	}
 	workDir := t.TempDir()
 
-	exitCode, output, truncated, runErr := defaultShellRunner(context.Background(), workDir, shell, []string{"-c", "pwd; exit 7"})
+	exitCode, output, truncated, runErr := defaultShellRunner(context.Background(), workDir, shell, []string{"-c", "pwd; exit 7"}, nil)
 
 	require.NoError(t, runErr)
 	assert.Equal(t, 7, exitCode)
@@ -86,7 +86,7 @@ func TestDefaultShellRunner_CapsOutputWithoutChangingExitCode(t *testing.T) {
 	}
 	workDir := t.TempDir()
 
-	exitCode, output, truncated, runErr := defaultShellRunner(context.Background(), workDir, shell, []string{"-c", "printf '%70000s' ''; exit 7"})
+	exitCode, output, truncated, runErr := defaultShellRunner(context.Background(), workDir, shell, []string{"-c", "printf '%70000s' ''; exit 7"}, nil)
 
 	require.NoError(t, runErr)
 	assert.Equal(t, 7, exitCode)

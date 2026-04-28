@@ -35,6 +35,7 @@ const sidebars: SidebarsConfig = {
         "guides/tui-overview",
         "guides/creating-plans",
         "guides/running-implementations",
+        "guides/interactive-resources",
         "guides/reviewing-and-merging",
         "guides/managing-instances",
         "guides/recipes",

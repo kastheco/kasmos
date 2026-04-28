@@ -71,6 +71,9 @@ type InfoData struct {
 	// Execution transport and speed tier for the selected instance, when present.
 	ExecutionMode string
 	SDKSpeedTier  string
+	// ResourceProfile is the active resource-control profile ("interactive", "custom", …).
+	// Empty or "normal" means the row is suppressed.
+	ResourceProfile string
 
 	// Resource utilisation
 	CPUPercent float64
@@ -585,6 +588,9 @@ func (p *InfoPane) renderInstanceSection() string {
 	}
 	if p.data.ExecutionMode == "sdk" && p.data.SDKSpeedTier != "" {
 		rows = append(rows, p.renderRow("speed tier", p.data.SDKSpeedTier))
+	}
+	if p.data.ResourceProfile != "" && p.data.ResourceProfile != "normal" {
+		rows = append(rows, p.renderRow("profile", p.data.ResourceProfile))
 	}
 	if p.data.CPUPercent > 0 || p.data.MemMB > 0 {
 		rows = append(rows, p.renderRow("cpu", fmt.Sprintf("%.0f%%", math.Round(p.data.CPUPercent))))

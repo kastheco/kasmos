@@ -1582,19 +1582,20 @@ func (m *home) updateInfoPane() {
 
 	rs := selected.RendererStats
 	data := ui.InfoData{
-		HasInstance:   true,
-		Title:         selected.DisplayName(),
-		Program:       selected.Program,
-		Branch:        selected.Branch,
-		Path:          selected.Path,
-		Status:        statusString(selected.Status),
-		AgentType:     selected.AgentType,
-		TaskNumber:    selected.TaskNumber,
-		WaveNumber:    selected.WaveNumber,
-		WaveTaskIndex: selected.WaveTaskIndex,
-		WaveTaskCount: selected.WaveTaskCount,
-		ExecutionMode: string(selected.ExecutionMode),
-		SDKSpeedTier:  selected.SDKSpeedTier,
+		HasInstance:     true,
+		Title:           selected.DisplayName(),
+		Program:         selected.Program,
+		Branch:          selected.Branch,
+		Path:            selected.Path,
+		Status:          statusString(selected.Status),
+		AgentType:       selected.AgentType,
+		TaskNumber:      selected.TaskNumber,
+		WaveNumber:      selected.WaveNumber,
+		WaveTaskIndex:   selected.WaveTaskIndex,
+		WaveTaskCount:   selected.WaveTaskCount,
+		ExecutionMode:   string(selected.ExecutionMode),
+		SDKSpeedTier:    selected.SDKSpeedTier,
+		ResourceProfile: selected.ResourceProfile,
 		// Transcript diagnostics from last cached renderer stats snapshot.
 		TranscriptBytes:         rs.Bytes,
 		TranscriptLines:         rs.Lines,
@@ -2193,17 +2194,38 @@ func (m *home) sdkTranscriptRetentionOptions() (maxBytes, maxTurns int64, config
 	return m.appConfig.SDK.TranscriptMaxBytes, m.appConfig.SDK.TranscriptMaxTurns, true
 }
 
-// withRetentionOpts copies SDK transcript retention limits from config into opts
-// and sets SDKTranscriptLimitsSet so the SDK renderer applies them. Call this
-// on every InstanceOptions that may resolve to an SDK execution session.
+// resolvedResourceControls returns the active resource-control policy from
+// the loaded app config. A zero value (Enabled=false) is returned when the
+// config is absent or the [resources] block resolves to the normal profile.
+func (m *home) resolvedResourceControls() config.ResolvedResourceControls {
+	if m.appConfig == nil {
+		return config.ResolvedResourceControls{}
+	}
+	rc, err := m.appConfig.Resources.Resolve()
+	if err != nil {
+		msg := "invalid [resources] config: " + err.Error()
+		if log.WarningLog != nil {
+			log.WarningLog.Print(msg)
+		}
+		if m.toastManager != nil {
+			m.toastManager.Error(msg)
+		}
+		return config.ResolvedResourceControls{}
+	}
+	return rc
+}
+
+// withRetentionOpts copies SDK transcript retention limits and the resolved
+// resource-control policy from config into opts. Call this on every
+// InstanceOptions that may resolve to an SDK execution session.
 func (m *home) withRetentionOpts(opts session.InstanceOptions) session.InstanceOptions {
 	maxBytes, maxTurns, configured := m.sdkTranscriptRetentionOptions()
-	if !configured {
-		return opts
+	if configured {
+		opts.SDKTranscriptLimitsSet = true
+		opts.SDKTranscriptMaxBytes = maxBytes
+		opts.SDKTranscriptMaxTurns = maxTurns
 	}
-	opts.SDKTranscriptLimitsSet = true
-	opts.SDKTranscriptMaxBytes = maxBytes
-	opts.SDKTranscriptMaxTurns = maxTurns
+	opts.ResourceControls = m.resolvedResourceControls()
 	return opts
 }
 
@@ -4019,8 +4041,17 @@ func (m *home) applyAdvanceWaveAction(action loop.AdvanceWaveAction, preStartToa
 }
 
 // startNextWave advances the orchestrator to the next wave and spawns its task instances.
+// When max_parallel_wave_tasks is configured, at most that many tasks are launched;
+// the remainder stay pending and are promoted via startPendingWaveTasks as capacity opens.
 func (m *home) startNextWave(orch *orchestration.WaveOrchestrator, entry taskstate.TaskEntry) (tea.Model, tea.Cmd) {
-	tasks := orch.StartNextWave()
+	rc := m.resolvedResourceControls()
+	limit := rc.MaxParallelWaveTasks
+	var tasks []taskparser.Task
+	if limit > 0 {
+		tasks, _ = orch.StartNextWaveLimited(limit)
+	} else {
+		tasks = orch.StartNextWave()
+	}
 	if len(tasks) == 0 {
 		return m, nil
 	}
@@ -4032,6 +4063,22 @@ func (m *home) startNextWave(orch *orchestration.WaveOrchestrator, entry tasksta
 		auditlog.WithPlan(orch.TaskFile()),
 		auditlog.WithWave(waveNum, 0))
 	return m.spawnWaveTasks(orch, tasks, entry)
+}
+
+// startPendingWaveTasks promotes pending wave tasks to running up to the configured
+// parallelism limit, spawning agents for each. No-op when no limit is configured,
+// when the wave is not running, or when the active-task count is already at the limit.
+func (m *home) startPendingWaveTasks(orch *orchestration.WaveOrchestrator, entry taskstate.TaskEntry) (tea.Model, tea.Cmd) {
+	rc := m.resolvedResourceControls()
+	limit := rc.MaxParallelWaveTasks
+	if limit <= 0 {
+		return m, nil
+	}
+	pending, _ := orch.StartPendingTasks(limit)
+	if len(pending) == 0 {
+		return m, nil
+	}
+	return m.spawnWaveTasks(orch, pending, entry)
 }
 
 // retryFailedWaveTasks retries all failed tasks in the current wave by re-spawning them.
