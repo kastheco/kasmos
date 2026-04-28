@@ -118,6 +118,16 @@ and compare the `app` and `session/tmux` cold times against the baselines above.
 a regression of more than ~10s in either package warrants investigation before
 merging.
 
+### tmux pty handles
+
+- every real `PtyFactory.Start(cmd)` result must retain ownership of both the
+  pty file and the started `exec.Cmd`.
+- `Restore()` stays monitor-only; detached preview/status uses `capture-pane`,
+  not a background attach client.
+- active `Attach()` owns one attach handle, and `Detach()` must close/reap it.
+- fake factories return fake handles and must not call real `cmd.Start()`.
+- developer regression command: `go test -tags integration_tmux ./session/tmux/...`.
+
 ## ci
 
 ci runs one `test` job (`go test ./...`) and four `build` jobs (linux/darwin ×
