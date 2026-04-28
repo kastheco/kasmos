@@ -19,6 +19,7 @@ const (
 	presentationColorGold   = "#f6c177"
 	presentationColorRose   = "#ea9a97"
 	presentationColorPine   = "#3e8fb0"
+	presentationColorIris   = "#c4a7e7"
 
 	presentationNarrowPaneThreshold = 40
 	presentationDefaultWidth        = 80
@@ -99,7 +100,7 @@ func renderPresentationTurn(turn *PresentationTurn, width int) []string {
 	toolStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorPine))
 	toolArgStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorGold))
 	userPrefixStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorRose))
-	userTextStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorFoam))
+	userTextStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorIris))
 	resultOKStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorFoam))
 	resultErrStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorLove))
 	systemStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorGold))

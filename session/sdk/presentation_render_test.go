@@ -69,6 +69,7 @@ func TestRenderPresentation_UserPrefix(t *testing.T) {
 
 	require.Contains(t, plain, expectedLine)
 	require.NotContains(t, plain, "you: show logs")
+	require.Contains(t, result, lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorIris)).Render("show logs"))
 	require.Contains(t, result, lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorSubtle)).Render("09:41"))
 }
 
