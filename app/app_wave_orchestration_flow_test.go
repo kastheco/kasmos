@@ -656,7 +656,7 @@ func TestTriggerPlanStage_ImplementNoWaves_RespawnsPlanner(t *testing.T) {
 	// Use planner-only config: this test covers wave-parse failure re-planning,
 	// not the parallel architect-baseline default behaviour.
 	noParallelCfg := config.DefaultConfig()
-	noParallelCfg.ParallelPlannerArchitect = false
+	noParallelCfg.Planners = nil // nil = legacy single-planner mode (no parallel planners)
 	h := &home{
 		ctx:               context.Background(),
 		state:             stateDefault,
@@ -2422,7 +2422,7 @@ func TestImplementTriggersElaborationBeforeWave1(t *testing.T) {
 func TestImplementFinalArchitectPromptUsesParallelBaselineOptionsWhenEnabled(t *testing.T) {
 	t.Parallel()
 	h := newWaveElabTestHarness(t)
-	h.h.appConfig.ParallelPlannerArchitect = true
+	h.h.appConfig.Planners = []string{"planner"} // enable parallel-planner mode
 
 	const planFile = "parallel-elab-test"
 	const description = "merge planner draft with cached baseline"
@@ -2490,7 +2490,7 @@ func TestClearArchitectBaselineCmdRemovesOnlyBaselineArtifact(t *testing.T) {
 	require.NoError(t, orchestration.SaveArchitectMeta(cacheDir, planFile, &orchestration.ArchitectMeta{}))
 
 	h := home{
-		appConfig:      &config.Config{ParallelPlannerArchitect: true},
+		appConfig:      &config.Config{Planners: []string{"planner"}},
 		activeRepoPath: dir,
 	}
 	cmd := h.clearArchitectBaselineCmd(planFile)

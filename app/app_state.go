@@ -2656,7 +2656,7 @@ func (m *home) spawnElaborator(planFile string) (tea.Model, tea.Cmd) {
 }
 
 func (m home) parallelPlannerArchitectEnabled() bool {
-	return m.appConfig != nil && m.appConfig.ParallelPlannerArchitect
+	return m.appConfig != nil && len(m.appConfig.Planners) > 0
 }
 
 func (m home) architectBaselineCacheDir() string {

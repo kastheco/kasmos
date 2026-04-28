@@ -122,7 +122,7 @@ func TestLifecycleE2E_DaemonManagedPlanningDelegatesWithoutLocalBaseline(t *test
 	store, ps, fsm := newSharedStoreForTest(t, plansDir)
 	require.NoError(t, ps.Create(planFile, "daemon managed parallel plan", "plan/daemon-managed-parallel-plan", "", time.Now()))
 	h := newLifecycleE2EHome(t, dir, plansDir, store, ps, fsm)
-	h.appConfig.ParallelPlannerArchitect = true
+	h.appConfig.Planners = []string{"planner"} // enable parallel-planner mode
 
 	model, cmd := h.executeTaskStage(planFile, "plan")
 	updated := model.(*home)

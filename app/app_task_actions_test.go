@@ -441,7 +441,7 @@ func TestSpawnPlannerWithOptionalBaseline_DisabledSpawnsOnlyPlanner(t *testing.T
 }
 
 func TestSpawnPlannerWithOptionalBaseline_DefaultConfigSpawnsPlannerAndArchitectBaseline(t *testing.T) {
-	// DefaultConfig() sets ParallelPlannerArchitect: true — verify the TUI spawns
+	// DefaultConfig() no longer sets parallel planners by default; verify the TUI spawns
 	// both the planner and the architect-baseline agent out of the box.
 	t.Parallel()
 	dir := t.TempDir()
@@ -496,7 +496,7 @@ func TestSpawnPlannerWithOptionalBaseline_EnabledSpawnsPlannerAndArchitectBaseli
 
 	sp := spinner.New(spinner.WithSpinner(spinner.Dot))
 	h := &home{
-		appConfig:          &config.Config{ParallelPlannerArchitect: true},
+		appConfig:          &config.Config{Planners: []string{"planner"}},
 		taskState:          ps,
 		activeRepoPath:     dir,
 		taskStoreProject:   "proj",
@@ -552,7 +552,7 @@ func TestStartOverCompletedMsgSpawnsReplacementAgentsInUpdate(t *testing.T) {
 	}
 	sp := spinner.New(spinner.WithSpinner(spinner.Dot))
 	h := &home{
-		appConfig:          &config.Config{ParallelPlannerArchitect: true},
+		appConfig:          &config.Config{Planners: []string{"planner"}},
 		taskState:          ps,
 		activeRepoPath:     dir,
 		taskStoreProject:   "proj",

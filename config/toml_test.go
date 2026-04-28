@@ -859,19 +859,83 @@ plan = "planner"
 	assert.Equal(t, "planner", result.PhaseRoles["plan"])
 }
 
-func TestParallelPlannerArchitectTOML(t *testing.T) {
-	t.Run("absent orchestration key is nil", func(t *testing.T) {
-		// Key absent from TOML — pointer must be nil so the runtime default (true) applies.
+func TestPlannersTOML(t *testing.T) {
+	t.Run("absent planners key leaves Planners nil", func(t *testing.T) {
 		dir := t.TempDir()
 		path := filepath.Join(dir, "config.toml")
 		require.NoError(t, os.WriteFile(path, []byte("[orchestration]\n"), 0o644))
 
 		result, err := LoadTOMLConfigFrom(path)
 		require.NoError(t, err)
-		assert.Nil(t, result.ParallelPlannerArchitect)
+		assert.Nil(t, result.Planners)
 	})
 
-	t.Run("explicit true parses as non-nil true pointer", func(t *testing.T) {
+	t.Run("empty planners list parses as empty slice", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "config.toml")
+		content := `
+[orchestration]
+planners = []
+`
+		require.NoError(t, os.WriteFile(path, []byte(content), 0o644))
+
+		result, err := LoadTOMLConfigFrom(path)
+		require.NoError(t, err)
+		assert.Empty(t, result.Planners)
+	})
+
+	t.Run("single explicit planner parses correctly", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "config.toml")
+		content := `
+[orchestration]
+planners = ["planner-a"]
+`
+		require.NoError(t, os.WriteFile(path, []byte(content), 0o644))
+
+		result, err := LoadTOMLConfigFrom(path)
+		require.NoError(t, err)
+		require.Len(t, result.Planners, 1)
+		assert.Equal(t, "planner-a", result.Planners[0])
+	})
+
+	t.Run("multiple planners preserve order", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "config.toml")
+		content := `
+[orchestration]
+planners = ["planner-a", "planner-b", "planner-c"]
+`
+		require.NoError(t, os.WriteFile(path, []byte(content), 0o644))
+
+		result, err := LoadTOMLConfigFrom(path)
+		require.NoError(t, err)
+		require.Len(t, result.Planners, 3)
+		assert.Equal(t, []string{"planner-a", "planner-b", "planner-c"}, result.Planners)
+	})
+
+	t.Run("planners round-trip through SaveTOMLConfigTo and LoadTOMLConfigFrom", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "config.toml")
+		tc := &TOMLConfig{
+			Orchestration: TOMLOrchestrationConfig{
+				Planners: []string{"planner-a", "planner-b"},
+			},
+		}
+
+		require.NoError(t, SaveTOMLConfigTo(tc, path))
+		data, err := os.ReadFile(path)
+		require.NoError(t, err)
+		assert.Contains(t, string(data), "[orchestration]")
+		assert.Contains(t, string(data), "planners")
+		assert.NotContains(t, string(data), "parallel_planner_architect")
+
+		loaded, err := LoadTOMLConfigFrom(path)
+		require.NoError(t, err)
+		assert.Equal(t, []string{"planner-a", "planner-b"}, loaded.Planners)
+	})
+
+	t.Run("legacy parallel_planner_architect key loads without error and is ignored", func(t *testing.T) {
 		dir := t.TempDir()
 		path := filepath.Join(dir, "config.toml")
 		content := `
@@ -880,69 +944,23 @@ parallel_planner_architect = true
 `
 		require.NoError(t, os.WriteFile(path, []byte(content), 0o644))
 
+		// Should not error; legacy key is silently dropped with a warning.
 		result, err := LoadTOMLConfigFrom(path)
 		require.NoError(t, err)
-		require.NotNil(t, result.ParallelPlannerArchitect)
-		assert.True(t, *result.ParallelPlannerArchitect)
+		// Planners is not set by the legacy key.
+		assert.Nil(t, result.Planners)
 	})
 
-	t.Run("explicit false parses as non-nil false pointer", func(t *testing.T) {
+	t.Run("saved config never includes parallel_planner_architect", func(t *testing.T) {
 		dir := t.TempDir()
 		path := filepath.Join(dir, "config.toml")
-		content := `
-[orchestration]
-parallel_planner_architect = false
-`
-		require.NoError(t, os.WriteFile(path, []byte(content), 0o644))
 
-		result, err := LoadTOMLConfigFrom(path)
-		require.NoError(t, err)
-		require.NotNil(t, result.ParallelPlannerArchitect)
-		assert.False(t, *result.ParallelPlannerArchitect)
-	})
+		def := DefaultConfig()
+		require.NoError(t, SaveTOMLConfigTo(configToTOML(def), path))
 
-	t.Run("save round-trips true under orchestration", func(t *testing.T) {
-		dir := t.TempDir()
-		path := filepath.Join(dir, "config.toml")
-		trueVal := true
-		tc := &TOMLConfig{
-			Orchestration: TOMLOrchestrationConfig{
-				ParallelPlannerArchitect: &trueVal,
-			},
-		}
-
-		require.NoError(t, SaveTOMLConfigTo(tc, path))
 		data, err := os.ReadFile(path)
 		require.NoError(t, err)
-		assert.Contains(t, string(data), "[orchestration]")
-		assert.Contains(t, string(data), "parallel_planner_architect = true")
-
-		result, err := LoadTOMLConfigFrom(path)
-		require.NoError(t, err)
-		require.NotNil(t, result.ParallelPlannerArchitect)
-		assert.True(t, *result.ParallelPlannerArchitect)
-	})
-
-	t.Run("save round-trips false under orchestration", func(t *testing.T) {
-		dir := t.TempDir()
-		path := filepath.Join(dir, "config.toml")
-		falseVal := false
-		tc := &TOMLConfig{
-			Orchestration: TOMLOrchestrationConfig{
-				ParallelPlannerArchitect: &falseVal,
-			},
-		}
-
-		require.NoError(t, SaveTOMLConfigTo(tc, path))
-		data, err := os.ReadFile(path)
-		require.NoError(t, err)
-		assert.Contains(t, string(data), "[orchestration]")
-		assert.Contains(t, string(data), "parallel_planner_architect = false")
-
-		result, err := LoadTOMLConfigFrom(path)
-		require.NoError(t, err)
-		require.NotNil(t, result.ParallelPlannerArchitect)
-		assert.False(t, *result.ParallelPlannerArchitect)
+		assert.NotContains(t, string(data), "parallel_planner_architect")
 	})
 }
 

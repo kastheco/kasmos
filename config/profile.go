@@ -1,6 +1,9 @@
 package config
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+)
 
 // AgentProfile defines the program and flags for an agent in a specific role.
 type AgentProfile struct {
@@ -149,4 +152,73 @@ func (p AgentProfile) ResolveSkipPermissions(defaultSkip bool) bool {
 	default:
 		return defaultSkip
 	}
+}
+
+// ResolveNamedProfile resolves an explicit [agents.<name>] profile by name.
+// It returns the profile and true when the profile exists, is enabled, and
+// has a non-empty program. ExecutionMode, PermissionDefault, and Tier are
+// normalised identically to ResolveProfile.
+// Returns false when the profile is missing, disabled, or has an empty program.
+func (c *Config) ResolveNamedProfile(name, defaultProgram string) (AgentProfile, bool) {
+	if c == nil || c.Profiles == nil {
+		return AgentProfile{Program: defaultProgram, ExecutionMode: ExecutionModeTmux}, false
+	}
+	profile, ok := c.Profiles[name]
+	if !ok {
+		return AgentProfile{Program: defaultProgram, ExecutionMode: ExecutionModeTmux}, false
+	}
+	if profile.Program == "" || !profile.Enabled {
+		return AgentProfile{Program: defaultProgram, ExecutionMode: ExecutionModeTmux}, false
+	}
+	profile.ExecutionMode = NormalizeExecutionMode(profile.ExecutionMode)
+	profile.PermissionDefault = NormalizePermissionDefault(profile.PermissionDefault)
+	profile.Tier = NormalizeTier(profile.Tier)
+	return profile, true
+}
+
+// PlannerProfileNames returns the configured planner profile names in order.
+// A nil or empty return means legacy single-planner mode.
+func (c *Config) PlannerProfileNames() []string {
+	if c == nil {
+		return nil
+	}
+	return c.Planners
+}
+
+// ValidatePlannerProfiles checks that each name in [orchestration].planners
+// refers to a known, enabled [agents.*] profile. It rejects:
+//   - empty names (after trimming)
+//   - names containing '/', '\', or ".."
+//   - duplicate names (after trimming)
+//   - names not present in [agents.*]
+//   - names that map to a disabled profile
+func (c *Config) ValidatePlannerProfiles() error {
+	if c == nil {
+		return nil
+	}
+	seen := make(map[string]bool, len(c.Planners))
+	for i, name := range c.Planners {
+		trimmed := strings.TrimSpace(name)
+		if trimmed == "" {
+			return fmt.Errorf("[orchestration].planners[%d]: empty planner profile name", i)
+		}
+		if strings.ContainsAny(trimmed, `/\`) || strings.Contains(trimmed, "..") {
+			return fmt.Errorf("[orchestration].planners: planner profile %q contains invalid characters ('/', '\\', or '..')", trimmed)
+		}
+		if seen[trimmed] {
+			return fmt.Errorf("[orchestration].planners: duplicate planner profile %q", trimmed)
+		}
+		seen[trimmed] = true
+		if c.Profiles == nil {
+			return fmt.Errorf("[orchestration].planners: planner profile %q not found in [agents.*]", trimmed)
+		}
+		profile, ok := c.Profiles[trimmed]
+		if !ok {
+			return fmt.Errorf("[orchestration].planners: planner profile %q not found in [agents.*]", trimmed)
+		}
+		if !profile.Enabled {
+			return fmt.Errorf("[orchestration].planners: planner profile %q is disabled", trimmed)
+		}
+	}
+	return nil
 }

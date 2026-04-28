@@ -237,9 +237,9 @@ type Config struct {
 	// blueprint-skip mode is used instead of wave orchestration.
 	// When nil, the default threshold of 2 applies.
 	BlueprintSkipThresholdValue *int `json:"blueprint_skip_threshold,omitempty"`
-	// ParallelPlannerArchitect enables the parallel architect baseline flow.
-	// Defaults to true (opt-out: set to false in config.toml to disable).
-	ParallelPlannerArchitect bool `json:"parallel_planner_architect,omitempty"`
+	// Planners is an ordered list of [agents.*] profile names used as parallel planners
+	// during plan_start. Nil or empty means legacy single-planner mode.
+	Planners []string `json:"planners,omitempty"`
 	// ClaudeNoFlicker sets CLAUDE_CODE_NO_FLICKER for spawned claude agents.
 	// Defaults to false (CLAUDE_CODE_NO_FLICKER=0) so prompt detection works in spawned agents.
 	ClaudeNoFlicker bool `json:"claude_no_flicker,omitempty"`
@@ -318,7 +318,6 @@ func DefaultConfig() *Config {
 		ReadinessMaxVerifyCycles: 2,
 		NotificationsEnabled:     &trueVal,
 		DoubleTapThresholdMS:     &dtThreshold,
-		ParallelPlannerArchitect: true,
 		SDK: SDKConfig{
 			TranscriptMaxBytes: defaultSDKTranscriptMaxBytes,
 			TranscriptMaxTurns: defaultSDKTranscriptMaxTurns,
@@ -456,9 +455,7 @@ func configFromTOML(result *TOMLConfigResult) *Config {
 		cfg.DatabaseURL = result.DatabaseURL
 		cfg.Hooks = result.Hooks
 		cfg.BlueprintSkipThresholdValue = result.BlueprintSkipThreshold
-		if result.ParallelPlannerArchitect != nil {
-			cfg.ParallelPlannerArchitect = *result.ParallelPlannerArchitect
-		}
+		cfg.Planners = result.Planners
 		cfg.DoubleTapThresholdMS = result.DoubleTapThresholdMS
 		if result.AutoAdvanceWaves != nil {
 			cfg.AutoAdvanceWaves = *result.AutoAdvanceWaves
@@ -565,6 +562,7 @@ func configToTOML(cfg *Config) *TOMLConfig {
 		Telemetry: TOMLTelemetryConfig{Enabled: cfg.TelemetryEnabled},
 		Orchestration: TOMLOrchestrationConfig{
 			BlueprintSkipThreshold: cfg.BlueprintSkipThresholdValue,
+			Planners:               cfg.Planners,
 		},
 		Keybinds:             TOMLKeybindsConfig{DoubleTapThresholdMS: cfg.DoubleTapThresholdMS},
 		Enforcement:          cfg.Enforcement,
@@ -576,8 +574,6 @@ func configToTOML(cfg *Config) *TOMLConfig {
 		NotificationsEnabled: cfg.NotificationsEnabled,
 		Hooks:                cfg.Hooks,
 	}
-	parallelPlannerArchitect := cfg.ParallelPlannerArchitect
-	out.Orchestration.ParallelPlannerArchitect = &parallelPlannerArchitect
 	claudeNoFlicker := cfg.ClaudeNoFlicker
 	out.ClaudeNoFlicker = &claudeNoFlicker
 	autoReviewFix := cfg.AutoReviewFix
@@ -630,12 +626,6 @@ func migrateJSONToTOML(configDir string) (*Config, bool) {
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		log.ErrorLog.Printf("failed to parse config file: %v", err)
 		return nil, false
-	}
-	var raw map[string]json.RawMessage
-	if err := json.Unmarshal(data, &raw); err == nil {
-		if _, ok := raw["parallel_planner_architect"]; !ok {
-			cfg.ParallelPlannerArchitect = true
-		}
 	}
 	applyConfigDefaults(&cfg)
 	// Legacy JSON configs predate the [sdk] section; apply SDK defaults so the

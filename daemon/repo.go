@@ -357,9 +357,8 @@ func (m *RepoManager) resolveRepoConfig(path string) (autoAdvance bool, autoRead
 	if result.AutoReadinessReview != nil {
 		autoReadinessReview = *result.AutoReadinessReview
 	}
-	if result.ParallelPlannerArchitect != nil {
-		parallelPlannerArchitect = *result.ParallelPlannerArchitect
-	}
+	// parallelPlannerArchitect: legacy key removed; stays at default (true) until
+	// the orchestration layer is updated in a later wave to use result.Planners.
 	if result.ReadinessSelfFixMaxLines != nil {
 		if *result.ReadinessSelfFixMaxLines > 0 {
 			selfFixMaxLines = *result.ReadinessSelfFixMaxLines
