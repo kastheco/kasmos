@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { listInstances, listTasks, getInstanceCapture, pauseInstance, resumeInstance, restartInstance, killInstance, sendInstancePrompt } from "../api";
+import { listInstances, listTasks, getInstanceCapture, pauseInstance, resumeInstance, restartInstance, killInstance, sendInstancePrompt, RequestError } from "../api";
 import { useAutoRefresh } from "../hooks/useAutoRefresh";
 import { useProject } from "../hooks/useProject";
 import { useToast } from "../hooks/useToast";
@@ -14,8 +14,11 @@ import {
   isAtBottom,
   previewLineLimit,
   captureErrorLabel,
+  shouldClearSuspendedCaptureError,
+  shouldSuspendTerminalPolling,
   supportsStructuredPreview,
   usesTerminalPreview,
+  type CaptureErrorInfo,
 } from "./instanceInteractivity";
 import styles from "./InstancesPage.module.css";
 import {
@@ -160,7 +163,7 @@ export default function InstancesPage() {
 
   // -- capture state (page-local, not useAutoRefresh) --
   const [captureContent, setCaptureContent] = useState<string>("");
-  const [captureError, setCaptureError] = useState<string | null>(null);
+  const [captureError, setCaptureError] = useState<CaptureErrorInfo | null>(null);
   const [captureLoading, setCaptureLoading] = useState(false);
 
   // -- follow mode & depth --
@@ -179,6 +182,8 @@ export default function InstancesPage() {
   isFollowingRef.current = isFollowing;
   const depthRef = useRef(depth);
   depthRef.current = depth;
+  const previousSelectedTitleRef = useRef<string | null>(null);
+  const previousSelectedStatusRef = useRef<InstanceEntry["status"] | undefined>(undefined);
 
   // Reset selection and capture state when project changes.
   useEffect(() => {
@@ -272,9 +277,27 @@ export default function InstancesPage() {
     instances.data?.find((i) => i.title === selectedTitle) ?? null;
   const selectedCard =
     flatCards.find((c) => c.title === selectedTitle) ?? null;
+  const selectedStatus = selectedInstance?.status;
 
   // Determine preview path: terminal (tmux) vs structured (AgentPreview).
   const isTerminalInstance = usesTerminalPreview(selectedInstance);
+  const suspendTerminalPolling = shouldSuspendTerminalPolling(captureError);
+
+  useEffect(() => {
+    if (
+      previousSelectedTitleRef.current === selectedTitle &&
+      isTerminalInstance &&
+      shouldClearSuspendedCaptureError(
+        captureError,
+        previousSelectedStatusRef.current,
+        selectedStatus,
+      )
+    ) {
+      setCaptureError(null);
+    }
+    previousSelectedTitleRef.current = selectedTitle;
+    previousSelectedStatusRef.current = selectedStatus;
+  }, [captureError, isTerminalInstance, selectedTitle, selectedStatus]);
 
   // Capture poll logic.
   const doPoll = useCallback(async () => {
@@ -296,7 +319,9 @@ export default function InstancesPage() {
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      setCaptureError(msg);
+      const status = e instanceof RequestError ? e.status : undefined;
+      // 409 (paused) and 410 (session ended) are expected lifecycle events — not logged.
+      setCaptureError({ message: msg, status });
       setCaptureLoading(false);
     }
   }, [project, selectedTitle]);
@@ -311,7 +336,17 @@ export default function InstancesPage() {
       pollTimerRef.current = null;
     }
 
-    if (!isTerminalInstance || !isFollowing || !project || !selectedTitle) return;
+    const isPausedTerminal =
+      isTerminalInstance && selectedInstance?.status === "paused";
+
+    if (
+      !isTerminalInstance ||
+      !isFollowing ||
+      !project ||
+      !selectedTitle ||
+      isPausedTerminal ||
+      suspendTerminalPolling
+    ) return;
 
     let cancelled = false;
 
@@ -345,7 +380,7 @@ export default function InstancesPage() {
         pollTimerRef.current = null;
       }
     };
-  }, [isTerminalInstance, isFollowing, project, selectedTitle, depth, doPoll]);
+  }, [isTerminalInstance, isFollowing, project, selectedTitle, depth, doPoll, suspendTerminalPolling, selectedStatus]);
 
   // Reset capture state when selected instance changes.
   useEffect(() => {
@@ -403,9 +438,19 @@ export default function InstancesPage() {
     }
   }, [project, selectedTitle, composerText]);
 
-  const composerState = composerStateForInstance(selectedInstance);
+  // Only apply terminal capture errors to the composer for terminal rows.
+  // AgentPreview rows have their own internal error handling.
+  const composerState = composerStateForInstance(
+    selectedInstance,
+    isTerminalInstance ? captureError : null,
+  );
   const maxLines = previewLineLimit(depth);
   const captureErrLabel = captureErrorLabel(captureError);
+  // For a paused terminal row, derive the label before the next failed capture.
+  const terminalDisplayLabel =
+    isTerminalInstance && selectedInstance?.status === "paused"
+      ? "instance is paused"
+      : captureErrLabel;
 
   // ---- action handler --------------------------------------------------------
 
@@ -564,7 +609,7 @@ export default function InstancesPage() {
                         ))}
                       </div>
 
-                      {captureErrLabel ? (
+                      {terminalDisplayLabel ? (
                         <span className={styles.captureError}>preview unavailable</span>
                       ) : null}
                     </div>
@@ -577,12 +622,11 @@ export default function InstancesPage() {
                     project={project!}
                     title={selectedTitle!}
                     onFollowStateChange={setIsFollowing}
-                    onError={setCaptureError}
                   />
                 ) : isTerminalInstance ? (
                   /* terminal (tmux) path */
-                  captureErrLabel ? (
-                    <p className={styles.captureEmpty}>{captureErrLabel}</p>
+                  terminalDisplayLabel ? (
+                    <p className={styles.captureEmpty}>{terminalDisplayLabel}</p>
                   ) : (
                     <div className={styles.previewWrapper}>
                       <TerminalPreview

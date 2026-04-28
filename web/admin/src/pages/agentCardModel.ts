@@ -178,7 +178,7 @@ export function deriveAgentPresentation(
 
 /** Parse a single instance into a display model. */
 export function toAgentCardModel(inst: InstanceEntry, taskStatus?: Status): AgentCardModel {
-  const pills: AgentPill[] = [];
+  const rolePills: AgentPill[] = [];
 
   // Prefer structured fields when the daemon populated them.
   const role = roleFromAgentType(inst.agent_type);
@@ -187,11 +187,11 @@ export function toAgentCardModel(inst: InstanceEntry, taskStatus?: Status): Agen
     typeof inst.task_number === "number" && inst.task_number > 0;
 
   if (hasWaveTask) {
-    pills.push({ label: role ?? "coder", tone: "role" });
-    pills.push({ label: `wave ${inst.wave_number}`, tone: "wave" });
-    pills.push({ label: `task ${inst.task_number}`, tone: "task" });
+    rolePills.push({ label: role ?? "coder", tone: "role" });
+    rolePills.push({ label: `wave ${inst.wave_number}`, tone: "wave" });
+    rolePills.push({ label: `task ${inst.task_number}`, tone: "task" });
   } else if (role) {
-    pills.push({ label: role, tone: "role" });
+    rolePills.push({ label: role, tone: "role" });
   }
 
   // Derive the display name: prefer task_file (the plan), otherwise strip
@@ -206,8 +206,8 @@ export function toAgentCardModel(inst: InstanceEntry, taskStatus?: Status): Agen
         baseSlug = baseSlug.slice(0, m.index ?? baseSlug.length);
         // When we fell back to regex parsing AND we didn't already add
         // pills from structured fields, use the regex-derived pills.
-        if (pills.length === 0) {
-          pills.push(...p.pill(m));
+        if (rolePills.length === 0) {
+          rolePills.push(...p.pill(m));
         }
         break;
       }
@@ -215,6 +215,11 @@ export function toAgentCardModel(inst: InstanceEntry, taskStatus?: Status): Agen
   }
 
   const displayName = deslugify(baseSlug) || inst.title;
+
+  // Prepend a "solo" pill when the daemon flagged this as a solo agent.
+  const pills: AgentPill[] = inst.solo_agent
+    ? [{ label: "solo", tone: "default" as const }, ...rolePills]
+    : rolePills;
 
   return {
     title: inst.title,

@@ -736,6 +736,91 @@ func TestHTTPHandler_ListInstances_DaemonSDKSoloAgent_HasValidActions(t *testing
 		"daemon-managed standalone SDK row must have non-empty valid_actions — it is not standalone")
 }
 
+// TestHTTPHandler_ListInstances_DaemonSDKSoloAgent_Metadata verifies that a
+// daemon-managed standalone SDK row with SoloAgent=true and SDKSpeedTier="fast"
+// exposes all three new list metadata fields plus a non-empty ValidActions array.
+func TestHTTPHandler_ListInstances_DaemonSDKSoloAgent_Metadata(t *testing.T) {
+	root := t.TempDir()
+	writeStateJSON(t, root) // empty disk; only daemon has this row
+
+	daemon := &fakeDaemonLister{
+		records: []Record{
+			{
+				Title:           "my-solo-sdk",
+				Status:          StatusRunning,
+				Program:         "claude",
+				ExecutionMode:   "sdk",
+				SoloAgent:       true,
+				SDKSpeedTier:    "fast",
+				ManagedByDaemon: true,
+			},
+		},
+	}
+
+	h := NewHTTPHandlerWithDaemon(resolverFor(root), &mockPaneRunner{}, daemon, nil)
+	req := httptest.NewRequest(http.MethodGet, "/v1/projects/proj/instances", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	var entries []ListEntry
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&entries))
+	require.Len(t, entries, 1)
+	assert.Equal(t, "sdk", entries[0].ExecutionMode)
+	assert.True(t, entries[0].ManagedByDaemon,
+		"daemon-managed rows must expose managed_by_daemon:true so the SPA routes to AgentPreview")
+	assert.True(t, entries[0].SoloAgent,
+		"daemon-managed solo rows must expose solo_agent:true for the solo pill")
+	assert.Equal(t, "fast", entries[0].SDKSpeedTier,
+		"sdk_speed_tier must be forwarded from the daemon record")
+	assert.NotEmpty(t, entries[0].ValidActions,
+		"daemon-managed standalone SDK rows must have non-empty valid_actions")
+}
+
+// TestHTTPHandler_ListInstances_StateJSONSoloAgent_Metadata verifies that a
+// state.json (non-daemon) solo tmux instance exposes solo_agent:true and
+// managed_by_daemon omitted (false).
+func TestHTTPHandler_ListInstances_StateJSONSoloAgent_Metadata(t *testing.T) {
+	root := t.TempDir()
+	writeStateJSON(t, root,
+		Record{Title: "feature-solo", Status: StatusRunning, ExecutionMode: "tmux", SoloAgent: true},
+	)
+
+	h := NewHTTPHandler(resolverFor(root), &mockPaneRunner{})
+	req := httptest.NewRequest(http.MethodGet, "/v1/projects/proj/instances", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	var entries []ListEntry
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&entries))
+	require.Len(t, entries, 1)
+	assert.True(t, entries[0].SoloAgent,
+		"state.json solo tmux row must expose solo_agent:true")
+	assert.False(t, entries[0].ManagedByDaemon,
+		"state.json rows must not be marked managed_by_daemon")
+	assert.Empty(t, entries[0].SDKSpeedTier,
+		"non-SDK rows must omit sdk_speed_tier")
+}
+
+// TestHTTPHandler_Capture_SoloTmuxSessionGone_Returns410 verifies that a
+// capture request for a solo tmux instance whose tmux session is gone returns
+// 410 with the standard "tmux session not found" error body.
+func TestHTTPHandler_Capture_SoloTmuxSessionGone_Returns410(t *testing.T) {
+	root := t.TempDir()
+	writeStateJSON(t, root,
+		Record{Title: "feature-solo", Status: StatusRunning, ExecutionMode: "tmux", SoloAgent: true},
+	)
+
+	h := NewHTTPHandler(resolverFor(root), sessionGoneRunner())
+	req := httptest.NewRequest(http.MethodGet, "/v1/projects/proj/instances/feature-solo/capture", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusGone, rec.Code)
+	assert.Contains(t, rec.Body.String(), "tmux session not found")
+}
+
 // TestHTTPHandler_Presentation_DaemonSDKSoloAgent_NoTaskFile_Forwarded is a
 // regression guard that proves the presentation route forwards daemon responses
 // unchanged for a daemon-managed standalone SDK row with TaskFile == "".

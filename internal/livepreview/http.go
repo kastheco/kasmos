@@ -174,19 +174,25 @@ func LoadRecordsFromRepoRoot(repoRoot string) ([]Record, error) {
 // ListEntry is the JSON shape returned by GET /v1/projects/{project}/instances.
 // ExecutionMode is included so the SPA can disable the composer and polling
 // before hitting tmux-only routes on headless instances.
+// ManagedByDaemon, SoloAgent, and SDKSpeedTier are included so the SPA can
+// route daemon-owned SDK rows to AgentPreview without inferring ownership from
+// ValidActions, and can render a solo pill for solo-spawned instances.
 type ListEntry struct {
-	Title         string   `json:"title"`
-	Status        string   `json:"status"`
-	Branch        string   `json:"branch"`
-	Program       string   `json:"program"`
-	TaskFile      string   `json:"task_file,omitempty"`
-	AgentType     string   `json:"agent_type,omitempty"`
-	WaveNumber    int      `json:"wave_number,omitempty"`
-	TaskNumber    int      `json:"task_number,omitempty"`
-	CreatedAt     string   `json:"created_at,omitempty"`
-	UpdatedAt     string   `json:"updated_at,omitempty"`
-	ExecutionMode string   `json:"execution_mode,omitempty"`
-	ValidActions  []string `json:"valid_actions,omitempty"`
+	Title           string   `json:"title"`
+	Status          string   `json:"status"`
+	Branch          string   `json:"branch"`
+	Program         string   `json:"program"`
+	TaskFile        string   `json:"task_file,omitempty"`
+	AgentType       string   `json:"agent_type,omitempty"`
+	WaveNumber      int      `json:"wave_number,omitempty"`
+	TaskNumber      int      `json:"task_number,omitempty"`
+	CreatedAt       string   `json:"created_at,omitempty"`
+	UpdatedAt       string   `json:"updated_at,omitempty"`
+	ExecutionMode   string   `json:"execution_mode,omitempty"`
+	ValidActions    []string `json:"valid_actions,omitempty"`
+	ManagedByDaemon bool     `json:"managed_by_daemon,omitempty"`
+	SoloAgent       bool     `json:"solo_agent,omitempty"`
+	SDKSpeedTier    string   `json:"sdk_speed_tier,omitempty"`
 }
 
 // NewHTTPHandler returns an http.Handler that serves the live-preview API
@@ -710,16 +716,19 @@ func writeJSONError(w http.ResponseWriter, code int, msg string) {
 // timestamps as RFC3339.
 func recordToListEntry(rec Record) ListEntry {
 	e := ListEntry{
-		Title:         rec.Title,
-		Status:        StatusLabel(rec.Status),
-		Branch:        rec.Branch,
-		Program:       rec.Program,
-		TaskFile:      rec.TaskFile,
-		AgentType:     rec.AgentType,
-		WaveNumber:    rec.WaveNumber,
-		TaskNumber:    rec.TaskNumber,
-		ExecutionMode: rec.ExecutionMode,
-		ValidActions:  ValidActions(rec),
+		Title:           rec.Title,
+		Status:          StatusLabel(rec.Status),
+		Branch:          rec.Branch,
+		Program:         rec.Program,
+		TaskFile:        rec.TaskFile,
+		AgentType:       rec.AgentType,
+		WaveNumber:      rec.WaveNumber,
+		TaskNumber:      rec.TaskNumber,
+		ExecutionMode:   rec.ExecutionMode,
+		ValidActions:    ValidActions(rec),
+		ManagedByDaemon: rec.ManagedByDaemon,
+		SoloAgent:       rec.SoloAgent,
+		SDKSpeedTier:    rec.SDKSpeedTier,
 	}
 	if !rec.CreatedAt.IsZero() {
 		e.CreatedAt = rec.CreatedAt.Format(time.RFC3339)
