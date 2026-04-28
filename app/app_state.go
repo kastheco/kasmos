@@ -748,10 +748,8 @@ func (m *home) refreshSelectedPreview() {
 		return
 	}
 	selected := m.nav.GetSelectedInstance()
-	if m.previewTerminal != nil && (selected == nil || session.NormalizeExecutionMode(selected.ExecutionMode) == session.ExecutionModeTmux) {
-		return
-	}
-	if m.shouldAttachPreviewTerminal(selected) {
+	if m.shouldAttachPreviewTerminal(selected) &&
+		(m.previewTerminal == nil || m.previewTerminalInstance != previewIdentityKey(selected)) {
 		m.tabbedWindow.SetConnectingState()
 		return
 	}
