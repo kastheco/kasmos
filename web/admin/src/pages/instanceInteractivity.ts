@@ -10,23 +10,29 @@ import type { InstanceEntry, ScrollbackDepth } from "../types";
 // ---------------------------------------------------------------------------
 
 /**
+ * Returns true when the instance has a daemon-backed web path — either because
+ * the list API explicitly set managed_by_daemon, or because valid_actions is
+ * non-empty (the legacy proxy for daemon ownership from older daemons).
+ */
+export function hasDaemonBackedWebPath(instance: InstanceEntry | null): boolean {
+  if (!instance) return false;
+  return instance.managed_by_daemon === true || (instance.valid_actions?.length ?? 0) > 0;
+}
+
+/**
  * Returns true when the instance is a daemon-managed SDK row that exposes the
- * structured presentation endpoint. Requires both canonical "sdk" mode and at
- * least one valid_action — the safest browser-visible proxy for "daemon-managed"
- * without widening the list API.
+ * structured presentation endpoint. Requires canonical "sdk" mode and daemon
+ * ownership — either via the explicit managed_by_daemon flag or the legacy
+ * valid_actions fallback.
  */
 export function supportsStructuredPreview(instance: InstanceEntry | null): boolean {
-  if (!instance) return false;
-  return (
-    instance.execution_mode === "sdk" &&
-    (instance.valid_actions?.length ?? 0) > 0
-  );
+  return instance?.execution_mode === "sdk" && hasDaemonBackedWebPath(instance);
 }
 
 /**
  * Returns true when the instance should be rendered with the terminal
- * (tmux pane capture) preview path. Anything that is not explicitly "sdk" falls
- * back here, including instances with no execution_mode set.
+ * (tmux pane capture) preview path. SDK rows never use terminal capture
+ * regardless of daemon ownership.
  */
 export function usesTerminalPreview(instance: InstanceEntry | null): boolean {
   if (!instance) return false;

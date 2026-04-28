@@ -415,4 +415,138 @@ assertEqual(deslugify(undefined), "", "deslugify undefined");
   assertEqual(card.resourceProfile, undefined, "absent resource_profile maps to undefined");
 }
 
+// --- solo pill: ad-hoc agent with no role ----------------------------------
+
+{
+  const inst: InstanceEntry = {
+    title: "my-solo-agent",
+    status: "running",
+    branch: "feat/solo",
+    program: "claude",
+    solo_agent: true,
+  };
+  const card = toAgentCardModel(inst);
+  assertEqual(card.pills[0].label, "solo", "ad-hoc solo: first pill is solo");
+  assertEqual(card.pills[0].tone, "default", "ad-hoc solo: solo pill tone is default");
+  assertEqual(card.pills.length, 1, "ad-hoc solo with no role: only solo pill");
+}
+
+// --- solo pill: solo agent with agent_type ---------------------------------
+
+{
+  const inst: InstanceEntry = {
+    title: "solo-fixer-agent",
+    status: "running",
+    branch: "feat/fix",
+    program: "claude",
+    solo_agent: true,
+    agent_type: "fixer",
+  };
+  const card = toAgentCardModel(inst);
+  assertEqual(card.pills[0].label, "solo", "solo+agent_type: first pill is solo");
+  assertEqual(card.pills[1].label, "fixer", "solo+agent_type: second pill is role");
+  assertEqual(card.pills.length, 2, "solo+agent_type: exactly two pills");
+}
+
+// --- solo pill: solo wave/task row ----------------------------------------
+
+{
+  const inst: InstanceEntry = {
+    title: "solo-plan-W1-T2",
+    status: "running",
+    branch: "plan/solo-plan",
+    program: "claude",
+    task_file: "solo-plan",
+    agent_type: "coder",
+    wave_number: 1,
+    task_number: 2,
+    solo_agent: true,
+  };
+  const card = toAgentCardModel(inst);
+  assertDeepEqual(
+    card.pills.map((p) => [p.label, p.tone]),
+    [
+      ["solo", "default"],
+      ["coder", "role"],
+      ["wave 1", "wave"],
+      ["task 2", "task"],
+    ],
+    "solo wave/task row: solo pill first, then role/wave/task",
+  );
+}
+
+// --- solo pill: legacy title-derived solo row -----------------------------
+
+{
+  // A legacy entry with a recognised suffix but also solo_agent=true.
+  // The solo pill must still appear first; regex-derived pills follow.
+  const inst: InstanceEntry = {
+    title: "adhoc-plan-review-1",
+    status: "running",
+    branch: "",
+    program: "claude",
+    solo_agent: true,
+  };
+  const card = toAgentCardModel(inst);
+  assertEqual(card.pills[0].label, "solo", "legacy solo: first pill is solo");
+  assertEqual(card.pills[1].label, "reviewer", "legacy solo: second pill is reviewer");
+  assertEqual(card.pills[2].label, "cycle 1", "legacy solo: third pill is cycle");
+  assertEqual(card.pills.length, 3, "legacy solo: three pills total");
+}
+
+// --- solo pill: plain coder negative case (no solo_agent) -----------------
+
+{
+  const inst: InstanceEntry = {
+    title: "plan-W1-T1",
+    status: "running",
+    branch: "plan/plan",
+    program: "claude",
+    task_file: "plan",
+    agent_type: "coder",
+    wave_number: 1,
+    task_number: 1,
+  };
+  const card = toAgentCardModel(inst);
+  assertEqual(card.pills[0].label, "coder", "no solo_agent: first pill is coder not solo");
+  assertDeepEqual(
+    card.pills.map((p) => p.label),
+    ["coder", "wave 1", "task 1"],
+    "no solo_agent: no solo pill",
+  );
+}
+
+// --- groupAgentsByTaskStatus: solo task-attached rows stay in task buckets -
+
+{
+  // A solo agent that also has a task_file must NOT be moved to the
+  // trailing "agents" group — only rows without task_file belong there.
+  const cards = [
+    {
+      title: "solo-attached",
+      displayName: "solo attached",
+      status: "running" as const,
+      taskFile: "my-plan",
+      presentation: "active" as const,
+      pills: [{ label: "solo", tone: "default" as const }],
+    },
+    {
+      title: "pure-solo",
+      displayName: "pure solo",
+      status: "running" as const,
+      presentation: "active" as const,
+      pills: [{ label: "solo", tone: "default" as const }],
+    },
+  ];
+  const taskStatus: ReadonlyMap<string, Status> = new Map<string, Status>([
+    ["my-plan", "implementing"],
+  ]);
+  const groups = groupAgentsByTaskStatus(cards, taskStatus);
+  assertEqual(groups.length, 2, "solo attached + pure solo: two groups");
+  assertEqual(groups[0].key, "implementing", "solo attached stays in implementing bucket");
+  assertEqual(groups[0].cards[0].title, "solo-attached", "solo attached card in implementing");
+  assertEqual(groups[1].key, "solo", "pure solo goes to solo group");
+  assertEqual(groups[1].cards[0].title, "pure-solo", "pure solo card in solo group");
+}
+
 console.log("agentCardModel.test.ts ok");

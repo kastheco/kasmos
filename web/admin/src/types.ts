@@ -171,6 +171,9 @@ export interface InstanceEntry {
   /** resource_profile is the active resource-control profile name
    *  ("interactive", "custom", …). Absent or empty means normal/no-op. */
   resource_profile?: string;
+  managed_by_daemon?: boolean;
+  solo_agent?: boolean;
+  sdk_speed_tier?: string;
 }
 
 export interface AuditEvent {

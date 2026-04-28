@@ -8,6 +8,7 @@ import {
   isAtBottom,
   previewLineLimit,
   captureErrorLabel,
+  hasDaemonBackedWebPath,
   supportsStructuredPreview,
   usesTerminalPreview,
 } from "./instanceInteractivity.ts";
@@ -266,5 +267,120 @@ assertFalse(
   usesTerminalPreview({ ...base, execution_mode: "sdk" }),
   "sdk instance: usesTerminalPreview false",
 );
+
+// sdk with valid_actions → still false (daemon-managed sdk also uses structured preview)
+assertFalse(
+  usesTerminalPreview({ ...base, execution_mode: "sdk", valid_actions: ["pause"] }),
+  "daemon-managed sdk: usesTerminalPreview false",
+);
+
+// sdk with managed_by_daemon → still false
+assertFalse(
+  usesTerminalPreview({ ...base, execution_mode: "sdk", managed_by_daemon: true }),
+  "managed_by_daemon sdk: usesTerminalPreview false",
+);
+
+// ---------------------------------------------------------------------------
+// hasDaemonBackedWebPath
+// ---------------------------------------------------------------------------
+
+assertFalse(hasDaemonBackedWebPath(null), "hasDaemonBackedWebPath(null) = false");
+
+// managed_by_daemon true → true (even without valid_actions)
+assertTrue(
+  hasDaemonBackedWebPath({ ...base, managed_by_daemon: true }),
+  "managed_by_daemon: hasDaemonBackedWebPath true",
+);
+
+// managed_by_daemon false, no valid_actions → false
+assertFalse(
+  hasDaemonBackedWebPath({ ...base, managed_by_daemon: false }),
+  "managed_by_daemon false, no valid_actions: hasDaemonBackedWebPath false",
+);
+
+// valid_actions non-empty (legacy fallback) → true
+assertTrue(
+  hasDaemonBackedWebPath({ ...base, valid_actions: ["pause"] }),
+  "valid_actions non-empty: hasDaemonBackedWebPath true",
+);
+
+// valid_actions empty → false
+assertFalse(
+  hasDaemonBackedWebPath({ ...base, valid_actions: [] }),
+  "valid_actions empty: hasDaemonBackedWebPath false",
+);
+
+// ---------------------------------------------------------------------------
+// supportsStructuredPreview — managed_by_daemon cases
+// ---------------------------------------------------------------------------
+
+// sdk + managed_by_daemon true, no valid_actions → true
+assertTrue(
+  supportsStructuredPreview({ ...base, execution_mode: "sdk", managed_by_daemon: true }),
+  "sdk + managed_by_daemon (no valid_actions): supportsStructuredPreview true",
+);
+
+// sdk + managed_by_daemon true, empty valid_actions → true
+assertTrue(
+  supportsStructuredPreview({
+    ...base,
+    execution_mode: "sdk",
+    managed_by_daemon: true,
+    valid_actions: [],
+  }),
+  "sdk + managed_by_daemon (empty valid_actions): supportsStructuredPreview true",
+);
+
+// sdk + valid_actions fallback (no managed_by_daemon) → true
+assertTrue(
+  supportsStructuredPreview({ ...base, execution_mode: "sdk", valid_actions: ["pause", "resume"] }),
+  "sdk + valid_actions fallback: supportsStructuredPreview true",
+);
+
+// standalone sdk (no managed_by_daemon, no valid_actions) → false
+assertFalse(
+  supportsStructuredPreview({ ...base, execution_mode: "sdk" }),
+  "standalone sdk: supportsStructuredPreview false",
+);
+
+// tmux → false
+assertFalse(
+  supportsStructuredPreview({ ...base, execution_mode: "tmux", managed_by_daemon: true }),
+  "tmux: supportsStructuredPreview false",
+);
+
+// ---------------------------------------------------------------------------
+// composerStateForInstance — managed_by_daemon cases
+// ---------------------------------------------------------------------------
+
+// running daemon-managed SDK (managed_by_daemon, no valid_actions) → enabled
+{
+  const s = composerStateForInstance({
+    ...base,
+    execution_mode: "sdk",
+    managed_by_daemon: true,
+  });
+  assertFalse(s.disabled, "running daemon-managed sdk (managed_by_daemon): composer enabled");
+  assertEqual(s.reason, null, "running daemon-managed sdk (managed_by_daemon): no reason");
+}
+
+// ready daemon-managed SDK (managed_by_daemon, no valid_actions) → enabled
+{
+  const s = composerStateForInstance({
+    ...base,
+    status: "ready",
+    execution_mode: "sdk",
+    managed_by_daemon: true,
+  });
+  assertFalse(s.disabled, "ready daemon-managed sdk (managed_by_daemon): composer enabled");
+  assertEqual(s.reason, null, "ready daemon-managed sdk (managed_by_daemon): no reason");
+}
+
+// standalone SDK still disabled with expected reason
+{
+  const s = composerStateForInstance({ ...base, execution_mode: "sdk" });
+  assertTrue(s.disabled, "standalone sdk: composer disabled");
+  assertEqual(s.reason, "standalone sdk instance", "standalone sdk: reason unchanged");
+}
 
 console.log("instanceInteractivity.test.ts ok");

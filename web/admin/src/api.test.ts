@@ -745,6 +745,37 @@ assertEqual(
   "listInstances maps missing mode to undefined",
 );
 
+// listInstances: managed_by_daemon, solo_agent, sdk_speed_tier survive normalization
+const soloInstanceList = [
+  {
+    title: "solo-1",
+    status: "running",
+    branch: "feat/solo",
+    program: "claude",
+    execution_mode: "sdk",
+    managed_by_daemon: true,
+    solo_agent: true,
+    sdk_speed_tier: "fast",
+  },
+];
+mockFetch(true, 200, JSON.stringify(soloInstanceList));
+const soloInstances = await listInstances("proj");
+assertEqual(
+  soloInstances[0].managed_by_daemon,
+  true,
+  "listInstances preserves managed_by_daemon",
+);
+assertEqual(
+  soloInstances[0].solo_agent,
+  true,
+  "listInstances preserves solo_agent",
+);
+assertEqual(
+  soloInstances[0].sdk_speed_tier,
+  "fast",
+  "listInstances preserves sdk_speed_tier",
+);
+
 console.log("api.test.ts listInstances normalization ok");
 
 // ---- getInstancePresentation ------------------------------------------------
