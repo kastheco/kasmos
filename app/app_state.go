@@ -227,7 +227,10 @@ func (m *home) ensureProcessor() *loop.Processor {
 		maxCycles = m.appConfig.MaxReviewFixCycles
 		autoReadinessReview = m.appConfig.AutoReadinessReview
 	}
-	plannerProfiles := m.appConfig.PlannerProfileNames()
+	var plannerProfiles []string
+	if m.appConfig != nil {
+		plannerProfiles = m.appConfig.PlannerProfileNames()
+	}
 	plannerDraftMode := len(plannerProfiles) > 0
 	if m.processor != nil {
 		m.processor.SetReviewFixConfig(autoReviewFix, maxCycles)

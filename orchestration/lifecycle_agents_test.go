@@ -71,17 +71,6 @@ func TestBuildArchitectAgentSpecWithOptions(t *testing.T) {
 	assert.Contains(t, spec.Prompt, "signal_create` (signal_type: \"elaborator-finished\", plan_file: \"feature\", project: \"myproject\")")
 }
 
-func TestBuildArchitectBaselineAgentSpec(t *testing.T) {
-	spec := BuildArchitectBaselineAgentSpec("feature", "myproject", "build something great")
-
-	assert.Equal(t, "feature-architect-baseline", spec.Title)
-	assert.Contains(t, spec.Prompt, ".kasmos/cache/feature-architect-baseline.json")
-	assert.Contains(t, spec.Prompt, `"plan_file": "feature"`)
-	assert.Contains(t, spec.Prompt, `"project": "myproject"`)
-	assert.Contains(t, spec.Prompt, `"description_hash": "`+ArchitectBaselineDescriptionHash("build something great")+`"`)
-	assert.NotEqual(t, BuildArchitectAgentSpec("feature", "myproject").Title, spec.Title)
-}
-
 func TestBuildMasterAgentSpec(t *testing.T) {
 	spec := BuildMasterAgentSpec("feature", "myproject", 0)
 	assert.Equal(t, "feature-verify-1", spec.Title)

@@ -14,6 +14,7 @@ import (
 	"github.com/kastheco/kasmos/config/taskparser"
 	"github.com/kastheco/kasmos/config/taskstate"
 	"github.com/kastheco/kasmos/config/taskstore"
+	"github.com/kastheco/kasmos/internal/initcmd/scaffold"
 	"github.com/kastheco/kasmos/keys"
 	"github.com/kastheco/kasmos/orchestration"
 	"github.com/kastheco/kasmos/session"
@@ -548,8 +549,7 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 		if planFile == "" {
 			return m, nil
 		}
-		entry, ok := m.taskState.Entry(planFile)
-		if !ok {
+		if _, ok := m.taskState.Entry(planFile); !ok {
 			return m, m.handleError(fmt.Errorf("task not found: %s", planFile))
 		}
 		if err := m.fsm.Transition(planFile, taskfsm.PlanStart); err != nil {
@@ -1130,6 +1130,9 @@ func (m *home) spawnPlannersForTask(planFile, legacyPrompt, description string) 
 	if repoManagedByDaemon(m.activeRepoPath) {
 		return m.spawnTaskAgent(planFile, "plan", legacyPrompt)
 	}
+	if m.appConfig == nil {
+		return m.spawnTaskAgent(planFile, "plan", legacyPrompt)
+	}
 	profiles := m.appConfig.PlannerProfileNames()
 	if len(profiles) == 0 {
 		return m.spawnTaskAgent(planFile, "plan", legacyPrompt)
@@ -1158,54 +1161,62 @@ func (m *home) spawnPlannersForTask(planFile, legacyPrompt, description string) 
 
 	var startCmds []tea.Cmd
 	for i, profileName := range profiles {
-		profile, err := m.profileForNamedPlanner(profileName)
+		startCmd, err := m.spawnPlannerProfileForTask(planFile, profileName, i == 0, description)
 		if err != nil {
 			return m, m.handleError(err)
 		}
-		cacheName, err := orchestration.PlannerDraftCacheFilename(planFile, profileName)
-		if err != nil {
-			return m, m.handleError(err)
-		}
-		spec := orchestration.BuildPlannerAgentSpecWithOptions(planFile, m.taskStoreProject, description, orchestration.PlannerAgentOptions{
-			Profile:   profileName,
-			Primary:   i == 0,
-			DraftMode: true,
-			CachePath: filepath.Join(".kasmos", "cache", cacheName),
-		})
-		inst, err := session.NewInstance(m.withRetentionOpts(session.InstanceOptions{
-			Title:           spec.Title,
-			Path:            m.activeRepoPath,
-			Program:         buildHarnessAwareProgramCommand(profile),
-			ExecutionMode:   session.ExecutionMode(config.NormalizeExecutionMode(profile.ExecutionMode)),
-			SDKSpeedTier:    session.NormalizeSDKSpeedTier(profile.Tier),
-			SkipPermissions: profile.ResolveSkipPermissions(false),
-			TaskFile:        planFile,
-			AgentType:       session.AgentTypePlanner,
-			ClaudeNoFlicker: m.claudeNoFlicker(),
-		}))
-		if err != nil {
-			return m, m.handleError(err)
-		}
-		inst.PlannerProfile = profileName
-		inst.QueuedPrompt = spec.Prompt
-		inst.SetStatus(session.Loading)
-		inst.LoadingTotal = 5
-		inst.LoadingMessage = "Preparing session..."
-		m.addInstanceFinalizer(inst, m.nav.AddInstance(inst))
-		m.nav.SelectInstance(inst)
-
-		plannerInst := inst
-		startCmds = append(startCmds, func() tea.Msg {
-			return instanceStartedMsg{instance: plannerInst, err: plannerInst.StartOnMainBranch()}
-		})
-		m.audit(auditlog.EventAgentSpawned, fmt.Sprintf("spawned planner %s for plan %s", profileName, taskstate.DisplayName(planFile)),
-			auditlog.WithPlan(planFile),
-			auditlog.WithInstance(spec.Title),
-			auditlog.WithAgent(session.AgentTypePlanner),
-		)
+		startCmds = append(startCmds, startCmd)
 	}
 	startCmds = append([]tea.Cmd{tea.RequestWindowSize}, startCmds...)
 	return m, tea.Sequence(clearCmd, tea.Batch(startCmds...))
+}
+
+func (m *home) spawnPlannerProfileForTask(planFile, profileName string, primary bool, description string) (tea.Cmd, error) {
+	profile, err := m.profileForNamedPlanner(profileName)
+	if err != nil {
+		return nil, err
+	}
+	cacheName, err := orchestration.PlannerDraftCacheFilename(planFile, profileName)
+	if err != nil {
+		return nil, err
+	}
+	spec := orchestration.BuildPlannerAgentSpecWithOptions(planFile, m.taskStoreProject, description, orchestration.PlannerAgentOptions{
+		Profile:   profileName,
+		Primary:   primary,
+		DraftMode: true,
+		CachePath: filepath.Join(".kasmos", "cache", cacheName),
+	})
+	inst, err := session.NewInstance(m.withRetentionOpts(session.InstanceOptions{
+		Title:           spec.Title,
+		Path:            m.activeRepoPath,
+		Program:         buildHarnessAwareProgramCommand(profile),
+		ExecutionMode:   session.ExecutionMode(config.NormalizeExecutionMode(profile.ExecutionMode)),
+		SDKSpeedTier:    session.NormalizeSDKSpeedTier(profile.Tier),
+		SkipPermissions: profile.ResolveSkipPermissions(false),
+		TaskFile:        planFile,
+		AgentType:       session.AgentTypePlanner,
+		ClaudeNoFlicker: m.claudeNoFlicker(),
+	}))
+	if err != nil {
+		return nil, err
+	}
+	inst.PlannerProfile = profileName
+	inst.QueuedPrompt = spec.Prompt
+	inst.SetStatus(session.Loading)
+	inst.LoadingTotal = 5
+	inst.LoadingMessage = "Preparing session..."
+	m.addInstanceFinalizer(inst, m.nav.AddInstance(inst))
+	m.nav.SelectInstance(inst)
+
+	m.audit(auditlog.EventAgentSpawned, fmt.Sprintf("spawned planner %s for plan %s", profileName, taskstate.DisplayName(planFile)),
+		auditlog.WithPlan(planFile),
+		auditlog.WithInstance(spec.Title),
+		auditlog.WithAgent(session.AgentTypePlanner),
+	)
+	plannerInst := inst
+	return func() tea.Msg {
+		return instanceStartedMsg{instance: plannerInst, err: plannerInst.StartOnMainBranch()}
+	}, nil
 }
 
 // instanceSignalItems returns the promoted root-level items for an instance context

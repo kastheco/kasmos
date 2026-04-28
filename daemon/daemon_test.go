@@ -694,7 +694,7 @@ func TestDaemon_StartPlan_ReturnsBeforeSpawnCompletes(t *testing.T) {
 	close(release)
 }
 
-func TestDaemon_StartPlan_SpawnsOnlyPlannerWhenParallelBaselineDisabled(t *testing.T) {
+func TestDaemon_StartPlan_SpawnsLegacyPlannerWhenPlannerProfilesUnset(t *testing.T) {
 	project := "proj"
 	store := taskstore.NewTestStore(t)
 	require.NoError(t, store.Create(project, taskstore.TaskEntry{
@@ -728,14 +728,36 @@ func TestDaemon_StartPlan_SpawnsOnlyPlannerWhenParallelBaselineDisabled(t *testi
 	select {
 	case opts := <-spawnedPlanner:
 		assert.Equal(t, "feature.md", opts.PlanFile)
+		assert.Equal(t, "plan prompt", opts.Prompt)
+		assert.Equal(t, "opencode", opts.Program)
+		assert.False(t, opts.PlannerDraftMode)
 	case <-time.After(time.Second):
 		t.Fatal("planner spawn did not run")
 	}
 }
 
-func TestDaemon_StartPlan_SpawnsOnlyPlannerWhenParallelBaselineEnabled(t *testing.T) {
+func TestDaemon_StartPlan_SpawnsPlannerDraftProfiles(t *testing.T) {
 	project := "proj"
 	repoPath := t.TempDir()
+	kasmosDir := filepath.Join(repoPath, ".kasmos")
+	require.NoError(t, os.MkdirAll(kasmosDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(kasmosDir, "config.toml"), []byte(`
+[orchestration]
+planners = ["planner-a", "planner-b"]
+
+[agents.planner-a]
+program = "codex"
+enabled = true
+execution_mode = "sdk"
+tier = "fast"
+permission_default = "prompt"
+
+[agents.planner-b]
+program = "opencode"
+enabled = true
+execution_mode = "tmux"
+permission_default = "bypass"
+`), 0o644))
 
 	store := taskstore.NewTestStore(t)
 	require.NoError(t, store.Create(project, taskstore.TaskEntry{
@@ -748,8 +770,11 @@ func TestDaemon_StartPlan_SpawnsOnlyPlannerWhenParallelBaselineEnabled(t *testin
 		name string
 		opts loop.SpawnOpts
 	}
-	spawned := make(chan spawnRecord, 1)
+	spawned := make(chan spawnRecord, 2)
 	killed := make(chan string, 1)
+	cacheDir := filepath.Join(kasmosDir, "cache")
+	require.NoError(t, os.MkdirAll(cacheDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(cacheDir, "feature.md-planner-old.md"), []byte("stale"), 0o644))
 	d := &Daemon{
 		repos:       NewRepoManager(),
 		logger:      slog.Default(),
@@ -765,13 +790,15 @@ func TestDaemon_StartPlan_SpawnsOnlyPlannerWhenParallelBaselineEnabled(t *testin
 	}
 	t.Cleanup(func() { d.broadcaster.Close() })
 	d.repos.repos = []RepoEntry{{
-		Path:                     repoPath,
-		Project:                  project,
-		Store:                    store,
-		ParallelPlannerArchitect: true,
+		Path:             repoPath,
+		Project:          project,
+		Store:            store,
+		PlannerProfiles:  []string{"planner-a", "planner-b"},
+		PlannerDraftMode: true,
+		CacheDir:         cacheDir,
 	}}
 
-	require.NoError(t, d.StartPlan(project, "feature.md", "plan prompt", "opencode"))
+	require.NoError(t, d.StartPlan(project, "feature.md", "legacy prompt ignored", "legacy-program-ignored"))
 
 	var killedAgents []string
 	require.Eventually(t, func() bool {
@@ -793,15 +820,31 @@ func TestDaemon_StartPlan_SpawnsOnlyPlannerWhenParallelBaselineEnabled(t *testin
 			case record := <-spawned:
 				records = append(records, record)
 			default:
-				return len(records) == 1
+				return len(records) == 2
 			}
 		}
 	}, time.Second, 5*time.Millisecond)
-	require.Len(t, records, 1)
+	require.Len(t, records, 2)
 	assert.Equal(t, "planner", records[0].name)
+	assert.Equal(t, "planner-a", records[0].opts.PlannerProfile)
+	assert.True(t, records[0].opts.PlannerPrimary)
+	assert.True(t, records[0].opts.PlannerDraftMode)
+	assert.Equal(t, "codex", records[0].opts.Program)
+	assert.Equal(t, "sdk", records[0].opts.ExecutionMode)
+	assert.Equal(t, "fast", records[0].opts.SDKSpeedTier)
+	assert.False(t, records[0].opts.SkipPermissions)
+	assert.Contains(t, records[0].opts.Prompt, ".kasmos/cache/feature.md-planner-planner-a.md")
+	assert.NotContains(t, records[0].opts.Prompt, "legacy prompt ignored")
+	assert.Equal(t, "planner-b", records[1].opts.PlannerProfile)
+	assert.False(t, records[1].opts.PlannerPrimary)
+	assert.True(t, records[1].opts.PlannerDraftMode)
+	assert.Equal(t, "opencode", records[1].opts.Program)
+	assert.Equal(t, "tmux", records[1].opts.ExecutionMode)
+	assert.True(t, records[1].opts.SkipPermissions)
+	assert.NoFileExists(t, filepath.Join(cacheDir, "feature.md-planner-old.md"))
 }
 
-func TestDaemon_ExecuteSpawnArchitectBaselineNoOps(t *testing.T) {
+func TestDaemon_ExecuteClearPlannerDraftsAction(t *testing.T) {
 	project := "proj"
 	planFile := "feature.md"
 	store := taskstore.NewTestStore(t)
@@ -818,12 +861,17 @@ func TestDaemon_ExecuteSpawnArchitectBaselineNoOps(t *testing.T) {
 	}
 	t.Cleanup(func() { d.broadcaster.Close() })
 
+	cacheDir := filepath.Join(t.TempDir(), "cache")
+	require.NoError(t, os.MkdirAll(cacheDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(cacheDir, "feature.md-planner-old.md"), []byte("stale"), 0o644))
 	repo := RepoEntry{
-		Path:    t.TempDir(),
-		Project: project,
-		Store:   store,
+		Path:     t.TempDir(),
+		Project:  project,
+		Store:    store,
+		CacheDir: cacheDir,
 	}
-	require.NoError(t, d.executeAction(context.Background(), repo, loop.SpawnArchitectBaselineAction{PlanFile: planFile}))
+	require.NoError(t, d.executeAction(context.Background(), repo, loop.ClearPlannerDraftsAction{PlanFile: planFile}))
+	assert.NoFileExists(t, filepath.Join(cacheDir, "feature.md-planner-old.md"))
 }
 
 func TestDaemon_AutoAdvanceCompletedImplementer_TransitionsToReviewing(t *testing.T) {

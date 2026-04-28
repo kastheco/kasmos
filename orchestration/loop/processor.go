@@ -85,14 +85,6 @@ type ProcessorConfig struct {
 	// When true, a reviewer approval (non-master origin) is intercepted and converted
 	// into a SpawnMasterAction instead of flowing directly to ReviewApprovedAction.
 	AutoReadinessReview bool
-	// ParallelPlannerArchitect starts an advisory architect-baseline session
-	// alongside planner work for plan_start signals.
-	//
-	// Deprecated: superseded by PlannerDraftMode + PlannerProfiles for the new
-	// multi-planner fan-out path. This field is retained for backward
-	// compatibility with existing daemon callers that set it in ProcessorConfig
-	// struct literals; the processor no longer acts on it.
-	ParallelPlannerArchitect bool
 	// PlannerProfiles is the ordered list of agent profile names that should
 	// be spawned in parallel when PlannerDraftMode is true. Each entry must
 	// reference a configured [agents.<profile>] section. When empty, the

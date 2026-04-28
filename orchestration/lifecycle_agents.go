@@ -101,15 +101,6 @@ func BuildArchitectAgentSpecWithOptions(planFile, project string, opts Architect
 	}
 }
 
-// BuildArchitectBaselineAgentSpec returns the prompt/title metadata for the
-// cache-only parallel architect baseline session.
-func BuildArchitectBaselineAgentSpec(planFile, project, description string) LifecycleAgentSpec {
-	return LifecycleAgentSpec{
-		Title:  fmt.Sprintf("%s-architect-baseline", planFile),
-		Prompt: BuildArchitectBaselinePrompt(planFile, project, description),
-	}
-}
-
 // BuildPlannerAgentSpec returns the shared prompt/title metadata for a
 // planner spawn. The canonical title is "<plan>-plan" matching the existing
 // recovery-candidate shape in BuildRecoveryCandidates and the TUI's

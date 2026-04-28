@@ -361,17 +361,12 @@ func elaborationDecisionAuditInstructions(planFile, project string) string {
 	)
 }
 
-func architectDecisionAuditInstructions(planFile, project string, includeBaselineCache bool) string {
-	baselineCacheNote := ""
-	if includeBaselineCache {
-		baselineCacheNote = fmt.Sprintf("   - `.kasmos/cache/%s-architect-baseline.json` is advisory input only and must not be treated as final implementation state.\n", planFile)
-	}
+func architectDecisionAuditInstructions(planFile, project string) string {
 	return fmt.Sprintf(
 		"   - Preserve the existing wave/task metadata fields and add optional `decision_audit`; do not replace the task metadata with only the audit.\n"+
 			"   - `decision_audit.baseline_source` must be one of `parallel_cache`, `inline`, `absent`, or `stale`.\n"+
 			"   - Include a short `planner_summary`, a short `baseline_summary`, a `differences` list for each meaningful file, wave, API, UI, docs, or verification change, and a `final_decision` sentence that states the implementation path coders should follow.\n"+
 			"   - Include `summary` as the concise overall audit summary.\n"+
-			"%[3]s"+
 			"   - Prefer this metadata shape:\n\n"+
 			"```json\n"+
 			"{\n"+
@@ -391,44 +386,7 @@ func architectDecisionAuditInstructions(planFile, project string, includeBaselin
 			"  }\n"+
 			"}\n"+
 			"```\n",
-		planFile, project, baselineCacheNote,
-	)
-}
-
-// BuildArchitectBaselinePrompt returns the cache-only prompt for a parallel
-// architect baseline session. The session must not mutate task lifecycle state.
-func BuildArchitectBaselinePrompt(planFile, project, description string) string {
-	descriptionHash := ArchitectBaselineDescriptionHash(description)
-	return fmt.Sprintf(
-		"You are the architect baseline agent for plan %[1]q in project %[2]q. "+
-			"Your job is to independently derive an implementation baseline while the planner works. "+
-			"Load the `kasmos-architect` skill and `cli-tools` before starting.\n\n"+
-			"## Goal\n\n%[3]s\n\n"+
-			"## Instructions\n\n"+
-			"1. Inspect the live codebase independently from planner output. Do not wait for, read, or rely on the planner draft.\n"+
-			"2. Derive the implementation baseline from the goal, product/runtime surfaces, dependencies, state transitions, prompts, config, tests, scaffold mirrors, and existing code patterns.\n"+
-			"3. Write exactly one artifact: `.kasmos/cache/%[1]s-architect-baseline.json`.\n"+
-			"4. Use this JSON schema and expected identity values:\n\n"+
-			"```json\n"+
-			"{\n"+
-			"  \"schema_version\": 1,\n"+
-			"  \"plan_file\": \"%[1]s\",\n"+
-			"  \"project\": \"%[2]s\",\n"+
-			"  \"description_hash\": \"%[4]s\",\n"+
-			"  \"created_at\": \"<rfc3339 timestamp>\",\n"+
-			"  \"baseline_markdown\": \"<non-empty markdown baseline>\",\n"+
-			"  \"surfaces\": [\"<paths or subsystems>\"],\n"+
-			"  \"risks\": [\"<implementation risks>\"],\n"+
-			"  \"notes\": [\"<optional notes>\"]\n"+
-			"}\n"+
-			"```\n\n"+
-			"5. Stop after the cache write.\n\n"+
-			"## Cache-only constraints\n\n"+
-			"- Do not edit any file except `.kasmos/cache/%[1]s-architect-baseline.json`.\n"+
-			"- Forbidden: MCP `task_update_content`, `kas task update-content`, task status transitions, or any lifecycle signal.\n"+
-			"- Forbidden lifecycle signals include `planner-finished`, `architect-finished`, and `elaborator-finished`.\n"+
-			"- Do not mutate task content, task status, or orchestration state.\n",
-		planFile, project, description, descriptionHash,
+		planFile, project,
 	)
 }
 
@@ -453,7 +411,7 @@ func BuildArchitectPrompt(planFile, project string) string {
 			"8. Signal architect-pass completion: prefer MCP `signal_create` (signal_type: \"elaborator-finished\", plan_file: \"%[1]s\", project: \"%[2]s\")\n"+
 			"   - If MCP is unavailable, use `kas signal emit elaborator_finished %[1]s`; if CLI signaling is also unavailable, fallback: `touch .kasmos/signals/elaborator-finished-%[1]s`\n"+
 			"   - Keep the role wording as architect in your notes and output; only the completion signal name stays legacy.\n",
-		planFile, project, architectDecisionAuditInstructions(planFile, project, true),
+		planFile, project, architectDecisionAuditInstructions(planFile, project),
 	)
 }
 

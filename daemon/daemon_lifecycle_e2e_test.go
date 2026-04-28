@@ -315,9 +315,9 @@ Complete the last implementation task and transition into review.
 	assert.Equal(t, []string{"kill:wave-1", "spawn:wave-2:task-3", "kill:wave-2", "spawn:reviewer", "create:pr"}, events[5:])
 }
 
-func TestDaemon_LifecycleE2E_ParallelPlannerArchitectFalse_PlanStartSpawnsOnlyPlanner(t *testing.T) {
-	// When ParallelPlannerArchitect is explicitly false, plan_start must emit exactly
-	// one SpawnPlannerAction — no clear_architect_baseline, no spawn_architect_baseline.
+func TestDaemon_LifecycleE2E_LegacyPlanStartSpawnsOnlyPlanner(t *testing.T) {
+	// When planner profiles are unset, plan_start emits exactly one legacy
+	// SpawnPlannerAction and no planner draft cache action.
 	store := taskstore.NewTestStore(t)
 	project := "test-project-false"
 	planFile := "serial-plan.md"
@@ -328,19 +328,20 @@ func TestDaemon_LifecycleE2E_ParallelPlannerArchitectFalse_PlanStartSpawnsOnlyPl
 	}))
 
 	proc := loop.NewProcessor(loop.ProcessorConfig{
-		Store:                    store,
-		Project:                  project,
-		AutoAdvance:              true,
-		ParallelPlannerArchitect: false,
+		Store:       store,
+		Project:     project,
+		AutoAdvance: true,
 	})
 
 	planStartActions := proc.ProcessFSMSignals([]taskfsm.Signal{{TaskFile: planFile, Event: taskfsm.PlanStart}})
-	require.Len(t, planStartActions, 1, "plan_start with ParallelPlannerArchitect=false must emit only SpawnPlannerAction")
-	_, isSpawnPlanner := planStartActions[0].(loop.SpawnPlannerAction)
-	assert.True(t, isSpawnPlanner, "expected SpawnPlannerAction, got %T", planStartActions[0])
+	require.Len(t, planStartActions, 1, "legacy plan_start must emit only SpawnPlannerAction")
+	spawn, isSpawnPlanner := planStartActions[0].(loop.SpawnPlannerAction)
+	require.True(t, isSpawnPlanner, "expected SpawnPlannerAction, got %T", planStartActions[0])
+	assert.False(t, spawn.DraftMode)
+	assert.True(t, spawn.Primary)
 }
 
-func TestDaemon_LifecycleE2E_ParallelBaselineDoesNotGatePlannerCompletion(t *testing.T) {
+func TestDaemon_LifecycleE2E_PlannerDraftsAggregateToPlannerCompletion(t *testing.T) {
 	store := taskstore.NewTestStore(t)
 	project := "test-project"
 	planFile := "parallel-plan.md"
@@ -351,22 +352,31 @@ func TestDaemon_LifecycleE2E_ParallelBaselineDoesNotGatePlannerCompletion(t *tes
 	}))
 
 	proc := loop.NewProcessor(loop.ProcessorConfig{
-		Store:                    store,
-		Project:                  project,
-		AutoAdvance:              true,
-		ParallelPlannerArchitect: true,
+		Store:            store,
+		Project:          project,
+		AutoAdvance:      true,
+		PlannerDraftMode: true,
+		PlannerProfiles:  []string{"planner-a", "planner-b"},
 	})
 
 	planStartActions := proc.ProcessFSMSignals([]taskfsm.Signal{{TaskFile: planFile, Event: taskfsm.PlanStart}})
-	require.Len(t, planStartActions, 1)
-	assert.Equal(t, "spawn_planner", planStartActions[0].Kind())
+	require.Len(t, planStartActions, 3)
+	assert.Equal(t, "clear_planner_drafts", planStartActions[0].Kind())
+	assert.Equal(t, "spawn_planner", planStartActions[1].Kind())
+	assert.Equal(t, "spawn_planner", planStartActions[2].Kind())
 
 	entry, err := store.Get(project, planFile)
 	require.NoError(t, err)
 	assert.Equal(t, taskstore.StatusPlanning, entry.Status)
 	assert.Equal(t, taskstore.ExecutionState{}, entry.ExecutionState)
 
-	plannerFinishedActions := proc.ProcessFSMSignals([]taskfsm.Signal{{TaskFile: planFile, Event: taskfsm.PlannerFinished}})
+	firstDraftActions := proc.ProcessPlannerDraftSignals([]taskfsm.PlannerDraftSignal{{TaskFile: planFile, PlannerID: "planner-a"}})
+	assert.Empty(t, firstDraftActions)
+
+	duplicateDraftActions := proc.ProcessPlannerDraftSignals([]taskfsm.PlannerDraftSignal{{TaskFile: planFile, PlannerID: "planner-a"}})
+	assert.Empty(t, duplicateDraftActions)
+
+	plannerFinishedActions := proc.ProcessPlannerDraftSignals([]taskfsm.PlannerDraftSignal{{TaskFile: planFile, PlannerID: "planner-b"}})
 	require.Len(t, plannerFinishedActions, 2)
 	assert.Equal(t, "planner_complete", plannerFinishedActions[0].Kind())
 	assert.Equal(t, "auto_implement", plannerFinishedActions[1].Kind())

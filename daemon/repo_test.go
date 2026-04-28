@@ -190,19 +190,20 @@ func TestRepoManager_MigratesRepoLocalTasks(t *testing.T) {
 	assert.Equal(t, taskstore.StatusReady, entry.Status)
 }
 
-func TestRepoManager_ParallelPlannerArchitectConfig(t *testing.T) {
-	t.Run("defaults true without project config", func(t *testing.T) {
+func TestRepoManager_PlannerProfilesConfig(t *testing.T) {
+	t.Run("defaults legacy without project config", func(t *testing.T) {
 		repoDir := t.TempDir()
 		rm := newTestRepoManager(t)
 
 		require.NoError(t, rm.Add(repoDir))
 		repos := rm.List()
 		require.Len(t, repos, 1)
-		assert.True(t, repos[0].ParallelPlannerArchitect)
+		assert.Empty(t, repos[0].PlannerProfiles)
+		assert.False(t, repos[0].PlannerDraftMode)
+		assert.Equal(t, filepath.Join(repoDir, ".kasmos", "cache"), repos[0].CacheDir)
 	})
 
-	t.Run("orchestration section without key resolves true", func(t *testing.T) {
-		// [orchestration] present but key absent — nil pointer, default true applies.
+	t.Run("orchestration section without planners stays legacy", func(t *testing.T) {
 		repoDir := t.TempDir()
 		kasmosDir := filepath.Join(repoDir, ".kasmos")
 		require.NoError(t, os.MkdirAll(kasmosDir, 0o755))
@@ -212,16 +213,25 @@ func TestRepoManager_ParallelPlannerArchitectConfig(t *testing.T) {
 		require.NoError(t, rm.Add(repoDir))
 		repos := rm.List()
 		require.Len(t, repos, 1)
-		assert.True(t, repos[0].ParallelPlannerArchitect)
+		assert.Empty(t, repos[0].PlannerProfiles)
+		assert.False(t, repos[0].PlannerDraftMode)
 	})
 
-	t.Run("explicit true in project config resolves true", func(t *testing.T) {
+	t.Run("explicit planners enable draft mode", func(t *testing.T) {
 		repoDir := t.TempDir()
 		kasmosDir := filepath.Join(repoDir, ".kasmos")
 		require.NoError(t, os.MkdirAll(kasmosDir, 0o755))
 		content := `
 [orchestration]
-parallel_planner_architect = true
+planners = ["planner-a", "planner-b"]
+
+[agents.planner-a]
+program = "codex"
+enabled = true
+
+[agents.planner-b]
+program = "opencode"
+enabled = true
 `
 		require.NoError(t, os.WriteFile(filepath.Join(kasmosDir, "config.toml"), []byte(content), 0o644))
 
@@ -229,16 +239,17 @@ parallel_planner_architect = true
 		require.NoError(t, rm.Add(repoDir))
 		repos := rm.List()
 		require.Len(t, repos, 1)
-		assert.True(t, repos[0].ParallelPlannerArchitect)
+		assert.Equal(t, []string{"planner-a", "planner-b"}, repos[0].PlannerProfiles)
+		assert.True(t, repos[0].PlannerDraftMode)
 	})
 
-	t.Run("legacy explicit false in project config is ignored", func(t *testing.T) {
+	t.Run("explicit empty planners stays legacy", func(t *testing.T) {
 		repoDir := t.TempDir()
 		kasmosDir := filepath.Join(repoDir, ".kasmos")
 		require.NoError(t, os.MkdirAll(kasmosDir, 0o755))
 		content := `
 [orchestration]
-parallel_planner_architect = false
+planners = []
 `
 		require.NoError(t, os.WriteFile(filepath.Join(kasmosDir, "config.toml"), []byte(content), 0o644))
 
@@ -246,7 +257,24 @@ parallel_planner_architect = false
 		require.NoError(t, rm.Add(repoDir))
 		repos := rm.List()
 		require.Len(t, repos, 1)
-		assert.True(t, repos[0].ParallelPlannerArchitect)
+		assert.Empty(t, repos[0].PlannerProfiles)
+		assert.False(t, repos[0].PlannerDraftMode)
+	})
+
+	t.Run("unknown planner profile rejects repo", func(t *testing.T) {
+		repoDir := t.TempDir()
+		kasmosDir := filepath.Join(repoDir, ".kasmos")
+		require.NoError(t, os.MkdirAll(kasmosDir, 0o755))
+		content := `
+[orchestration]
+planners = ["missing"]
+`
+		require.NoError(t, os.WriteFile(filepath.Join(kasmosDir, "config.toml"), []byte(content), 0o644))
+
+		rm := newTestRepoManager(t)
+		err := rm.Add(repoDir)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "invalid project planner config")
 	})
 }
 
@@ -258,7 +286,7 @@ func TestSDKTranscriptRetention_ResolveRepoConfig(t *testing.T) {
 
 	t.Run("no project config — default SDK limits apply", func(t *testing.T) {
 		rm := newTestRepoManager(t)
-		_, _, _, _, _, sdk, _, err := rm.resolveRepoConfig(t.TempDir())
+		_, _, _, _, _, _, sdk, _, err := rm.resolveRepoConfig(t.TempDir())
 		require.NoError(t, err)
 		assert.Equal(t, defaults.TranscriptMaxBytes, sdk.TranscriptMaxBytes)
 		assert.Equal(t, defaults.TranscriptMaxTurns, sdk.TranscriptMaxTurns)
@@ -276,7 +304,7 @@ transcript_max_turns = 500
 		require.NoError(t, os.WriteFile(filepath.Join(kasmosDir, "config.toml"), []byte(content), 0o644))
 
 		rm := newTestRepoManager(t)
-		_, _, _, _, _, sdk, _, err := rm.resolveRepoConfig(repoDir)
+		_, _, _, _, _, _, sdk, _, err := rm.resolveRepoConfig(repoDir)
 		require.NoError(t, err)
 		assert.Equal(t, int64(1<<20), sdk.TranscriptMaxBytes)
 		assert.Equal(t, int64(500), sdk.TranscriptMaxTurns)
@@ -294,7 +322,7 @@ transcript_max_turns = 0
 		require.NoError(t, os.WriteFile(filepath.Join(kasmosDir, "config.toml"), []byte(content), 0o644))
 
 		rm := newTestRepoManager(t)
-		_, _, _, _, _, sdk, _, err := rm.resolveRepoConfig(repoDir)
+		_, _, _, _, _, _, sdk, _, err := rm.resolveRepoConfig(repoDir)
 		require.NoError(t, err)
 		assert.Equal(t, int64(0), sdk.TranscriptMaxBytes, "explicit zero must disable byte limit")
 		assert.Equal(t, int64(0), sdk.TranscriptMaxTurns, "explicit zero must disable turn limit")
@@ -312,7 +340,7 @@ transcript_max_turns = -50
 		require.NoError(t, os.WriteFile(filepath.Join(kasmosDir, "config.toml"), []byte(content), 0o644))
 
 		rm := newTestRepoManager(t)
-		_, _, _, _, _, sdk, _, err := rm.resolveRepoConfig(repoDir)
+		_, _, _, _, _, _, sdk, _, err := rm.resolveRepoConfig(repoDir)
 		require.NoError(t, err)
 		assert.Equal(t, int64(0), sdk.TranscriptMaxBytes, "negative must clamp to 0")
 		assert.Equal(t, int64(0), sdk.TranscriptMaxTurns, "negative must clamp to 0")

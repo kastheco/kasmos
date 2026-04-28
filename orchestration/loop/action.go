@@ -56,35 +56,13 @@ func (SpawnPlannerAction) Kind() string  { return "spawn_planner" }
 func (SpawnPlannerAction) sealedAction() {}
 
 // ClearPlannerDraftsAction instructs the caller to clear any stale planner
-// draft caches (and the legacy architect-baseline artifact) before a new
-// multi-planner run starts.
+// draft caches before a new multi-planner run starts.
 type ClearPlannerDraftsAction struct {
 	PlanFile string
 }
 
 func (ClearPlannerDraftsAction) Kind() string  { return "clear_planner_drafts" }
 func (ClearPlannerDraftsAction) sealedAction() {}
-
-// ClearArchitectBaselineAction instructs the caller to clear any stale advisory
-// architect-baseline cache before planner/baseline work starts.
-//
-// Deprecated: superseded by ClearPlannerDraftsAction for the multi-planner
-// path. Retained for daemon callers that handle the legacy single-baseline path.
-type ClearArchitectBaselineAction struct {
-	PlanFile string
-}
-
-func (ClearArchitectBaselineAction) Kind() string  { return "clear_architect_baseline" }
-func (ClearArchitectBaselineAction) sealedAction() {}
-
-// SpawnArchitectBaselineAction instructs the caller to launch the cache-only
-// architect baseline agent alongside planner work.
-type SpawnArchitectBaselineAction struct {
-	PlanFile string
-}
-
-func (SpawnArchitectBaselineAction) Kind() string  { return "spawn_architect_baseline" }
-func (SpawnArchitectBaselineAction) sealedAction() {}
 
 // ReviewChangesAction signals a validated review-changes transition and carries
 // the reviewer feedback so callers can perform side effects only after the FSM

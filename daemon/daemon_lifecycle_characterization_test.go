@@ -32,6 +32,7 @@ func TestGatewayNoopOutcome_Characterization(t *testing.T) {
 		{name: "stray verify_failed is explicit", signalType: "verify_failed", status: taskstore.SignalFailed, result: "signal rejected outside verifying state"},
 		{name: "deprecated readiness_approved alias is explicit", signalType: "readiness_approved", status: taskstore.SignalFailed, result: "signal rejected outside verifying state"},
 		{name: "deprecated readiness_changes_requested alias is explicit", signalType: "readiness_changes_requested", status: taskstore.SignalFailed, result: "signal rejected outside verifying state"},
+		{name: "planner draft no-op waits for peers", signalType: "planner_draft_finished", status: taskstore.SignalDone, result: "planner draft recorded or waiting for peers"},
 		{name: "unexpected signals are rejected", signalType: "planner_finished", status: taskstore.SignalFailed, result: "signal rejected by processor"},
 	}
 

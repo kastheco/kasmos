@@ -14,8 +14,6 @@ func TestActionType_String(t *testing.T) {
 		{SpawnReviewerAction{PlanFile: "foo.md"}, "spawn_reviewer"},
 		{SpawnCoderAction{PlanFile: "foo.md"}, "spawn_coder"},
 		{ClearPlannerDraftsAction{PlanFile: "foo.md"}, "clear_planner_drafts"},
-		{ClearArchitectBaselineAction{PlanFile: "foo.md"}, "clear_architect_baseline"},
-		{SpawnArchitectBaselineAction{PlanFile: "foo.md"}, "spawn_architect_baseline"},
 		{SpawnFixerAction{PlanFile: "foo.md"}, "spawn_fixer"},
 		{SpawnMasterAction{PlanFile: "foo.md"}, "spawn_master"},
 		{ReviewChangesAction{PlanFile: "foo.md"}, "review_changes"},

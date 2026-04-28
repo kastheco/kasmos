@@ -255,37 +255,6 @@ func TestBuildElaborationPrompt(t *testing.T) {
 	assert.NotContains(t, prompt, "architect-finished")
 }
 
-func TestBuildArchitectBaselinePrompt(t *testing.T) {
-	description := "build the parallel planner architect baseline"
-	descriptionHash := ArchitectBaselineDescriptionHash(description)
-
-	prompt := BuildArchitectBaselinePrompt("my-feature", "myproject", description)
-
-	assert.Contains(t, prompt, "kasmos-architect")
-	assert.Contains(t, prompt, "cli-tools")
-	assert.Contains(t, prompt, "Inspect the live codebase independently from planner output")
-	assert.Contains(t, prompt, "goal")
-	assert.Contains(t, prompt, "surfaces")
-	assert.Contains(t, prompt, "dependencies")
-	assert.Contains(t, prompt, "patterns")
-	assert.Contains(t, prompt, ".kasmos/cache/my-feature-architect-baseline.json")
-	assert.Contains(t, prompt, `"schema_version": 1`)
-	assert.Contains(t, prompt, `"plan_file": "my-feature"`)
-	assert.Contains(t, prompt, `"project": "myproject"`)
-	assert.Contains(t, prompt, `"description_hash": "`+descriptionHash+`"`)
-	assert.Contains(t, prompt, `"baseline_markdown":`)
-	assert.Contains(t, prompt, "Stop after the cache write")
-	assert.Contains(t, prompt, "Do not edit any file except `.kasmos/cache/my-feature-architect-baseline.json`")
-	assert.Contains(t, prompt, "Forbidden: MCP `task_update_content`")
-	assert.Contains(t, prompt, "task status transitions")
-	assert.Contains(t, prompt, "planner-finished")
-	assert.Contains(t, prompt, "architect-finished")
-	assert.Contains(t, prompt, "elaborator-finished")
-	assert.Contains(t, prompt, "Do not mutate task content, task status, or orchestration state")
-	assert.NotContains(t, prompt, "use MCP `task_update_content`")
-	assert.NotContains(t, prompt, "signal_create")
-}
-
 func TestBuildElaborationPromptWithOptions_PlannerDraftGuidance(t *testing.T) {
 	// Deprecated opts are silently ignored; both zero and non-zero opts produce
 	// identical planner-draft guidance in the new code path.
@@ -342,8 +311,7 @@ func TestBuildArchitectPrompt(t *testing.T) {
 	assert.Contains(t, prompt, "baseline_summary")
 	assert.Contains(t, prompt, "final_decision")
 	assert.Contains(t, prompt, "differences")
-	assert.Contains(t, prompt, ".kasmos/cache/my-feature-architect-baseline.json")
-	assert.Contains(t, prompt, "advisory input only and must not be treated as final implementation state")
+	assert.NotContains(t, prompt, "architect-baseline.json")
 	assert.Contains(t, prompt, "signal_create` (signal_type: \"elaborator-finished\", plan_file: \"my-feature\", project: \"myproject\")")
 	// Signal completion should prefer MCP with filesystem fallback
 	assert.Contains(t, prompt, "signal_create")
