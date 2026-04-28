@@ -10,19 +10,26 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestNewWaveOrchestrator(t *testing.T) {
-	plan := &taskparser.Plan{
-		Goal: "test",
-		Waves: []taskparser.Wave{
-			{Number: 1, Tasks: []taskparser.Task{
-				{Number: 1, Title: "First", Body: "do first"},
-				{Number: 2, Title: "Second", Body: "do second"},
-			}},
-			{Number: 2, Tasks: []taskparser.Task{
-				{Number: 3, Title: "Third", Body: "do third"},
-			}},
-		},
+func testWavePlan(waves ...[]taskparser.Task) *taskparser.Plan {
+	plan := &taskparser.Plan{Waves: make([]taskparser.Wave, 0, len(waves))}
+	for i, tasks := range waves {
+		plan.Waves = append(plan.Waves, taskparser.Wave{
+			Number: i + 1,
+			Tasks:  tasks,
+		})
 	}
+	return plan
+}
+
+func TestNewWaveOrchestrator(t *testing.T) {
+	plan := testWavePlan(
+		[]taskparser.Task{
+			{Number: 1, Title: "First", Body: "do first"},
+			{Number: 2, Title: "Second", Body: "do second"},
+		},
+		[]taskparser.Task{{Number: 3, Title: "Third", Body: "do third"}},
+	)
+	plan.Goal = "test"
 
 	orch := NewWaveOrchestrator("plan", plan)
 	assert.Equal(t, WaveStateIdle, orch.State())
@@ -46,9 +53,7 @@ func TestWaveOrchestrator_LoadsArchitectMeta(t *testing.T) {
 	}
 	require.NoError(t, SaveArchitectMeta(cacheDir, "test-plan", meta))
 
-	plan := &taskparser.Plan{Waves: []taskparser.Wave{
-		{Number: 1, Tasks: []taskparser.Task{{Number: 1, Title: "Task 1"}}},
-	}}
+	plan := testWavePlan([]taskparser.Task{{Number: 1, Title: "Task 1"}})
 	orch := NewWaveOrchestrator("test-plan", plan)
 	orch.LoadArchitectMeta(cacheDir)
 
@@ -59,9 +64,7 @@ func TestWaveOrchestrator_LoadsArchitectMeta(t *testing.T) {
 }
 
 func TestWaveOrchestrator_NoArchitectMeta(t *testing.T) {
-	plan := &taskparser.Plan{Waves: []taskparser.Wave{
-		{Number: 1, Tasks: []taskparser.Task{{Number: 1, Title: "Task 1"}}},
-	}}
+	plan := testWavePlan([]taskparser.Task{{Number: 1, Title: "Task 1"}})
 	orch := NewWaveOrchestrator("test-plan", plan)
 	orch.LoadArchitectMeta(t.TempDir())
 
@@ -69,13 +72,9 @@ func TestWaveOrchestrator_NoArchitectMeta(t *testing.T) {
 }
 
 func TestWaveOrchestrator_StartWave(t *testing.T) {
-	plan := &taskparser.Plan{
-		Waves: []taskparser.Wave{
-			{Number: 1, Tasks: []taskparser.Task{
-				{Number: 1, Title: "First", Body: "do first"},
-			}},
-		},
-	}
+	plan := testWavePlan([]taskparser.Task{
+		{Number: 1, Title: "First", Body: "do first"},
+	})
 
 	orch := NewWaveOrchestrator("plan", plan)
 	tasks := orch.StartNextWave()
@@ -87,14 +86,10 @@ func TestWaveOrchestrator_StartWave(t *testing.T) {
 }
 
 func TestWaveOrchestrator_TaskCompleted(t *testing.T) {
-	plan := &taskparser.Plan{
-		Waves: []taskparser.Wave{
-			{Number: 1, Tasks: []taskparser.Task{
-				{Number: 1, Title: "First", Body: "do first"},
-				{Number: 2, Title: "Second", Body: "do second"},
-			}},
-		},
-	}
+	plan := testWavePlan([]taskparser.Task{
+		{Number: 1, Title: "First", Body: "do first"},
+		{Number: 2, Title: "Second", Body: "do second"},
+	})
 
 	orch := NewWaveOrchestrator("plan", plan)
 	orch.StartNextWave()
@@ -110,14 +105,10 @@ func TestWaveOrchestrator_TaskCompleted(t *testing.T) {
 }
 
 func TestWaveOrchestrator_TaskFailed(t *testing.T) {
-	plan := &taskparser.Plan{
-		Waves: []taskparser.Wave{
-			{Number: 1, Tasks: []taskparser.Task{
-				{Number: 1, Title: "First", Body: "do first"},
-				{Number: 2, Title: "Second", Body: "do second"},
-			}},
-		},
-	}
+	plan := testWavePlan([]taskparser.Task{
+		{Number: 1, Title: "First", Body: "do first"},
+		{Number: 2, Title: "Second", Body: "do second"},
+	})
 
 	orch := NewWaveOrchestrator("plan", plan)
 	orch.StartNextWave()
@@ -131,16 +122,10 @@ func TestWaveOrchestrator_TaskFailed(t *testing.T) {
 }
 
 func TestWaveOrchestrator_MultiWaveProgression(t *testing.T) {
-	plan := &taskparser.Plan{
-		Waves: []taskparser.Wave{
-			{Number: 1, Tasks: []taskparser.Task{
-				{Number: 1, Title: "First", Body: "do first"},
-			}},
-			{Number: 2, Tasks: []taskparser.Task{
-				{Number: 2, Title: "Second", Body: "do second"},
-			}},
-		},
-	}
+	plan := testWavePlan(
+		[]taskparser.Task{{Number: 1, Title: "First", Body: "do first"}},
+		[]taskparser.Task{{Number: 2, Title: "Second", Body: "do second"}},
+	)
 
 	orch := NewWaveOrchestrator("plan", plan)
 
@@ -161,13 +146,7 @@ func TestWaveOrchestrator_MultiWaveProgression(t *testing.T) {
 }
 
 func TestWaveOrchestrator_AllComplete(t *testing.T) {
-	plan := &taskparser.Plan{
-		Waves: []taskparser.Wave{
-			{Number: 1, Tasks: []taskparser.Task{
-				{Number: 1, Title: "Only", Body: "do it"},
-			}},
-		},
-	}
+	plan := testWavePlan([]taskparser.Task{{Number: 1, Title: "Only", Body: "do it"}})
 
 	orch := NewWaveOrchestrator("plan", plan)
 	orch.StartNextWave()
@@ -178,16 +157,10 @@ func TestWaveOrchestrator_AllComplete(t *testing.T) {
 }
 
 func TestWaveOrchestrator_ResetConfirmAllowsReprompt(t *testing.T) {
-	plan := &taskparser.Plan{
-		Waves: []taskparser.Wave{
-			{Number: 1, Tasks: []taskparser.Task{
-				{Number: 1, Title: "First", Body: "do first"},
-			}},
-			{Number: 2, Tasks: []taskparser.Task{
-				{Number: 2, Title: "Second", Body: "do second"},
-			}},
-		},
-	}
+	plan := testWavePlan(
+		[]taskparser.Task{{Number: 1, Title: "First", Body: "do first"}},
+		[]taskparser.Task{{Number: 2, Title: "Second", Body: "do second"}},
+	)
 
 	orch := NewWaveOrchestrator("plan", plan)
 	orch.StartNextWave()
@@ -203,11 +176,7 @@ func TestWaveOrchestrator_ResetConfirmAllowsReprompt(t *testing.T) {
 }
 
 func TestIsTaskRunning(t *testing.T) {
-	plan := &taskparser.Plan{
-		Waves: []taskparser.Wave{
-			{Number: 1, Tasks: []taskparser.Task{{Number: 1}, {Number: 2}}},
-		},
-	}
+	plan := testWavePlan([]taskparser.Task{{Number: 1}, {Number: 2}})
 	orch := NewWaveOrchestrator("test", plan)
 	orch.StartNextWave()
 
@@ -222,15 +191,11 @@ func TestIsTaskRunning(t *testing.T) {
 }
 
 func TestWaveOrchestrator_TaskStatusQueries(t *testing.T) {
-	plan := &taskparser.Plan{
-		Waves: []taskparser.Wave{
-			{Number: 1, Tasks: []taskparser.Task{
-				{Number: 1, Title: "Task 1"},
-				{Number: 2, Title: "Task 2"},
-				{Number: 3, Title: "Task 3"},
-			}},
-		},
-	}
+	plan := testWavePlan([]taskparser.Task{
+		{Number: 1, Title: "Task 1"},
+		{Number: 2, Title: "Task 2"},
+		{Number: 3, Title: "Task 3"},
+	})
 	orch := NewWaveOrchestrator("test", plan)
 	orch.StartNextWave()
 
@@ -252,17 +217,13 @@ func TestWaveOrchestrator_TaskStatusQueries(t *testing.T) {
 }
 
 func TestWaveOrchestrator_RetryFailedTasksRestoresRunning(t *testing.T) {
-	plan := &taskparser.Plan{
-		Waves: []taskparser.Wave{
-			{Number: 1, Tasks: []taskparser.Task{
-				{Number: 1, Title: "First", Body: "do first"},
-				{Number: 2, Title: "Second", Body: "do second"},
-			}},
-			{Number: 2, Tasks: []taskparser.Task{
-				{Number: 3, Title: "Third", Body: "do third"},
-			}},
+	plan := testWavePlan(
+		[]taskparser.Task{
+			{Number: 1, Title: "First", Body: "do first"},
+			{Number: 2, Title: "Second", Body: "do second"},
 		},
-	}
+		[]taskparser.Task{{Number: 3, Title: "Third", Body: "do third"}},
+	)
 
 	orch := NewWaveOrchestrator("plan", plan)
 	orch.StartNextWave()
@@ -287,10 +248,7 @@ func TestWaveOrchestrator_RetryFailedTasksRestoresRunning(t *testing.T) {
 }
 
 func TestClaimWaveOutcome_SameGenerationBlocksDuplicate(t *testing.T) {
-	plan := &taskparser.Plan{Waves: []taskparser.Wave{{
-		Number: 1,
-		Tasks:  []taskparser.Task{{Number: 1, Title: "first"}},
-	}}}
+	plan := testWavePlan([]taskparser.Task{{Number: 1, Title: "first"}})
 	orch := NewWaveOrchestrator("plan", plan)
 	orch.StartNextWave()
 	orch.MarkTaskComplete(1)
@@ -301,10 +259,7 @@ func TestClaimWaveOutcome_SameGenerationBlocksDuplicate(t *testing.T) {
 }
 
 func TestClaimWaveOutcome_RetryAllowsEmission(t *testing.T) {
-	plan := &taskparser.Plan{Waves: []taskparser.Wave{{
-		Number: 1,
-		Tasks:  []taskparser.Task{{Number: 1, Title: "first"}},
-	}}}
+	plan := testWavePlan([]taskparser.Task{{Number: 1, Title: "first"}})
 	orch := NewWaveOrchestrator("plan", plan)
 	orch.StartNextWave()
 	orch.MarkTaskFailed(1)
@@ -319,16 +274,10 @@ func TestClaimWaveOutcome_RetryAllowsEmission(t *testing.T) {
 }
 
 func TestClaimWaveOutcome_RetryGenerationResetsOnNextWave(t *testing.T) {
-	plan := &taskparser.Plan{Waves: []taskparser.Wave{
-		{
-			Number: 1,
-			Tasks:  []taskparser.Task{{Number: 1, Title: "first"}},
-		},
-		{
-			Number: 2,
-			Tasks:  []taskparser.Task{{Number: 2, Title: "second"}},
-		},
-	}}
+	plan := testWavePlan(
+		[]taskparser.Task{{Number: 1, Title: "first"}},
+		[]taskparser.Task{{Number: 2, Title: "second"}},
+	)
 	orch := NewWaveOrchestrator("plan", plan)
 	orch.StartNextWave()
 	orch.MarkTaskFailed(1)
@@ -352,10 +301,7 @@ func TestClaimWaveOutcome_RetryGenerationResetsOnNextWave(t *testing.T) {
 }
 
 func TestUpdatePlan_ResetsOutcomeClaims(t *testing.T) {
-	plan := &taskparser.Plan{Waves: []taskparser.Wave{{
-		Number: 1,
-		Tasks:  []taskparser.Task{{Number: 1, Title: "first"}},
-	}}}
+	plan := testWavePlan([]taskparser.Task{{Number: 1, Title: "first"}})
 	orch := NewWaveOrchestrator("plan", plan)
 	orch.StartNextWave()
 	orch.MarkTaskFailed(1)
@@ -371,12 +317,10 @@ func TestUpdatePlan_ResetsOutcomeClaims(t *testing.T) {
 }
 
 func TestRestoreToWave(t *testing.T) {
-	plan := &taskparser.Plan{
-		Waves: []taskparser.Wave{
-			{Number: 1, Tasks: []taskparser.Task{{Number: 1}, {Number: 2}}},
-			{Number: 2, Tasks: []taskparser.Task{{Number: 3}}},
-		},
-	}
+	plan := testWavePlan(
+		[]taskparser.Task{{Number: 1}, {Number: 2}},
+		[]taskparser.Task{{Number: 3}},
+	)
 	orch := NewWaveOrchestrator("plan", plan)
 	orch.RestoreToWave(2, []int{3})
 	assert.Equal(t, WaveStateAllComplete, orch.State())
@@ -384,12 +328,10 @@ func TestRestoreToWave(t *testing.T) {
 }
 
 func TestRestoreToWave_PartialCompletion(t *testing.T) {
-	plan := &taskparser.Plan{
-		Waves: []taskparser.Wave{
-			{Number: 1, Tasks: []taskparser.Task{{Number: 1}}},
-			{Number: 2, Tasks: []taskparser.Task{{Number: 2}, {Number: 3}}},
-		},
-	}
+	plan := testWavePlan(
+		[]taskparser.Task{{Number: 1}},
+		[]taskparser.Task{{Number: 2}, {Number: 3}},
+	)
 	orch := NewWaveOrchestrator("plan", plan)
 	orch.RestoreToWave(2, []int{2}) // task 3 still running
 	assert.Equal(t, WaveStateRunning, orch.State())
@@ -398,13 +340,11 @@ func TestRestoreToWave_PartialCompletion(t *testing.T) {
 }
 
 func TestShouldPostWaveCompleteComment(t *testing.T) {
-	single := &taskparser.Plan{Waves: []taskparser.Wave{
-		{Number: 1, Tasks: []taskparser.Task{{Number: 1}}},
-	}}
-	multi := &taskparser.Plan{Waves: []taskparser.Wave{
-		{Number: 1, Tasks: []taskparser.Task{{Number: 1}}},
-		{Number: 2, Tasks: []taskparser.Task{{Number: 2}}},
-	}}
+	single := testWavePlan([]taskparser.Task{{Number: 1}})
+	multi := testWavePlan(
+		[]taskparser.Task{{Number: 1}},
+		[]taskparser.Task{{Number: 2}},
+	)
 	assert.False(t, NewWaveOrchestrator("s", single).ShouldPostWaveCompleteComment())
 	assert.True(t, NewWaveOrchestrator("m", multi).ShouldPostWaveCompleteComment())
 
@@ -414,13 +354,7 @@ func TestShouldPostWaveCompleteComment(t *testing.T) {
 }
 
 func TestWaveOrchestrator_ElaboratingState(t *testing.T) {
-	plan := &taskparser.Plan{
-		Waves: []taskparser.Wave{
-			{Number: 1, Tasks: []taskparser.Task{
-				{Number: 1, Title: "First", Body: "do first"},
-			}},
-		},
-	}
+	plan := testWavePlan([]taskparser.Task{{Number: 1, Title: "First", Body: "do first"}})
 
 	orch := NewWaveOrchestrator("plan", plan)
 	orch.SetElaborating()
@@ -433,26 +367,16 @@ func TestWaveOrchestrator_ElaboratingState(t *testing.T) {
 }
 
 func TestWaveOrchestrator_UpdatePlan(t *testing.T) {
-	plan := &taskparser.Plan{
-		Goal: "original",
-		Waves: []taskparser.Wave{
-			{Number: 1, Tasks: []taskparser.Task{
-				{Number: 1, Title: "First", Body: "terse body"},
-			}},
-		},
-	}
+	plan := testWavePlan([]taskparser.Task{{Number: 1, Title: "First", Body: "terse body"}})
+	plan.Goal = "original"
 
 	orch := NewWaveOrchestrator("plan", plan)
 	orch.SetElaborating()
 
-	updated := &taskparser.Plan{
-		Goal: "original",
-		Waves: []taskparser.Wave{
-			{Number: 1, Tasks: []taskparser.Task{
-				{Number: 1, Title: "First", Body: "detailed body with signatures and patterns"},
-			}},
-		},
-	}
+	updated := testWavePlan([]taskparser.Task{
+		{Number: 1, Title: "First", Body: "detailed body with signatures and patterns"},
+	})
+	updated.Goal = "original"
 	orch.UpdatePlan(updated)
 
 	// Should transition back to Idle so StartNextWave works
@@ -465,15 +389,11 @@ func TestWaveOrchestrator_UpdatePlan(t *testing.T) {
 }
 
 func TestBuildTaskPrompt_Method(t *testing.T) {
-	plan := &taskparser.Plan{
-		Goal: "Test goal",
-		Waves: []taskparser.Wave{
-			{Number: 1, Tasks: []taskparser.Task{
-				{Number: 1, Title: "First", Body: "do first"},
-				{Number: 2, Title: "Second", Body: "do second"},
-			}},
-		},
-	}
+	plan := testWavePlan([]taskparser.Task{
+		{Number: 1, Title: "First", Body: "do first"},
+		{Number: 2, Title: "Second", Body: "do second"},
+	})
+	plan.Goal = "Test goal"
 	orch := NewWaveOrchestrator("plan", plan)
 	orch.SetStore(nil, "testproject")
 	orch.StartNextWave()
@@ -499,9 +419,7 @@ func TestWaveOrchestrator_PreferredModelForTask(t *testing.T) {
 	}
 	require.NoError(t, SaveArchitectMeta(cacheDir, "model-plan", meta))
 
-	plan := &taskparser.Plan{Waves: []taskparser.Wave{
-		{Number: 1, Tasks: []taskparser.Task{{Number: 1}, {Number: 2}}},
-	}}
+	plan := testWavePlan([]taskparser.Task{{Number: 1}, {Number: 2}})
 	orch := NewWaveOrchestrator("model-plan", plan)
 	orch.LoadArchitectMeta(cacheDir)
 
@@ -526,9 +444,7 @@ func TestWaveOrchestrator_DetectFileConflicts(t *testing.T) {
 	}
 	require.NoError(t, SaveArchitectMeta(cacheDir, "conflict-plan", meta))
 
-	plan := &taskparser.Plan{Waves: []taskparser.Wave{
-		{Number: 1, Tasks: []taskparser.Task{{Number: 1}, {Number: 2}}},
-	}}
+	plan := testWavePlan([]taskparser.Task{{Number: 1}, {Number: 2}})
 	orch := NewWaveOrchestrator("conflict-plan", plan)
 	orch.LoadArchitectMeta(cacheDir)
 
@@ -539,9 +455,7 @@ func TestWaveOrchestrator_DetectFileConflicts(t *testing.T) {
 }
 
 func TestWaveOrchestrator_DetectFileConflicts_NoMeta(t *testing.T) {
-	plan := &taskparser.Plan{Waves: []taskparser.Wave{
-		{Number: 1, Tasks: []taskparser.Task{{Number: 1}}},
-	}}
+	plan := testWavePlan([]taskparser.Task{{Number: 1}})
 	orch := NewWaveOrchestrator("no-meta", plan)
 
 	conflicts := orch.DetectFileConflicts(1)
@@ -549,9 +463,7 @@ func TestWaveOrchestrator_DetectFileConflicts_NoMeta(t *testing.T) {
 }
 
 func TestWaveOrchestrator_PreferredModelForTask_NoMeta(t *testing.T) {
-	plan := &taskparser.Plan{Waves: []taskparser.Wave{
-		{Number: 1, Tasks: []taskparser.Task{{Number: 1}}},
-	}}
+	plan := testWavePlan([]taskparser.Task{{Number: 1}})
 	orch := NewWaveOrchestrator("no-meta", plan)
 	assert.Empty(t, orch.PreferredModelForTask(1))
 }
@@ -567,10 +479,10 @@ func TestWaveOrchestrator_PersistsSubtaskStatus(t *testing.T) {
 		{TaskNumber: 2, Title: "second", Status: taskstore.SubtaskStatusPending},
 	}))
 
-	plan := &taskparser.Plan{Waves: []taskparser.Wave{{
-		Number: 1,
-		Tasks:  []taskparser.Task{{Number: 1, Title: "first"}, {Number: 2, Title: "second"}},
-	}}}
+	plan := testWavePlan([]taskparser.Task{
+		{Number: 1, Title: "first"},
+		{Number: 2, Title: "second"},
+	})
 	orch := NewWaveOrchestrator(planFile, plan)
 	orch.SetStore(store, project)
 
@@ -593,15 +505,11 @@ func TestWaveOrchestrator_PersistsSubtaskStatus(t *testing.T) {
 
 // TestStartNextWaveLimited_ZeroLimit delegates to unlimited behavior.
 func TestStartNextWaveLimited_ZeroLimit(t *testing.T) {
-	plan := &taskparser.Plan{
-		Waves: []taskparser.Wave{
-			{Number: 1, Tasks: []taskparser.Task{
-				{Number: 1, Title: "T1"},
-				{Number: 2, Title: "T2"},
-				{Number: 3, Title: "T3"},
-			}},
-		},
-	}
+	plan := testWavePlan([]taskparser.Task{
+		{Number: 1, Title: "T1"},
+		{Number: 2, Title: "T2"},
+		{Number: 3, Title: "T3"},
+	})
 	orch := NewWaveOrchestrator("plan", plan)
 	tasks, err := orch.StartNextWaveLimited(0)
 	require.NoError(t, err)
@@ -614,15 +522,11 @@ func TestStartNextWaveLimited_ZeroLimit(t *testing.T) {
 
 // TestStartNextWaveLimited_LimitOne only starts first task, others pending.
 func TestStartNextWaveLimited_LimitOne(t *testing.T) {
-	plan := &taskparser.Plan{
-		Waves: []taskparser.Wave{
-			{Number: 1, Tasks: []taskparser.Task{
-				{Number: 1, Title: "T1"},
-				{Number: 2, Title: "T2"},
-				{Number: 3, Title: "T3"},
-			}},
-		},
-	}
+	plan := testWavePlan([]taskparser.Task{
+		{Number: 1, Title: "T1"},
+		{Number: 2, Title: "T2"},
+		{Number: 3, Title: "T3"},
+	})
 	orch := NewWaveOrchestrator("plan", plan)
 	tasks, err := orch.StartNextWaveLimited(1)
 	require.NoError(t, err)
@@ -640,15 +544,11 @@ func TestStartNextWaveLimited_LimitOne(t *testing.T) {
 
 // TestStartNextWaveLimited_PendingDoesNotCompleteWave ensures wave stays running while pending tasks exist.
 func TestStartNextWaveLimited_PendingDoesNotCompleteWave(t *testing.T) {
-	plan := &taskparser.Plan{
-		Waves: []taskparser.Wave{
-			{Number: 1, Tasks: []taskparser.Task{
-				{Number: 1, Title: "T1"},
-				{Number: 2, Title: "T2"},
-				{Number: 3, Title: "T3"},
-			}},
-		},
-	}
+	plan := testWavePlan([]taskparser.Task{
+		{Number: 1, Title: "T1"},
+		{Number: 2, Title: "T2"},
+		{Number: 3, Title: "T3"},
+	})
 	orch := NewWaveOrchestrator("plan", plan)
 	tasks, err := orch.StartNextWaveLimited(1)
 	require.NoError(t, err)
@@ -662,15 +562,11 @@ func TestStartNextWaveLimited_PendingDoesNotCompleteWave(t *testing.T) {
 
 // TestStartPendingTasks_LaunchesUpToCapacity verifies that pending tasks are launched as capacity opens.
 func TestStartPendingTasks_LaunchesUpToCapacity(t *testing.T) {
-	plan := &taskparser.Plan{
-		Waves: []taskparser.Wave{
-			{Number: 1, Tasks: []taskparser.Task{
-				{Number: 1, Title: "T1"},
-				{Number: 2, Title: "T2"},
-				{Number: 3, Title: "T3"},
-			}},
-		},
-	}
+	plan := testWavePlan([]taskparser.Task{
+		{Number: 1, Title: "T1"},
+		{Number: 2, Title: "T2"},
+		{Number: 3, Title: "T3"},
+	})
 	orch := NewWaveOrchestrator("plan", plan)
 	_, err := orch.StartNextWaveLimited(1)
 	require.NoError(t, err)
@@ -690,15 +586,11 @@ func TestStartPendingTasks_LaunchesUpToCapacity(t *testing.T) {
 
 // TestStartPendingTasks_FullDrainWithLimit1 simulates a 3-task wave with limit=1 draining sequentially.
 func TestStartPendingTasks_FullDrainWithLimit1(t *testing.T) {
-	plan := &taskparser.Plan{
-		Waves: []taskparser.Wave{
-			{Number: 1, Tasks: []taskparser.Task{
-				{Number: 1, Title: "T1"},
-				{Number: 2, Title: "T2"},
-				{Number: 3, Title: "T3"},
-			}},
-		},
-	}
+	plan := testWavePlan([]taskparser.Task{
+		{Number: 1, Title: "T1"},
+		{Number: 2, Title: "T2"},
+		{Number: 3, Title: "T3"},
+	})
 	orch := NewWaveOrchestrator("plan", plan)
 	launched, err := orch.StartNextWaveLimited(1)
 	require.NoError(t, err)
@@ -727,11 +619,7 @@ func TestStartPendingTasks_FullDrainWithLimit1(t *testing.T) {
 
 // TestStartPendingTasks_NoOpWhenNotRunning returns nil outside WaveStateRunning.
 func TestStartPendingTasks_NoOpWhenNotRunning(t *testing.T) {
-	plan := &taskparser.Plan{
-		Waves: []taskparser.Wave{
-			{Number: 1, Tasks: []taskparser.Task{{Number: 1, Title: "T1"}}},
-		},
-	}
+	plan := testWavePlan([]taskparser.Task{{Number: 1, Title: "T1"}})
 	orch := NewWaveOrchestrator("plan", plan)
 	// State is Idle — StartPendingTasks must be a no-op.
 	pending, err := orch.StartPendingTasks(1)
@@ -741,14 +629,10 @@ func TestStartPendingTasks_NoOpWhenNotRunning(t *testing.T) {
 
 // TestStartPendingTasks_FullyAtCapacity returns nil when no slots are free.
 func TestStartPendingTasks_FullyAtCapacity(t *testing.T) {
-	plan := &taskparser.Plan{
-		Waves: []taskparser.Wave{
-			{Number: 1, Tasks: []taskparser.Task{
-				{Number: 1, Title: "T1"},
-				{Number: 2, Title: "T2"},
-			}},
-		},
-	}
+	plan := testWavePlan([]taskparser.Task{
+		{Number: 1, Title: "T1"},
+		{Number: 2, Title: "T2"},
+	})
 	orch := NewWaveOrchestrator("plan", plan)
 	launched, err := orch.StartNextWaveLimited(1)
 	require.NoError(t, err)
@@ -762,15 +646,11 @@ func TestStartPendingTasks_FullyAtCapacity(t *testing.T) {
 
 // TestStartPendingTasks_FailureStillOpensCapacity confirms a failed task releases a slot.
 func TestStartPendingTasks_FailureStillOpensCapacity(t *testing.T) {
-	plan := &taskparser.Plan{
-		Waves: []taskparser.Wave{
-			{Number: 1, Tasks: []taskparser.Task{
-				{Number: 1, Title: "T1"},
-				{Number: 2, Title: "T2"},
-				{Number: 3, Title: "T3"},
-			}},
-		},
-	}
+	plan := testWavePlan([]taskparser.Task{
+		{Number: 1, Title: "T1"},
+		{Number: 2, Title: "T2"},
+		{Number: 3, Title: "T3"},
+	})
 	orch := NewWaveOrchestrator("plan", plan)
 	launched, err := orch.StartNextWaveLimited(1)
 	require.NoError(t, err)
@@ -790,17 +670,13 @@ func TestStartPendingTasks_FailureStillOpensCapacity(t *testing.T) {
 // completing all running tasks is not enough to declare the wave complete when
 // pending tasks remain.
 func TestStartNextWaveLimited_DoesNotAdvanceToNextWaveWhilePending(t *testing.T) {
-	plan := &taskparser.Plan{
-		Waves: []taskparser.Wave{
-			{Number: 1, Tasks: []taskparser.Task{
-				{Number: 1, Title: "T1"},
-				{Number: 2, Title: "T2"},
-			}},
-			{Number: 2, Tasks: []taskparser.Task{
-				{Number: 3, Title: "T3"},
-			}},
+	plan := testWavePlan(
+		[]taskparser.Task{
+			{Number: 1, Title: "T1"},
+			{Number: 2, Title: "T2"},
 		},
-	}
+		[]taskparser.Task{{Number: 3, Title: "T3"}},
+	)
 	orch := NewWaveOrchestrator("plan", plan)
 	_, err := orch.StartNextWaveLimited(1)
 	require.NoError(t, err)
@@ -813,14 +689,10 @@ func TestStartNextWaveLimited_DoesNotAdvanceToNextWaveWhilePending(t *testing.T)
 
 // TestActiveTaskCount tracks running count across state transitions.
 func TestActiveTaskCount(t *testing.T) {
-	plan := &taskparser.Plan{
-		Waves: []taskparser.Wave{
-			{Number: 1, Tasks: []taskparser.Task{
-				{Number: 1, Title: "T1"},
-				{Number: 2, Title: "T2"},
-			}},
-		},
-	}
+	plan := testWavePlan([]taskparser.Task{
+		{Number: 1, Title: "T1"},
+		{Number: 2, Title: "T2"},
+	})
 	orch := NewWaveOrchestrator("plan", plan)
 	assert.Equal(t, 0, orch.ActiveTaskCount())
 
@@ -837,15 +709,11 @@ func TestActiveTaskCount(t *testing.T) {
 // TestApplyParallelismLimit_TrimsRunningToLimit verifies that excess running tasks
 // are moved back to pending so only `limit` tasks remain active.
 func TestApplyParallelismLimit_TrimsRunningToLimit(t *testing.T) {
-	plan := &taskparser.Plan{
-		Waves: []taskparser.Wave{
-			{Number: 1, Tasks: []taskparser.Task{
-				{Number: 1, Title: "T1"},
-				{Number: 2, Title: "T2"},
-				{Number: 3, Title: "T3"},
-			}},
-		},
-	}
+	plan := testWavePlan([]taskparser.Task{
+		{Number: 1, Title: "T1"},
+		{Number: 2, Title: "T2"},
+		{Number: 3, Title: "T3"},
+	})
 	orch := NewWaveOrchestrator("plan", plan)
 	orch.StartNextWave() // marks all three as running
 
@@ -864,14 +732,10 @@ func TestApplyParallelismLimit_TrimsRunningToLimit(t *testing.T) {
 
 // TestApplyParallelismLimit_NoOpWhenZeroLimit returns all running tasks unchanged.
 func TestApplyParallelismLimit_NoOpWhenZeroLimit(t *testing.T) {
-	plan := &taskparser.Plan{
-		Waves: []taskparser.Wave{
-			{Number: 1, Tasks: []taskparser.Task{
-				{Number: 1, Title: "T1"},
-				{Number: 2, Title: "T2"},
-			}},
-		},
-	}
+	plan := testWavePlan([]taskparser.Task{
+		{Number: 1, Title: "T1"},
+		{Number: 2, Title: "T2"},
+	})
 	orch := NewWaveOrchestrator("plan", plan)
 	orch.StartNextWave()
 
@@ -881,9 +745,7 @@ func TestApplyParallelismLimit_NoOpWhenZeroLimit(t *testing.T) {
 }
 
 func TestApplyParallelismLimit_NoOpWhenAllCompleteAndWaveExhausted(t *testing.T) {
-	plan := &taskparser.Plan{Waves: []taskparser.Wave{
-		{Number: 1, Tasks: []taskparser.Task{{Number: 1, Title: "T1"}}},
-	}}
+	plan := testWavePlan([]taskparser.Task{{Number: 1, Title: "T1"}})
 	orch := NewWaveOrchestrator("plan", plan)
 	orch.state = WaveStateAllComplete
 	orch.currentWave = len(plan.Waves)
