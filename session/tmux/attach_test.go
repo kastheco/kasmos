@@ -75,13 +75,50 @@ func TestSetDetachedSize(t *testing.T) {
 		OutputFunc: func(cmd *exec.Cmd) ([]byte, error) { return []byte(""), nil },
 	}
 	s := NewTmuxSessionWithDeps("test-size", "opencode", false, ptyFactory, cmdExec)
-	// Restore to get a PTY
+	// Restore leaves ptmx nil (monitor-only), so SetDetachedSize uses resize-window.
 	err := s.Restore()
 	require.NoError(t, err)
-	// SetDetachedSize should not error with a valid PTY
-	// May error on mock PTY (not a real terminal) — that's OK for unit test
-	// The important thing is it doesn't panic
+	// SetDetachedSize should not error; the important thing is it doesn't panic.
 	_ = s.SetDetachedSize(120, 40)
+}
+
+func TestSetDetachedSize_UsesResizeWindowWhenNoActivePTY(t *testing.T) {
+	t.Parallel()
+	var ranCmds []string
+	cmdExec := cmd_test.MockCmdExec{
+		RunFunc: func(cmd *exec.Cmd) error {
+			ranCmds = append(ranCmds, commandString(cmd))
+			return nil
+		},
+		OutputFunc: func(cmd *exec.Cmd) ([]byte, error) { return nil, nil },
+	}
+	s := NewTmuxSessionWithDeps("test-detached-size", "opencode", false, NewMockPtyFactory(t), cmdExec)
+	// No active PTY (ptmx is nil) — should use tmux resize-window.
+	require.Nil(t, s.ptmx)
+	err := s.SetDetachedSize(120, 40)
+	require.NoError(t, err)
+	require.Len(t, ranCmds, 1)
+	assert.Contains(t, ranCmds[0], "resize-window")
+	assert.Contains(t, ranCmds[0], "-x 120")
+	assert.Contains(t, ranCmds[0], "-y 40")
+	assert.Contains(t, ranCmds[0], "kas_test-detached-size")
+}
+
+func TestSetDetachedSize_ZeroDimensionsAreNoOp(t *testing.T) {
+	t.Parallel()
+	var ranCmds []string
+	cmdExec := cmd_test.MockCmdExec{
+		RunFunc: func(cmd *exec.Cmd) error {
+			ranCmds = append(ranCmds, commandString(cmd))
+			return nil
+		},
+		OutputFunc: func(cmd *exec.Cmd) ([]byte, error) { return nil, nil },
+	}
+	s := NewTmuxSessionWithDeps("test-zero-size", "opencode", false, NewMockPtyFactory(t), cmdExec)
+	// Zero dimensions should not issue resize-window.
+	err := s.SetDetachedSize(0, 0)
+	require.NoError(t, err)
+	assert.Empty(t, ranCmds, "zero dimensions should not issue resize-window")
 }
 
 func TestDetachSafely_IsIdempotent(t *testing.T) {

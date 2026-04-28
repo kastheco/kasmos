@@ -12,10 +12,24 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+type testPtyHandle struct{ file *os.File }
+
+func (h *testPtyHandle) File() *os.File { return h.file }
+func (h *testPtyHandle) Close() error {
+	if h.file != nil {
+		return h.file.Close()
+	}
+	return nil
+}
+
 type testPtyFactory struct{}
 
-func (f *testPtyFactory) Start(_ *exec.Cmd) (*os.File, error) {
-	return os.CreateTemp("", "kas-pty-*")
+func (f *testPtyFactory) Start(_ *exec.Cmd) (tmux.PtyHandle, error) {
+	file, err := os.CreateTemp("", "kas-pty-*")
+	if err != nil {
+		return nil, err
+	}
+	return &testPtyHandle{file: file}, nil
 }
 
 func (f *testPtyFactory) Close() {}

@@ -30,22 +30,45 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
+// MockPtyHandle is a test PtyHandle that wraps a temp file without a real
+// child process. It tracks whether Close has been called.
+type MockPtyHandle struct {
+	file   *os.File
+	closed bool
+}
+
+func (h *MockPtyHandle) File() *os.File { return h.file }
+
+func (h *MockPtyHandle) Close() error {
+	if h.closed {
+		return nil
+	}
+	h.closed = true
+	if h.file != nil {
+		return h.file.Close()
+	}
+	return nil
+}
+
 type MockPtyFactory struct {
 	t *testing.T
 
-	// Array of commands and the corresponding file handles representing PTYs.
-	cmds  []*exec.Cmd
-	files []*os.File
+	// cmds records the commands passed to each Start call.
+	cmds []*exec.Cmd
+	// handles records the MockPtyHandle returned by each Start call.
+	handles []*MockPtyHandle
 }
 
-func (pt *MockPtyFactory) Start(cmd *exec.Cmd) (*os.File, error) {
+func (pt *MockPtyFactory) Start(cmd *exec.Cmd) (PtyHandle, error) {
 	filePath := filepath.Join(pt.t.TempDir(), fmt.Sprintf("pty-%s-%d", pt.t.Name(), rand.Int31()))
 	f, err := os.OpenFile(filePath, os.O_CREATE|os.O_RDWR, 0644)
-	if err == nil {
-		pt.cmds = append(pt.cmds, cmd)
-		pt.files = append(pt.files, f)
+	if err != nil {
+		return nil, err
 	}
-	return f, err
+	handle := &MockPtyHandle{file: f}
+	pt.cmds = append(pt.cmds, cmd)
+	pt.handles = append(pt.handles, handle)
+	return handle, nil
 }
 
 func (pt *MockPtyFactory) Close() {}
@@ -92,21 +115,18 @@ func TestStartTmuxSession(t *testing.T) {
 
 	err := session.Start(workdir)
 	require.NoError(t, err)
-	require.Equal(t, 2, len(ptyFactory.cmds))
+	// Only one PTY handle for tmux new-session -d; Restore is monitor-only.
+	require.Equal(t, 1, len(ptyFactory.cmds))
 	require.Contains(t, commandString(ptyFactory.cmds[0]),
 		fmt.Sprintf("tmux new-session -d -s kas_test-session -c %s KASMOS_MANAGED=1 CLAUDE_CODE_NO_FLICKER=0 claude", workdir))
 	require.Contains(t, commandString(ptyFactory.cmds[0]), "2>>'"+workdir+"/.kasmos/logs/kas_test-session.log'")
-	require.Equal(t, "tmux attach-session -t kas_test-session",
-		commandString(ptyFactory.cmds[1]))
 
-	require.Equal(t, 2, len(ptyFactory.files))
+	// The new-session PTY handle must be closed and reaped after Start succeeds.
+	require.Equal(t, 1, len(ptyFactory.handles))
+	require.True(t, ptyFactory.handles[0].closed, "new-session PTY handle should be closed after Start")
 
-	// File should be closed.
-	_, err = ptyFactory.files[0].Stat()
-	require.Error(t, err)
-	// File should be open
-	_, err = ptyFactory.files[1].Stat()
-	require.NoError(t, err)
+	// No active PTY after a detached Start (ptmx is nil until Attach).
+	require.Nil(t, session.GetPTY(), "GetPTY should be nil after Start (no active attach)")
 }
 
 func TestStartTmuxSessionWithSkipPermissions(t *testing.T) {
@@ -135,7 +155,7 @@ func TestStartTmuxSessionWithSkipPermissions(t *testing.T) {
 
 	err := session.Start(workdir)
 	require.NoError(t, err)
-	require.Equal(t, 2, len(ptyFactory.cmds))
+	require.Equal(t, 1, len(ptyFactory.cmds))
 	require.Contains(t, commandString(ptyFactory.cmds[0]),
 		fmt.Sprintf("tmux new-session -d -s kas_test-session -c %s KASMOS_MANAGED=1 CLAUDE_CODE_NO_FLICKER=0 claude --permission-mode bypassPermissions", workdir))
 	require.Contains(t, commandString(ptyFactory.cmds[0]), "2>>'"+workdir+"/.kasmos/logs/kas_test-session.log'")
@@ -225,7 +245,7 @@ func TestStartTmuxSessionSkipPermissionsNotAppliedToAider(t *testing.T) {
 
 	err := session.Start(workdir)
 	require.NoError(t, err)
-	require.Equal(t, 2, len(ptyFactory.cmds))
+	require.Equal(t, 1, len(ptyFactory.cmds))
 	require.Contains(t, commandString(ptyFactory.cmds[0]),
 		fmt.Sprintf("tmux new-session -d -s kas_test-session -c %s KASMOS_MANAGED=1 aider --model gpt-4", workdir))
 	require.Contains(t, commandString(ptyFactory.cmds[0]), "2>>'"+workdir+"/.kasmos/logs/kas_test-session.log'")

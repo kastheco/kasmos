@@ -18,6 +18,10 @@ kq
 **/.kasmos/config.json
 **/.kasmos/config.toml
 **/.kasmos/cache/
+# tmux debug-log debris from external probe/debug sessions
+/tmux-server-*.log
+/tmux-client-*.log
+/tmux-out-*.log
 dist/
 !web/admin/dist/
 !web/admin/dist/**

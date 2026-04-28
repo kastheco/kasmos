@@ -15,7 +15,6 @@ import (
 	"github.com/kastheco/kasmos/ui"
 	"github.com/kastheco/kasmos/ui/overlay"
 	"github.com/stretchr/testify/require"
-	"os"
 )
 
 // mockAppState is a minimal in-test implementation of config.AppState.
@@ -27,10 +26,12 @@ func (s *mockAppState) GetHelpScreensSeen() uint32        { return s.seen }
 func (s *mockAppState) SetHelpScreensSeen(v uint32) error { s.seen = v; return nil }
 
 // noopPtyFactory satisfies tmux.PtyFactory without spawning a real PTY.
+// Start returns a nil handle with a nil error (test-stub behaviour); callers
+// that invoke Attach() will receive a clear error rather than panicking.
 type noopPtyFactory struct{}
 
-func (f *noopPtyFactory) Start(_ *exec.Cmd) (*os.File, error) { return nil, nil }
-func (f *noopPtyFactory) Close()                              {}
+func (f *noopPtyFactory) Start(_ *exec.Cmd) (tmux.PtyHandle, error) { return nil, nil }
+func (f *noopPtyFactory) Close()                                    {}
 
 // newStartedInstance returns an instance that passes the Started/Paused/TmuxAlive
 // guards in app_input.go, using a mock cmdExec so DoesSessionExist returns true.

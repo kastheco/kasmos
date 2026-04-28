@@ -16,7 +16,10 @@ func (t *TmuxSession) GetSanitizedName() string {
 	return t.sanitizedName
 }
 
-// GetPTY returns the PTY file attached to this session, or nil if not attached.
+// GetPTY returns the PTY file for the active interactive attach, or nil when
+// detached. The file is non-nil only between a successful Attach() call and the
+// subsequent Detach() or Close(). During preview/monitoring mode (after
+// Restore()), GetPTY returns nil.
 func (t *TmuxSession) GetPTY() *os.File {
 	return t.ptmx
 }
