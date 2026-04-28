@@ -26,7 +26,7 @@ flowchart LR
 
     E --> F[UpdatePlan called\norchestrator → Idle\nwave 1 starts\nStartNextWave → WaveStateRunning]
 
-    F --> G[N coder agents spawned in parallel\none per task in wave\nshared worktree branch]
+    F --> G[coder agents spawned for wave\ndefault: all tasks start concurrently\noptional cap: max_parallel_wave_tasks\nshared worktree branch]
 
     G --> H{all tasks in wave\ncomplete or failed?}
     H -- "more tasks running" --> H
@@ -118,7 +118,9 @@ sequenceDiagram
 
     Note over D: ProcessElaborationSignals: UpdatePlan to WaveStateIdle, StartNextWave to WaveStateRunning, ExecutionPhase = wave_running (wave 1)
 
-    par Wave 1 — parallel coder agents (shared worktree)
+    Note over D: default: all wave tasks start concurrently; set max_parallel_wave_tasks in [resources] to cap concurrency (see §7)
+
+    par Wave 1 — parallel coder agents (shared worktree, default: all at once)
         D->>C1: spawn W1-T1 (BuildTaskPrompt, preferred_model from architect meta)
         D->>C2: spawn W1-T2
         D->>C3: spawn W1-T3
