@@ -850,7 +850,7 @@ permission_default = "bypass"
 		CacheDir:         cacheDir,
 	}}
 
-	require.NoError(t, d.StartPlan(project, "feature.md", "legacy prompt ignored", "legacy-program-ignored"))
+	require.NoError(t, d.StartPlan(project, "feature.md", "caller-specific repair prompt", "legacy-program-ignored"))
 
 	var killedAgents []string
 	require.Eventually(t, func() bool {
@@ -886,13 +886,15 @@ permission_default = "bypass"
 	assert.Equal(t, "fast", records[0].opts.SDKSpeedTier)
 	assert.False(t, records[0].opts.SkipPermissions)
 	assert.Contains(t, records[0].opts.Prompt, ".kasmos/cache/feature.md-planner-planner-a.md")
-	assert.NotContains(t, records[0].opts.Prompt, "legacy prompt ignored")
+	assert.Contains(t, records[0].opts.Prompt, "caller-specific repair prompt")
+	assert.Contains(t, records[0].opts.Prompt, "planner_draft_finished")
 	assert.Equal(t, "planner-b", records[1].opts.PlannerProfile)
 	assert.False(t, records[1].opts.PlannerPrimary)
 	assert.True(t, records[1].opts.PlannerDraftMode)
 	assert.Equal(t, "opencode", records[1].opts.Program)
 	assert.Equal(t, "tmux", records[1].opts.ExecutionMode)
 	assert.True(t, records[1].opts.SkipPermissions)
+	assert.Contains(t, records[1].opts.Prompt, "caller-specific repair prompt")
 	assert.NoFileExists(t, filepath.Join(cacheDir, "feature.md-planner-old.md"))
 }
 

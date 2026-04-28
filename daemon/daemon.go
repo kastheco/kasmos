@@ -652,7 +652,7 @@ func (d *Daemon) startPlanAsync(entry RepoEntry, planFile, prompt, program strin
 			return
 		}
 		for i, profile := range entry.PlannerProfiles {
-			if err := d.spawnPlannerForProfile(context.Background(), entry, planFile, profile, i == 0, true, "", ""); err != nil {
+			if err := d.spawnPlannerForProfile(context.Background(), entry, planFile, profile, i == 0, true, prompt, program); err != nil {
 				d.logger.Error("spawn planner failed", "project", entry.Project, "plan", planFile, "profile", profile, "err", err)
 				// Kill any already-spawned siblings so the partial set
 				// doesn't strand the task in planning — without this
@@ -711,7 +711,13 @@ func (d *Daemon) spawnPlannerForProfile(ctx context.Context, e RepoEntry, planFi
 			CachePath: cachePath,
 		})
 		opts.Prompt = spec.Prompt
+		if legacyPrompt != "" {
+			opts.Prompt = fmt.Sprintf("%s\n\n## caller-provided prompt\n\nFollow this caller-provided planning request while preserving the draft-mode cache and planner_draft_finished instructions above:\n\n%s", opts.Prompt, legacyPrompt)
+		}
 		opts.Program = programForNamedProfile(e.Path, profile)
+		if opts.Program == "" {
+			opts.Program = legacyProgram
+		}
 		opts.Description = entry.Description
 		opts.ExecutionMode = string(executionModeForNamedProfile(e.Path, profile))
 		opts.SDKSpeedTier = sdkSpeedTierForNamedProfile(e.Path, profile)
