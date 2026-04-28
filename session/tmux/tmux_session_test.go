@@ -341,9 +341,11 @@ func TestRestore_LeavesPTYNil(t *testing.T) {
 	assert.Nil(t, s.ptmxHandle, "ptmxHandle should be nil after Restore")
 }
 
-func TestAttach_CreatesAndClosesAttachSessionHandles(t *testing.T) {
+func withNonInteractiveAttachUnitHarness(t *testing.T) {
 	// serial: mutates tmux timing globals
+	t.Helper()
 	withFastTmuxTimings(t)
+
 	oldStdinFD := stdinFD
 	oldIsTTY := terminalIsTTY
 	oldMakeRaw := terminalMakeRaw
@@ -351,7 +353,7 @@ func TestAttach_CreatesAndClosesAttachSessionHandles(t *testing.T) {
 	oldDrain := drainStdin
 	oldSilence := outerTerminalSilence
 	oldOuterRestore := outerTerminalRestore
-	defer func() {
+	t.Cleanup(func() {
 		stdinFD = oldStdinFD
 		terminalIsTTY = oldIsTTY
 		terminalMakeRaw = oldMakeRaw
@@ -359,7 +361,8 @@ func TestAttach_CreatesAndClosesAttachSessionHandles(t *testing.T) {
 		drainStdin = oldDrain
 		outerTerminalSilence = oldSilence
 		outerTerminalRestore = oldOuterRestore
-	}()
+	})
+
 	stdinFD = func() int { return 9 }
 	terminalIsTTY = func(int) bool { return false } // skip raw mode in tests
 	state := &term.State{}
@@ -368,6 +371,10 @@ func TestAttach_CreatesAndClosesAttachSessionHandles(t *testing.T) {
 	drainStdin = func(time.Duration) {}
 	outerTerminalSilence = func(io.Writer) {}
 	outerTerminalRestore = func(io.Writer) {}
+}
+
+func TestAttach_CreatesAndClosesAttachSessionHandles(t *testing.T) {
+	withNonInteractiveAttachUnitHarness(t)
 
 	ptyFactory := NewMockPtyFactory(t)
 	s := NewTmuxSessionWithDeps("test-attach-handle", "opencode", false,
@@ -401,32 +408,7 @@ func TestAttach_CreatesAndClosesAttachSessionHandles(t *testing.T) {
 }
 
 func TestDetach_DoesNotCallRestore(t *testing.T) {
-	// serial: mutates tmux timing globals
-	withFastTmuxTimings(t)
-	oldStdinFD := stdinFD
-	oldIsTTY := terminalIsTTY
-	oldMakeRaw := terminalMakeRaw
-	oldRestore := terminalRestore
-	oldDrain := drainStdin
-	oldSilence := outerTerminalSilence
-	oldOuterRestore := outerTerminalRestore
-	defer func() {
-		stdinFD = oldStdinFD
-		terminalIsTTY = oldIsTTY
-		terminalMakeRaw = oldMakeRaw
-		terminalRestore = oldRestore
-		drainStdin = oldDrain
-		outerTerminalSilence = oldSilence
-		outerTerminalRestore = oldOuterRestore
-	}()
-	stdinFD = func() int { return 9 }
-	terminalIsTTY = func(int) bool { return false }
-	state := &term.State{}
-	terminalMakeRaw = func(int) (*term.State, error) { return state, nil }
-	terminalRestore = func(int, *term.State) error { return nil }
-	drainStdin = func(time.Duration) {}
-	outerTerminalSilence = func(io.Writer) {}
-	outerTerminalRestore = func(io.Writer) {}
+	withNonInteractiveAttachUnitHarness(t)
 
 	ptyFactory := NewMockPtyFactory(t)
 	s := NewTmuxSessionWithDeps("test-detach-no-restore", "opencode", false,
