@@ -2301,6 +2301,12 @@ func TestPreviewTerminal_SelectionChange(t *testing.T) {
 	})
 }
 
+func TestAsyncClosePreviewTerminal_NilIsNoOp(t *testing.T) {
+	t.Parallel()
+
+	assert.Nil(t, asyncClosePreviewTerminal(nil))
+}
+
 // TestPreviewTerminal_RenderTickIntegration tests the full preview terminal lifecycle:
 // selection change → previewTerminalReadyMsg → render tick → selection change again.
 func TestPreviewTerminal_RenderTickIntegration(t *testing.T) {
