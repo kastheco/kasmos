@@ -14,6 +14,10 @@ Planning agent. Writes specs, plans, decomposes work into packages.
 Use `scc` for codebase metrics when scoping work.
 Load the `kasmos-planner` skill.
 
+## test philosophy
+
+Tests should protect durable behavior contracts and user-visible workflows, not only historical symptoms. Plans, implementations, and reviews should name the invariant each new test protects and prefer extending existing invariant suites over adding one-off regression files.
+
 ## Task State (CRITICAL)
 Task state is stored in the **global task store** (`~/.config/kasmos/taskstore.db` by default, or a remote http api), not in files on disk.
 Prefer mcp task tools for task-state work: `task_create`, `task_show`, `task_update_content`, `task_list`, and `task_transition`.

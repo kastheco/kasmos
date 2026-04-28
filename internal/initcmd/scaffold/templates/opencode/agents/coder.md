@@ -14,6 +14,10 @@ use `mcp__kasmos__docs_read` to fetch full docs when a match looks relevant.
 the canonical wiki is https://kasmos.kasthe.co/docs/ — the mcp tools serve the same content and work offline inside the kasmos repo.
 look up config keys and signal types in the wiki before hardcoding strings.
 
+## test philosophy
+
+When writing tests, protect behavior contracts, acceptance criteria, and bug families. Prefer extending existing invariant or workflow suites over adding one-off regression files.
+
 ## Commit Policy (CRITICAL)
 
 **ALWAYS commit your work.** After implementing changes, run tests, then immediately commit.

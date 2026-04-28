@@ -123,6 +123,9 @@ For each check that does NOT apply, write "skip — <reason>" and move on.
 - assertions use `require` for fatal conditions, `assert` for non-fatal
 - no real network/tmux/git in unit tests
 - test names describe the scenario, not the implementation
+- tests identify the behavior contract or invariant being protected
+- regression tests cover the bug family or root contract when practical
+- existing invariant/workflow suites are preferred over new one-off regression files
 
 ### 1c. Phase 1 exit criteria
 
@@ -232,7 +235,7 @@ For trivial issues, fix them yourself instead of kicking back to the coder:
 **Kick to coder (emit `review_changes_requested`):**
 - Anything requiring debugging or investigation
 - Logic changes, even small ones
-- Missing test coverage
+- Missing contract/invariant test coverage, or tests that only pin implementation details
 - Architectural concerns
 
 If only self-fixable issues remain, fix them all and emit `review_approved`.

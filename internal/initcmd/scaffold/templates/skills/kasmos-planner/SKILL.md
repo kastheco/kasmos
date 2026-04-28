@@ -230,6 +230,10 @@ rules:
 - task headers must use `### Task N: Title`
 - include a `**Files:**` block for each task with concrete paths when known
 
+### test philosophy
+
+When planning verification, name the durable behavior contract or user-visible invariant each test should protect. Prefer workflow, contract, or invariant coverage for bug families and cross-surface behavior over one-off regressions that only pin a historical symptom. Do not ask for tests merely because code changed; ask for them when they protect acceptance criteria, risky behavior, or a public contract.
+
 ### sizing table
 
 classify before writing plan body content. this informs the architect, not implementation chunking.
@@ -274,6 +278,7 @@ this is mandatory. fix every failure inline before signaling.
 - [ ] every implementation task appears under a `## Wave N` section with a `### Task N:` header.
 - [ ] each task includes a `**Files:**` block or a short reason why exact files are still unknown.
 - [ ] trade-offs and approach recommendation are documented in approach section.
+- [ ] test expectations name the behavior contract or invariant they protect; no task asks for tests only because code changed.
 
 ### coherence checks
 

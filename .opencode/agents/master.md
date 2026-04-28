@@ -9,6 +9,10 @@ You are the master agent. Perform readiness review after the reviewer has approv
 
 Before reviewing, load the `kasmos-master` skill.
 
+## test philosophy
+
+Evaluate test ROI: tests should protect contracts, invariants, and bug families, not just implementation details or old symptoms.
+
 ## CLI Tools (MANDATORY)
 
 You MUST read the `cli-tools` skill (SKILL.md) at the start of every session.

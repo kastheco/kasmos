@@ -121,6 +121,12 @@ Wrote code before writing the test? Delete it. Start over from the test. No exce
 - Don't "adapt" it while writing tests — delete means delete
 - Implement fresh from tests
 
+### Test ROI Rule
+
+Write tests for durable behavior contracts, acceptance criteria, or bug families. Prefer extending an existing invariant, workflow, or contract suite over adding a new one-off regression file. When a narrow regression is necessary, name the broader invariant in the test name or assertion so the suite protects the root behavior instead of only the old symptom.
+
+Avoid tests that only pin private helpers, incidental strings, or implementation shape unless that detail is the public contract.
+
 ### RED → GREEN → REFACTOR
 
 **RED — Write the failing test**
@@ -206,7 +212,7 @@ Form one specific hypothesis: "I think X is the root cause because Y." Test it w
 
 **Phase 4 — Implementation**
 
-Write a failing test reproducing the bug first (TDD discipline applies to bugfixes). Implement the single fix addressing the root cause. Verify the test now passes and no other tests regressed.
+Write a failing test at the narrowest public or invariant boundary that reproduces the bug family first (TDD discipline applies to bugfixes). Implement the single fix addressing the root cause. Verify the test now passes and no other tests regressed.
 
 **If the fix doesn't work:** Return to Phase 1. Re-analyze with new information.
 
