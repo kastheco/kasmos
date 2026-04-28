@@ -1120,4 +1120,20 @@ func TestValidatePlannerProfiles(t *testing.T) {
 		assert.Contains(t, err.Error(), "planner-a")
 		assert.Contains(t, err.Error(), "[orchestration].planners")
 	})
+
+	t.Run("enabled profile with empty program rejected", func(t *testing.T) {
+		// Without this guard, ResolveNamedProfile returns ok=false and the
+		// caller falls back to the default launcher, silently running the
+		// wrong agent for a configured planner profile.
+		cfg := &Config{
+			Planners: []string{"planner-a"},
+			Profiles: map[string]AgentProfile{
+				"planner-a": {Program: "", Enabled: true},
+			},
+		}
+		err := cfg.ValidatePlannerProfiles()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "planner-a")
+		assert.Contains(t, err.Error(), "empty program")
+	})
 }

@@ -1152,7 +1152,7 @@ func (d *Daemon) tickRepo(ctx context.Context, e RepoEntry) {
 
 		actions := e.Processor.Tick(scan)
 		if len(actions) == 0 {
-			status, result := gatewayNoopOutcome(entry)
+			status, result := loop.GatewayNoopOutcome(entry)
 			if err := e.SignalGateway.MarkProcessed(entry.ID, status, result); err != nil {
 				d.logger.Error("mark noop signal failed", "repo", e.Path, "id", entry.ID, "err", err)
 			}
@@ -1480,34 +1480,6 @@ func (d *Daemon) monitorRunningInstances(ctx context.Context, e RepoEntry) {
 		if err := d.executeAction(ctx, e, loop.SpawnReviewerAction{PlanFile: inst.TaskFile}); err != nil {
 			d.logger.Error("spawn reviewer after implementer completion failed", "repo", e.Path, "plan", inst.TaskFile, "err", err)
 		}
-	}
-}
-
-func gatewayNoopOutcome(entry *taskstore.SignalEntry) (taskstore.SignalStatus, string) {
-	canonicalType, err := taskfsm.CanonicalGatewaySignalType(entry.SignalType)
-	if err != nil {
-		return taskstore.SignalFailed, "signal rejected by processor"
-	}
-	if canonicalType == "planner_draft_finished" {
-		return taskstore.SignalDone, "planner draft recorded or waiting for peers"
-	}
-	internalType := canonicalType
-	if canonicalType == "elaborator_finished" {
-		internalType = string(taskfsm.ArchitectFinished)
-	}
-	switch internalType {
-	case "implement_finished":
-		return taskstore.SignalDone, "suppressed implement-finished signal"
-	case "implement_task_finished":
-		return taskstore.SignalFailed, "no active orchestrator / wrong wave / already-finished task"
-	case "implement_wave":
-		return taskstore.SignalFailed, "processor could not start the requested wave"
-	case string(taskfsm.ArchitectFinished):
-		return taskstore.SignalFailed, "no active architect pass to resume"
-	case string(taskfsm.VerifyApproved), string(taskfsm.VerifyFailed):
-		return taskstore.SignalFailed, "signal rejected outside verifying state"
-	default:
-		return taskstore.SignalFailed, "signal rejected by processor"
 	}
 }
 

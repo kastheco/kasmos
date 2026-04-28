@@ -1353,6 +1353,44 @@ func TestProcessor_ProcessPlannerDraftSignals_AutoAdvanceSynthesis(t *testing.T)
 	assert.True(t, isAutoImpl, "expected AutoImplementAction second, got %T", actions[1])
 }
 
+// TestProcessor_ResetPlannerDraftAgg_AllowsNewSynthesis verifies the public
+// reset is honored by ProcessPlannerDraftSignals on the next signal — this is
+// the seam UI replan flows (which bypass ProcessFSMSignals(PlanStart)) use to
+// avoid the stale agg.done drop documented in the FSM-path test below.
+func TestProcessor_ResetPlannerDraftAgg_AllowsNewSynthesis(t *testing.T) {
+	store := taskstore.NewTestStore(t)
+	require.NoError(t, store.Create("test", taskstore.TaskEntry{
+		Filename: "my-plan.md",
+		Status:   taskstore.StatusPlanning,
+	}))
+
+	p := NewProcessor(ProcessorConfig{
+		Store:            store,
+		Project:          "test",
+		PlannerDraftMode: true,
+		PlannerProfiles:  []string{"planner"},
+	})
+
+	// First fan-out completes (single-profile synthesizes immediately).
+	first := p.ProcessPlannerDraftSignals([]taskfsm.PlannerDraftSignal{
+		{TaskFile: "my-plan.md", PlannerID: "planner"},
+	})
+	require.NotEmpty(t, first)
+
+	// Without reset, a follow-up signal would be dropped on agg.done.
+	p.ResetPlannerDraftAgg("my-plan.md")
+
+	// Plan must be in StatusPlanning for the synthesized planner_finished
+	// transition to succeed; the UI flow performs PlanStart on the FSM
+	// (ready→planning) before calling ResetPlannerDraftAgg.
+	require.NoError(t, p.fsm.Transition("my-plan.md", taskfsm.PlanStart))
+
+	second := p.ProcessPlannerDraftSignals([]taskfsm.PlannerDraftSignal{
+		{TaskFile: "my-plan.md", PlannerID: "planner"},
+	})
+	require.NotEmpty(t, second, "post-reset signal must be honored")
+}
+
 // TestProcessor_ProcessFSMSignals_PlanStart_DraftModeResetsCompletedAggregation
 // verifies that re-issuing PlanStart for a plan whose previous draft
 // aggregation already completed clears the in-memory state so subsequent

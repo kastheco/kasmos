@@ -197,6 +197,8 @@ func (c *Config) PlannerProfileNames() []string {
 //   - duplicate names (after trimming)
 //   - names not present in [agents.*]
 //   - names that map to a disabled profile
+//   - names that map to a profile with empty program (would silently fall
+//     back to the default launcher at spawn time, running the wrong agent)
 func (c *Config) ValidatePlannerProfiles() error {
 	if c == nil {
 		return nil
@@ -223,6 +225,9 @@ func (c *Config) ValidatePlannerProfiles() error {
 		}
 		if !profile.Enabled {
 			return fmt.Errorf("[orchestration].planners: planner profile %q is disabled", trimmed)
+		}
+		if strings.TrimSpace(profile.Program) == "" {
+			return fmt.Errorf("[orchestration].planners: planner profile %q has empty program", trimmed)
 		}
 	}
 	return nil

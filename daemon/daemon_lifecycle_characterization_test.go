@@ -8,6 +8,7 @@ import (
 	"github.com/kastheco/kasmos/config/taskfsm"
 	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/kastheco/kasmos/daemon/api"
+	"github.com/kastheco/kasmos/orchestration/loop"
 	"github.com/kastheco/kasmos/session"
 	tmuxpkg "github.com/kastheco/kasmos/session/tmux"
 	"github.com/stretchr/testify/assert"
@@ -38,7 +39,7 @@ func TestGatewayNoopOutcome_Characterization(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			status, result := gatewayNoopOutcome(&taskstore.SignalEntry{SignalType: tt.signalType})
+			status, result := loop.GatewayNoopOutcome(&taskstore.SignalEntry{SignalType: tt.signalType})
 			assert.Equal(t, tt.status, status)
 			assert.Equal(t, tt.result, result)
 		})

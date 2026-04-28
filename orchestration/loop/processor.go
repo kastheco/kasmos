@@ -433,7 +433,7 @@ func (p *Processor) ProcessFSMSignals(signals []taskfsm.Signal) []Action {
 			if p.config.PlannerDraftMode && len(p.config.PlannerProfiles) > 0 {
 				// Drop any aggregation state from a prior run so signals from this
 				// new fan-out aren't ignored by a stale agg.done=true.
-				delete(p.plannerDraftAggs, sig.TaskFile)
+				p.ResetPlannerDraftAgg(sig.TaskFile)
 				// Multi-planner draft mode: clear stale caches, then spawn one
 				// planner per configured profile. Only the first profile is primary.
 				actions = append(actions, ClearPlannerDraftsAction{PlanFile: sig.TaskFile})
@@ -728,6 +728,14 @@ func (p *Processor) ProcessPlannerDraftSignals(signals []taskfsm.PlannerDraftSig
 		actions = append(actions, synthesized...)
 	}
 	return actions
+}
+
+// ResetPlannerDraftAgg drops any in-memory draft aggregation for planFile so a
+// fresh fan-out's signals are not ignored by a stale agg.done from a prior run.
+// Callers that respawn planners outside of ProcessFSMSignals (e.g. UI replan
+// flows) must invoke this before launching the new planners.
+func (p *Processor) ResetPlannerDraftAgg(planFile string) {
+	delete(p.plannerDraftAggs, planFile)
 }
 
 // getOrInitDraftAgg returns the existing aggregation state for a plan file, or

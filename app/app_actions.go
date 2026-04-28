@@ -1151,6 +1151,14 @@ func (m *home) spawnPlannersForTask(planFile, legacyPrompt, description string) 
 	}
 
 	m.killExistingPlanAgent(planFile, session.AgentTypePlanner)
+	// Drop any stale in-memory aggregation from a previous fan-out so the
+	// new planners' draft signals aren't ignored. The FSM-driven path resets
+	// this in ProcessFSMSignals(PlanStart), but UI flows (this file) and
+	// AutoImplementAction-style retries call spawnPlannersForTask directly,
+	// bypassing that signal-processing pass.
+	if proc := m.ensureProcessor(); proc != nil {
+		proc.ResetPlannerDraftAgg(planFile)
+	}
 	cacheDir := filepath.Join(m.activeRepoPath, ".kasmos", "cache")
 	clearCmd := func() tea.Msg {
 		if err := orchestration.ClearPlannerDraftCaches(cacheDir, planFile); err != nil {

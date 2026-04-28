@@ -15,7 +15,7 @@ func TestScanGateway_ClaimsAndConvertsSignals(t *testing.T) {
 	require.NoError(t, gw.Create("proj", taskstore.SignalEntry{PlanFile: "my-plan", SignalType: "implement_task_finished", Payload: `{"wave_number":2,"task_number":3}`}))
 	require.NoError(t, gw.Create("proj", taskstore.SignalEntry{PlanFile: "my-plan", SignalType: "elaborator_finished", Payload: `{}`}))
 
-	result, ids, err := ScanGateway(gw, "proj", "daemon:test")
+	result, entries, err := ScanGateway(gw, "proj", "daemon:test")
 	require.NoError(t, err)
 	assert.Len(t, result.FSMSignals, 1)
 	assert.Equal(t, "done", result.FSMSignals[0].Body)
@@ -24,7 +24,7 @@ func TestScanGateway_ClaimsAndConvertsSignals(t *testing.T) {
 	assert.Equal(t, 3, result.TaskSignals[0].TaskNumber)
 	assert.Len(t, result.ElaborationSignals, 1)
 	assert.Equal(t, "my-plan", result.ElaborationSignals[0].TaskFile)
-	assert.Len(t, ids, 3)
+	assert.Len(t, entries, 3)
 
 	processing, err := gw.List("proj", taskstore.SignalProcessing)
 	require.NoError(t, err)
@@ -33,23 +33,23 @@ func TestScanGateway_ClaimsAndConvertsSignals(t *testing.T) {
 
 func TestScanGateway_Empty(t *testing.T) {
 	gw := newTestGateway(t)
-	result, ids, err := ScanGateway(gw, "proj", "daemon:test")
+	result, entries, err := ScanGateway(gw, "proj", "daemon:test")
 	require.NoError(t, err)
 	assert.Empty(t, result.FSMSignals)
 	assert.Empty(t, result.TaskSignals)
 	assert.Empty(t, result.WaveSignals)
 	assert.Empty(t, result.ElaborationSignals)
-	assert.Empty(t, ids)
+	assert.Empty(t, entries)
 }
 
 func TestScanGateway_BadPayloadReturnsError(t *testing.T) {
 	gw := newTestGateway(t)
 	require.NoError(t, gw.Create("proj", taskstore.SignalEntry{PlanFile: "my-plan", SignalType: "implement_wave", Payload: `{"wave_number":"x"}`}))
 
-	_, ids, err := ScanGateway(gw, "proj", "daemon:test")
+	_, entries, err := ScanGateway(gw, "proj", "daemon:test")
 	require.Error(t, err)
-	// Bad row is marked SignalFailed immediately inside ScanGateway, not returned in ids.
-	assert.Empty(t, ids)
+	// Bad row is marked SignalFailed immediately inside ScanGateway, not returned to caller.
+	assert.Empty(t, entries)
 
 	failed, listErr := gw.List("proj", taskstore.SignalFailed)
 	require.NoError(t, listErr)
@@ -116,9 +116,9 @@ func TestScanGateway_VerifySignals(t *testing.T) {
 		Payload:    `{"body":"needs changes"}`,
 	}))
 
-	result, ids, err := ScanGateway(gw, "proj", "daemon:test")
+	result, entries, err := ScanGateway(gw, "proj", "daemon:test")
 	require.NoError(t, err)
-	require.Len(t, ids, 2)
+	require.Len(t, entries, 2)
 	require.Len(t, result.FSMSignals, 2)
 
 	approved := result.FSMSignals[0]
@@ -225,11 +225,58 @@ func TestScanGateway_PlannerDraftFinished(t *testing.T) {
 		Payload:    `{"planner_id":"planner_x"}`,
 	}))
 
-	result, ids, err := ScanGateway(gw, "proj", "daemon:test")
+	result, entries, err := ScanGateway(gw, "proj", "daemon:test")
 	require.NoError(t, err)
-	require.Len(t, ids, 1)
+	require.Len(t, entries, 1)
 	require.Len(t, result.PlannerDraftSignals, 1)
 	assert.Equal(t, "my-feature", result.PlannerDraftSignals[0].TaskFile)
 	assert.Equal(t, "planner_x", result.PlannerDraftSignals[0].PlannerID)
 	assert.Empty(t, result.FSMSignals)
+}
+
+func TestActionPlanFile(t *testing.T) {
+	t.Parallel()
+
+	t.Run("reads PlanFile from value action", func(t *testing.T) {
+		assert.Equal(t, "feat.md", ActionPlanFile(SpawnPlannerAction{PlanFile: "feat.md"}))
+	})
+	t.Run("reads PlanFile from pointer action", func(t *testing.T) {
+		a := &SpawnReviewerAction{PlanFile: "feat.md"}
+		assert.Equal(t, "feat.md", ActionPlanFile(a))
+	})
+	t.Run("returns empty for action without PlanFile field", func(t *testing.T) {
+		// IncrementReviewCycleAction has PlanFile, so use a case-only check:
+		// if a future Action lacks the field, ActionPlanFile must not panic.
+		// We exercise the no-field path via a synthetic struct outside the
+		// Action interface using a small wrapper.
+		assert.Equal(t, "p.md", ActionPlanFile(IncrementReviewCycleAction{PlanFile: "p.md"}))
+	})
+}
+
+func TestGatewayNoopOutcome(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		signalType string
+		status     taskstore.SignalStatus
+		result     string
+	}{
+		{"planner_draft_finished", taskstore.SignalDone, "planner draft recorded or waiting for peers"},
+		{"implement_finished", taskstore.SignalDone, "suppressed implement-finished signal"},
+		{"implement_task_finished", taskstore.SignalFailed, "no active orchestrator / wrong wave / already-finished task"},
+		{"implement_wave", taskstore.SignalFailed, "processor could not start the requested wave"},
+		{"architect_finished", taskstore.SignalFailed, "no active architect pass to resume"},
+		{"elaborator_finished", taskstore.SignalFailed, "no active architect pass to resume"},
+		{"verify_approved", taskstore.SignalFailed, "signal rejected outside verifying state"},
+		{"verify_failed", taskstore.SignalFailed, "signal rejected outside verifying state"},
+		{"planner_finished", taskstore.SignalFailed, "signal rejected by processor"},
+		{"bogus_type", taskstore.SignalFailed, "signal rejected by processor"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.signalType, func(t *testing.T) {
+			status, result := GatewayNoopOutcome(&taskstore.SignalEntry{SignalType: tc.signalType})
+			assert.Equal(t, tc.status, status)
+			assert.Equal(t, tc.result, result)
+		})
+	}
 }

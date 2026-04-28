@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"reflect"
 
 	"github.com/kastheco/kasmos/config/taskfsm"
 	"github.com/kastheco/kasmos/config/taskstore"
@@ -35,7 +36,8 @@ type plannerDraftPayload struct {
 
 // ScanGateway claims all pending signals for the given project from gw,
 // converts them into a ScanResult that Processor.Tick can consume, and returns
-// the claimed row IDs so the caller can mark them done after processing.
+// the claimed entries so the caller can mark them done after processing and
+// classify no-op rows via GatewayNoopOutcome.
 //
 // Signals are claimed one at a time using the atomic Claim method to prevent
 // double-processing. The function does NOT call MarkProcessed — ownership of
@@ -43,17 +45,17 @@ type plannerDraftPayload struct {
 //
 // Error handling:
 //   - An unknown signal type or a malformed JSON payload returns an error.
-//     Any IDs already claimed before the bad row are included in the return value.
+//     Any entries already claimed before the bad row are included in the return value.
 //   - An empty payload is valid for FSM and elaboration signals and produces
 //     an empty Body field.
-func ScanGateway(gw taskstore.SignalGateway, project, claimedBy string) (ScanResult, []int64, error) {
+func ScanGateway(gw taskstore.SignalGateway, project, claimedBy string) (ScanResult, []*taskstore.SignalEntry, error) {
 	var result ScanResult
-	var ids []int64
+	var entries []*taskstore.SignalEntry
 
 	for {
 		entry, err := gw.Claim(project, claimedBy)
 		if err != nil {
-			return result, ids, fmt.Errorf("claim signal: %w", err)
+			return result, entries, fmt.Errorf("claim signal: %w", err)
 		}
 		if entry == nil {
 			break
@@ -65,13 +67,13 @@ func ScanGateway(gw taskstore.SignalGateway, project, claimedBy string) (ScanRes
 			if markErr := gw.MarkProcessed(entry.ID, taskstore.SignalFailed, convertErr.Error()); markErr != nil {
 				slog.Default().Error("gateway_scanner: mark signal as failed", "id", entry.ID, "err", markErr)
 			}
-			return result, ids, fmt.Errorf("signal %d (%s): %w", entry.ID, entry.SignalType, convertErr)
+			return result, entries, fmt.Errorf("signal %d (%s): %w", entry.ID, entry.SignalType, convertErr)
 		}
 
-		ids = append(ids, entry.ID)
+		entries = append(entries, entry)
 	}
 
-	return result, ids, nil
+	return result, entries, nil
 }
 
 // ConvertSignalEntry decodes a single SignalEntry and appends it to result.
@@ -202,6 +204,62 @@ func ConvertSignalEntry(entry *taskstore.SignalEntry, result *ScanResult) error 
 	}
 
 	return nil
+}
+
+// ActionPlanFile extracts the PlanFile value from an Action by reading the
+// `PlanFile` field via reflection. Returns the empty string for actions that
+// have no PlanFile field. This is used by callers (the local TUI ack loop)
+// that need to map produced actions back to their originating plan file
+// without keeping a hand-maintained type switch in lockstep with every new
+// action type.
+func ActionPlanFile(a Action) string {
+	v := reflect.ValueOf(a)
+	if v.Kind() == reflect.Pointer {
+		v = v.Elem()
+	}
+	if v.Kind() != reflect.Struct {
+		return ""
+	}
+	f := v.FieldByName("PlanFile")
+	if !f.IsValid() || f.Kind() != reflect.String {
+		return ""
+	}
+	return f.String()
+}
+
+// GatewayNoopOutcome classifies a gateway signal entry that produced no
+// processor actions. Daemon and TUI both use this so a no-op signal row gets
+// either a descriptive SignalDone result (for legitimate no-ops, e.g. a
+// planner draft waiting on peers) or SignalFailed (for signals that the
+// processor cannot dispatch in the current state, e.g. wrong-wave
+// implement_task_finished or out-of-phase verify signals). Marking everything
+// SignalDone unconditionally hides those mismatches and makes recovery harder.
+func GatewayNoopOutcome(entry *taskstore.SignalEntry) (taskstore.SignalStatus, string) {
+	canonicalType, err := taskfsm.CanonicalGatewaySignalType(entry.SignalType)
+	if err != nil {
+		return taskstore.SignalFailed, "signal rejected by processor"
+	}
+	if canonicalType == "planner_draft_finished" {
+		return taskstore.SignalDone, "planner draft recorded or waiting for peers"
+	}
+	internalType := canonicalType
+	if canonicalType == "elaborator_finished" {
+		internalType = string(taskfsm.ArchitectFinished)
+	}
+	switch internalType {
+	case "implement_finished":
+		return taskstore.SignalDone, "suppressed implement-finished signal"
+	case "implement_task_finished":
+		return taskstore.SignalFailed, "no active orchestrator / wrong wave / already-finished task"
+	case "implement_wave":
+		return taskstore.SignalFailed, "processor could not start the requested wave"
+	case string(taskfsm.ArchitectFinished):
+		return taskstore.SignalFailed, "no active architect pass to resume"
+	case string(taskfsm.VerifyApproved), string(taskfsm.VerifyFailed):
+		return taskstore.SignalFailed, "signal rejected outside verifying state"
+	default:
+		return taskstore.SignalFailed, "signal rejected by processor"
+	}
 }
 
 // decodeBody extracts the optional "body" and "fsm_applied" fields from a JSON
