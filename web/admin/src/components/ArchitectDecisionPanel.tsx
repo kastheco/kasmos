@@ -4,6 +4,7 @@ import remarkGfm from "remark-gfm";
 import type {
   ArchitectDecisionAuditResponse,
   ArchitectDecisionDifference,
+  ArchitectPlannerDraftDecision,
 } from "../types";
 import styles from "./ArchitectDecisionPanel.module.css";
 
@@ -80,6 +81,43 @@ function formatList(values?: string[] | number[]): string {
   return values.join(", ");
 }
 
+function PlannerDraftsTable({
+  drafts,
+}: {
+  drafts?: ArchitectPlannerDraftDecision[];
+}) {
+  if (!drafts || drafts.length === 0) return null;
+  return (
+    <section className={styles.section}>
+      <h3 className={styles.sectionTitle}>planner drafts</h3>
+      <div className={styles.tableScroller}>
+        <table className={styles.table}>
+          <thead>
+            <tr>
+              <th>profile</th>
+              <th>decision</th>
+              <th>summary</th>
+              <th>rationale</th>
+            </tr>
+          </thead>
+          <tbody>
+            {drafts.map((draft, index) => (
+              <tr key={`${draft.profile}-${index}`}>
+                <td>
+                  <strong>{draft.profile}</strong>
+                </td>
+                <td>{draft.decision}</td>
+                <td>{draft.summary || "-"}</td>
+                <td>{draft.rationale || "-"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
 function DifferencesTable({
   differences,
 }: {
@@ -137,7 +175,6 @@ function Timestamps({
 }) {
   const rows = [
     ["architect meta", response.timestamps?.architect_meta_at],
-    ["baseline created", response.timestamps?.baseline_created_at],
     [
       "decision audit created",
       response.timestamps?.decision_audit_created_at ??
@@ -222,6 +259,8 @@ export default function ArchitectDecisionPanel({
         </section>
       )}
 
+      <PlannerDraftsTable drafts={audit?.planner_drafts} />
+
       <DifferencesTable differences={audit?.differences} />
 
       {showFinalMarkdown && response.final_markdown && (
@@ -229,16 +268,6 @@ export default function ArchitectDecisionPanel({
           <h3 className={styles.sectionTitle}>final markdown</h3>
           <MarkdownBlock value={response.final_markdown} />
         </section>
-      )}
-
-      {response.architect_baseline_markdown && (
-        <details className={styles.details}>
-          <summary>architect baseline</summary>
-          {response.baseline_reason && (
-            <p className={styles.baselineReason}>{response.baseline_reason}</p>
-          )}
-          <MarkdownBlock value={response.architect_baseline_markdown} />
-        </details>
       )}
 
       <Timestamps response={response} />

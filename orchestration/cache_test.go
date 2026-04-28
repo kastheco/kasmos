@@ -10,6 +10,114 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// --- planner draft cache helpers ---
+
+func TestPlannerDraftCacheFilename(t *testing.T) {
+	name, err := PlannerDraftCacheFilename("my-plan", "claude")
+	require.NoError(t, err)
+	assert.Equal(t, "my-plan-planner-claude.md", name)
+
+	_, err = PlannerDraftCacheFilename("", "claude")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "plan slug")
+
+	_, err = PlannerDraftCacheFilename("plan", "")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "profile")
+
+	_, err = PlannerDraftCacheFilename("plan/bad", "claude")
+	require.Error(t, err)
+
+	_, err = PlannerDraftCacheFilename("plan", "pro/file")
+	require.Error(t, err)
+}
+
+func TestSaveAndLoadPlannerDraft(t *testing.T) {
+	tmp := t.TempDir()
+	cacheDir := filepath.Join(tmp, "cache")
+	markdown := "## draft\n\n- wave 1\n- wave 2\n"
+
+	require.NoError(t, SavePlannerDraft(cacheDir, "my-plan", "claude", markdown))
+
+	entry, err := LoadPlannerDraft(cacheDir, "my-plan", "claude")
+	require.NoError(t, err)
+	require.NotNil(t, entry)
+	assert.Equal(t, "claude", entry.Profile)
+	assert.Equal(t, markdown, entry.Markdown)
+	assert.True(t, entry.ModTime.IsZero() == false)
+	assert.NotEmpty(t, entry.Path)
+
+	// cacheDir created
+	info, err := os.Stat(cacheDir)
+	require.NoError(t, err)
+	assert.True(t, info.IsDir())
+}
+
+func TestLoadPlannerDraft_Missing(t *testing.T) {
+	tmp := t.TempDir()
+	entry, err := LoadPlannerDraft(filepath.Join(tmp, "cache"), "plan", "codex")
+	require.NoError(t, err)
+	assert.Nil(t, entry)
+}
+
+func TestListPlannerDraftCaches(t *testing.T) {
+	tmp := t.TempDir()
+	cacheDir := filepath.Join(tmp, "cache")
+
+	require.NoError(t, SavePlannerDraft(cacheDir, "plan", "zephyr", "zephyr draft"))
+	require.NoError(t, SavePlannerDraft(cacheDir, "plan", "alpha", "alpha draft"))
+	require.NoError(t, SavePlannerDraft(cacheDir, "plan", "bravo", "bravo draft"))
+	// unrelated file – should be ignored
+	require.NoError(t, os.WriteFile(filepath.Join(cacheDir, "plan-architect.json"), []byte("{}"), 0o644))
+
+	entries, err := ListPlannerDraftCaches(cacheDir, "plan")
+	require.NoError(t, err)
+	require.Len(t, entries, 3)
+	// sorted by profile
+	assert.Equal(t, "alpha", entries[0].Profile)
+	assert.Equal(t, "bravo", entries[1].Profile)
+	assert.Equal(t, "zephyr", entries[2].Profile)
+	assert.Equal(t, "alpha draft", entries[0].Markdown)
+}
+
+func TestListPlannerDraftCaches_MissingDir(t *testing.T) {
+	tmp := t.TempDir()
+	entries, err := ListPlannerDraftCaches(filepath.Join(tmp, "no-such-dir"), "plan")
+	require.NoError(t, err)
+	assert.Nil(t, entries)
+}
+
+func TestClearPlannerDraftCaches(t *testing.T) {
+	tmp := t.TempDir()
+	cacheDir := filepath.Join(tmp, "cache")
+	planSlug := "plan"
+
+	require.NoError(t, SavePlannerDraft(cacheDir, planSlug, "alpha", "alpha draft"))
+	require.NoError(t, SavePlannerDraft(cacheDir, planSlug, "bravo", "bravo draft"))
+	// legacy baseline file
+	legacyPath := filepath.Join(cacheDir, planSlug+"-architect-baseline.json")
+	require.NoError(t, os.WriteFile(legacyPath, []byte(`{}`), 0o644))
+	// unrelated file – must survive
+	survivorPath := filepath.Join(cacheDir, planSlug+"-architect.json")
+	require.NoError(t, os.WriteFile(survivorPath, []byte(`{}`), 0o644))
+
+	require.NoError(t, ClearPlannerDraftCaches(cacheDir, planSlug))
+
+	entries, err := ListPlannerDraftCaches(cacheDir, planSlug)
+	require.NoError(t, err)
+	assert.Empty(t, entries)
+	assert.NoFileExists(t, legacyPath)
+	assert.FileExists(t, survivorPath)
+
+	// idempotent – missing files are not errors
+	require.NoError(t, ClearPlannerDraftCaches(cacheDir, planSlug))
+}
+
+func TestClearPlannerDraftCaches_MissingDir(t *testing.T) {
+	tmp := t.TempDir()
+	require.NoError(t, ClearPlannerDraftCaches(filepath.Join(tmp, "no-such-dir"), "plan"))
+}
+
 func TestSaveAndLoadArchitectMeta(t *testing.T) {
 	tmp := t.TempDir()
 	cacheDir := filepath.Join(tmp, "cache")
@@ -61,6 +169,15 @@ func TestSaveAndLoadArchitectMeta(t *testing.T) {
 				RelatedFiles:      []string{"orchestration/meta.go", "orchestration/cache.go"},
 				TaskNumbers:       []int{1, 2},
 			}},
+			PlannerDrafts: []ArchitectPlannerDraftDecision{
+				{
+					Profile:   "claude",
+					CachePath: ".kasmos/cache/planner-planner-claude.md",
+					Summary:   "claude proposed two waves",
+					Decision:  "accept",
+					Rationale: "well-structured",
+				},
+			},
 		},
 	}
 
@@ -179,6 +296,13 @@ func TestValidateArchitectDecisionAudit(t *testing.T) {
 		FinalDecision:  "accepted unchanged",
 		Summary:        "planner draft accepted unchanged",
 	}, planFile, project))
+	// valid planner drafts
+	withDrafts := valid()
+	withDrafts.PlannerDrafts = []ArchitectPlannerDraftDecision{
+		{Profile: "claude", Decision: "accept"},
+		{Profile: "codex", Decision: "reject", Rationale: "too broad"},
+	}
+	require.NoError(t, ValidateArchitectDecisionAudit(withDrafts, planFile, project))
 
 	tests := []struct {
 		name      string
@@ -261,6 +385,24 @@ func TestValidateArchitectDecisionAudit(t *testing.T) {
 				return a
 			}(),
 			errSubstr: "difference 0 final decision is empty",
+		},
+		{
+			name: "planner draft missing profile",
+			audit: func() *ArchitectDecisionAudit {
+				a := valid()
+				a.PlannerDrafts = []ArchitectPlannerDraftDecision{{Profile: "", Decision: "accept"}}
+				return a
+			}(),
+			errSubstr: "planner draft 0 profile is empty",
+		},
+		{
+			name: "planner draft missing decision",
+			audit: func() *ArchitectDecisionAudit {
+				a := valid()
+				a.PlannerDrafts = []ArchitectPlannerDraftDecision{{Profile: "claude", Decision: "  "}}
+				return a
+			}(),
+			errSubstr: "planner draft 0 decision is empty",
 		},
 	}
 

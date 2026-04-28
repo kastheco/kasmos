@@ -70,7 +70,6 @@ vi.mock("../hooks/useAutoRefresh", () => ({
               },
             ],
           },
-          architect_baseline_markdown: "## baseline\n\nkeep plan editing intact",
         },
         loading: false,
         error: null,

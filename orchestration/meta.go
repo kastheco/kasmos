@@ -18,16 +18,27 @@ type ArchitectMeta struct {
 // ArchitectDecisionAudit records the architect's baseline-vs-planner comparison
 // and the final decision set that shaped the architect metadata.
 type ArchitectDecisionAudit struct {
-	SchemaVersion   int                           `json:"schema_version"`
-	PlanFile        string                        `json:"plan_file"`
-	Project         string                        `json:"project"`
-	CreatedAt       time.Time                     `json:"created_at"`
-	BaselineSource  string                        `json:"baseline_source,omitempty"`
-	Summary         string                        `json:"summary,omitempty"`
-	PlannerSummary  string                        `json:"planner_summary,omitempty"`
-	BaselineSummary string                        `json:"baseline_summary,omitempty"`
-	FinalDecision   string                        `json:"final_decision,omitempty"`
-	Differences     []ArchitectDecisionDifference `json:"differences,omitempty"`
+	SchemaVersion   int                             `json:"schema_version"`
+	PlanFile        string                          `json:"plan_file"`
+	Project         string                          `json:"project"`
+	CreatedAt       time.Time                       `json:"created_at"`
+	BaselineSource  string                          `json:"baseline_source,omitempty"`
+	Summary         string                          `json:"summary,omitempty"`
+	PlannerSummary  string                          `json:"planner_summary,omitempty"`
+	BaselineSummary string                          `json:"baseline_summary,omitempty"`
+	FinalDecision   string                          `json:"final_decision,omitempty"`
+	Differences     []ArchitectDecisionDifference   `json:"differences,omitempty"`
+	PlannerDrafts   []ArchitectPlannerDraftDecision `json:"planner_drafts,omitempty"`
+}
+
+// ArchitectPlannerDraftDecision records how the architect evaluated one planner's draft
+// during the multi-planner aggregation step.
+type ArchitectPlannerDraftDecision struct {
+	Profile   string `json:"profile"`
+	CachePath string `json:"cache_path,omitempty"`
+	Summary   string `json:"summary,omitempty"`
+	Decision  string `json:"decision"`
+	Rationale string `json:"rationale,omitempty"`
 }
 
 // ArchitectDecisionDifference describes one planner-vs-architect decision point.

@@ -6,11 +6,8 @@ import type { ArchitectDecisionAuditResponse } from "../types";
 const HAPPY_RESPONSE: ArchitectDecisionAuditResponse = {
   available: true,
   final_markdown: "**ship** the architect version",
-  architect_baseline_markdown: "## baseline\n\n- keep existing api shape",
-  baseline_reason: "captured before architect rewrite",
   timestamps: {
     architect_meta_at: "2026-04-24T10:00:00Z",
-    baseline_created_at: "2026-04-24T09:30:00Z",
     decision_audit_created_at: "2026-04-24T10:05:00Z",
   },
   decision_audit: {
@@ -23,6 +20,19 @@ const HAPPY_RESPONSE: ArchitectDecisionAuditResponse = {
     planner_summary: "planner split api and ui separately",
     baseline_summary: "baseline used the task detail page contract",
     final_decision: "use a read-only hq api and lazy admin panel",
+    planner_drafts: [
+      {
+        profile: "claude",
+        decision: "accept",
+        summary: "claude proposed two waves",
+        rationale: "well-structured",
+      },
+      {
+        profile: "codex",
+        decision: "partial",
+        summary: "codex narrowed scope",
+      },
+    ],
     differences: [
       {
         area: "admin ui",
@@ -39,7 +49,7 @@ const HAPPY_RESPONSE: ArchitectDecisionAuditResponse = {
 };
 
 describe("ArchitectDecisionPanel", () => {
-  it("renders the available audit with summaries, differences, markdown, and timestamps", () => {
+  it("renders the available audit with summaries, planner drafts, differences, markdown, and timestamps", () => {
     render(<ArchitectDecisionPanel response={HAPPY_RESPONSE} />);
 
     expect(
@@ -50,10 +60,18 @@ describe("ArchitectDecisionPanel", () => {
     expect(screen.getByText("baseline used the task detail page contract")).toBeTruthy();
     expect(screen.getByText("use a read-only hq api and lazy admin panel")).toBeTruthy();
     expect(screen.getByText("ship")).toBeTruthy();
-    expect(screen.getByRole("table")).toBeTruthy();
+    // two tables: planner drafts + differences
+    expect(screen.getAllByRole("table")).toHaveLength(2);
+    // planner drafts section
+    expect(screen.getByText("planner drafts")).toBeTruthy();
+    expect(screen.getByText("claude")).toBeTruthy();
+    expect(screen.getByText("codex")).toBeTruthy();
+    expect(screen.getByText("claude proposed two waves")).toBeTruthy();
+    // differences section
     expect(screen.getByText("admin ui")).toBeTruthy();
     expect(screen.getByText("operators need the comparison at a glance")).toBeTruthy();
-    expect(screen.getByText("architect baseline", { selector: "summary" })).toBeTruthy();
+    // baseline details block must not be present
+    expect(screen.queryByText("architect baseline", { selector: "summary" })).toBeNull();
     expect(screen.getByText("decision audit created")).toBeTruthy();
   });
 
@@ -81,15 +99,18 @@ describe("ArchitectDecisionPanel", () => {
     ).toBeTruthy();
   });
 
-  it("omits the baseline details when baseline markdown is absent", () => {
+  it("omits the planner drafts table when no drafts are present", () => {
     const response: ArchitectDecisionAuditResponse = {
       ...HAPPY_RESPONSE,
-      architect_baseline_markdown: undefined,
+      decision_audit: {
+        ...HAPPY_RESPONSE.decision_audit!,
+        planner_drafts: undefined,
+      },
     };
 
     render(<ArchitectDecisionPanel response={response} />);
 
-    expect(screen.queryByText("architect baseline", { selector: "summary" })).toBeNull();
+    expect(screen.queryByText("planner drafts")).toBeNull();
     expect(screen.getByText("ship the structured panel")).toBeTruthy();
   });
 });

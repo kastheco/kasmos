@@ -211,6 +211,14 @@ export interface ArchitectDecisionDifference {
   task_numbers?: number[];
 }
 
+export interface ArchitectPlannerDraftDecision {
+  profile: string;
+  cache_path?: string;
+  summary?: string;
+  decision: string;
+  rationale?: string;
+}
+
 export interface ArchitectDecisionAudit {
   schema_version: number;
   plan_file: string;
@@ -222,6 +230,7 @@ export interface ArchitectDecisionAudit {
   baseline_summary?: string;
   final_decision?: string;
   differences?: ArchitectDecisionDifference[];
+  planner_drafts?: ArchitectPlannerDraftDecision[];
 }
 
 export interface ArchitectDecisionAuditResponse {
@@ -229,11 +238,8 @@ export interface ArchitectDecisionAuditResponse {
   reason?: ArchitectDecisionUnavailableReason | string;
   final_markdown?: string;
   decision_audit?: ArchitectDecisionAudit;
-  architect_baseline_markdown?: string;
-  baseline_reason?: string;
   timestamps?: {
     architect_meta_at?: string;
-    baseline_created_at?: string;
     decision_audit_created_at?: string;
   };
 }
