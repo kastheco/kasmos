@@ -372,7 +372,8 @@ func (s *shellCommandExecutionSession) SetProject(string)              {}
 func (s *shellCommandExecutionSession) SetSessionTitle(string)         {}
 func (s *shellCommandExecutionSession) SetTitleFunc(func(string, time.Time, string)) {
 }
-func (s *shellCommandExecutionSession) SetSDKSpeedTier(string) {}
+func (s *shellCommandExecutionSession) SetSDKSpeedTier(string)                       {}
+func (s *shellCommandExecutionSession) SetResourceControls(config.ResolvedResourceControls) {}
 func (s *shellCommandExecutionSession) RendererStats() sessionsdk.RendererStats {
 	return s.stats
 }

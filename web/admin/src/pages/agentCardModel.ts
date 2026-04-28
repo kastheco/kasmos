@@ -40,6 +40,9 @@ export interface AgentCardModel {
   updatedAt?: string;
   /** Program string, e.g. "claude" / "opencode" — shown in meta. */
   program?: string;
+  /** Active resource-control profile ("interactive", "custom", …).
+   *  Absent when the instance uses the normal/no-op profile. */
+  resourceProfile?: string;
 }
 
 /** Task-status groups — display order top-to-bottom. Matches the plan
@@ -231,6 +234,7 @@ export function toAgentCardModel(inst: InstanceEntry, taskStatus?: Status): Agen
     branch: inst.branch || undefined,
     updatedAt: inst.updated_at,
     program: inst.program,
+    resourceProfile: inst.resource_profile || undefined,
   };
 }
 

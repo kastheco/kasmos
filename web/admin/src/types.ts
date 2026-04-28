@@ -168,6 +168,9 @@ export interface InstanceEntry {
   health_reason?: string;
   execution_mode?: ExecutionMode;
   valid_actions?: InstanceAction[];
+  /** resource_profile is the active resource-control profile name
+   *  ("interactive", "custom", …). Absent or empty means normal/no-op. */
+  resource_profile?: string;
 }
 
 export interface AuditEvent {

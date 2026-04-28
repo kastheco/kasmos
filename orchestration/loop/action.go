@@ -5,6 +5,7 @@ package loop
 import (
 	"context"
 
+	"github.com/kastheco/kasmos/config"
 	"github.com/kastheco/kasmos/config/taskfsm"
 )
 
@@ -289,6 +290,11 @@ type SpawnOpts struct {
 	// SDKTranscriptMaxTurns is the turn cap forwarded to the SDK renderer.
 	// Zero means no turn limit. Only applied when SDKTranscriptLimitsSet is true.
 	SDKTranscriptMaxTurns int64
+	// ResourceControls is the resolved resource-control policy for the spawned
+	// instance. A zero value (Enabled=false, Profile="") means the normal/no-op
+	// profile — callers do not need to initialise this field unless a non-normal
+	// profile is configured.
+	ResourceControls config.ResolvedResourceControls
 }
 
 // AgentSpawner abstracts tmux session management so the daemon and TUI can

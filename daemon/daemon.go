@@ -225,6 +225,12 @@ func (a *daemonStateAdapter) ListInstances(project string) []api.InstanceStatus 
 			ready := active && inst.Status == session.Ready
 			skipPermissions := inst.SkipPermissions
 			lastActivity := instanceLastActivity(inst)
+			// Only surface the profile when it is non-normal so the common case
+			// stays clean on the wire.
+			resourceProfile := inst.ResourceProfile
+			if resourceProfile == "normal" {
+				resourceProfile = ""
+			}
 			out = append(out, api.InstanceStatus{
 				ID:              inst.Title,
 				Project:         project,
@@ -247,6 +253,7 @@ func (a *daemonStateAdapter) ListInstances(project string) []api.InstanceStatus 
 				SoloAgent:       inst.SoloAgent,
 				SDKSpeedTier:    inst.SDKSpeedTier,
 				SkipPermissions: &skipPermissions,
+				ResourceProfile: resourceProfile,
 			})
 		}
 		return out
@@ -790,6 +797,7 @@ func (d *Daemon) startSoloAsync(entry RepoEntry, req api.SpawnSoloRequest) {
 		SDKTranscriptMaxBytes:  entry.SDK.TranscriptMaxBytes,
 		SDKTranscriptMaxTurns:  entry.SDK.TranscriptMaxTurns,
 		SkipPermissions:        skip,
+		ResourceControls:       resolvedResourceControlsForRepo(entry),
 	}
 	if err := spawnSolo(context.Background(), opts); err != nil {
 		d.logger.Error("spawn solo failed", "project", entry.Project, "title", req.Title, "err", err)

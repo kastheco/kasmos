@@ -6,6 +6,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/kastheco/kasmos/config"
 	"github.com/kastheco/kasmos/session"
 	"github.com/kastheco/kasmos/session/tmux"
 	"github.com/stretchr/testify/assert"
@@ -54,6 +55,7 @@ func (r *recordingExecutionSession) SetProject(string)                          
 func (r *recordingExecutionSession) SetSessionTitle(string)                       {}
 func (r *recordingExecutionSession) SetTitleFunc(func(string, time.Time, string)) {}
 func (r *recordingExecutionSession) SetSDKSpeedTier(string)                       {}
+func (r *recordingExecutionSession) SetResourceControls(config.ResolvedResourceControls) {}
 func (r *recordingExecutionSession) SendPromptWithLocalImages(prompt string, imagePaths []string) error {
 	r.localImagePrompts = append(r.localImagePrompts, prompt)
 	r.localImagePathSets = append(r.localImagePathSets, append([]string(nil), imagePaths...))

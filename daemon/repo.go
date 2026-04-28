@@ -43,17 +43,28 @@ type RepoEntry struct {
 	// These are forwarded into SpawnOpts so every agent spawned for this repo
 	// applies the same in-process transcript limits.
 	SDK config.SDKConfig
+	// Resources holds the resolved resource-control policy for this repo.
+	// A zero value (Enabled=false) represents the normal/no-op profile.
+	// Forwarded into SpawnOpts so every agent spawned for this repo inherits it.
+	Resources config.ResolvedResourceControls
 }
 
-// withSDKTranscriptRetention copies the repo's SDK transcript limits into opts
-// and sets SDKTranscriptLimitsSet so the spawner knows the limits were explicitly
-// configured (rather than left at zero/unlimited). Call this on every SpawnOpts
+// withSDKTranscriptRetention copies the repo's SDK transcript limits and
+// resolved resource-control policy into opts. Call this on every SpawnOpts
 // before handing it to any spawn function.
 func withSDKTranscriptRetention(entry RepoEntry, opts loop.SpawnOpts) loop.SpawnOpts {
 	opts.SDKTranscriptLimitsSet = true
 	opts.SDKTranscriptMaxBytes = entry.SDK.TranscriptMaxBytes
 	opts.SDKTranscriptMaxTurns = entry.SDK.TranscriptMaxTurns
+	opts.ResourceControls = entry.Resources
 	return opts
+}
+
+// resolvedResourceControlsForRepo returns the pre-loaded resource-control policy
+// for entry. It reads from the already-resolved RepoEntry.Resources field and
+// does not re-parse config.toml. A zero value (Enabled=false) means normal/no-op.
+func resolvedResourceControlsForRepo(entry RepoEntry) config.ResolvedResourceControls {
+	return entry.Resources
 }
 
 // RepoManager tracks registered repositories for the daemon.
@@ -188,7 +199,7 @@ func (m *RepoManager) Add(path string) error {
 	}
 
 	// Load per-repo TOML overrides once and derive effective config values.
-	autoAdvance, autoReadinessReview, selfFixMaxLines, maxVerifyCycles, parallelPlannerArchitect, sdkCfg := m.resolveRepoConfig(path)
+	autoAdvance, autoReadinessReview, selfFixMaxLines, maxVerifyCycles, parallelPlannerArchitect, sdkCfg, resourceControls := m.resolveRepoConfig(path)
 
 	// Create a per-repo processor that persists across poll ticks so that wave
 	// orchestrator state is maintained between cycles.
@@ -216,6 +227,7 @@ func (m *RepoManager) Add(path string) error {
 		ReadinessMaxVerifyCycles: maxVerifyCycles,
 		ParallelPlannerArchitect: parallelPlannerArchitect,
 		SDK:                      sdkCfg,
+		Resources:                resourceControls,
 	})
 	return nil
 }
@@ -311,18 +323,20 @@ func (m *RepoManager) Get(path string) (RepoEntry, error) {
 
 // resolveRepoConfig reads per-repo TOML overrides and returns the effective
 // values for autoAdvance, autoReadinessReview, readinessSelfFixMaxLines,
-// readinessMaxVerifyCycles, parallelPlannerArchitect, and the SDK transcript
-// retention config for the given repo path.
+// readinessMaxVerifyCycles, parallelPlannerArchitect, the SDK transcript
+// retention config, and the resolved resource-control policy for the given repo path.
 // parallelPlannerArchitect defaults to true (opt-out); a project TOML key overrides
 // only when explicitly present. Falls back to daemon-level defaults for the other fields.
 // SDK limits default to config.DefaultConfig().SDK values when absent from the TOML file.
-func (m *RepoManager) resolveRepoConfig(path string) (autoAdvance bool, autoReadinessReview bool, selfFixMaxLines int, maxVerifyCycles int, parallelPlannerArchitect bool, sdkCfg config.SDKConfig) {
+// Resource controls default to the normal/no-op profile when [resources] is absent.
+func (m *RepoManager) resolveRepoConfig(path string) (autoAdvance bool, autoReadinessReview bool, selfFixMaxLines int, maxVerifyCycles int, parallelPlannerArchitect bool, sdkCfg config.SDKConfig, resourceControls config.ResolvedResourceControls) {
 	autoAdvance = m.autoAdvance
 	autoReadinessReview = m.autoReadinessReview
 	selfFixMaxLines = m.readinessSelfFixMaxLines
 	maxVerifyCycles = m.readinessMaxVerifyCycles
 	parallelPlannerArchitect = true // default-on opt-out
 	sdkCfg = config.DefaultConfig().SDK
+	resourceControls = config.ResolvedResourceControls{Profile: "normal"}
 
 	projTomlPath := filepath.Join(path, ".kasmos", config.TOMLConfigFileName)
 	if _, err := os.Stat(projTomlPath); err != nil {
@@ -385,6 +399,13 @@ func (m *RepoManager) resolveRepoConfig(path string) (autoAdvance bool, autoRead
 			v = 0
 		}
 		sdkCfg.TranscriptMaxTurns = v
+	}
+	// Resource controls: resolve once from the [resources] TOML block.
+	// Validation errors are logged and the normal/no-op profile is kept.
+	if rc, err := result.Resources.Resolve(); err != nil {
+		slog.Warn("daemon: invalid project [resources] config, using normal profile", "repo", path, "error", err)
+	} else {
+		resourceControls = rc
 	}
 	return
 }

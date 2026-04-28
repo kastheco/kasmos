@@ -1593,8 +1593,9 @@ func (m *home) updateInfoPane() {
 		WaveNumber:    selected.WaveNumber,
 		WaveTaskIndex: selected.WaveTaskIndex,
 		WaveTaskCount: selected.WaveTaskCount,
-		ExecutionMode: string(selected.ExecutionMode),
-		SDKSpeedTier:  selected.SDKSpeedTier,
+		ExecutionMode:   string(selected.ExecutionMode),
+		SDKSpeedTier:    selected.SDKSpeedTier,
+		ResourceProfile: selected.ResourceProfile,
 		// Transcript diagnostics from last cached renderer stats snapshot.
 		TranscriptBytes:         rs.Bytes,
 		TranscriptLines:         rs.Lines,
@@ -2193,17 +2194,31 @@ func (m *home) sdkTranscriptRetentionOptions() (maxBytes, maxTurns int64, config
 	return m.appConfig.SDK.TranscriptMaxBytes, m.appConfig.SDK.TranscriptMaxTurns, true
 }
 
-// withRetentionOpts copies SDK transcript retention limits from config into opts
-// and sets SDKTranscriptLimitsSet so the SDK renderer applies them. Call this
-// on every InstanceOptions that may resolve to an SDK execution session.
+// resolvedResourceControls returns the active resource-control policy from
+// the loaded app config. A zero value (Enabled=false) is returned when the
+// config is absent or the [resources] block resolves to the normal profile.
+func (m *home) resolvedResourceControls() config.ResolvedResourceControls {
+	if m.appConfig == nil {
+		return config.ResolvedResourceControls{}
+	}
+	rc, err := m.appConfig.Resources.Resolve()
+	if err != nil {
+		return config.ResolvedResourceControls{}
+	}
+	return rc
+}
+
+// withRetentionOpts copies SDK transcript retention limits and the resolved
+// resource-control policy from config into opts. Call this on every
+// InstanceOptions that may resolve to an SDK execution session.
 func (m *home) withRetentionOpts(opts session.InstanceOptions) session.InstanceOptions {
 	maxBytes, maxTurns, configured := m.sdkTranscriptRetentionOptions()
-	if !configured {
-		return opts
+	if configured {
+		opts.SDKTranscriptLimitsSet = true
+		opts.SDKTranscriptMaxBytes = maxBytes
+		opts.SDKTranscriptMaxTurns = maxTurns
 	}
-	opts.SDKTranscriptLimitsSet = true
-	opts.SDKTranscriptMaxBytes = maxBytes
-	opts.SDKTranscriptMaxTurns = maxTurns
+	opts.ResourceControls = m.resolvedResourceControls()
 	return opts
 }
 

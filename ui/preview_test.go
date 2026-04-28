@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"github.com/kastheco/kasmos/cmd/cmd_test"
+	"github.com/kastheco/kasmos/config"
 	"github.com/kastheco/kasmos/log"
 	"github.com/kastheco/kasmos/session"
 	"github.com/kastheco/kasmos/session/sdk"
@@ -618,6 +619,7 @@ func (f *fakeSDKSession) SetProject(string)                            {}
 func (f *fakeSDKSession) SetSessionTitle(string)                       {}
 func (f *fakeSDKSession) SetTitleFunc(func(string, time.Time, string)) {}
 func (f *fakeSDKSession) SetSDKSpeedTier(string)                       {}
+func (f *fakeSDKSession) SetResourceControls(config.ResolvedResourceControls) {}
 
 // CapturePresentation implements the optional presentationProvider interface.
 func (f *fakeSDKSession) CapturePresentation() []*sdk.PresentationTurn {
