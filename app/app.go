@@ -1403,6 +1403,9 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						}
 						prompt := buildPlanningPrompt(a.PlanFile, taskstate.DisplayName(a.PlanFile), entry.Description, m.taskStoreProject)
 						if a.DraftMode {
+							if a.Primary {
+								m.killExistingPlanAgent(a.PlanFile, session.AgentTypePlanner)
+							}
 							cmd, err := m.spawnPlannerProfileForTask(a.PlanFile, a.PlannerProfile, a.Primary, entry.Description)
 							if err != nil {
 								log.WarningLog.Printf("could not spawn planner profile %q for %q: %v", a.PlannerProfile, a.PlanFile, err)

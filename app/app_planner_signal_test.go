@@ -104,6 +104,44 @@ func TestPlannerFinishedSignal_ShowsConfirmDialog(t *testing.T) {
 		"pendingPlannerTaskFile must be set to the plan file from the signal")
 }
 
+func TestPlanStartDraftModeGatewayRespawnKillsStalePlanners(t *testing.T) {
+	t.Parallel()
+	const planFile = "feature"
+	h, ps, _, oldPlanner := plannerSignalHome(t, planFile)
+	seedPlanStatus(t, ps, planFile, taskstate.StatusReady)
+	h.taskStateDir = ""
+	h.appConfig = &config.Config{
+		Planners: []string{"planner_a", "planner_b"},
+		Profiles: map[string]config.AgentProfile{
+			"planner_a": {Enabled: true, Program: "opencode"},
+			"planner_b": {Enabled: true, Program: "opencode"},
+		},
+	}
+
+	model, _ := h.Update(metadataResultMsg{
+		PlanState: ps,
+		Signals: []taskfsm.Signal{
+			{Event: taskfsm.PlanStart, TaskFile: planFile},
+		},
+	})
+	updated := model.(*home)
+
+	var titles []string
+	var profiles []string
+	for _, inst := range updated.nav.GetInstances() {
+		titles = append(titles, inst.Title)
+		if inst.AgentType == session.AgentTypePlanner {
+			profiles = append(profiles, inst.PlannerProfile)
+		}
+	}
+	assert.NotContains(t, titles, oldPlanner.Title)
+	assert.ElementsMatch(t, []string{"planner_a", "planner_b"}, profiles)
+
+	for _, inst := range updated.allInstances {
+		assert.NotEqual(t, oldPlanner.Title, inst.Title)
+	}
+}
+
 // TestPlannerFinishedSignal_ConfirmKeepsPlannerAndTriggersImplement verifies that
 // after the user confirms (plannerCompleteMsg), the planner instance is kept,
 // plannerPrompted is set, and triggerTaskStage("implement") is called.

@@ -704,6 +704,10 @@ func (p *Processor) ProcessPlannerDraftSignals(signals []taskfsm.PlannerDraftSig
 		if p.config.CacheDir != "" {
 			p.seedDraftAggFromCache(agg, sig.TaskFile)
 		}
+		if len(agg.receivedProfiles) >= len(agg.expectedProfiles) {
+			actions = append(actions, p.synthesizePlannerFinished(sig.TaskFile, agg)...)
+			continue
+		}
 		// Unknown profile — ignore.
 		if !agg.expectedProfiles[sig.PlannerID] {
 			continue
@@ -719,15 +723,17 @@ func (p *Processor) ProcessPlannerDraftSignals(signals []taskfsm.PlannerDraftSig
 			continue
 		}
 
-		// All expected drafts received: synthesize planner_finished.
-		agg.done = true
-		synthesized := p.ProcessFSMSignals([]taskfsm.Signal{{
-			TaskFile: sig.TaskFile,
-			Event:    taskfsm.PlannerFinished,
-		}})
-		actions = append(actions, synthesized...)
+		actions = append(actions, p.synthesizePlannerFinished(sig.TaskFile, agg)...)
 	}
 	return actions
+}
+
+func (p *Processor) synthesizePlannerFinished(planFile string, agg *plannerDraftAgg) []Action {
+	agg.done = true
+	return p.ProcessFSMSignals([]taskfsm.Signal{{
+		TaskFile: planFile,
+		Event:    taskfsm.PlannerFinished,
+	}})
 }
 
 // ResetPlannerDraftAgg drops any in-memory draft aggregation for planFile so a

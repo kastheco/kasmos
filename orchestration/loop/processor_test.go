@@ -1266,6 +1266,43 @@ func TestProcessor_ProcessPlannerDraftSignals_AllProfilesReceivedSynthesizesPlan
 	assert.Equal(t, taskstore.StatusReady, entry.Status)
 }
 
+func TestProcessor_ProcessPlannerDraftSignals_CacheCompleteSynthesizesOnDuplicateSignal(t *testing.T) {
+	store := taskstore.NewTestStore(t)
+	require.NoError(t, store.Create("test", taskstore.TaskEntry{
+		Filename: "my-plan.md",
+		Status:   taskstore.StatusPlanning,
+	}))
+
+	cacheDir := t.TempDir()
+	require.NoError(t, orchestration.SavePlannerDraft(cacheDir, "my-plan.md", "planner", "# planner"))
+	require.NoError(t, orchestration.SavePlannerDraft(cacheDir, "my-plan.md", "planner-alt", "# planner-alt"))
+
+	p := NewProcessor(ProcessorConfig{
+		Store:            store,
+		Project:          "test",
+		PlannerDraftMode: true,
+		PlannerProfiles:  []string{"planner", "planner-alt"},
+		CacheDir:         cacheDir,
+	})
+
+	actions := p.ProcessPlannerDraftSignals([]taskfsm.PlannerDraftSignal{
+		{TaskFile: "my-plan.md", PlannerID: "planner"},
+	})
+	require.NotEmpty(t, actions, "complete cached drafts must synthesize even when the triggering signal is already represented in cache")
+
+	var foundPlannerComplete bool
+	for _, a := range actions {
+		if _, ok := a.(PlannerCompleteAction); ok {
+			foundPlannerComplete = true
+		}
+	}
+	assert.True(t, foundPlannerComplete, "expected PlannerCompleteAction from cached draft recovery")
+
+	entry, err := store.Get("test", "my-plan.md")
+	require.NoError(t, err)
+	assert.Equal(t, taskstore.StatusReady, entry.Status)
+}
+
 // TestProcessor_ProcessPlannerDraftSignals_SingleProfileSynthesesImmediately verifies
 // that a single configured profile synthesizes planner_finished on the first signal.
 func TestProcessor_ProcessPlannerDraftSignals_SingleProfileSynthesesImmediately(t *testing.T) {
