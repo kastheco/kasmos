@@ -60,7 +60,7 @@ func waitForDaemonPlannerInstance(project string, data session.InstanceData) (*s
 			statuses, err := listDaemonInstances(project)
 			if err == nil {
 				for _, status := range statuses {
-					if status.Title != data.Title || !status.Active {
+					if !daemonPlannerStatusMatches(data, status) {
 						continue
 					}
 					inst, restoreErr := restoreDaemonInstance(data.Path, status)
@@ -90,6 +90,19 @@ func waitForDaemonPlannerInstance(project string, data session.InstanceData) (*s
 		return nil, lastErr
 	}
 	return nil, fmt.Errorf("planner session did not appear")
+}
+
+func daemonPlannerStatusMatches(data session.InstanceData, status api.InstanceStatus) bool {
+	if !status.Active {
+		return false
+	}
+	if status.Title == data.Title {
+		return true
+	}
+	if data.TaskFile == "" || status.Plan != data.TaskFile || status.Role != session.AgentTypePlanner {
+		return false
+	}
+	return strings.HasPrefix(status.Title, data.Title+"-")
 }
 
 // spawnSoloWithDaemon is a seam for tests. It POSTs to the daemon's

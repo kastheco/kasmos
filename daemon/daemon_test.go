@@ -846,6 +846,83 @@ permission_default = "bypass"
 	assert.NoFileExists(t, filepath.Join(cacheDir, "feature.md-planner-old.md"))
 }
 
+func TestDaemon_StartPlan_DraftModeResetsProcessorAggregation(t *testing.T) {
+	project := "proj"
+	repoPath := t.TempDir()
+	kasmosDir := filepath.Join(repoPath, ".kasmos")
+	require.NoError(t, os.MkdirAll(kasmosDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(kasmosDir, "config.toml"), []byte(`
+[orchestration]
+planners = ["planner-a", "planner-b"]
+
+[agents.planner-a]
+program = "opencode"
+enabled = true
+
+[agents.planner-b]
+program = "opencode"
+enabled = true
+`), 0o644))
+
+	const planFile = "feature.md"
+	store := taskstore.NewTestStore(t)
+	require.NoError(t, store.Create(project, taskstore.TaskEntry{
+		Filename:    planFile,
+		Status:      taskstore.StatusPlanning,
+		Description: "ship feature",
+	}))
+	proc := loop.NewProcessor(loop.ProcessorConfig{
+		Store:            store,
+		Project:          project,
+		PlannerProfiles:  []string{"planner-a", "planner-b"},
+		PlannerDraftMode: true,
+	})
+
+	assert.Empty(t, proc.ProcessPlannerDraftSignals([]taskfsm.PlannerDraftSignal{{TaskFile: planFile, PlannerID: "planner-a"}}))
+	require.NotEmpty(t, proc.ProcessPlannerDraftSignals([]taskfsm.PlannerDraftSignal{{TaskFile: planFile, PlannerID: "planner-b"}}))
+	entry, err := store.Get(project, planFile)
+	require.NoError(t, err)
+	entry.Status = taskstore.StatusPlanning
+	entry.ExecutionState = taskstore.ExecutionState{}
+	require.NoError(t, store.Update(project, planFile, entry))
+
+	spawned := make(chan loop.SpawnOpts, 2)
+	cacheDir := filepath.Join(kasmosDir, "cache")
+	require.NoError(t, os.MkdirAll(cacheDir, 0o755))
+	d := &Daemon{
+		repos:       NewRepoManager(),
+		logger:      slog.Default(),
+		broadcaster: api.NewEventBroadcaster(),
+		killAgent: func(repoPath, planFile, agentType string) error {
+			return nil
+		},
+		spawnPlanner: func(_ context.Context, opts loop.SpawnOpts) error {
+			spawned <- opts
+			return nil
+		},
+	}
+	t.Cleanup(func() { d.broadcaster.Close() })
+	d.repos.repos = []RepoEntry{{
+		Path:             repoPath,
+		Project:          project,
+		Store:            store,
+		Processor:        proc,
+		PlannerProfiles:  []string{"planner-a", "planner-b"},
+		PlannerDraftMode: true,
+		CacheDir:         cacheDir,
+	}}
+
+	require.NoError(t, d.StartPlan(project, planFile, "legacy", "legacy"))
+	require.Eventually(t, func() bool {
+		return len(spawned) == 2
+	}, time.Second, 5*time.Millisecond)
+
+	assert.Empty(t, proc.ProcessPlannerDraftSignals([]taskfsm.PlannerDraftSignal{{TaskFile: planFile, PlannerID: "planner-a"}}))
+	actions := proc.ProcessPlannerDraftSignals([]taskfsm.PlannerDraftSignal{{TaskFile: planFile, PlannerID: "planner-b"}})
+	require.NotEmpty(t, actions, "fresh daemon fan-out must not be blocked by stale agg.done")
+	assert.Equal(t, "planner_complete", actions[0].Kind())
+}
+
 // TestDaemon_StartPlan_PartialFanOutFailureCleansUpSiblings verifies that when
 // the second planner spawn errors, the daemon also kills the previously
 // successful spawn so the aggregator doesn't hang waiting on a draft that

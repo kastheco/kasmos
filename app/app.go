@@ -1267,19 +1267,44 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var signalCmds []tea.Cmd
 		proc := m.ensureProcessor()
 		if !msg.DaemonManagedRepo {
-			// Track plan files that produced any action (or, for inline-only
-			// signal categories below, reached their happy path). The gateway
-			// ack loop at the end of this block uses this to classify each
-			// row as SignalDone vs SignalFailed/Done-with-result via
-			// loop.GatewayNoopOutcome — preserving signal-state for rejected
-			// lifecycle signals (wrong-wave, out-of-phase, etc.).
-			gatewayProcessedPlans := make(map[string]bool)
-			recordActionPlans := func(actions []loop.Action) {
-				for _, a := range actions {
-					if pf := loop.ActionPlanFile(a); pf != "" {
-						gatewayProcessedPlans[pf] = true
-					}
+			// Track the specific claimed gateway rows whose originating signal
+			// produced actions or reached an inline happy path. Classifying by
+			// row preserves failure state for mixed batches where one signal for
+			// a plan succeeds while another same-plan signal is rejected.
+			gatewayProcessedEntryIDs := make(map[int64]bool)
+			gatewayClaimedEntryIDs := make(map[int64]bool)
+			claimGatewayEntry := func(planFile, signalType string) *taskstore.SignalEntry {
+				if planFile == "" || len(msg.GatewaySignalEntries) == 0 {
+					return nil
 				}
+				canonicalType, err := taskfsm.CanonicalGatewaySignalType(signalType)
+				if err != nil {
+					return nil
+				}
+				for _, entry := range msg.GatewaySignalEntries {
+					if entry == nil || gatewayClaimedEntryIDs[entry.ID] || entry.PlanFile != planFile {
+						continue
+					}
+					entryType, err := taskfsm.CanonicalGatewaySignalType(entry.SignalType)
+					if err != nil || entryType != canonicalType {
+						continue
+					}
+					gatewayClaimedEntryIDs[entry.ID] = true
+					return entry
+				}
+				return nil
+			}
+			markGatewayProcessedEntry := func(entry *taskstore.SignalEntry) {
+				if entry != nil {
+					gatewayProcessedEntryIDs[entry.ID] = true
+				}
+			}
+			claimGatewayEventEntry := func(planFile string, event taskfsm.Event) *taskstore.SignalEntry {
+				signalType, err := taskfsm.GatewaySignalTypeForEvent(event)
+				if err != nil {
+					return nil
+				}
+				return claimGatewayEntry(planFile, signalType)
 			}
 
 			// Process FSM signals using the Processor when available, falling back to
@@ -1295,12 +1320,22 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					feedbackBeforeTick[planFile] = true
 				}
 
-				actions := proc.ProcessPlannerDraftSignals(msg.PlannerDraftSignals)
-				recordActionPlans(actions)
-				fsmActions := proc.ProcessFSMSignals(msg.Signals)
-				recordActionPlans(fsmActions)
-				actions = append(actions, fsmActions...)
+				var actions []loop.Action
+				for _, sig := range msg.PlannerDraftSignals {
+					entry := claimGatewayEntry(sig.TaskFile, "planner_draft_finished")
+					sigActions := proc.ProcessPlannerDraftSignals([]taskfsm.PlannerDraftSignal{sig})
+					if len(sigActions) > 0 {
+						markGatewayProcessedEntry(entry)
+					}
+					actions = append(actions, sigActions...)
+				}
 				for _, sig := range msg.Signals {
+					entry := claimGatewayEventEntry(sig.TaskFile, sig.Event)
+					sigActions := proc.ProcessFSMSignals([]taskfsm.Signal{sig})
+					if len(sigActions) > 0 {
+						markGatewayProcessedEntry(entry)
+					}
+					actions = append(actions, sigActions...)
 					taskfsm.ConsumeSignal(sig)
 				}
 
@@ -1660,6 +1695,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 			for _, ts := range msg.TaskSignals {
+				entry := claimGatewayEntry(ts.TaskFile, "implement_task_finished")
 				orch, exists := m.waveOrchestrators[ts.TaskFile]
 				if !exists {
 					log.WarningLog.Printf("ignoring task-finished signal for %q — no active wave orchestrator", ts.TaskFile)
@@ -1677,7 +1713,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 
 				orch.MarkTaskComplete(ts.TaskNumber)
-				gatewayProcessedPlans[ts.TaskFile] = true
+				markGatewayProcessedEntry(entry)
 				for _, inst := range m.nav.GetInstances() {
 					if inst.TaskFile != ts.TaskFile || inst.TaskNumber != ts.TaskNumber || inst.WaveNumber != ts.WaveNumber {
 						continue
@@ -1702,6 +1738,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			// Process wave signals — trigger implementation for specific waves.
 			for _, ws := range msg.WaveSignals {
+				gatewayEntry := claimGatewayEntry(ws.TaskFile, "implement_wave")
 				taskfsm.ConsumeWaveSignal(ws)
 
 				// Check if orchestrator already exists
@@ -1736,7 +1773,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				orch := orchestration.NewWaveOrchestrator(ws.TaskFile, plan)
 				orch.SetStore(m.taskStore, m.taskStoreProject)
 				m.waveOrchestrators[ws.TaskFile] = orch
-				gatewayProcessedPlans[ws.TaskFile] = true
+				markGatewayProcessedEntry(gatewayEntry)
 
 				// Fast-forward to the requested wave
 				for i := 1; i < ws.WaveNumber; i++ {
@@ -1758,42 +1795,43 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// daemon both reuse the shared processor semantics for reloading the
 			// enriched plan and advancing to wave 1.
 			if proc != nil {
-				actions := proc.ProcessElaborationSignals(msg.ElaborationSignals)
-				recordActionPlans(actions)
 				for _, es := range msg.ElaborationSignals {
-					taskfsm.ConsumeElaborationSignal(es)
-				}
-				for _, act := range actions {
-					advance, ok := act.(loop.AdvanceWaveAction)
-					if !ok {
-						continue
+					entry := claimGatewayEntry(es.TaskFile, "elaborator_finished")
+					actions := proc.ProcessElaborationSignals([]taskfsm.ElaborationSignal{es})
+					if len(actions) > 0 {
+						markGatewayProcessedEntry(entry)
 					}
-					mdl, cmd := m.applyAdvanceWaveAction(
-						advance,
-						fmt.Sprintf("architect pass complete — starting wave %d for '%s'", advance.Wave, taskstate.DisplayName(advance.PlanFile)),
-						session.AgentTypeElaborator,
-					)
-					m = mdl.(*home)
-					if cmd != nil {
-						signalCmds = append(signalCmds, cmd)
+					taskfsm.ConsumeElaborationSignal(es)
+					for _, act := range actions {
+						advance, ok := act.(loop.AdvanceWaveAction)
+						if !ok {
+							continue
+						}
+						mdl, cmd := m.applyAdvanceWaveAction(
+							advance,
+							fmt.Sprintf("architect pass complete — starting wave %d for '%s'", advance.Wave, taskstate.DisplayName(advance.PlanFile)),
+							session.AgentTypeElaborator,
+						)
+						m = mdl.(*home)
+						if cmd != nil {
+							signalCmds = append(signalCmds, cmd)
+						}
 					}
 				}
 			}
 
 			// Classify each claimed gateway row before acknowledging it. Rows
-			// whose plan file produced an action (or hit the inline happy
-			// path for task/wave signals) get SignalDone with an empty
-			// result; the rest fall through to GatewayNoopOutcome which
-			// matches the daemon's classification for stuck/rejected
-			// lifecycle signals (wrong-wave implement_task_finished,
-			// out-of-phase verify, etc.) instead of silently masking them.
+			// whose own signal produced an action (or hit the inline happy path
+			// for task/wave signals) get SignalDone with an empty result; the
+			// rest fall through to GatewayNoopOutcome which matches the daemon's
+			// classification for rejected lifecycle signals.
 			for _, entry := range msg.GatewaySignalEntries {
 				if m.signalGateway == nil || entry == nil {
 					continue
 				}
 				status := taskstore.SignalDone
 				result := ""
-				if !gatewayProcessedPlans[entry.PlanFile] {
+				if !gatewayProcessedEntryIDs[entry.ID] {
 					status, result = loop.GatewayNoopOutcome(entry)
 				}
 				if err := m.signalGateway.MarkProcessed(entry.ID, status, result); err != nil {

@@ -12,7 +12,9 @@ import (
 	"github.com/kastheco/kasmos/config"
 	"github.com/kastheco/kasmos/config/taskfsm"
 	"github.com/kastheco/kasmos/config/taskstate"
+	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/kastheco/kasmos/orchestration"
+	"github.com/kastheco/kasmos/orchestration/loop"
 	"github.com/kastheco/kasmos/session"
 	"github.com/kastheco/kasmos/ui"
 	"github.com/kastheco/kasmos/ui/overlay"
@@ -167,6 +169,56 @@ func TestPlanStartDraftModeGatewaySpawnFailureCleansPartialFanout(t *testing.T) 
 	for _, inst := range updated.nav.GetInstances() {
 		assert.NotEqual(t, session.AgentTypePlanner, inst.AgentType)
 	}
+}
+
+func TestGatewayAckClassifiesRowsIndividuallyForSamePlan(t *testing.T) {
+	t.Parallel()
+	const planFile = "feature"
+	h, ps, _, _ := plannerSignalHome(t, planFile)
+	h.appConfig.AutoAdvance = false
+
+	gw, err := taskstore.NewSQLiteSignalGateway(":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = gw.Close() })
+	h.signalGateway = gw
+
+	require.NoError(t, gw.Create("test", taskstore.SignalEntry{
+		PlanFile:   planFile,
+		SignalType: "planner_finished",
+	}))
+	require.NoError(t, gw.Create("test", taskstore.SignalEntry{
+		PlanFile:   planFile,
+		SignalType: "verify_approved",
+	}))
+
+	var scan loop.ScanResult
+	claimed := make([]*taskstore.SignalEntry, 0, 2)
+	for range 2 {
+		entry, err := gw.Claim("test", "app-test")
+		require.NoError(t, err)
+		require.NotNil(t, entry)
+		require.NoError(t, loop.ConvertSignalEntry(entry, &scan))
+		claimed = append(claimed, entry)
+	}
+
+	model, _ := h.Update(metadataResultMsg{
+		PlanState:            ps,
+		Signals:              scan.FSMSignals,
+		GatewaySignalEntries: claimed,
+	})
+	_ = model.(*home)
+
+	done, err := gw.List("test", taskstore.SignalDone)
+	require.NoError(t, err)
+	require.Len(t, done, 1)
+	assert.Equal(t, "planner_finished", done[0].SignalType)
+	assert.Empty(t, done[0].Result)
+
+	failed, err := gw.List("test", taskstore.SignalFailed)
+	require.NoError(t, err)
+	require.Len(t, failed, 1)
+	assert.Equal(t, "verify_approved", failed[0].SignalType)
+	assert.Contains(t, failed[0].Result, "outside verifying")
 }
 
 // TestPlannerFinishedSignal_ConfirmKeepsPlannerAndTriggersImplement verifies that

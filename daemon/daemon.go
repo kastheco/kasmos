@@ -644,6 +644,9 @@ func (d *Daemon) startPlanAsync(entry RepoEntry, planFile, prompt, program strin
 	}
 
 	if entry.PlannerDraftMode && len(entry.PlannerProfiles) > 0 {
+		if entry.Processor != nil {
+			entry.Processor.ResetPlannerDraftAgg(planFile)
+		}
 		if err := orchestration.ClearPlannerDraftCaches(entry.CacheDir, planFile); err != nil {
 			d.logger.Error("clear planner drafts failed", "project", entry.Project, "plan", planFile, "err", err)
 			return

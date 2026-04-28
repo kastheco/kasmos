@@ -1128,6 +1128,9 @@ func lifecycleActionRejected(message string) tea.Cmd {
 
 func (m *home) spawnPlannersForTask(planFile, legacyPrompt, description string) (tea.Model, tea.Cmd) {
 	if repoManagedByDaemon(m.activeRepoPath) {
+		// The daemon owns profile fan-out for managed repos. Its start
+		// handshake accepts both the legacy base title and profile-suffixed
+		// planner titles produced by draft mode.
 		return m.spawnTaskAgent(planFile, "plan", legacyPrompt)
 	}
 	if m.appConfig == nil {

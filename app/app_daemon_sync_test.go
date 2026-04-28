@@ -216,6 +216,34 @@ func TestDaemonSync_MetadataTickReflectsDaemonTaskStateInSidebar(t *testing.T) {
 	}
 }
 
+func TestWaitForDaemonPlannerInstanceAcceptsProfileSuffixedTitle(t *testing.T) {
+	// serial: mutates daemon instance seam and planner timing globals
+	withFastAppTimings(t)
+	repoPath := t.TempDir()
+	withListDaemonInstances(t, func(project string) ([]api.InstanceStatus, error) {
+		require.Equal(t, "test", project)
+		return []api.InstanceStatus{{
+			Title:   "feature-plan-planner-a",
+			Plan:    "feature",
+			Role:    session.AgentTypePlanner,
+			Active:  true,
+			Loading: true,
+			Program: "opencode",
+		}}, nil
+	})
+
+	inst, err := waitForDaemonPlannerInstance("test", session.InstanceData{
+		Title:     "feature-plan",
+		Path:      repoPath,
+		Program:   "opencode",
+		TaskFile:  "feature",
+		AgentType: session.AgentTypePlanner,
+		Status:    session.Loading,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "feature-plan-planner-a", inst.Title)
+}
+
 func TestDaemonSync_DoneTaskDoesNotDeleteInstanceRecord(t *testing.T) {
 	t.Parallel()
 	const planFile = "feature"
