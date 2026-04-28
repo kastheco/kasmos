@@ -8,6 +8,8 @@ import {
   isAtBottom,
   previewLineLimit,
   captureErrorLabel,
+  captureErrorComposerReason,
+  shouldSuspendTerminalPolling,
   hasDaemonBackedWebPath,
   supportsStructuredPreview,
   usesTerminalPreview,
@@ -182,25 +184,152 @@ assertEqual(previewLineLimit("full"), 0, 'previewLineLimit("full") = 0 (unbounde
 
 assertEqual(captureErrorLabel(null), null, "null → null");
 assertEqual(captureErrorLabel(""), null, "empty string → null");
+assertEqual(captureErrorLabel({ message: "" }), null, "empty CaptureErrorInfo → null");
 
-// kas serve specific message
+// kas serve specific message — plain string
 {
   const label = captureErrorLabel("run kas serve --repo /path to enable capture");
   assertTrue(
     label !== null && label.includes("kas serve"),
-    "kas serve error: label includes kas serve",
+    "kas serve error (string): label includes kas serve",
   );
 }
 
-// generic fallback
+// kas serve via CaptureErrorInfo
+{
+  const label = captureErrorLabel({ message: "run kas serve --repo /path to enable capture" });
+  assertTrue(
+    label !== null && label.includes("kas serve"),
+    "kas serve error (CaptureErrorInfo): label includes kas serve",
+  );
+}
+
+// 410 / session-ended
+{
+  const label = captureErrorLabel({ status: 410, message: "tmux session not found" });
+  assertEqual(label, "session ended", "410 status: label is 'session ended'");
+}
+
+// session-ended via message (no status)
+{
+  const label = captureErrorLabel({ message: "tmux session not found" });
+  assertEqual(label, "session ended", "tmux session not found message: label is 'session ended'");
+}
+
+// 409 / paused
+{
+  const label = captureErrorLabel({ status: 409, message: "cannot capture pane from a paused instance" });
+  assertEqual(label, "instance is paused", "409 paused: label is 'instance is paused'");
+}
+
+// 502 / daemon-unavailable (exact trimmed message)
+{
+  const label = captureErrorLabel({ status: 502, message: "daemon unavailable" });
+  assertTrue(
+    label !== null && label.includes("daemon unavailable") && label.includes("preview will resume"),
+    "502 daemon unavailable: label describes daemon down",
+  );
+}
+
+// 502 / tmux-stderr — first line, capped
+{
+  const longMsg = "a".repeat(200);
+  const multiLine = `first line\nsecond line`;
+  const labelLong = captureErrorLabel({ status: 502, message: longMsg });
+  assertTrue(
+    labelLong !== null && labelLong.length <= 160,
+    "502 tmux-stderr long message: capped to 160 chars",
+  );
+  const labelMulti = captureErrorLabel({ status: 502, message: multiLine });
+  assertEqual(labelMulti, "first line", "502 tmux-stderr: only first line returned");
+}
+
+// generic fallback — plain string
 {
   const label = captureErrorLabel("connection refused");
   assertEqual(
     label,
     "pane output is not available right now",
-    "generic error: fallback label",
+    "generic error (string): fallback label",
   );
 }
+
+// generic fallback — CaptureErrorInfo with no matching status
+{
+  const label = captureErrorLabel({ status: 500, message: "internal error" });
+  assertEqual(
+    label,
+    "pane output is not available right now",
+    "generic error (CaptureErrorInfo 500): fallback label",
+  );
+}
+
+// ---------------------------------------------------------------------------
+// captureErrorComposerReason
+// ---------------------------------------------------------------------------
+
+assertEqual(captureErrorComposerReason(null), null, "null → no composer reason");
+assertEqual(captureErrorComposerReason(""), null, "empty string → no composer reason");
+
+{
+  const reason = captureErrorComposerReason({ status: 410, message: "tmux session not found" });
+  assertTrue(
+    reason !== null && reason.includes("session ended"),
+    "session-ended: composer reason mentions session ended",
+  );
+}
+
+{
+  const reason = captureErrorComposerReason({ status: 409, message: "cannot capture pane from a paused instance" });
+  assertEqual(reason, "instance is paused", "paused: composer reason is 'instance is paused'");
+}
+
+{
+  const reason = captureErrorComposerReason({ status: 502, message: "daemon unavailable" });
+  assertEqual(reason, null, "daemon-unavailable: no composer reason (polling continues)");
+}
+
+{
+  const reason = captureErrorComposerReason("connection refused");
+  assertEqual(reason, null, "generic: no composer reason");
+}
+
+// ---------------------------------------------------------------------------
+// shouldSuspendTerminalPolling
+// ---------------------------------------------------------------------------
+
+assertFalse(shouldSuspendTerminalPolling(null), "null → do not suspend");
+assertFalse(shouldSuspendTerminalPolling(""), "empty string → do not suspend");
+
+assertTrue(
+  shouldSuspendTerminalPolling({ status: 410, message: "tmux session not found" }),
+  "session-ended: suspend polling",
+);
+
+assertTrue(
+  shouldSuspendTerminalPolling({ message: "tmux session not found" }),
+  "session-ended (no status): suspend polling",
+);
+
+assertTrue(
+  shouldSuspendTerminalPolling({ status: 409, message: "cannot capture pane from a paused instance" }),
+  "paused: suspend polling",
+);
+
+assertFalse(
+  shouldSuspendTerminalPolling({ status: 502, message: "daemon unavailable" }),
+  "daemon-unavailable: do not suspend polling",
+);
+
+assertFalse(
+  shouldSuspendTerminalPolling({ status: 502, message: "some tmux stderr" }),
+  "tmux-stderr: do not suspend polling",
+);
+
+assertFalse(
+  shouldSuspendTerminalPolling("connection refused"),
+  "generic: do not suspend polling",
+);
 
 // ---------------------------------------------------------------------------
 // supportsStructuredPreview
@@ -381,6 +510,47 @@ assertFalse(
   const s = composerStateForInstance({ ...base, execution_mode: "sdk" });
   assertTrue(s.disabled, "standalone sdk: composer disabled");
   assertEqual(s.reason, "standalone sdk instance", "standalone sdk: reason unchanged");
+}
+
+// running terminal row + 410 capture error disables composer with session-ended reason
+{
+  const s = composerStateForInstance(
+    { ...base, status: "running" },
+    { status: 410, message: "tmux session not found" },
+  );
+  assertTrue(s.disabled, "running terminal + 410 captureError: composer disabled");
+  assertTrue(
+    s.reason !== null && s.reason.includes("session ended"),
+    "running terminal + 410 captureError: reason mentions session ended",
+  );
+}
+
+// running terminal row + generic capture error does NOT disable via capture error
+{
+  const s = composerStateForInstance(
+    { ...base, status: "running" },
+    { status: 500, message: "internal error" },
+  );
+  assertFalse(s.disabled, "running terminal + generic captureError: composer still enabled");
+}
+
+// running terminal row + daemon-unavailable does NOT disable composer
+{
+  const s = composerStateForInstance(
+    { ...base, status: "running" },
+    { status: 502, message: "daemon unavailable" },
+  );
+  assertFalse(s.disabled, "running terminal + daemon-unavailable: composer still enabled");
+}
+
+// paused terminal row (status-driven) is disabled regardless of captureError
+{
+  const s = composerStateForInstance(
+    { ...base, status: "paused" },
+    { status: 200, message: "" },
+  );
+  assertTrue(s.disabled, "paused terminal row: composer disabled");
+  assertEqual(s.reason, "instance is paused", "paused terminal row: reason is 'instance is paused'");
 }
 
 console.log("instanceInteractivity.test.ts ok");

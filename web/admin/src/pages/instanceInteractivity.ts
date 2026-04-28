@@ -40,48 +40,6 @@ export function usesTerminalPreview(instance: InstanceEntry | null): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// Composer state
-// ---------------------------------------------------------------------------
-
-export interface ComposerState {
-  disabled: boolean;
-  reason: string | null;
-}
-
-/**
- * Returns whether the composer is enabled for a given instance and, if not,
- * a lowercase reason string to display in the UI.
- *
- * Priority order:
- *  1. loading / paused always disable (regardless of mode)
- *  2. daemon-managed SDK rows (valid_actions present) in running/ready are enabled
- *     because /send is forwarded through the daemon
- *  3. standalone SDK rows (no valid_actions) are disabled — no tmux pane
- *  4. tmux running/ready are enabled
- */
-export function composerStateForInstance(
-  instance: InstanceEntry | null,
-): ComposerState {
-  if (!instance) {
-    return { disabled: true, reason: "no instance selected" };
-  }
-  if (instance.status === "loading") {
-    return { disabled: true, reason: "instance is loading" };
-  }
-  if (instance.status === "paused") {
-    return { disabled: true, reason: "instance is paused" };
-  }
-  // Standalone SDK rows have no daemon-forwarded /send path.
-  if (instance.execution_mode === "sdk" && !supportsStructuredPreview(instance)) {
-    return { disabled: true, reason: "standalone sdk instance" };
-  }
-  if (instance.status === "running" || instance.status === "ready") {
-    return { disabled: false, reason: null };
-  }
-  return { disabled: true, reason: "instance not available" };
-}
-
-// ---------------------------------------------------------------------------
 // Key classification
 // ---------------------------------------------------------------------------
 
@@ -143,18 +101,174 @@ export function previewLineLimit(depth: ScrollbackDepth): number {
 }
 
 // ---------------------------------------------------------------------------
+// Composer state
+// ---------------------------------------------------------------------------
+
+export interface ComposerState {
+  disabled: boolean;
+  reason: string | null;
+}
+
+/**
+ * Returns whether the composer is enabled for a given instance and, if not,
+ * a lowercase reason string to display in the UI.
+ *
+ * Priority order:
+ *  1. loading / paused always disable (regardless of mode)
+ *  2. terminal session-ended capture error disables with specific reason
+ *  3. daemon-managed SDK rows (valid_actions present) in running/ready are enabled
+ *     because /send is forwarded through the daemon
+ *  4. standalone SDK rows (no valid_actions) are disabled — no tmux pane
+ *  5. tmux running/ready are enabled
+ */
+export function composerStateForInstance(
+  instance: InstanceEntry | null,
+  captureError?: CaptureErrorInfo | string | null,
+): ComposerState {
+  if (!instance) {
+    return { disabled: true, reason: "no instance selected" };
+  }
+  if (instance.status === "loading") {
+    return { disabled: true, reason: "instance is loading" };
+  }
+  if (instance.status === "paused") {
+    return { disabled: true, reason: "instance is paused" };
+  }
+  // Terminal session-ended disables the composer.
+  if (captureError !== undefined && captureError !== null) {
+    const reason = captureErrorComposerReason(captureError);
+    if (reason !== null) {
+      return { disabled: true, reason };
+    }
+  }
+  // Standalone SDK rows have no daemon-forwarded /send path.
+  if (instance.execution_mode === "sdk" && !supportsStructuredPreview(instance)) {
+    return { disabled: true, reason: "standalone sdk instance" };
+  }
+  if (instance.status === "running" || instance.status === "ready") {
+    return { disabled: false, reason: null };
+  }
+  return { disabled: true, reason: "instance not available" };
+}
+
+// ---------------------------------------------------------------------------
 // Error labels
 // ---------------------------------------------------------------------------
 
 /**
- * Maps a raw capture error message to a user-friendly lowercase label.
+ * Structured capture error — carries an optional HTTP status alongside the
+ * message so classification helpers can make precise decisions without
+ * parsing status codes from error strings.
+ */
+export interface CaptureErrorInfo {
+  status?: number;
+  message: string;
+}
+
+export type CaptureErrorKind =
+  | "kas-serve"
+  | "session-ended"
+  | "paused"
+  | "daemon-unavailable"
+  | "tmux-stderr"
+  | "generic";
+
+/** Normalise the overloaded error argument to a CaptureErrorInfo or null. */
+function normaliseCaptureError(
+  error: CaptureErrorInfo | string | null,
+): CaptureErrorInfo | null {
+  if (error === null || error === undefined) return null;
+  if (typeof error === "string") {
+    if (!error) return null;
+    return { message: error };
+  }
+  if (!error.message) return null;
+  return error;
+}
+
+/**
+ * Classifies a capture error into a semantic kind.
+ * Returns null when there is no error.
+ */
+export function captureErrorKind(
+  error: CaptureErrorInfo | string | null,
+): CaptureErrorKind | null {
+  const e = normaliseCaptureError(error);
+  if (!e) return null;
+  const msg = e.message;
+  if (msg.includes("kas serve") || msg.includes("--repo")) {
+    return "kas-serve";
+  }
+  if (e.status === 410 || msg.includes("tmux session not found")) {
+    return "session-ended";
+  }
+  if (e.status === 409 && msg.includes("cannot capture pane from a paused instance")) {
+    return "paused";
+  }
+  if (e.status === 502) {
+    if (msg.trim() === "daemon unavailable") {
+      return "daemon-unavailable";
+    }
+    if (msg.trim()) {
+      return "tmux-stderr";
+    }
+  }
+  return "generic";
+}
+
+/**
+ * Maps a capture error to a user-friendly lowercase label.
  * Returns null when there is no error to show.
  */
-export function captureErrorLabel(message: string | null): string | null {
-  if (!message) return null;
-  // Specific message for missing repo argument to kas serve.
-  if (message.includes("kas serve") || message.includes("--repo")) {
-    return "pane capture unavailable — run kas serve --repo <path> to enable";
+export function captureErrorLabel(
+  error: CaptureErrorInfo | string | null,
+): string | null {
+  const kind = captureErrorKind(error);
+  if (kind === null) return null;
+  const e = normaliseCaptureError(error)!;
+  switch (kind) {
+    case "kas-serve":
+      return "pane capture unavailable — run kas serve --repo <path> to enable";
+    case "session-ended":
+      return "session ended";
+    case "paused":
+      return "instance is paused";
+    case "daemon-unavailable":
+      return "daemon unavailable — preview will resume when the daemon is back";
+    case "tmux-stderr": {
+      const firstLine = e.message.split("\n")[0].trim().slice(0, 160);
+      return firstLine || "pane output is not available right now";
+    }
+    case "generic":
+      return "pane output is not available right now";
   }
-  return "pane output is not available right now";
+}
+
+/**
+ * Returns a composer-facing reason string when the capture error should
+ * disable the composer, or null when it should not affect the composer.
+ */
+export function captureErrorComposerReason(
+  error: CaptureErrorInfo | string | null,
+): string | null {
+  const kind = captureErrorKind(error);
+  switch (kind) {
+    case "session-ended":
+      return "session ended — restart or kill the instance";
+    case "paused":
+      return "instance is paused";
+    default:
+      return null;
+  }
+}
+
+/**
+ * Returns true when the polling loop should be suspended due to this error.
+ * Daemon-unavailable errors must keep polling so recovery is automatic.
+ */
+export function shouldSuspendTerminalPolling(
+  error: CaptureErrorInfo | string | null,
+): boolean {
+  const kind = captureErrorKind(error);
+  return kind === "session-ended" || kind === "paused";
 }
