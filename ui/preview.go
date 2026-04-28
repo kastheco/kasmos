@@ -244,6 +244,8 @@ func (p *PreviewPane) UpdateContent(instance *session.Instance) error {
 		p.viewport.GotoTop()
 		p.sdkView = nil
 		p.sdkScrollStrip = ""
+		p.previewState = previewState{}
+		p.isRawTerminal = false
 		p.lastInstanceKey = instanceKey
 	}
 	if composerOwnerKey != p.lastSDKComposerOwner {

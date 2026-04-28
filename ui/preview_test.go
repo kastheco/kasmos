@@ -583,6 +583,43 @@ func TestPreviewPane_SDKUpdateContent_ClearsScrollModeWhenCacheEmpty(t *testing.
 		"empty SDK capture should show the interactive footer after clearing stale scroll state")
 }
 
+// TestPreviewPane_NavigateAwayFromSDK_ClearsStaleSDKOutput is a regression
+// test for the bug where navigating from an SDK instance to a non-SDK (tmux)
+// instance left the SDK content visible in the preview pane. UpdateContent must
+// clear previewState when the instance identity changes so the tmux fallthrough
+// path starts from a blank pane rather than inheriting stale SDK output.
+func TestPreviewPane_NavigateAwayFromSDK_ClearsStaleSDKOutput(t *testing.T) {
+	previewPane := NewPreviewPane()
+	previewPane.SetSize(80, 24)
+
+	// Step 1: render an SDK instance with cached content.
+	sdkInst := &session.Instance{
+		Title:            "sdk-instance",
+		Status:           session.Running,
+		ExecutionMode:    session.ExecutionModeSDK,
+		CachedContent:    "sdk-rendered-output-marker",
+		CachedContentSet: true,
+	}
+	require.NoError(t, previewPane.UpdateContent(sdkInst))
+	require.Contains(t, previewPane.previewState.text, "sdk-rendered-output-marker",
+		"previewState should contain SDK output after UpdateContent with SDK instance")
+
+	// Step 2: navigate to a non-SDK (tmux) instance — no VT frame pushed yet,
+	// simulating a fresh/not-yet-started tmux session.
+	tmuxInst := &session.Instance{
+		Title:  "tmux-instance",
+		Status: session.Running,
+		// ExecutionMode deliberately zero-value (tmux).
+	}
+	require.NoError(t, previewPane.UpdateContent(tmuxInst))
+
+	// The SDK marker must not survive the identity change.
+	require.NotContains(t, previewPane.previewState.text, "sdk-rendered-output-marker",
+		"stale SDK output must be cleared when navigating to a different (tmux) instance")
+	require.False(t, previewPane.previewState.fallback,
+		"pane should be in normal (non-fallback) mode awaiting raw VT content")
+}
+
 // fakeSDKSession is a no-op ExecutionSession that also implements
 // presentationProvider. Used to inject structured turn data into an Instance
 // without starting a real process.
