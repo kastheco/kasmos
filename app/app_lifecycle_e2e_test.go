@@ -128,7 +128,7 @@ func TestLifecycleE2E_DaemonManagedPlanningDelegatesWithoutLocalBaseline(t *test
 	updated := model.(*home)
 	require.NotNil(t, cmd)
 	assert.Empty(t, updated.nav.GetInstances(),
-		"daemon-managed StartPlan path must not add a local architect-baseline row")
+		"daemon-managed StartPlan path must not add local planner rows")
 
 	msg := cmd()
 	var started daemonPlannerStartedMsg

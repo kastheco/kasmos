@@ -4,9 +4,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"sort"
 	"strings"
 
+	"github.com/kastheco/kasmos/config"
 	"github.com/kastheco/kasmos/config/auditlog"
 	"github.com/kastheco/kasmos/config/taskfsm"
 	"github.com/kastheco/kasmos/config/taskparser"
@@ -555,7 +557,7 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 		}
 		m.loadTaskState()
 		m.updateSidebarTasks()
-		return m.spawnPlannerWithOptionalBaseline(planFile, buildModifyTaskPrompt(planFile, m.taskStoreProject), entry.Description)
+		return m.spawnTaskAgent(planFile, "plan", buildModifyTaskPrompt(planFile, m.taskStoreProject))
 
 	case "start_over_plan":
 		planFile := m.nav.GetSelectedPlanFile()
@@ -1124,33 +1126,86 @@ func lifecycleActionRejected(message string) tea.Cmd {
 	}
 }
 
-func (m *home) spawnPlannerWithOptionalBaseline(planFile, prompt, description string) (tea.Model, tea.Cmd) {
-	model, plannerCmd := m.spawnTaskAgent(planFile, "plan", prompt)
-	updated, ok := model.(*home)
-	if !ok {
-		return model, plannerCmd
+func (m *home) spawnPlannersForTask(planFile, legacyPrompt, description string) (tea.Model, tea.Cmd) {
+	if repoManagedByDaemon(m.activeRepoPath) {
+		return m.spawnTaskAgent(planFile, "plan", legacyPrompt)
 	}
-	if !updated.parallelPlannerArchitectEnabled() || repoManagedByDaemon(updated.activeRepoPath) {
-		return updated, plannerCmd
+	profiles := m.appConfig.PlannerProfileNames()
+	if len(profiles) == 0 {
+		return m.spawnTaskAgent(planFile, "plan", legacyPrompt)
+	}
+	if !m.requireDaemonForAgents() {
+		return m, nil
+	}
+	if m.taskState == nil {
+		return m, m.handleError(fmt.Errorf("no task state loaded"))
+	}
+	if _, ok := m.taskState.Entry(planFile); !ok {
+		return m, m.handleError(fmt.Errorf("task not found: %s", planFile))
+	}
+	if err := scaffold.PatchWorktreeConfig(m.activeRepoPath, m.opencodeAgentConfigs()); err != nil {
+		return m, m.handleError(err)
 	}
 
-	clearCmd := updated.clearArchitectBaselineCmd(planFile)
-	var spawnCmds []tea.Cmd
-	if plannerCmd != nil {
-		spawnCmds = append(spawnCmds, plannerCmd)
+	m.killExistingPlanAgent(planFile, session.AgentTypePlanner)
+	cacheDir := filepath.Join(m.activeRepoPath, ".kasmos", "cache")
+	clearCmd := func() tea.Msg {
+		if err := orchestration.ClearPlannerDraftCaches(cacheDir, planFile); err != nil {
+			return err
+		}
+		return nil
 	}
-	baselineModel, baselineCmd := updated.spawnArchitectBaseline(planFile, description)
-	if baselineUpdated, ok := baselineModel.(*home); ok {
-		updated = baselineUpdated
+
+	var startCmds []tea.Cmd
+	for i, profileName := range profiles {
+		profile, err := m.profileForNamedPlanner(profileName)
+		if err != nil {
+			return m, m.handleError(err)
+		}
+		cacheName, err := orchestration.PlannerDraftCacheFilename(planFile, profileName)
+		if err != nil {
+			return m, m.handleError(err)
+		}
+		spec := orchestration.BuildPlannerAgentSpecWithOptions(planFile, m.taskStoreProject, description, orchestration.PlannerAgentOptions{
+			Profile:   profileName,
+			Primary:   i == 0,
+			DraftMode: true,
+			CachePath: filepath.Join(".kasmos", "cache", cacheName),
+		})
+		inst, err := session.NewInstance(m.withRetentionOpts(session.InstanceOptions{
+			Title:           spec.Title,
+			Path:            m.activeRepoPath,
+			Program:         buildHarnessAwareProgramCommand(profile),
+			ExecutionMode:   session.ExecutionMode(config.NormalizeExecutionMode(profile.ExecutionMode)),
+			SDKSpeedTier:    session.NormalizeSDKSpeedTier(profile.Tier),
+			SkipPermissions: profile.ResolveSkipPermissions(false),
+			TaskFile:        planFile,
+			AgentType:       session.AgentTypePlanner,
+			ClaudeNoFlicker: m.claudeNoFlicker(),
+		}))
+		if err != nil {
+			return m, m.handleError(err)
+		}
+		inst.PlannerProfile = profileName
+		inst.QueuedPrompt = spec.Prompt
+		inst.SetStatus(session.Loading)
+		inst.LoadingTotal = 5
+		inst.LoadingMessage = "Preparing session..."
+		m.addInstanceFinalizer(inst, m.nav.AddInstance(inst))
+		m.nav.SelectInstance(inst)
+
+		plannerInst := inst
+		startCmds = append(startCmds, func() tea.Msg {
+			return instanceStartedMsg{instance: plannerInst, err: plannerInst.StartOnMainBranch()}
+		})
+		m.audit(auditlog.EventAgentSpawned, fmt.Sprintf("spawned planner %s for plan %s", profileName, taskstate.DisplayName(planFile)),
+			auditlog.WithPlan(planFile),
+			auditlog.WithInstance(spec.Title),
+			auditlog.WithAgent(session.AgentTypePlanner),
+		)
 	}
-	if baselineCmd != nil {
-		spawnCmds = append(spawnCmds, baselineCmd)
-	}
-	spawnCmd := tea.Batch(spawnCmds...)
-	if clearCmd != nil {
-		return updated, tea.Sequence(clearCmd, spawnCmd)
-	}
-	return updated, spawnCmd
+	startCmds = append([]tea.Cmd{tea.RequestWindowSize}, startCmds...)
+	return m, tea.Sequence(clearCmd, tea.Batch(startCmds...))
 }
 
 // instanceSignalItems returns the promoted root-level items for an instance context
@@ -1712,7 +1767,7 @@ func (m *home) executeTaskStage(planFile, stage string) (tea.Model, tea.Cmd) {
 			auditlog.WithPlan(planFile))
 		m.loadTaskState()
 		m.updateSidebarTasks()
-		return m.spawnPlannerWithOptionalBaseline(planFile, buildPlanningPrompt(planFile, taskstate.DisplayName(planFile), entry.Description, m.taskStoreProject), entry.Description)
+		return m.spawnPlannersForTask(planFile, buildPlanningPrompt(planFile, taskstate.DisplayName(planFile), entry.Description, m.taskStoreProject), entry.Description)
 	case "solo":
 		// Check store content before fsmSetImplementing — the FSM transition calls
 		// store.Update which overwrites the content field with an empty string.
@@ -1765,7 +1820,7 @@ func (m *home) executeTaskStage(planFile, stage string) (tea.Model, tea.Cmd) {
 			m.loadTaskState()
 			m.updateSidebarTasks()
 			m.toastManager.Info("plan content missing — respawning planner to write plan content.")
-			_, spawnCmd := m.spawnPlannerWithOptionalBaseline(planFile, buildPlanningPrompt(planFile, taskstate.DisplayName(planFile), entry.Description, m.taskStoreProject), entry.Description)
+			_, spawnCmd := m.spawnTaskAgent(planFile, "plan", buildPlanningPrompt(planFile, taskstate.DisplayName(planFile), entry.Description, m.taskStoreProject))
 			return m, tea.Batch(m.toastTickCmd(), func() tea.Msg { return taskRefreshMsg{} }, spawnCmd)
 		}
 		plan, err := taskparser.Parse(rawContent)
@@ -1778,7 +1833,7 @@ func (m *home) executeTaskStage(planFile, stage string) (tea.Model, tea.Cmd) {
 			m.loadTaskState()
 			m.updateSidebarTasks()
 			m.toastManager.Info("task needs ## Wave headers — respawning planner to annotate.")
-			_, spawnCmd := m.spawnPlannerWithOptionalBaseline(planFile, orchestration.BuildWaveAnnotationPrompt(planFile, m.taskStoreProject), entry.Description)
+			_, spawnCmd := m.spawnTaskAgent(planFile, "plan", orchestration.BuildWaveAnnotationPrompt(planFile, m.taskStoreProject))
 			return m, tea.Batch(m.toastTickCmd(), func() tea.Msg { return taskRefreshMsg{} }, spawnCmd)
 		}
 
@@ -1844,7 +1899,7 @@ func (m *home) executeTaskStage(planFile, stage string) (tea.Model, tea.Cmd) {
 			m.loadTaskState()
 			m.updateSidebarTasks()
 			m.toastManager.Info("plan content missing — respawning planner to write plan content.")
-			_, spawnCmd := m.spawnPlannerWithOptionalBaseline(planFile, buildPlanningPrompt(planFile, taskstate.DisplayName(planFile), entry.Description, m.taskStoreProject), entry.Description)
+			_, spawnCmd := m.spawnTaskAgent(planFile, "plan", buildPlanningPrompt(planFile, taskstate.DisplayName(planFile), entry.Description, m.taskStoreProject))
 			return m, tea.Batch(m.toastTickCmd(), func() tea.Msg { return taskRefreshMsg{} }, spawnCmd)
 		}
 		plan, err := taskparser.Parse(rawContent)
@@ -1856,7 +1911,7 @@ func (m *home) executeTaskStage(planFile, stage string) (tea.Model, tea.Cmd) {
 			m.loadTaskState()
 			m.updateSidebarTasks()
 			m.toastManager.Info("task needs ## Wave headers — respawning planner to annotate.")
-			_, spawnCmd := m.spawnPlannerWithOptionalBaseline(planFile, orchestration.BuildWaveAnnotationPrompt(planFile, m.taskStoreProject), entry.Description)
+			_, spawnCmd := m.spawnTaskAgent(planFile, "plan", orchestration.BuildWaveAnnotationPrompt(planFile, m.taskStoreProject))
 			return m, tea.Batch(m.toastTickCmd(), func() tea.Msg { return taskRefreshMsg{} }, spawnCmd)
 		}
 

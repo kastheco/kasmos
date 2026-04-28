@@ -2374,7 +2374,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.loadTaskState()
 		m.updateSidebarTasks()
-		model, spawnCmd := m.spawnPlannerWithOptionalBaseline(
+		model, spawnCmd := m.spawnPlannersForTask(
 			msg.planFile,
 			buildPlanningPrompt(msg.planFile, msg.planName, msg.description, m.taskStoreProject),
 			msg.description,

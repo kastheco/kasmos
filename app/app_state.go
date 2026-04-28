@@ -227,6 +227,8 @@ func (m *home) ensureProcessor() *loop.Processor {
 		maxCycles = m.appConfig.MaxReviewFixCycles
 		autoReadinessReview = m.appConfig.AutoReadinessReview
 	}
+	plannerProfiles := m.appConfig.PlannerProfileNames()
+	plannerDraftMode := len(plannerProfiles) > 0
 	if m.processor != nil {
 		m.processor.SetReviewFixConfig(autoReviewFix, maxCycles)
 		m.processor.SetReadinessReviewConfig(autoReadinessReview)
@@ -249,6 +251,9 @@ func (m *home) ensureProcessor() *loop.Processor {
 		Dir:                 m.taskStateDir,
 		MaxReviewFixCycles:  maxCycles,
 		Hooks:               hooks,
+		PlannerProfiles:     plannerProfiles,
+		PlannerDraftMode:    plannerDraftMode,
+		CacheDir:            filepath.Join(m.activeRepoPath, ".kasmos", "cache"),
 	})
 	return m.processor
 }
@@ -1589,6 +1594,7 @@ func (m *home) updateInfoPane() {
 		Path:            selected.Path,
 		Status:          statusString(selected.Status),
 		AgentType:       selected.AgentType,
+		PlannerProfile:  selected.PlannerProfile,
 		TaskNumber:      selected.TaskNumber,
 		WaveNumber:      selected.WaveNumber,
 		WaveTaskIndex:   selected.WaveTaskIndex,
@@ -2149,6 +2155,17 @@ func (m *home) profileForAgent(agentType string) config.AgentProfile {
 	return profile
 }
 
+func (m *home) profileForNamedPlanner(name string) (config.AgentProfile, error) {
+	if m.appConfig == nil {
+		return config.AgentProfile{}, fmt.Errorf("planner profile %q requires app config", name)
+	}
+	profile, ok := m.appConfig.ResolveNamedProfile(name, m.program)
+	if !ok {
+		return config.AgentProfile{}, fmt.Errorf("planner profile %q is not configured or enabled", name)
+	}
+	return profile, nil
+}
+
 // programForAgent resolves the program command for a given agent type
 // (e.g. "coder", "planner") using the kasmos config profile. Falls back to
 // m.program if no profile is configured.
@@ -2596,16 +2613,7 @@ func (m *home) spawnElaborator(planFile string) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	planName := taskstate.DisplayName(planFile)
-	description := ""
-	if m.taskState != nil {
-		if entry, ok := m.taskState.Entry(planFile); ok {
-			description = entry.Description
-		}
-	}
-	spec := orchestration.BuildArchitectAgentSpecWithOptions(planFile, m.taskStoreProject, orchestration.ArchitectPromptOptions{
-		ParallelBaseline: m.parallelPlannerArchitectEnabled(),
-		DescriptionHash:  orchestration.ArchitectBaselineDescriptionHash(description),
-	})
+	spec := orchestration.BuildArchitectAgentSpec(planFile, m.taskStoreProject)
 
 	// Clear any stale elaborator_finished sentinel before starting a new architect pass.
 	// Signal processing is edge-unaware, so a stale file would advance the current
@@ -2653,75 +2661,6 @@ func (m *home) spawnElaborator(planFile string) (tea.Model, tea.Cmd) {
 
 	m.toastManager.Info(fmt.Sprintf("running architect pass for '%s' before implementation", planName))
 	return m, tea.Batch(tea.RequestWindowSize, startCmd, m.toastTickCmd())
-}
-
-func (m home) parallelPlannerArchitectEnabled() bool {
-	return m.appConfig != nil && len(m.appConfig.Planners) > 0
-}
-
-func (m home) architectBaselineCacheDir() string {
-	return filepath.Join(m.activeRepoPath, ".kasmos", "cache")
-}
-
-func (m home) clearArchitectBaselineCmd(planFile string) tea.Cmd {
-	if !m.parallelPlannerArchitectEnabled() || repoManagedByDaemon(m.activeRepoPath) {
-		return nil
-	}
-	cacheDir := m.architectBaselineCacheDir()
-	return func() tea.Msg {
-		if err := orchestration.ClearArchitectBaseline(cacheDir, planFile); err != nil {
-			return err
-		}
-		return nil
-	}
-}
-
-func (m home) spawnArchitectBaseline(planFile, description string) (tea.Model, tea.Cmd) {
-	if !m.requireDaemonForAgents() {
-		return &m, nil
-	}
-	if repoManagedByDaemon(m.activeRepoPath) {
-		return &m, nil
-	}
-
-	spec := orchestration.BuildArchitectBaselineAgentSpec(planFile, m.taskStoreProject, description)
-	agentType := "architect-baseline"
-	if err := scaffold.PatchWorktreeConfig(m.activeRepoPath, m.opencodeAgentConfigs()); err != nil {
-		return &m, m.handleError(err)
-	}
-	m.killExistingPlanAgent(planFile, agentType)
-
-	inst, err := session.NewInstance(m.withRetentionOpts(session.InstanceOptions{
-		Title:           spec.Title,
-		Path:            m.activeRepoPath,
-		Program:         m.programForAgent(session.AgentTypeElaborator),
-		ExecutionMode:   m.executionModeForAgent(session.AgentTypeElaborator),
-		SDKSpeedTier:    m.sdkSpeedTierForAgent(session.AgentTypeElaborator),
-		SkipPermissions: m.skipPermissionsForAgent(session.AgentTypeElaborator),
-		TaskFile:        planFile,
-		AgentType:       agentType,
-		ClaudeNoFlicker: m.claudeNoFlicker(),
-	}))
-	if err != nil {
-		return &m, m.handleError(err)
-	}
-	inst.QueuedPrompt = spec.Prompt
-	inst.SetStatus(session.Loading)
-	inst.LoadingTotal = 5
-	inst.LoadingMessage = "Preparing session..."
-
-	m.audit(auditlog.EventAgentSpawned, fmt.Sprintf("spawned architect-baseline for plan %s", taskstate.DisplayName(planFile)),
-		auditlog.WithPlan(planFile),
-		auditlog.WithInstance(spec.Title),
-		auditlog.WithAgent(agentType),
-	)
-
-	m.addInstanceFinalizer(inst, m.nav.AddInstance(inst))
-	m.nav.SelectInstance(inst)
-	startCmd := func() tea.Msg {
-		return instanceStartedMsg{instance: inst, err: inst.StartOnMainBranch()}
-	}
-	return &m, tea.Batch(tea.RequestWindowSize, startCmd)
 }
 
 // blueprintSkipThreshold returns the configured threshold for blueprint-skip mode.
@@ -3024,7 +2963,7 @@ Determine if the task is well-specified enough for implementation or needs furth
 Retrieve the current plan content with: kas task show %s`, filename)
 
 	m.toastManager.Success("imported! spawning planner...")
-	model, cmd := m.spawnPlannerWithOptionalBaseline(filename, prompt, task.Description)
+	model, cmd := m.spawnPlannersForTask(filename, prompt, task.Description)
 	if cmd == nil {
 		return model, m.toastTickCmd()
 	}
