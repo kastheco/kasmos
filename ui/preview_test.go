@@ -298,27 +298,39 @@ func TestPreviewScrolling(t *testing.T) {
 	require.False(t, previewPane.isScrolling, "Should not be in scrolling mode after reset")
 }
 
+// mockPtyHandle is a local PtyHandle implementation for ui tests.
+type mockPtyHandle struct{ file *os.File }
+
+func (h *mockPtyHandle) File() *os.File { return h.file }
+func (h *mockPtyHandle) Close() error {
+	if h.file != nil {
+		return h.file.Close()
+	}
+	return nil
+}
+
 // MockPtyFactory for testing tmux sessions
 type MockPtyFactory struct {
 	t       *testing.T
 	cmdExec cmd_test.MockCmdExec
 
-	// Array of commands and the corresponding file handles representing PTYs.
-	cmds  []*exec.Cmd
+	// cmds records each command passed to Start.
+	cmds []*exec.Cmd
+	// files records the underlying files for compatibility with existing test assertions.
 	files []*os.File
 }
 
-func (pt *MockPtyFactory) Start(cmd *exec.Cmd) (*os.File, error) {
+func (pt *MockPtyFactory) Start(cmd *exec.Cmd) (tmux.PtyHandle, error) {
 	filePath := filepath.Join(pt.t.TempDir(), fmt.Sprintf("pty-%s-%d", pt.t.Name(), len(pt.cmds)))
 	f, err := os.OpenFile(filePath, os.O_CREATE|os.O_RDWR, 0644)
-	if err == nil {
-		pt.cmds = append(pt.cmds, cmd)
-		pt.files = append(pt.files, f)
-
-		// Execute the command through our mock to trigger session creation logic
-		_ = pt.cmdExec.Run(cmd)
+	if err != nil {
+		return nil, err
 	}
-	return f, err
+	pt.cmds = append(pt.cmds, cmd)
+	pt.files = append(pt.files, f)
+	// Execute the command through our mock to trigger session creation logic.
+	_ = pt.cmdExec.Run(cmd)
+	return &mockPtyHandle{file: f}, nil
 }
 
 func (pt *MockPtyFactory) Close() {}

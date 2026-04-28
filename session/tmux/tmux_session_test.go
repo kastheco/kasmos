@@ -2,6 +2,7 @@ package tmux
 
 import (
 	"fmt"
+	"io"
 	"os/exec"
 	"strings"
 	"testing"
@@ -10,6 +11,7 @@ import (
 	"github.com/kastheco/kasmos/cmd/cmd_test"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/term"
 )
 
 func TestToKasTmuxName(t *testing.T) {
@@ -194,10 +196,14 @@ func TestStart_CreatesAndRestoresSession(t *testing.T) {
 	s := NewTmuxSessionWithDeps("test-start", "claude", false, ptyFactory, cmdExec)
 	err := s.Start(workdir)
 	require.NoError(t, err)
-	require.Len(t, ptyFactory.cmds, 2) // new-session + attach-session
+	// Only one PTY handle: new-session. Restore() is monitor-only (no PTY).
+	require.Len(t, ptyFactory.cmds, 1)
 	assert.Contains(t, commandString(ptyFactory.cmds[0]), "new-session")
 	assert.Contains(t, commandString(ptyFactory.cmds[0]), "KASMOS_MANAGED=1")
-	assert.Contains(t, commandString(ptyFactory.cmds[1]), "attach-session")
+	// The new-session handle is closed after Start succeeds.
+	assert.True(t, ptyFactory.handles[0].closed, "new-session handle should be closed after Start")
+	// No active PTY in detached state.
+	assert.Nil(t, s.GetPTY(), "GetPTY should be nil after Start")
 }
 
 func TestStart_WithSkipPermissions(t *testing.T) {
@@ -324,6 +330,116 @@ func TestRestore_DisablesMouseOnRestoredSession(t *testing.T) {
 		}
 	}
 	assert.True(t, found, "expected 'tmux set-option ... mouse off' to be run during Restore(); ran: %v", ranCmds)
+}
+
+func TestRestore_LeavesPTYNil(t *testing.T) {
+	t.Parallel()
+	s := NewTmuxSessionWithDeps("test-restore-nil-pty", "opencode", false,
+		NewMockPtyFactory(t), cmd_test.NewMockExecutor())
+	require.NoError(t, s.Restore())
+	assert.Nil(t, s.GetPTY(), "GetPTY should be nil after Restore (monitor-only, no attached PTY)")
+	assert.Nil(t, s.ptmxHandle, "ptmxHandle should be nil after Restore")
+}
+
+func TestAttach_CreatesAttachSessionHandle(t *testing.T) {
+	// serial: mutates tmux timing globals
+	withFastTmuxTimings(t)
+	oldStdinFD := stdinFD
+	oldIsTTY := terminalIsTTY
+	oldMakeRaw := terminalMakeRaw
+	oldRestore := terminalRestore
+	oldDrain := drainStdin
+	oldSilence := outerTerminalSilence
+	oldOuterRestore := outerTerminalRestore
+	defer func() {
+		stdinFD = oldStdinFD
+		terminalIsTTY = oldIsTTY
+		terminalMakeRaw = oldMakeRaw
+		terminalRestore = oldRestore
+		drainStdin = oldDrain
+		outerTerminalSilence = oldSilence
+		outerTerminalRestore = oldOuterRestore
+	}()
+	stdinFD = func() int { return 9 }
+	terminalIsTTY = func(int) bool { return false } // skip raw mode in tests
+	state := &term.State{}
+	terminalMakeRaw = func(int) (*term.State, error) { return state, nil }
+	terminalRestore = func(int, *term.State) error { return nil }
+	drainStdin = func(time.Duration) {}
+	outerTerminalSilence = func(io.Writer) {}
+	outerTerminalRestore = func(io.Writer) {}
+
+	ptyFactory := NewMockPtyFactory(t)
+	s := NewTmuxSessionWithDeps("test-attach-handle", "opencode", false,
+		ptyFactory, cmd_test.NewMockExecutor())
+	require.NoError(t, s.Restore())
+	require.Nil(t, s.GetPTY(), "GetPTY must be nil before Attach")
+
+	ch, err := s.Attach()
+	require.NoError(t, err)
+	require.NotNil(t, ch)
+
+	// Attach creates exactly one PTY handle for attach-session.
+	require.Len(t, ptyFactory.cmds, 1)
+	assert.Contains(t, commandString(ptyFactory.cmds[0]), "attach-session")
+	assert.Contains(t, commandString(ptyFactory.cmds[0]), "kas_test-attach-handle")
+
+	// PTY is set during active attach.
+	assert.NotNil(t, s.GetPTY(), "GetPTY should be non-nil during active attach")
+	assert.NotNil(t, s.ptmxHandle, "ptmxHandle should be set during active attach")
+
+	s.Detach()
+
+	// After Detach, PTY is nil and handle is reaped.
+	assert.Nil(t, s.GetPTY(), "GetPTY should be nil after Detach")
+	assert.Nil(t, s.ptmxHandle, "ptmxHandle should be nil after Detach")
+	// The attach-session handle must have been closed.
+	assert.True(t, ptyFactory.handles[0].closed, "attach-session PTY handle should be closed after Detach")
+}
+
+func TestDetach_DoesNotCallRestore(t *testing.T) {
+	// serial: mutates tmux timing globals
+	withFastTmuxTimings(t)
+	oldStdinFD := stdinFD
+	oldIsTTY := terminalIsTTY
+	oldMakeRaw := terminalMakeRaw
+	oldRestore := terminalRestore
+	oldDrain := drainStdin
+	oldSilence := outerTerminalSilence
+	oldOuterRestore := outerTerminalRestore
+	defer func() {
+		stdinFD = oldStdinFD
+		terminalIsTTY = oldIsTTY
+		terminalMakeRaw = oldMakeRaw
+		terminalRestore = oldRestore
+		drainStdin = oldDrain
+		outerTerminalSilence = oldSilence
+		outerTerminalRestore = oldOuterRestore
+	}()
+	stdinFD = func() int { return 9 }
+	terminalIsTTY = func(int) bool { return false }
+	state := &term.State{}
+	terminalMakeRaw = func(int) (*term.State, error) { return state, nil }
+	terminalRestore = func(int, *term.State) error { return nil }
+	drainStdin = func(time.Duration) {}
+	outerTerminalSilence = func(io.Writer) {}
+	outerTerminalRestore = func(io.Writer) {}
+
+	ptyFactory := NewMockPtyFactory(t)
+	s := NewTmuxSessionWithDeps("test-detach-no-restore", "opencode", false,
+		ptyFactory, cmd_test.NewMockExecutor())
+	require.NoError(t, s.Restore())
+
+	ch, err := s.Attach()
+	require.NoError(t, err)
+	require.NotNil(t, ch)
+
+	handlesBefore := len(ptyFactory.cmds)
+	s.Detach()
+
+	// Detach must NOT create any additional PTY handles (no background Restore).
+	assert.Equal(t, handlesBefore, len(ptyFactory.cmds),
+		"Detach must not start a new PTY handle; handles before=%d, after=%d", handlesBefore, len(ptyFactory.cmds))
 }
 
 func TestStart_InjectsAgentFlag(t *testing.T) {
