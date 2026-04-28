@@ -101,6 +101,14 @@ func newConcreteTestStore(t *testing.T) *taskstore.SQLiteStore {
 	return store
 }
 
+func createReadyTask(t *testing.T, store taskstore.Store, project, filename string) {
+	t.Helper()
+	require.NoError(t, store.Create(project, taskstore.TaskEntry{
+		Filename: filename,
+		Status:   taskstore.StatusReady,
+	}))
+}
+
 func TestSQLiteStore_CreateAndGet(t *testing.T) {
 	store := newTestStore(t)
 	entry := taskstore.TaskEntry{
@@ -150,9 +158,9 @@ func TestSQLiteStore_MdSuffixMigration(t *testing.T) {
 
 func TestSQLiteStore_ListByStatus(t *testing.T) {
 	store := newTestStore(t)
-	require.NoError(t, store.Create("kasmos", taskstore.TaskEntry{Filename: "a", Status: taskstore.StatusReady}))
+	createReadyTask(t, store, "kasmos", "a")
 	require.NoError(t, store.Create("kasmos", taskstore.TaskEntry{Filename: "b", Status: taskstore.StatusDone}))
-	require.NoError(t, store.Create("kasmos", taskstore.TaskEntry{Filename: "c", Status: taskstore.StatusReady}))
+	createReadyTask(t, store, "kasmos", "c")
 
 	plans, err := store.ListByStatus("kasmos", taskstore.StatusReady)
 	require.NoError(t, err)
@@ -161,8 +169,8 @@ func TestSQLiteStore_ListByStatus(t *testing.T) {
 
 func TestSQLiteStore_ProjectIsolation(t *testing.T) {
 	store := newTestStore(t)
-	require.NoError(t, store.Create("project-a", taskstore.TaskEntry{Filename: "x", Status: taskstore.StatusReady}))
-	require.NoError(t, store.Create("project-b", taskstore.TaskEntry{Filename: "y", Status: taskstore.StatusReady}))
+	createReadyTask(t, store, "project-a", "x")
+	createReadyTask(t, store, "project-b", "y")
 
 	plans, err := store.List("project-a")
 	require.NoError(t, err)
@@ -236,7 +244,7 @@ func TestSQLiteStore_ExecutionStateRoundTrip(t *testing.T) {
 
 func TestSQLiteStore_ExecutionStateZeroValueDefaults(t *testing.T) {
 	store := newTestStore(t)
-	require.NoError(t, store.Create("proj", taskstore.TaskEntry{Filename: "defaults", Status: taskstore.StatusReady}))
+	createReadyTask(t, store, "proj", "defaults")
 
 	got, err := store.Get("proj", "defaults")
 	require.NoError(t, err)
@@ -299,10 +307,7 @@ func TestSQLiteStore_Rename(t *testing.T) {
 func TestSQLiteStore_RenameCascadesChildren(t *testing.T) {
 	store := newTestStore(t)
 
-	require.NoError(t, store.Create("proj", taskstore.TaskEntry{
-		Filename: "before-rename",
-		Status:   taskstore.StatusReady,
-	}))
+	createReadyTask(t, store, "proj", "before-rename")
 	require.NoError(t, store.SetContent("proj", "before-rename", "# content"))
 	require.NoError(t, store.SetSubtasks("proj", "before-rename", []taskstore.SubtaskEntry{
 		{TaskNumber: 1, Title: "alpha", Status: taskstore.SubtaskStatusPending},
@@ -342,10 +347,7 @@ func TestSQLiteStore_RenameCascadesChildren(t *testing.T) {
 func TestSQLiteStore_RenameNotFoundRollsBackTransaction(t *testing.T) {
 	store := newTestStore(t)
 
-	require.NoError(t, store.Create("proj", taskstore.TaskEntry{
-		Filename: "existing-task",
-		Status:   taskstore.StatusReady,
-	}))
+	createReadyTask(t, store, "proj", "existing-task")
 
 	err := store.Rename("proj", "missing-task", "renamed-task")
 	require.EqualError(t, err, "plan not found: proj/missing-task")
@@ -360,12 +362,12 @@ func TestSQLiteStore_RenameNotFoundRollsBackTransaction(t *testing.T) {
 func TestSQLiteStore_Delete(t *testing.T) {
 	store := newTestStore(t)
 
-	require.NoError(t, store.Create("proj", taskstore.TaskEntry{Filename: "task-a", Status: taskstore.StatusReady}))
+	createReadyTask(t, store, "proj", "task-a")
 	require.NoError(t, store.SetContent("proj", "task-a", "# deleted task"))
 	require.NoError(t, store.SetSubtasks("proj", "task-a", []taskstore.SubtaskEntry{{TaskNumber: 1, Title: "child", Status: taskstore.SubtaskStatusPending}}))
 	require.NoError(t, store.RecordPRReview("proj", "task-a", 101, "COMMENTED", "delete me", "reviewer"))
 
-	require.NoError(t, store.Create("other", taskstore.TaskEntry{Filename: "task-a", Status: taskstore.StatusReady}))
+	createReadyTask(t, store, "other", "task-a")
 	require.NoError(t, store.SetContent("other", "task-a", "# survivor"))
 
 	require.NoError(t, store.Delete("proj", "task-a"))
@@ -441,9 +443,9 @@ func TestSQLiteStore_CreateDuplicate(t *testing.T) {
 
 func TestSQLiteStore_ListSortedByFilename(t *testing.T) {
 	store := newTestStore(t)
-	require.NoError(t, store.Create("kasmos", taskstore.TaskEntry{Filename: "c", Status: taskstore.StatusReady}))
-	require.NoError(t, store.Create("kasmos", taskstore.TaskEntry{Filename: "a", Status: taskstore.StatusReady}))
-	require.NoError(t, store.Create("kasmos", taskstore.TaskEntry{Filename: "b", Status: taskstore.StatusReady}))
+	createReadyTask(t, store, "kasmos", "c")
+	createReadyTask(t, store, "kasmos", "a")
+	createReadyTask(t, store, "kasmos", "b")
 
 	plans, err := store.List("kasmos")
 	require.NoError(t, err)
@@ -564,7 +566,7 @@ func TestSQLiteStore_ReviewCycle(t *testing.T) {
 
 func TestSQLiteStore_SubtaskCRUD(t *testing.T) {
 	store := newTestStore(t)
-	require.NoError(t, store.Create("kasmos", taskstore.TaskEntry{Filename: "plan", Status: taskstore.StatusReady}))
+	createReadyTask(t, store, "kasmos", "plan")
 
 	require.NoError(t, store.SetSubtasks("kasmos", "plan", []taskstore.SubtaskEntry{
 		{TaskNumber: 1, Title: "one", Status: taskstore.SubtaskStatusPending},
@@ -594,7 +596,7 @@ func TestSQLiteStore_SubtaskCRUD(t *testing.T) {
 
 func TestSQLiteStore_PhaseTimestamps(t *testing.T) {
 	store := newTestStore(t)
-	require.NoError(t, store.Create("kasmos", taskstore.TaskEntry{Filename: "plan", Status: taskstore.StatusReady}))
+	createReadyTask(t, store, "kasmos", "plan")
 
 	require.NoError(t, store.SetPhaseTimestamp("kasmos", "plan", "planning", time.Now().UTC()))
 	require.NoError(t, store.SetPhaseTimestamp("kasmos", "plan", "implementing", time.Now().UTC()))
@@ -662,7 +664,7 @@ func TestSQLiteStore_VerifyingAtRoundTrip(t *testing.T) {
 
 func TestSQLiteStore_PlanGoal(t *testing.T) {
 	store := newTestStore(t)
-	require.NoError(t, store.Create("kasmos", taskstore.TaskEntry{Filename: "plan", Status: taskstore.StatusReady}))
+	createReadyTask(t, store, "kasmos", "plan")
 
 	require.NoError(t, store.SetPlanGoal("kasmos", "plan", "ship resilient workflow"))
 
@@ -676,7 +678,7 @@ func TestSQLiteStore_PRMetadata(t *testing.T) {
 	defer store.Close()
 
 	project := "test"
-	require.NoError(t, store.Create(project, taskstore.TaskEntry{Filename: "plan", Status: taskstore.StatusReady}))
+	createReadyTask(t, store, project, "plan")
 
 	require.NoError(t, store.SetPRURL(project, "plan", "https://github.com/org/repo/pull/42"))
 	require.NoError(t, store.SetPRState(project, "plan", "APPROVED", "SUCCESS"))
@@ -702,7 +704,7 @@ func TestSQLiteStore_PRMetadata_NotFound(t *testing.T) {
 
 func TestSQLiteStore_PRReviews_RecordAndList(t *testing.T) {
 	store := newTestStore(t)
-	require.NoError(t, store.Create("proj", taskstore.TaskEntry{Filename: "plan", Status: taskstore.StatusReady}))
+	createReadyTask(t, store, "proj", "plan")
 
 	// Record two reviews
 	require.NoError(t, store.RecordPRReview("proj", "plan", 101, "CHANGES_REQUESTED", "fix this", "reviewer1"))
@@ -722,7 +724,7 @@ func TestSQLiteStore_PRReviews_RecordAndList(t *testing.T) {
 
 func TestSQLiteStore_PRReviews_DuplicateInsertIdempotent(t *testing.T) {
 	store := newTestStore(t)
-	require.NoError(t, store.Create("proj", taskstore.TaskEntry{Filename: "plan", Status: taskstore.StatusReady}))
+	createReadyTask(t, store, "proj", "plan")
 
 	// Insert same review ID twice — second call must be a no-op
 	require.NoError(t, store.RecordPRReview("proj", "plan", 42, "APPROVED", "lgtm", "alice"))
@@ -738,7 +740,7 @@ func TestSQLiteStore_PRReviews_DuplicateInsertIdempotent(t *testing.T) {
 
 func TestSQLiteStore_PRReviews_IsReviewProcessed(t *testing.T) {
 	store := newTestStore(t)
-	require.NoError(t, store.Create("proj", taskstore.TaskEntry{Filename: "plan", Status: taskstore.StatusReady}))
+	createReadyTask(t, store, "proj", "plan")
 
 	// Not recorded yet
 	assert.False(t, store.IsReviewProcessed("proj", "plan", 99))
@@ -751,7 +753,7 @@ func TestSQLiteStore_PRReviews_IsReviewProcessed(t *testing.T) {
 
 func TestSQLiteStore_PRReviews_MarkReacted(t *testing.T) {
 	store := newTestStore(t)
-	require.NoError(t, store.Create("proj", taskstore.TaskEntry{Filename: "plan", Status: taskstore.StatusReady}))
+	createReadyTask(t, store, "proj", "plan")
 	require.NoError(t, store.RecordPRReview("proj", "plan", 10, "COMMENTED", "body", "reviewer"))
 
 	require.NoError(t, store.MarkReviewReacted("proj", "plan", 10))
@@ -769,7 +771,7 @@ func TestSQLiteStore_PRReviews_MarkReacted(t *testing.T) {
 
 func TestSQLiteStore_PRReviews_MarkFixerDispatched(t *testing.T) {
 	store := newTestStore(t)
-	require.NoError(t, store.Create("proj", taskstore.TaskEntry{Filename: "plan", Status: taskstore.StatusReady}))
+	createReadyTask(t, store, "proj", "plan")
 	require.NoError(t, store.RecordPRReview("proj", "plan", 20, "CHANGES_REQUESTED", "fix it", "reviewer"))
 
 	require.NoError(t, store.MarkReviewFixerDispatched("proj", "plan", 20))
@@ -787,7 +789,7 @@ func TestSQLiteStore_PRReviews_MarkFixerDispatched(t *testing.T) {
 
 func TestSQLiteStore_PRReviews_EmptyPendingList(t *testing.T) {
 	store := newTestStore(t)
-	require.NoError(t, store.Create("proj", taskstore.TaskEntry{Filename: "plan", Status: taskstore.StatusReady}))
+	createReadyTask(t, store, "proj", "plan")
 
 	pending, err := store.ListPendingReviews("proj", "plan")
 	require.NoError(t, err)
@@ -798,7 +800,7 @@ func TestSQLiteStore_PRReviews_EmptyPendingList(t *testing.T) {
 
 func TestSQLiteStore_PRReviews_OrderedByReviewID(t *testing.T) {
 	store := newTestStore(t)
-	require.NoError(t, store.Create("proj", taskstore.TaskEntry{Filename: "plan", Status: taskstore.StatusReady}))
+	createReadyTask(t, store, "proj", "plan")
 
 	// Insert in non-sequential order
 	require.NoError(t, store.RecordPRReview("proj", "plan", 300, "COMMENTED", "c", "r3"))
