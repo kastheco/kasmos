@@ -1304,6 +1304,8 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					taskfsm.ConsumeSignal(sig)
 				}
 
+				draftSpawnCmds := make(map[string][]tea.Cmd)
+				failedDraftPlannerFanout := make(map[string]bool)
 				for _, act := range actions {
 					switch a := act.(type) {
 					case loop.SpawnReviewerAction:
@@ -1403,16 +1405,22 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						}
 						prompt := buildPlanningPrompt(a.PlanFile, taskstate.DisplayName(a.PlanFile), entry.Description, m.taskStoreProject)
 						if a.DraftMode {
+							if failedDraftPlannerFanout[a.PlanFile] {
+								continue
+							}
 							if a.Primary {
 								m.killExistingPlanAgent(a.PlanFile, session.AgentTypePlanner)
 							}
 							cmd, err := m.spawnPlannerProfileForTask(a.PlanFile, a.PlannerProfile, a.Primary, entry.Description)
 							if err != nil {
 								log.WarningLog.Printf("could not spawn planner profile %q for %q: %v", a.PlannerProfile, a.PlanFile, err)
+								m.killExistingPlanAgent(a.PlanFile, session.AgentTypePlanner)
+								failedDraftPlannerFanout[a.PlanFile] = true
+								delete(draftSpawnCmds, a.PlanFile)
 								continue
 							}
 							if cmd != nil {
-								signalCmds = append(signalCmds, cmd)
+								draftSpawnCmds[a.PlanFile] = append(draftSpawnCmds[a.PlanFile], cmd)
 							}
 						} else {
 							mdl, cmd := m.spawnPlannersForTask(a.PlanFile, prompt, entry.Description)
@@ -1493,6 +1501,11 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 								return plannerCompleteMsg{planFile: capturedPlanFile}
 							},
 						)
+					}
+				}
+				for planFile, cmds := range draftSpawnCmds {
+					if !failedDraftPlannerFanout[planFile] {
+						signalCmds = append(signalCmds, cmds...)
 					}
 				}
 			} else {

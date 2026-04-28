@@ -270,6 +270,17 @@ func TestNormalizeGatewaySignalPayload_PlannerDraftFinished(t *testing.T) {
 			errSubstr: "planner_id must not be empty",
 		},
 		{
+			name:      "whitespace planner_id rejected",
+			payload:   `{"planner_id":"   "}`,
+			wantErr:   true,
+			errSubstr: "planner_id must not be empty",
+		},
+		{
+			name:    "planner_id is normalized",
+			payload: `{"planner_id":" planner_x "}`,
+			wantOut: `{"planner_id":"planner_x"}`,
+		},
+		{
 			name:    "valid payload accepted",
 			payload: `{"planner_id":"planner_x"}`,
 			wantOut: `{"planner_id":"planner_x"}`,

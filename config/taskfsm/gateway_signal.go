@@ -149,10 +149,13 @@ func NormalizeGatewaySignalPayload(signalType, payload string) (string, error) {
 		if !ok {
 			return "", fmt.Errorf("planner_draft_finished: planner_id must be a string")
 		}
+		pid = strings.TrimSpace(pid)
 		if pid == "" {
 			return "", fmt.Errorf("planner_draft_finished: planner_id must not be empty")
 		}
-		return payload, nil
+		m["planner_id"] = pid
+		b, _ := json.Marshal(m)
+		return string(b), nil
 
 	case "elaborator_finished":
 		if payload != "" {
