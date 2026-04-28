@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"github.com/kastheco/kasmos/session/common"
+	"github.com/kastheco/kasmos/session/resourcecontrol"
 )
 
 // Process manages the lifecycle of an SDK agent subprocess.
@@ -63,6 +64,9 @@ func (p *Process) Start(cfg LaunchConfig) (stdin io.WriteCloser, stdout io.ReadC
 	}
 	parts[0] = common.ResolveExecutable(parts[0])
 
+	wrapper := resourcecontrol.New(cfg.ResourceControls)
+	execName, execArgs := wrapper.WrapExec(parts[0], parts[1:])
+
 	sanitized := common.SanitizeSessionName(cfg.Name)
 	logDir := filepath.Join(cfg.WorkDir, ".kasmos", "logs")
 	if mkErr := os.MkdirAll(logDir, 0o755); mkErr != nil {
@@ -74,10 +78,10 @@ func (p *Process) Start(cfg LaunchConfig) (stdin io.WriteCloser, stdout io.ReadC
 		return nil, nil, fmt.Errorf("sdk process: open log file: %w", openErr)
 	}
 
-	cmd := exec.Command(parts[0], parts[1:]...)
+	cmd := exec.Command(execName, execArgs...)
 	cmd.Dir = cfg.WorkDir
 	cmd.Stderr = lf
-	cmd.Env = buildEnv(cfg)
+	cmd.Env = wrapper.MergeEnv(buildEnv(cfg))
 
 	stdinPipe, pipeErr := cmd.StdinPipe()
 	if pipeErr != nil {

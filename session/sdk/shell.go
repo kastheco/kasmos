@@ -18,8 +18,9 @@ const shellOutputCap = 64 * 1024
 var errShellNotAvailable = errors.New("no usable shell found in PATH ($SHELL, zsh, bash, sh)")
 
 // shellRunner is the test seam for command execution. Tests override it to
-// avoid spawning real processes.
-type shellRunner func(ctx context.Context, workDir, shell string, args []string) (exitCode int, output string, truncated bool, err error)
+// avoid spawning real processes. env holds the complete environment for the
+// child process; pass nil or empty to inherit the caller's environment.
+type shellRunner func(ctx context.Context, workDir, shell string, args []string, env []string) (exitCode int, output string, truncated bool, err error)
 
 type cappedOutputBuffer struct {
 	mu        sync.Mutex
@@ -64,10 +65,14 @@ func (b *cappedOutputBuffer) Truncated() bool {
 // defaultShellRunner spawns the selected shell with the requested flags and
 // captures up to shellOutputCap bytes of combined stdout+stderr. Non-zero
 // exit codes are NOT returned as errors — they flow through exitCode so the
-// caller can render them as a status row.
-func defaultShellRunner(ctx context.Context, workDir, shell string, args []string) (int, string, bool, error) {
+// caller can render them as a status row. When env is non-nil it is used as
+// the complete child environment; a nil env inherits the caller's environment.
+func defaultShellRunner(ctx context.Context, workDir, shell string, args []string, env []string) (int, string, bool, error) {
 	cmd := exec.CommandContext(ctx, shell, args...)
 	cmd.Dir = workDir
+	if len(env) > 0 {
+		cmd.Env = env
+	}
 
 	output := &cappedOutputBuffer{limit: shellOutputCap}
 	cmd.Stdout = output

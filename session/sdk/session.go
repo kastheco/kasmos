@@ -14,12 +14,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/kastheco/kasmos/config"
 	"github.com/kastheco/kasmos/session/common"
+	"github.com/kastheco/kasmos/session/resourcecontrol"
 	"github.com/kastheco/kasmos/session/tmux"
 )
 
@@ -69,20 +71,21 @@ type ExecutionSessionIface interface {
 // ExecutionSession interface without importing the parent package.
 type Session struct {
 	// builder fields — all set before Start
-	name            string
-	sanitizedName   string
-	program         string
-	skipPermissions bool
-	agentType       string
-	initialPrompt   string
-	noFlicker       bool
-	speedTier       string
-	project         string
-	sessionTitle    string
-	titleFunc       func(workDir string, beforeStart time.Time, title string)
-	taskNumber      int
-	waveNumber      int
-	peerCount       int
+	name             string
+	sanitizedName    string
+	program          string
+	skipPermissions  bool
+	agentType        string
+	initialPrompt    string
+	noFlicker        bool
+	speedTier        string
+	project          string
+	sessionTitle     string
+	titleFunc        func(workDir string, beforeStart time.Time, title string)
+	taskNumber       int
+	waveNumber       int
+	peerCount        int
+	resourceControls config.ResolvedResourceControls
 
 	// runtime — guarded by mu after Start
 	mu          sync.Mutex
@@ -120,9 +123,9 @@ func (s *Session) SetNoFlicker(enabled bool)      { s.noFlicker = enabled }
 func (s *Session) SetSDKSpeedTier(tier string)    { s.speedTier = tier }
 func (s *Session) SetProject(project string)      { s.project = project }
 
-// SetResourceControls is a no-op for SDK sessions. Resource controls (nice,
-// ionice, build-concurrency env vars) apply only to tmux-backed sessions.
-func (s *Session) SetResourceControls(_ config.ResolvedResourceControls) {}
+// SetResourceControls stores the resolved resource-control policy.
+// The policy is applied when the session starts (argv wrapping, build env).
+func (s *Session) SetResourceControls(rc config.ResolvedResourceControls) { s.resourceControls = rc }
 func (s *Session) SetSessionTitle(title string)   { s.sessionTitle = title }
 func (s *Session) SetTitleFunc(fn func(workDir string, beforeStart time.Time, title string)) {
 	s.titleFunc = fn
@@ -165,18 +168,19 @@ func (s *Session) Start(workDir string) error {
 	}
 
 	cfg := LaunchConfig{
-		Name:            s.name,
-		Program:         s.program,
-		WorkDir:         workDir,
-		SkipPermissions: s.skipPermissions,
-		AgentType:       s.agentType,
-		InitialPrompt:   s.initialPrompt,
-		Project:         s.project,
-		TaskNumber:      s.taskNumber,
-		WaveNumber:      s.waveNumber,
-		PeerCount:       s.peerCount,
-		NoFlicker:       s.noFlicker,
-		SpeedTier:       s.speedTier,
+		Name:             s.name,
+		Program:          s.program,
+		WorkDir:          workDir,
+		SkipPermissions:  s.skipPermissions,
+		AgentType:        s.agentType,
+		InitialPrompt:    s.initialPrompt,
+		Project:          s.project,
+		TaskNumber:       s.taskNumber,
+		WaveNumber:       s.waveNumber,
+		PeerCount:        s.peerCount,
+		NoFlicker:        s.noFlicker,
+		SpeedTier:        s.speedTier,
+		ResourceControls: s.resourceControls,
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -460,7 +464,12 @@ func (s *Session) RunShellCommand(ctx context.Context, command string) error {
 		s.renderer.AddShellTurn(command, "", -1, false, err.Error())
 		return err
 	}
-	exitCode, output, truncated, runErr := runCommandSeam(ctx, workDir, shell, []string{flag, command})
+
+	wrapper := resourcecontrol.New(s.resourceControls)
+	shellName, shellArgs := wrapper.WrapExec(shell, []string{flag, command})
+	shellEnv := wrapper.MergeEnv(os.Environ())
+
+	exitCode, output, truncated, runErr := runCommandSeam(ctx, workDir, shellName, shellArgs, shellEnv)
 	statusMsg := ""
 	if runErr != nil {
 		statusMsg = fmt.Sprintf("shell error: %s", runErr.Error())
