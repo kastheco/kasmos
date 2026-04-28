@@ -74,6 +74,7 @@ type Record struct {
 	// Optional plan/orchestration fields — must stay in sync with InstanceData.
 	TaskFile               string `json:"task_file,omitempty"`
 	AgentType              string `json:"agent_type,omitempty"`
+	PlannerProfile         string `json:"planner_profile,omitempty"`
 	TaskNumber             int    `json:"task_number,omitempty"`
 	WaveNumber             int    `json:"wave_number,omitempty"`
 	PeerCount              int    `json:"peer_count,omitempty"`

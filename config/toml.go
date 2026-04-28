@@ -139,21 +139,21 @@ type TOMLConfigResult struct {
 	AutoReadinessReview      *bool
 	ReadinessSelfFixMaxLines *int
 	ReadinessMaxVerifyCycles *int
-	TelemetryEnabled       *bool
-	DatabaseURL            string
-	BlueprintSkipThreshold *int
+	TelemetryEnabled         *bool
+	DatabaseURL              string
+	BlueprintSkipThreshold   *int
 	// Planners is the ordered list of planner profile names from [orchestration].planners.
 	// Nil or empty means legacy single-planner mode.
 	Planners             []string
 	DoubleTapThresholdMS *int
-	DefaultProgram           string
-	AutoYes                  bool
-	DaemonPollInterval       int
-	BranchPrefix             string
-	NotificationsEnabled     *bool
-	ClaudeNoFlicker          *bool
-	Hooks                    []TOMLHook
-	Enforcement              map[string]bool
+	DefaultProgram       string
+	AutoYes              bool
+	DaemonPollInterval   int
+	BranchPrefix         string
+	NotificationsEnabled *bool
+	ClaudeNoFlicker      *bool
+	Hooks                []TOMLHook
+	Enforcement          map[string]bool
 	// SDK holds transcript retention limit pointers from the [sdk] TOML table.
 	// Nil fields mean the key was absent; configFromTOML applies runtime defaults.
 	SDK TOMLSDKConfig

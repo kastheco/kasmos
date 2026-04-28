@@ -985,7 +985,7 @@ func TestResolveNamedProfile(t *testing.T) {
 		require.True(t, ok)
 		assert.Equal(t, "codex", profile.Program)
 		assert.Equal(t, ExecutionModeSDK, profile.ExecutionMode) // headless → sdk
-		assert.Equal(t, "flex", profile.Tier)                   // default → flex
+		assert.Equal(t, "flex", profile.Tier)                    // default → flex
 		assert.Equal(t, PermissionDefaultBypass, profile.PermissionDefault)
 	})
 }

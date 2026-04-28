@@ -160,14 +160,14 @@ func TestSaveAndLoadArchitectMeta(t *testing.T) {
 			BaselineSummary: "baseline kept metadata scoped to orchestration cache",
 			FinalDecision:   "store the decision audit inside architect metadata",
 			Differences: []ArchitectDecisionDifference{{
-				Area:              "metadata cache",
-				Scope:             "orchestration",
-				PlannerProposal:   "add an external planner snapshot",
-				BaselineProposal:  "reuse existing architect cache",
-				FinalDecision:     "add an optional decision_audit object",
-				Rationale:         "keeps cache ownership in one artifact",
-				RelatedFiles:      []string{"orchestration/meta.go", "orchestration/cache.go"},
-				TaskNumbers:       []int{1, 2},
+				Area:             "metadata cache",
+				Scope:            "orchestration",
+				PlannerProposal:  "add an external planner snapshot",
+				BaselineProposal: "reuse existing architect cache",
+				FinalDecision:    "add an optional decision_audit object",
+				Rationale:        "keeps cache ownership in one artifact",
+				RelatedFiles:     []string{"orchestration/meta.go", "orchestration/cache.go"},
+				TaskNumbers:      []int{1, 2},
 			}},
 			PlannerDrafts: []ArchitectPlannerDraftDecision{
 				{
@@ -414,4 +414,3 @@ func TestValidateArchitectDecisionAudit(t *testing.T) {
 		})
 	}
 }
-

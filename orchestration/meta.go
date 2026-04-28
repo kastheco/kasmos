@@ -43,14 +43,14 @@ type ArchitectPlannerDraftDecision struct {
 
 // ArchitectDecisionDifference describes one planner-vs-architect decision point.
 type ArchitectDecisionDifference struct {
-	Area              string   `json:"area"`
-	Scope             string   `json:"scope,omitempty"`
-	PlannerProposal   string   `json:"planner_proposal,omitempty"`
-	BaselineProposal  string   `json:"baseline_proposal,omitempty"`
-	FinalDecision     string   `json:"final_decision"`
-	Rationale         string   `json:"rationale,omitempty"`
-	RelatedFiles      []string `json:"related_files,omitempty"`
-	TaskNumbers       []int    `json:"task_numbers,omitempty"`
+	Area             string   `json:"area"`
+	Scope            string   `json:"scope,omitempty"`
+	PlannerProposal  string   `json:"planner_proposal,omitempty"`
+	BaselineProposal string   `json:"baseline_proposal,omitempty"`
+	FinalDecision    string   `json:"final_decision"`
+	Rationale        string   `json:"rationale,omitempty"`
+	RelatedFiles     []string `json:"related_files,omitempty"`
+	TaskNumbers      []int    `json:"task_numbers,omitempty"`
 }
 
 // WaveMeta describes a single wave within an architect metadata document,
