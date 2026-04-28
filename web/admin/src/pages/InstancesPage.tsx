@@ -182,6 +182,8 @@ export default function InstancesPage() {
   isFollowingRef.current = isFollowing;
   const depthRef = useRef(depth);
   depthRef.current = depth;
+  const previousSelectedTitleRef = useRef<string | null>(null);
+  const previousSelectedStatusRef = useRef<InstanceEntry["status"] | undefined>(undefined);
 
   // Reset selection and capture state when project changes.
   useEffect(() => {
@@ -283,12 +285,19 @@ export default function InstancesPage() {
 
   useEffect(() => {
     if (
+      previousSelectedTitleRef.current === selectedTitle &&
       isTerminalInstance &&
-      shouldClearSuspendedCaptureError(captureError, selectedStatus)
+      shouldClearSuspendedCaptureError(
+        captureError,
+        previousSelectedStatusRef.current,
+        selectedStatus,
+      )
     ) {
       setCaptureError(null);
     }
-  }, [captureError, isTerminalInstance, selectedStatus]);
+    previousSelectedTitleRef.current = selectedTitle;
+    previousSelectedStatusRef.current = selectedStatus;
+  }, [captureError, isTerminalInstance, selectedTitle, selectedStatus]);
 
   // Capture poll logic.
   const doPoll = useCallback(async () => {

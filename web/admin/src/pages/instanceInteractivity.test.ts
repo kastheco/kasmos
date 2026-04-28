@@ -339,6 +339,7 @@ assertFalse(
 assertTrue(
   shouldClearSuspendedCaptureError(
     { status: 409, message: "cannot capture pane from a paused instance" },
+    "paused",
     "running",
   ),
   "paused capture error clears when instance resumes running",
@@ -347,6 +348,7 @@ assertTrue(
 assertTrue(
   shouldClearSuspendedCaptureError(
     { status: 410, message: "tmux session not found" },
+    "loading",
     "ready",
   ),
   "session-ended capture error clears when instance returns ready",
@@ -354,7 +356,26 @@ assertTrue(
 
 assertFalse(
   shouldClearSuspendedCaptureError(
+    { status: 410, message: "tmux session not found" },
+    "running",
+    "running",
+  ),
+  "session-ended capture error stays when status was already running",
+);
+
+assertFalse(
+  shouldClearSuspendedCaptureError(
+    { status: 410, message: "tmux session not found" },
+    undefined,
+    "running",
+  ),
+  "session-ended capture error stays without a known previous status",
+);
+
+assertFalse(
+  shouldClearSuspendedCaptureError(
     { status: 409, message: "cannot capture pane from a paused instance" },
+    "paused",
     "paused",
   ),
   "paused capture error stays while instance is paused",
@@ -363,6 +384,7 @@ assertFalse(
 assertFalse(
   shouldClearSuspendedCaptureError(
     { status: 502, message: "daemon unavailable" },
+    "paused",
     "running",
   ),
   "non-suspending capture error is not cleared by resume status helper",
