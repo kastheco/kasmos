@@ -272,3 +272,15 @@ export function shouldSuspendTerminalPolling(
   const kind = captureErrorKind(error);
   return kind === "session-ended" || kind === "paused";
 }
+
+/**
+ * Returns true when a previously terminal-stopping capture error should be
+ * discarded because the live instance list now reports a resumable state.
+ */
+export function shouldClearSuspendedCaptureError(
+  error: CaptureErrorInfo | string | null,
+  status: InstanceEntry["status"] | undefined,
+): boolean {
+  if (!shouldSuspendTerminalPolling(error)) return false;
+  return status === "running" || status === "ready";
+}

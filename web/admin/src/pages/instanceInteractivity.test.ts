@@ -10,6 +10,7 @@ import {
   captureErrorLabel,
   captureErrorComposerReason,
   shouldSuspendTerminalPolling,
+  shouldClearSuspendedCaptureError,
   hasDaemonBackedWebPath,
   supportsStructuredPreview,
   usesTerminalPreview,
@@ -329,6 +330,42 @@ assertFalse(
 assertFalse(
   shouldSuspendTerminalPolling("connection refused"),
   "generic: do not suspend polling",
+);
+
+// ---------------------------------------------------------------------------
+// shouldClearSuspendedCaptureError
+// ---------------------------------------------------------------------------
+
+assertTrue(
+  shouldClearSuspendedCaptureError(
+    { status: 409, message: "cannot capture pane from a paused instance" },
+    "running",
+  ),
+  "paused capture error clears when instance resumes running",
+);
+
+assertTrue(
+  shouldClearSuspendedCaptureError(
+    { status: 410, message: "tmux session not found" },
+    "ready",
+  ),
+  "session-ended capture error clears when instance returns ready",
+);
+
+assertFalse(
+  shouldClearSuspendedCaptureError(
+    { status: 409, message: "cannot capture pane from a paused instance" },
+    "paused",
+  ),
+  "paused capture error stays while instance is paused",
+);
+
+assertFalse(
+  shouldClearSuspendedCaptureError(
+    { status: 502, message: "daemon unavailable" },
+    "running",
+  ),
+  "non-suspending capture error is not cleared by resume status helper",
 );
 
 // ---------------------------------------------------------------------------

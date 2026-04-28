@@ -14,6 +14,7 @@ import {
   isAtBottom,
   previewLineLimit,
   captureErrorLabel,
+  shouldClearSuspendedCaptureError,
   shouldSuspendTerminalPolling,
   supportsStructuredPreview,
   usesTerminalPreview,
@@ -274,10 +275,20 @@ export default function InstancesPage() {
     instances.data?.find((i) => i.title === selectedTitle) ?? null;
   const selectedCard =
     flatCards.find((c) => c.title === selectedTitle) ?? null;
+  const selectedStatus = selectedInstance?.status;
 
   // Determine preview path: terminal (tmux) vs structured (AgentPreview).
   const isTerminalInstance = usesTerminalPreview(selectedInstance);
   const suspendTerminalPolling = shouldSuspendTerminalPolling(captureError);
+
+  useEffect(() => {
+    if (
+      isTerminalInstance &&
+      shouldClearSuspendedCaptureError(captureError, selectedStatus)
+    ) {
+      setCaptureError(null);
+    }
+  }, [captureError, isTerminalInstance, selectedStatus]);
 
   // Capture poll logic.
   const doPoll = useCallback(async () => {
@@ -360,7 +371,7 @@ export default function InstancesPage() {
         pollTimerRef.current = null;
       }
     };
-  }, [isTerminalInstance, isFollowing, project, selectedTitle, depth, doPoll, suspendTerminalPolling, selectedInstance?.status]);
+  }, [isTerminalInstance, isFollowing, project, selectedTitle, depth, doPoll, suspendTerminalPolling, selectedStatus]);
 
   // Reset capture state when selected instance changes.
   useEffect(() => {
