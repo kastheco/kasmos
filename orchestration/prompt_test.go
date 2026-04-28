@@ -343,6 +343,8 @@ func TestBuildPlannerPromptWithOptions_DraftMode_NonPrimary(t *testing.T) {
 	assert.Contains(t, prompt, `signal_type: "planner-draft-finished"`)
 	assert.Contains(t, prompt, `planner_draft_finished`)
 	assert.Contains(t, prompt, `{"planner_id":"gpt"}`)
+	// CLI fallback must include the JSON payload so the gateway accepts it.
+	assert.Contains(t, prompt, `kas signal emit planner_draft_finished my-plan '{"planner_id":"gpt"}'`)
 	// Must NOT instruct signaling planner_finished — only planner_draft_finished
 	assert.NotContains(t, prompt, `signal_type: "planner_finished"`)
 	assert.NotContains(t, prompt, `signal_type: "planner-finished"`)

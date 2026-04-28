@@ -910,6 +910,13 @@ func TestPlannerProfileNames(t *testing.T) {
 		assert.Equal(t, []string{"planner-a", "planner-b"}, cfg.PlannerProfileNames())
 	})
 
+	t.Run("planner names are trimmed for callers", func(t *testing.T) {
+		// ValidatePlannerProfiles trims when checking, so callers must see
+		// the same trimmed names or named-profile lookups fail mysteriously.
+		cfg := &Config{Planners: []string{"  planner-a", "planner-b\t"}}
+		assert.Equal(t, []string{"planner-a", "planner-b"}, cfg.PlannerProfileNames())
+	})
+
 	t.Run("DefaultConfig has nil Planners (legacy mode)", func(t *testing.T) {
 		assert.Nil(t, DefaultConfig().Planners)
 	})

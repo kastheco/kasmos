@@ -176,13 +176,18 @@ func (c *Config) ResolveNamedProfile(name, defaultProgram string) (AgentProfile,
 	return profile, true
 }
 
-// PlannerProfileNames returns the configured planner profile names in order.
-// A nil or empty return means legacy single-planner mode.
+// PlannerProfileNames returns the configured planner profile names in order
+// with surrounding whitespace stripped, matching ValidatePlannerProfiles. A
+// nil or empty return means legacy single-planner mode.
 func (c *Config) PlannerProfileNames() []string {
-	if c == nil {
+	if c == nil || len(c.Planners) == 0 {
 		return nil
 	}
-	return c.Planners
+	out := make([]string, len(c.Planners))
+	for i, name := range c.Planners {
+		out[i] = strings.TrimSpace(name)
+	}
+	return out
 }
 
 // ValidatePlannerProfiles checks that each name in [orchestration].planners

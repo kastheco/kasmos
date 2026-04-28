@@ -431,6 +431,9 @@ func (p *Processor) ProcessFSMSignals(signals []taskfsm.Signal) []Action {
 
 		case taskfsm.PlanStart:
 			if p.config.PlannerDraftMode && len(p.config.PlannerProfiles) > 0 {
+				// Drop any aggregation state from a prior run so signals from this
+				// new fan-out aren't ignored by a stale agg.done=true.
+				delete(p.plannerDraftAggs, sig.TaskFile)
 				// Multi-planner draft mode: clear stale caches, then spawn one
 				// planner per configured profile. Only the first profile is primary.
 				actions = append(actions, ClearPlannerDraftsAction{PlanFile: sig.TaskFile})

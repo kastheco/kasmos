@@ -1353,6 +1353,44 @@ func TestProcessor_ProcessPlannerDraftSignals_AutoAdvanceSynthesis(t *testing.T)
 	assert.True(t, isAutoImpl, "expected AutoImplementAction second, got %T", actions[1])
 }
 
+// TestProcessor_ProcessFSMSignals_PlanStart_DraftModeResetsCompletedAggregation
+// verifies that re-issuing PlanStart for a plan whose previous draft
+// aggregation already completed clears the in-memory state so subsequent
+// planner_draft_finished signals are honored instead of dropped.
+func TestProcessor_ProcessFSMSignals_PlanStart_DraftModeResetsCompletedAggregation(t *testing.T) {
+	store := taskstore.NewTestStore(t)
+	require.NoError(t, store.Create("test", taskstore.TaskEntry{
+		Filename: "my-plan.md",
+		Status:   taskstore.StatusPlanning,
+	}))
+
+	p := NewProcessor(ProcessorConfig{
+		Store:            store,
+		Project:          "test",
+		PlannerDraftMode: true,
+		PlannerProfiles:  []string{"planner"},
+	})
+
+	// First fan-out completes (single profile synthesizes immediately).
+	// Synthesis transitions the FSM planning → ready.
+	first := p.ProcessPlannerDraftSignals([]taskfsm.PlannerDraftSignal{
+		{TaskFile: "my-plan.md", PlannerID: "planner"},
+	})
+	require.NotEmpty(t, first, "first draft signal should synthesize planner_finished")
+
+	// Restart planning: ready → planning, which must clear the stale
+	// completed aggregation so the next signal isn't dropped.
+	_ = p.ProcessFSMSignals([]taskfsm.Signal{
+		{Event: taskfsm.PlanStart, TaskFile: "my-plan.md"},
+	})
+
+	// New draft signal must NOT be dropped by stale agg.done.
+	second := p.ProcessPlannerDraftSignals([]taskfsm.PlannerDraftSignal{
+		{TaskFile: "my-plan.md", PlannerID: "planner"},
+	})
+	require.NotEmpty(t, second, "draft signal after replanning must synthesize planner_finished again")
+}
+
 // TestProcessor_ProcessFSMSignals_PlanStart_DraftModeWithSingleProfile verifies
 // that draft mode with a single profile emits clear + one planner spawn.
 func TestProcessor_ProcessFSMSignals_PlanStart_DraftModeWithSingleProfile(t *testing.T) {
