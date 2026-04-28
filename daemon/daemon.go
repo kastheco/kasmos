@@ -1968,39 +1968,12 @@ func (d *Daemon) createPRForApprovedTask(e RepoEntry, planFile, reviewBody strin
 	return nil
 }
 
-func (d *Daemon) startWaveTasks(ctx context.Context, e RepoEntry, planFile string) error {
-	orch := e.Processor.WaveOrchestrator(planFile)
-	if orch == nil {
-		return fmt.Errorf("wave orchestrator not found for %s", planFile)
-	}
-	if e.Store == nil {
-		return fmt.Errorf("task store unavailable for %s", planFile)
-	}
-
-	entry, err := e.Store.Get(e.Project, planFile)
-	if err != nil {
-		return fmt.Errorf("load task entry for %s: %w", planFile, err)
-	}
-
-	tasks := orch.CurrentWaveTasks()
-	if orch.State() != orchestration.WaveStateRunning {
-		tasks = orch.StartNextWave()
-	}
-	if len(tasks) == 0 {
-		return nil
-	}
-
-	waveNum := orch.CurrentWaveNumber()
+// spawnTaskBatch concurrently spawns a set of wave tasks using the daemon's spawn function.
+// It does not set execution state or emit events — callers are responsible for those.
+func (d *Daemon) spawnTaskBatch(ctx context.Context, e RepoEntry, orch *orchestration.WaveOrchestrator, planFile string, tasks []taskparser.Task, branch string, waveNum int) error {
 	spawnWaveTask := d.spawnWaveTask
 	if spawnWaveTask == nil {
 		spawnWaveTask = d.spawner.SpawnWaveTask
-	}
-	if err := setRepoExecutionState(e, planFile, taskstore.ExecutionState{
-		Phase:           string(taskfsm.ExecutionPhaseWaveRunning),
-		ActiveAgentType: session.AgentTypeCoder,
-		ActiveWave:      waveNum,
-	}); err != nil {
-		return fmt.Errorf("persist wave execution state for %s: %w", planFile, err)
 	}
 	peerCount := len(tasks)
 	var (
@@ -2016,7 +1989,7 @@ func (d *Daemon) startWaveTasks(ctx context.Context, e RepoEntry, planFile strin
 			PlanFile:        planFile,
 			RepoPath:        e.Path,
 			Project:         e.Project,
-			Branch:          entry.Branch,
+			Branch:          branch,
 			Program:         programForAgent(e.Path, session.AgentTypeCoder),
 			Wave:            waveNum,
 			ExecutionMode:   executionModeForAgent(e.Path, session.AgentTypeCoder),
@@ -2034,8 +2007,54 @@ func (d *Daemon) startWaveTasks(ctx context.Context, e RepoEntry, planFile strin
 		}()
 	}
 	wg.Wait()
-	if firstErr != nil {
-		return firstErr
+	return firstErr
+}
+
+func (d *Daemon) startWaveTasks(ctx context.Context, e RepoEntry, planFile string) error {
+	orch := e.Processor.WaveOrchestrator(planFile)
+	if orch == nil {
+		return fmt.Errorf("wave orchestrator not found for %s", planFile)
+	}
+	if e.Store == nil {
+		return fmt.Errorf("task store unavailable for %s", planFile)
+	}
+
+	entry, err := e.Store.Get(e.Project, planFile)
+	if err != nil {
+		return fmt.Errorf("load task entry for %s: %w", planFile, err)
+	}
+
+	limit := resolvedResourceControlsForRepo(e).MaxParallelWaveTasks
+	var tasks []taskparser.Task
+	if orch.State() != orchestration.WaveStateRunning {
+		// Wave not yet started for this wave index — advance and start tasks.
+		if limit > 0 {
+			tasks, _ = orch.StartNextWaveLimited(limit)
+		} else {
+			tasks = orch.StartNextWave()
+		}
+	} else {
+		// Wave already running (ProcessWaveSignals or a prior caller already called
+		// StartNextWave, marking all tasks running). Apply the parallelism limit now:
+		// excess running tasks are moved back to pending, and only the capped batch is
+		// returned for spawning. Under no limit, returns all running tasks unchanged.
+		tasks = orch.ApplyParallelismLimit(limit)
+	}
+	if len(tasks) == 0 {
+		return nil
+	}
+
+	waveNum := orch.CurrentWaveNumber()
+	if err := setRepoExecutionState(e, planFile, taskstore.ExecutionState{
+		Phase:           string(taskfsm.ExecutionPhaseWaveRunning),
+		ActiveAgentType: session.AgentTypeCoder,
+		ActiveWave:      waveNum,
+	}); err != nil {
+		return fmt.Errorf("persist wave execution state for %s: %w", planFile, err)
+	}
+
+	if err := d.spawnTaskBatch(ctx, e, orch, planFile, tasks, entry.Branch, waveNum); err != nil {
+		return err
 	}
 
 	planName := taskstate.DisplayName(planFile)
@@ -2065,7 +2084,21 @@ func (d *Daemon) handleWaveTaskComplete(ctx context.Context, e RepoEntry, action
 
 	switch orch.State() {
 	case orchestration.WaveStateRunning:
-		return nil
+		// Wave still active. Under limited parallelism, a completing task may open
+		// capacity for pending tasks — launch them now if any are waiting.
+		limit := resolvedResourceControlsForRepo(e).MaxParallelWaveTasks
+		if limit <= 0 {
+			return nil
+		}
+		pending, _ := orch.StartPendingTasks(limit)
+		if len(pending) == 0 {
+			return nil
+		}
+		pendingEntry, err := e.Store.Get(e.Project, action.PlanFile)
+		if err != nil {
+			return fmt.Errorf("load task entry for pending-task launch %s: %w", action.PlanFile, err)
+		}
+		return d.spawnTaskBatch(ctx, e, orch, action.PlanFile, pending, pendingEntry.Branch, orch.CurrentWaveNumber())
 
 	case orchestration.WaveStateWaveComplete:
 		waveNum := orch.CurrentWaveNumber()
@@ -2149,8 +2182,15 @@ func (d *Daemon) handleWaveTaskComplete(ctx context.Context, e RepoEntry, action
 			return nil
 		}
 
-		tasks := orch.StartNextWave()
-		if len(tasks) == 0 {
+		// Advance to the next wave, respecting the per-wave parallelism limit.
+		advanceLimit := resolvedResourceControlsForRepo(e).MaxParallelWaveTasks
+		var nextTasks []taskparser.Task
+		if advanceLimit > 0 {
+			nextTasks, _ = orch.StartNextWaveLimited(advanceLimit)
+		} else {
+			nextTasks = orch.StartNextWave()
+		}
+		if len(nextTasks) == 0 {
 			e.Processor.ClearWaveOrchestrator(action.PlanFile)
 			return nil
 		}

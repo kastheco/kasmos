@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -1906,6 +1907,203 @@ Do the second thing.
 	require.NoError(t, <-errCh)
 	assert.True(t, seen[1])
 	assert.True(t, seen[2])
+}
+
+// TestDaemon_StartWaveTasks_LimitOne verifies that with MaxParallelWaveTasks=1,
+// only the first task is spawned and the rest remain pending.
+func TestDaemon_StartWaveTasks_LimitOne(t *testing.T) {
+	store := taskstore.NewTestStore(t)
+	project := "test-project"
+	planFile := "limited-wave.md"
+	require.NoError(t, store.Create(project, taskstore.TaskEntry{
+		Filename: planFile,
+		Status:   taskstore.StatusImplementing,
+		Branch:   "plan/limited-wave",
+	}))
+	require.NoError(t, store.SetContent(project, planFile, `# Feature Plan
+
+## Wave 1
+### Task 1: First
+
+Do first.
+
+### Task 2: Second
+
+Do second.
+
+### Task 3: Third
+
+Do third.
+`))
+
+	proc := loop.NewProcessor(loop.ProcessorConfig{Store: store, Project: project})
+	actions := proc.ProcessWaveSignals([]taskfsm.WaveSignal{{TaskFile: planFile, WaveNumber: 1}})
+	require.Len(t, actions, 1)
+	advance, ok := actions[0].(loop.AdvanceWaveAction)
+	require.True(t, ok)
+
+	var spawned []int
+	var mu sync.Mutex
+	d := &Daemon{
+		spawner:     NewTmuxSpawner(),
+		logger:      slog.Default(),
+		broadcaster: api.NewEventBroadcaster(),
+		spawnWaveTask: func(_ context.Context, _ loop.SpawnOpts, task taskparser.Task, _ string, _ int, _ int) error {
+			mu.Lock()
+			spawned = append(spawned, task.Number)
+			mu.Unlock()
+			return nil
+		},
+	}
+	one := 1
+	e := RepoEntry{
+		Path:      t.TempDir(),
+		Project:   project,
+		Store:     store,
+		Processor: proc,
+		Resources: config.ResolvedResourceControls{MaxParallelWaveTasks: one},
+	}
+
+	require.NoError(t, d.executeAction(context.Background(), e, advance))
+
+	mu.Lock()
+	defer mu.Unlock()
+	assert.Len(t, spawned, 1, "only one task should be spawned under limit=1")
+	assert.Equal(t, 1, spawned[0])
+}
+
+// TestDaemon_TaskComplete_LaunchesPendingTask verifies that a completing task
+// causes the next pending task to be spawned when running under a limit.
+func TestDaemon_TaskComplete_LaunchesPendingTask(t *testing.T) {
+	store := taskstore.NewTestStore(t)
+	project := "test-project"
+	planFile := "pending-launch.md"
+	require.NoError(t, store.Create(project, taskstore.TaskEntry{
+		Filename: planFile,
+		Status:   taskstore.StatusImplementing,
+		Branch:   "plan/pending-launch",
+	}))
+	require.NoError(t, store.SetContent(project, planFile, `# Feature Plan
+
+## Wave 1
+### Task 1: First
+
+Do first.
+
+### Task 2: Second
+
+Do second.
+
+### Task 3: Third
+
+Do third.
+`))
+
+	proc := loop.NewProcessor(loop.ProcessorConfig{Store: store, Project: project})
+	// Advance to wave 1 — start the orchestrator.
+	actions := proc.ProcessWaveSignals([]taskfsm.WaveSignal{{TaskFile: planFile, WaveNumber: 1}})
+	require.Len(t, actions, 1)
+	advance, ok := actions[0].(loop.AdvanceWaveAction)
+	require.True(t, ok)
+
+	var spawned []int
+	var mu sync.Mutex
+	d := &Daemon{
+		spawner:     NewTmuxSpawner(),
+		logger:      slog.Default(),
+		broadcaster: api.NewEventBroadcaster(),
+		spawnWaveTask: func(_ context.Context, _ loop.SpawnOpts, task taskparser.Task, _ string, _ int, _ int) error {
+			mu.Lock()
+			spawned = append(spawned, task.Number)
+			mu.Unlock()
+			return nil
+		},
+	}
+	one := 1
+	e := RepoEntry{
+		Path:      t.TempDir(),
+		Project:   project,
+		Store:     store,
+		Processor: proc,
+		Resources: config.ResolvedResourceControls{MaxParallelWaveTasks: one},
+	}
+
+	// Start wave — only task 1 should spawn.
+	require.NoError(t, d.executeAction(context.Background(), e, advance))
+	mu.Lock()
+	assert.Equal(t, []int{1}, spawned)
+	mu.Unlock()
+
+	// Complete task 1 — should spawn task 2.
+	taskActions := proc.ProcessTaskSignals([]taskfsm.TaskSignal{
+		{TaskFile: planFile, WaveNumber: 1, TaskNumber: 1},
+	})
+	require.Len(t, taskActions, 1)
+	taskComplete, ok := taskActions[0].(loop.TaskCompleteAction)
+	require.True(t, ok)
+
+	require.NoError(t, d.executeAction(context.Background(), e, taskComplete))
+	mu.Lock()
+	assert.Equal(t, []int{1, 2}, spawned, "task 2 should launch after task 1 completes")
+	mu.Unlock()
+}
+
+// TestDaemon_TaskComplete_NoPendingLaunchWhenUnlimited verifies that when no limit
+// is configured, the WaveStateRunning case does not attempt to launch pending tasks.
+func TestDaemon_TaskComplete_NoPendingLaunchWhenUnlimited(t *testing.T) {
+	store := taskstore.NewTestStore(t)
+	project := "test-project"
+	planFile := "unlimited-wave.md"
+	require.NoError(t, store.Create(project, taskstore.TaskEntry{
+		Filename: planFile,
+		Status:   taskstore.StatusImplementing,
+		Branch:   "plan/unlimited-wave",
+	}))
+	require.NoError(t, store.SetContent(project, planFile, `# Feature Plan
+
+## Wave 1
+### Task 1: First
+
+Do first.
+
+### Task 2: Second
+
+Do second.
+`))
+
+	proc := loop.NewProcessor(loop.ProcessorConfig{Store: store, Project: project})
+	actions := proc.ProcessWaveSignals([]taskfsm.WaveSignal{{TaskFile: planFile, WaveNumber: 1}})
+	require.Len(t, actions, 1)
+	advance, ok := actions[0].(loop.AdvanceWaveAction)
+	require.True(t, ok)
+
+	var spawnCallCount int
+	var mu sync.Mutex
+	d := &Daemon{
+		spawner:     NewTmuxSpawner(),
+		logger:      slog.Default(),
+		broadcaster: api.NewEventBroadcaster(),
+		spawnWaveTask: func(_ context.Context, _ loop.SpawnOpts, _ taskparser.Task, _ string, _ int, _ int) error {
+			mu.Lock()
+			spawnCallCount++
+			mu.Unlock()
+			return nil
+		},
+	}
+	// No limit (zero = unlimited).
+	e := RepoEntry{
+		Path:      t.TempDir(),
+		Project:   project,
+		Store:     store,
+		Processor: proc,
+		Resources: config.ResolvedResourceControls{MaxParallelWaveTasks: 0},
+	}
+
+	// Both tasks should launch immediately.
+	require.NoError(t, d.executeAction(context.Background(), e, advance))
+	mu.Lock()
+	assert.Equal(t, 2, spawnCallCount, "unlimited: both tasks spawn on wave start")
+	mu.Unlock()
 }
 
 func TestDaemon_ArchitectCompletion_StartsWaveOneAfterRestart(t *testing.T) {

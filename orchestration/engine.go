@@ -278,6 +278,124 @@ func (o *WaveOrchestrator) FailedTaskCount() int {
 	return o.countCurrentWaveByStatus(taskFailed)
 }
 
+// ActiveTaskCount returns the number of tasks currently in the running state in the current wave.
+func (o *WaveOrchestrator) ActiveTaskCount() int {
+	return o.countCurrentWaveByStatus(taskRunning)
+}
+
+// ApplyParallelismLimit trims the running task set for the current wave to at most
+// limit tasks. Excess running tasks are moved back to pending so that later calls to
+// StartPendingTasks can promote them as capacity opens. Returns the tasks that remain
+// in the running state — i.e., the batch the caller should spawn agents for.
+// No-op when limit <= 0 or the orchestrator is not in WaveStateRunning.
+func (o *WaveOrchestrator) ApplyParallelismLimit(limit int) []taskparser.Task {
+	if limit <= 0 || o.state != WaveStateRunning || o.currentWave >= len(o.plan.Waves) {
+		// Return all running tasks unchanged.
+		var running []taskparser.Task
+		for _, t := range o.plan.Waves[o.currentWave].Tasks {
+			if o.taskStates[t.Number] == taskRunning {
+				running = append(running, t)
+			}
+		}
+		return running
+	}
+	var running []taskparser.Task
+	for _, t := range o.plan.Waves[o.currentWave].Tasks {
+		if o.taskStates[t.Number] != taskRunning {
+			continue
+		}
+		if len(running) < limit {
+			running = append(running, t)
+		} else {
+			// Move excess running tasks back to pending.
+			o.taskStates[t.Number] = taskPending
+			// Persist the pending state so the store reflects what is actually running.
+			o.persistTaskStatus(t.Number, taskstore.SubtaskStatusPending)
+		}
+	}
+	return running
+}
+
+// StartNextWaveLimited advances to the next wave and marks at most limit tasks as running.
+// Tasks that exceed the limit are left in the pending state and may be launched later
+// via StartPendingTasks when capacity opens up.
+// When limit <= 0, all tasks are started (identical to StartNextWave).
+// Returns the tasks marked running — i.e., the tasks callers should spawn agents for.
+func (o *WaveOrchestrator) StartNextWaveLimited(limit int) ([]taskparser.Task, error) {
+	if limit <= 0 {
+		return o.StartNextWave(), nil
+	}
+	if o.state == WaveStateElaborating {
+		return nil, nil
+	}
+	if o.state == WaveStateAllComplete {
+		return nil, nil
+	}
+	if o.state == WaveStateWaveComplete {
+		o.currentWave++
+		o.waitingForConfirm = false
+		o.resetWaveOutcomeScope()
+	}
+	if o.currentWave >= len(o.plan.Waves) {
+		o.state = WaveStateAllComplete
+		return nil, nil
+	}
+
+	o.state = WaveStateRunning
+	tasks := o.plan.Waves[o.currentWave].Tasks
+	var launched []taskparser.Task
+	for _, t := range tasks {
+		if len(launched) < limit {
+			o.taskStates[t.Number] = taskRunning
+			o.persistTaskStatus(t.Number, taskstore.SubtaskStatusRunning)
+			launched = append(launched, t)
+		} else {
+			o.taskStates[t.Number] = taskPending
+			// Pending tasks are not persisted as running; they remain in their
+			// prior (pending) store state until StartPendingTasks promotes them.
+		}
+	}
+	return launched, nil
+}
+
+// StartPendingTasks transitions pending tasks in the current wave to running up to
+// available capacity. Capacity is computed as max(0, limit-ActiveTaskCount()) when
+// limit > 0, or unlimited when limit <= 0. No-op when the orchestrator is not in
+// WaveStateRunning. Returns the newly launched tasks to spawn agents for.
+func (o *WaveOrchestrator) StartPendingTasks(limit int) ([]taskparser.Task, error) {
+	if o.state != WaveStateRunning {
+		return nil, nil
+	}
+	if o.currentWave >= len(o.plan.Waves) {
+		return nil, nil
+	}
+
+	var capacity int
+	if limit <= 0 {
+		// Unlimited: all pending tasks may be launched.
+		capacity = len(o.plan.Waves[o.currentWave].Tasks)
+	} else {
+		capacity = limit - o.ActiveTaskCount()
+		if capacity <= 0 {
+			return nil, nil
+		}
+	}
+
+	var launched []taskparser.Task
+	for _, t := range o.plan.Waves[o.currentWave].Tasks {
+		if capacity <= 0 {
+			break
+		}
+		if o.taskStates[t.Number] == taskPending {
+			o.taskStates[t.Number] = taskRunning
+			o.persistTaskStatus(t.Number, taskstore.SubtaskStatusRunning)
+			launched = append(launched, t)
+			capacity--
+		}
+	}
+	return launched, nil
+}
+
 // IsTaskRunning returns true if the given task number is currently in the running state.
 // Used to gate the "Mark complete" context menu action.
 func (o *WaveOrchestrator) IsTaskRunning(taskNumber int) bool {

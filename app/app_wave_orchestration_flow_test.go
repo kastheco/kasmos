@@ -2634,3 +2634,142 @@ func TestCoderExit_FocusesCoderInstance_BeforePushConfirm(t *testing.T) {
 	assert.Equal(t, coderInst, updated.nav.GetSelectedInstance(),
 		"coder-exit overlay should auto-focus the coder instance")
 }
+
+// TestStartNextWave_LimitedParallelism verifies that when MaxParallelWaveTasks=1,
+// startNextWave only marks the first task as running and leaves the rest pending.
+func TestStartNextWave_LimitedParallelism(t *testing.T) {
+	t.Parallel()
+	const planFile = "limited-parallelism"
+	plan := &taskparser.Plan{
+		Waves: []taskparser.Wave{
+			{Number: 1, Tasks: []taskparser.Task{
+				{Number: 1, Title: "T1"},
+				{Number: 2, Title: "T2"},
+				{Number: 3, Title: "T3"},
+			}},
+		},
+	}
+	orch := orchestration.NewWaveOrchestrator(planFile, plan)
+
+	dir := t.TempDir()
+	plansDir := filepath.Join(dir, "docs", "plans")
+	require.NoError(t, os.MkdirAll(plansDir, 0o755))
+	ps, err := newTestPlanState(t, plansDir)
+	require.NoError(t, err)
+	require.NoError(t, ps.Register(planFile, "limited parallelism test", "plan/limited", time.Now()))
+	seedPlanStatus(t, ps, planFile, taskstate.StatusImplementing)
+
+	one := 1
+	h := waveFlowHome(t, ps, plansDir, map[string]*orchestration.WaveOrchestrator{planFile: orch})
+	h.appConfig = &config.Config{
+		Resources: config.ResourcesConfig{
+			Profile:              "custom",
+			MaxParallelWaveTasks: &one,
+		},
+	}
+
+	entry, ok := ps.Entry(planFile)
+	require.True(t, ok)
+
+	// startNextWave should only launch one task.
+	_, _ = h.startNextWave(orch, entry)
+
+	// Orchestrator: only T1 should be running; T2, T3 still pending.
+	assert.Equal(t, orchestration.WaveStateRunning, orch.State())
+	assert.True(t, orch.IsTaskRunning(1), "T1 must be running")
+	assert.False(t, orch.IsTaskRunning(2), "T2 must not be running under limit=1")
+	assert.False(t, orch.IsTaskRunning(3), "T3 must not be running under limit=1")
+	assert.Equal(t, 1, orch.ActiveTaskCount())
+}
+
+// TestStartPendingWaveTasks_LaunchesPendingAfterCompletion verifies that after a task
+// completes and the wave is still running, startPendingWaveTasks can promote the next
+// pending task. This mirrors the app.go signal processing path.
+func TestStartPendingWaveTasks_LaunchesPendingAfterCompletion(t *testing.T) {
+	t.Parallel()
+	const planFile = "pending-promotion"
+	plan := &taskparser.Plan{
+		Waves: []taskparser.Wave{
+			{Number: 1, Tasks: []taskparser.Task{
+				{Number: 1, Title: "T1"},
+				{Number: 2, Title: "T2"},
+				{Number: 3, Title: "T3"},
+			}},
+		},
+	}
+	orch := orchestration.NewWaveOrchestrator(planFile, plan)
+	one := 1
+	// Start wave with limit=1 — only T1 running.
+	launched, orchErr := orch.StartNextWaveLimited(1)
+	require.NoError(t, orchErr)
+	require.Len(t, launched, 1)
+
+	dir := t.TempDir()
+	plansDir := filepath.Join(dir, "docs", "plans")
+	require.NoError(t, os.MkdirAll(plansDir, 0o755))
+	ps, err := newTestPlanState(t, plansDir)
+	require.NoError(t, err)
+	require.NoError(t, ps.Register(planFile, "pending promotion test", "plan/pending", time.Now()))
+	seedPlanStatus(t, ps, planFile, taskstate.StatusImplementing)
+
+	h := waveFlowHome(t, ps, plansDir, map[string]*orchestration.WaveOrchestrator{planFile: orch})
+	h.appConfig = &config.Config{
+		Resources: config.ResourcesConfig{
+			Profile:              "custom",
+			MaxParallelWaveTasks: &one,
+		},
+	}
+
+	// T1 completes — wave stays running (T2 and T3 pending).
+	orch.MarkTaskComplete(1)
+	require.Equal(t, orchestration.WaveStateRunning, orch.State())
+
+	entry, ok := ps.Entry(planFile)
+	require.True(t, ok)
+
+	// startPendingWaveTasks should promote T2.
+	_, _ = h.startPendingWaveTasks(orch, entry)
+
+	assert.True(t, orch.IsTaskRunning(2), "T2 must be promoted after T1 completes")
+	assert.False(t, orch.IsTaskRunning(3), "T3 must still be pending")
+	assert.Equal(t, 1, orch.ActiveTaskCount())
+}
+
+// TestStartNextWave_UnlimitedUnchanged verifies that without a limit, startNextWave
+// still starts all tasks (existing behavior preserved).
+func TestStartNextWave_UnlimitedUnchanged(t *testing.T) {
+	t.Parallel()
+	const planFile = "unlimited-unchanged"
+	plan := &taskparser.Plan{
+		Waves: []taskparser.Wave{
+			{Number: 1, Tasks: []taskparser.Task{
+				{Number: 1, Title: "T1"},
+				{Number: 2, Title: "T2"},
+				{Number: 3, Title: "T3"},
+			}},
+		},
+	}
+	orch := orchestration.NewWaveOrchestrator(planFile, plan)
+
+	dir := t.TempDir()
+	plansDir := filepath.Join(dir, "docs", "plans")
+	require.NoError(t, os.MkdirAll(plansDir, 0o755))
+	ps, err := newTestPlanState(t, plansDir)
+	require.NoError(t, err)
+	require.NoError(t, ps.Register(planFile, "unlimited test", "plan/unlimited", time.Now()))
+	seedPlanStatus(t, ps, planFile, taskstate.StatusImplementing)
+
+	h := waveFlowHome(t, ps, plansDir, map[string]*orchestration.WaveOrchestrator{planFile: orch})
+	// No resource limit configured.
+
+	entry, ok := ps.Entry(planFile)
+	require.True(t, ok)
+
+	_, _ = h.startNextWave(orch, entry)
+
+	assert.Equal(t, orchestration.WaveStateRunning, orch.State())
+	assert.True(t, orch.IsTaskRunning(1))
+	assert.True(t, orch.IsTaskRunning(2))
+	assert.True(t, orch.IsTaskRunning(3))
+	assert.Equal(t, 3, orch.ActiveTaskCount())
+}

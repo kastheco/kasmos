@@ -4034,8 +4034,17 @@ func (m *home) applyAdvanceWaveAction(action loop.AdvanceWaveAction, preStartToa
 }
 
 // startNextWave advances the orchestrator to the next wave and spawns its task instances.
+// When max_parallel_wave_tasks is configured, at most that many tasks are launched;
+// the remainder stay pending and are promoted via startPendingWaveTasks as capacity opens.
 func (m *home) startNextWave(orch *orchestration.WaveOrchestrator, entry taskstate.TaskEntry) (tea.Model, tea.Cmd) {
-	tasks := orch.StartNextWave()
+	rc := m.resolvedResourceControls()
+	limit := rc.MaxParallelWaveTasks
+	var tasks []taskparser.Task
+	if limit > 0 {
+		tasks, _ = orch.StartNextWaveLimited(limit)
+	} else {
+		tasks = orch.StartNextWave()
+	}
 	if len(tasks) == 0 {
 		return m, nil
 	}
@@ -4047,6 +4056,22 @@ func (m *home) startNextWave(orch *orchestration.WaveOrchestrator, entry tasksta
 		auditlog.WithPlan(orch.TaskFile()),
 		auditlog.WithWave(waveNum, 0))
 	return m.spawnWaveTasks(orch, tasks, entry)
+}
+
+// startPendingWaveTasks promotes pending wave tasks to running up to the configured
+// parallelism limit, spawning agents for each. No-op when no limit is configured,
+// when the wave is not running, or when the active-task count is already at the limit.
+func (m *home) startPendingWaveTasks(orch *orchestration.WaveOrchestrator, entry taskstate.TaskEntry) (tea.Model, tea.Cmd) {
+	rc := m.resolvedResourceControls()
+	limit := rc.MaxParallelWaveTasks
+	if limit <= 0 {
+		return m, nil
+	}
+	pending, _ := orch.StartPendingTasks(limit)
+	if len(pending) == 0 {
+		return m, nil
+	}
+	return m.spawnWaveTasks(orch, pending, entry)
 }
 
 // retryFailedWaveTasks retries all failed tasks in the current wave by re-spawning them.
