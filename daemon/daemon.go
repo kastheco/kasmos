@@ -695,6 +695,9 @@ func (d *Daemon) spawnPlannerForProfile(ctx context.Context, e RepoEntry, planFi
 	}
 
 	if draftMode {
+		if e.Store == nil {
+			return fmt.Errorf("task store unavailable for %s", planFile)
+		}
 		entry, err := e.Store.Get(e.Project, planFile)
 		if err != nil {
 			return fmt.Errorf("load task entry for %s: %w", planFile, err)

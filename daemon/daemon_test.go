@@ -1053,6 +1053,38 @@ enabled = true
 		"daemon must kill the partial fan-out on spawn failure (initial kill + cleanup kill)")
 }
 
+func TestDaemon_ExecuteAction_DraftPlannerStoreUnavailableReturnsError(t *testing.T) {
+	var spawnCalled bool
+	d := &Daemon{
+		logger:      slog.Default(),
+		broadcaster: api.NewEventBroadcaster(),
+		killAgent: func(repoPath, planFile, agentType string) error {
+			return nil
+		},
+		spawnPlanner: func(_ context.Context, opts loop.SpawnOpts) error {
+			spawnCalled = true
+			return nil
+		},
+	}
+	t.Cleanup(func() { d.broadcaster.Close() })
+
+	var err error
+	require.NotPanics(t, func() {
+		err = d.executeAction(context.Background(), RepoEntry{
+			Path:    t.TempDir(),
+			Project: "proj",
+		}, loop.SpawnPlannerAction{
+			PlanFile:       "feature.md",
+			PlannerProfile: "planner-a",
+			Primary:        true,
+			DraftMode:      true,
+		})
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "task store unavailable for feature.md")
+	assert.False(t, spawnCalled)
+}
+
 func TestDaemon_ExecuteClearPlannerDraftsAction(t *testing.T) {
 	project := "proj"
 	planFile := "feature.md"
