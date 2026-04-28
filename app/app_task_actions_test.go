@@ -475,7 +475,7 @@ func TestSpawnPlannerWithOptionalBaseline_DefaultConfigSpawnsPlannerAndArchitect
 		switch inst.AgentType {
 		case session.AgentTypePlanner:
 			planner = inst
-		case session.AgentTypeArchitectBaseline:
+		case "architect-baseline":
 			baseline = inst
 		}
 	}
@@ -517,7 +517,7 @@ func TestSpawnPlannerWithOptionalBaseline_EnabledSpawnsPlannerAndArchitectBaseli
 		switch inst.AgentType {
 		case session.AgentTypePlanner:
 			planner = inst
-		case session.AgentTypeArchitectBaseline:
+		case "architect-baseline":
 			baseline = inst
 		}
 	}
@@ -580,7 +580,7 @@ func TestStartOverCompletedMsgSpawnsReplacementAgentsInUpdate(t *testing.T) {
 		switch inst.AgentType {
 		case session.AgentTypePlanner:
 			planner = inst
-		case session.AgentTypeArchitectBaseline:
+		case "architect-baseline":
 			baseline = inst
 		}
 	}
@@ -595,7 +595,7 @@ func TestArchitectBaselineInstanceDoesNotOfferArchitectFinishedAction(t *testing
 	t.Parallel()
 	inst := &session.Instance{
 		TaskFile:  "feature",
-		AgentType: session.AgentTypeArchitectBaseline,
+		AgentType: "architect-baseline",
 	}
 	entry := taskstate.TaskEntry{
 		Status: taskstate.StatusImplementing,

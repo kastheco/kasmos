@@ -35,7 +35,7 @@ func TestNavInstanceTitle_ElaboratorUsesCreatingBlueprint(t *testing.T) {
 
 func TestNavInstanceTitle_ArchitectBaselineUsesLowercaseLabel(t *testing.T) {
 	instance := &session.Instance{
-		AgentType: session.AgentTypeArchitectBaseline,
+		AgentType: "architect-baseline",
 		TaskFile:  "parallel-planner-architect",
 	}
 
@@ -60,7 +60,7 @@ func TestNavInstanceStatusIcon_PlannerCompleteAfterPlanning(t *testing.T) {
 func TestNavInstanceStatusIcon_ArchitectBaselineCompleteWhenArchitecting(t *testing.T) {
 	n := newTestPanel()
 	instance := &session.Instance{
-		AgentType: session.AgentTypeArchitectBaseline,
+		AgentType: "architect-baseline",
 		TaskFile:  "parallel-planner-architect",
 		Status:    session.Running,
 	}
@@ -75,7 +75,7 @@ func TestNavInstanceStatusIcon_ArchitectBaselineCompleteWhenArchitecting(t *test
 func TestNavInstanceStatusIcon_ArchitectBaselineRunningWhilePlanning(t *testing.T) {
 	n := newTestPanel()
 	instance := &session.Instance{
-		AgentType: session.AgentTypeArchitectBaseline,
+		AgentType: "architect-baseline",
 		TaskFile:  "parallel-planner-architect",
 		Status:    session.Running,
 	}
@@ -979,7 +979,7 @@ func TestString_ArchitectBaselineInstanceShowsLowercaseLabel(t *testing.T) {
 		Title:     "parallel-planner-architect-architect-baseline",
 		TaskFile:  "parallel-planner-architect",
 		Status:    session.Running,
-		AgentType: session.AgentTypeArchitectBaseline,
+		AgentType: "architect-baseline",
 	}}
 	statuses := map[string]TopicStatus{"parallel-planner-architect": {HasRunning: true}}
 	n.SetData(plans, instances, nil, nil, statuses)

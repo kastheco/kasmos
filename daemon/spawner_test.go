@@ -204,6 +204,8 @@ func TestTmuxSpawner_instanceKey(t *testing.T) {
 	// Two repos with the same plan filename must produce distinct keys.
 	assert.NotEqual(t, instanceKey("/repo-a", "task.md", "coder"), instanceKey("/repo-b", "task.md", "coder"))
 	assert.Equal(t, "/repo:plan.md:coder:w2:t3", instanceKeyForTask("/repo", "plan.md", "coder", 2, 3))
+	assert.Equal(t, "/repo:plan.md:planner", instanceKeyForPlanner("/repo", "plan.md", ""))
+	assert.Equal(t, "/repo:plan.md:planner:planner-a", instanceKeyForPlanner("/repo", "plan.md", "planner-a"))
 }
 
 func TestSharedWorktreeAgentTitle_UsesReviewAndFixCycles(t *testing.T) {
@@ -435,7 +437,7 @@ func TestTmuxSpawner_SpawnElaborator_HonoursOptsSkipPermissions(t *testing.T) {
 	}
 }
 
-func TestTmuxSpawner_PlannerArchitectBaselineAndArchitectAreDistinct(t *testing.T) {
+func TestTmuxSpawner_PlannerProfilesAndArchitectCanCoexist(t *testing.T) {
 	s := NewTmuxSpawner()
 	var captured []*session.Instance
 	s.startOnMain = func(inst *session.Instance) error {
@@ -455,15 +457,24 @@ func TestTmuxSpawner_PlannerArchitectBaselineAndArchitectAreDistinct(t *testing.
 		Description: "ship the feature",
 	}
 
-	require.NoError(t, s.SpawnPlanner(context.Background(), opts))
-	require.NoError(t, s.SpawnArchitectBaseline(context.Background(), opts))
+	plannerA := opts
+	plannerA.PlannerProfile = "planner-a"
+	plannerA.PlannerPrimary = true
+	plannerA.PlannerDraftMode = true
+	plannerB := opts
+	plannerB.PlannerProfile = "planner-b"
+	plannerB.PlannerDraftMode = true
+	require.NoError(t, s.SpawnPlanner(context.Background(), plannerA))
+	require.NoError(t, s.SpawnPlanner(context.Background(), plannerB))
 	require.NoError(t, s.SpawnElaborator(context.Background(), opts))
 	require.Len(t, captured, 3)
 
-	assert.Equal(t, "feature.md-plan", captured[0].Title)
+	assert.Equal(t, "feature.md-plan-planner-a", captured[0].Title)
 	assert.Equal(t, session.AgentTypePlanner, captured[0].AgentType)
-	assert.Equal(t, "feature.md-architect-baseline", captured[1].Title)
-	assert.Equal(t, session.AgentTypeArchitectBaseline, captured[1].AgentType)
+	assert.Equal(t, "planner-a", captured[0].PlannerProfile)
+	assert.Equal(t, "feature.md-plan-planner-b", captured[1].Title)
+	assert.Equal(t, session.AgentTypePlanner, captured[1].AgentType)
+	assert.Equal(t, "planner-b", captured[1].PlannerProfile)
 	assert.Equal(t, "feature.md-architect", captured[2].Title)
 	assert.Equal(t, session.AgentTypeElaborator, captured[2].AgentType)
 
@@ -474,49 +485,44 @@ func TestTmuxSpawner_PlannerArchitectBaselineAndArchitectAreDistinct(t *testing.
 		keys = append(keys, inst.Key)
 	}
 	assert.ElementsMatch(t, []string{
-		instanceKey(repoPath, planFile, session.AgentTypePlanner),
-		instanceKey(repoPath, planFile, session.AgentTypeArchitectBaseline),
+		instanceKeyForPlanner(repoPath, planFile, "planner-a"),
+		instanceKeyForPlanner(repoPath, planFile, "planner-b"),
 		instanceKey(repoPath, planFile, session.AgentTypeElaborator),
 	}, keys)
 }
 
-func TestTmuxSpawner_KillArchitectBaselineAllowsReplacement(t *testing.T) {
+func TestTmuxSpawner_KillPlannerKillsAllPlannerProfiles(t *testing.T) {
 	s := NewTmuxSpawner()
-	var captured []*session.Instance
-	s.startOnMain = func(inst *session.Instance) error {
-		captured = append(captured, inst)
-		inst.MarkStartedForTest()
-		inst.SetStatus(session.Running)
-		return nil
-	}
+	s.hasAttachedClients = func(_ cmd.Executor, _ string) bool { return false }
+	s.sleep = func(_ time.Duration) {}
+	killed := []string{}
 	s.kill = func(inst *session.Instance) error {
-		inst.SetStatus(session.Ready)
+		killed = append(killed, inst.Title)
 		return nil
 	}
+	s.cleanupGracePeriod = 0
 
 	repoPath := t.TempDir()
-	opts := loop.SpawnOpts{
-		PlanFile:    "feature.md",
-		RepoPath:    repoPath,
-		Project:     "proj",
-		Program:     "true",
-		Description: "ship the feature",
+	const planFile = "feature.md"
+	register := func(key string, inst *session.Instance) {
+		s.mu.Lock()
+		s.instances[key] = inst
+		s.planFileByKey[key] = planFile
+		s.agentTypeByKey[key] = inst.AgentType
+		s.projectByKey[key] = "proj"
+		s.mu.Unlock()
 	}
+	register(instanceKeyForPlanner(repoPath, planFile, ""), &session.Instance{Title: "feature-plan", Path: repoPath, TaskFile: planFile, AgentType: session.AgentTypePlanner})
+	register(instanceKeyForPlanner(repoPath, planFile, "planner-a"), &session.Instance{Title: "feature-plan-planner-a", Path: repoPath, TaskFile: planFile, AgentType: session.AgentTypePlanner, PlannerProfile: "planner-a"})
+	register(instanceKeyForPlanner(repoPath, planFile, "planner-b"), &session.Instance{Title: "feature-plan-planner-b", Path: repoPath, TaskFile: planFile, AgentType: session.AgentTypePlanner, PlannerProfile: "planner-b"})
+	register(instanceKey(repoPath, planFile, session.AgentTypeElaborator), &session.Instance{Title: "feature-architect", Path: repoPath, TaskFile: planFile, AgentType: session.AgentTypeElaborator})
 
-	require.NoError(t, s.SpawnArchitectBaseline(context.Background(), opts))
-	require.NoError(t, s.KillAgent(repoPath, opts.PlanFile, session.AgentTypeArchitectBaseline))
-	require.NoError(t, s.SpawnArchitectBaseline(context.Background(), opts))
+	require.NoError(t, s.KillAgent(repoPath, planFile, session.AgentTypePlanner))
 
-	require.Len(t, captured, 2)
-	assert.NotSame(t, captured[0], captured[1])
+	assert.ElementsMatch(t, []string{"feature-plan", "feature-plan-planner-a", "feature-plan-planner-b"}, killed)
 	running := s.RunningInstances()
 	require.Len(t, running, 1)
-	assert.Equal(t, session.AgentTypeArchitectBaseline, running[0].AgentType)
-	key := instanceKey(repoPath, opts.PlanFile, session.AgentTypeArchitectBaseline)
-	s.mu.Lock()
-	tracked := s.instances[key]
-	s.mu.Unlock()
-	assert.Same(t, captured[1], tracked)
+	assert.Equal(t, session.AgentTypeElaborator, running[0].AgentType)
 }
 
 func TestTmuxSpawner_SpawnElaborator_StartFailureDiscardsTrackedInstance(t *testing.T) {

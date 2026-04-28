@@ -332,9 +332,6 @@ type SpawnOpts struct {
 type AgentSpawner interface {
 	// SpawnPlanner launches a planner agent for the given plan on the main branch.
 	SpawnPlanner(ctx context.Context, opts SpawnOpts) error
-	// SpawnArchitectBaseline launches a cache-only architect baseline agent
-	// for the given plan on the main branch.
-	SpawnArchitectBaseline(ctx context.Context, opts SpawnOpts) error
 	// SpawnReviewer launches a reviewer agent for the given plan.
 	SpawnReviewer(ctx context.Context, opts SpawnOpts) error
 	// SpawnCoder launches a coder agent for the given plan.

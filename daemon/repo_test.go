@@ -232,7 +232,7 @@ parallel_planner_architect = true
 		assert.True(t, repos[0].ParallelPlannerArchitect)
 	})
 
-	t.Run("explicit false in project config resolves false", func(t *testing.T) {
+	t.Run("legacy explicit false in project config is ignored", func(t *testing.T) {
 		repoDir := t.TempDir()
 		kasmosDir := filepath.Join(repoDir, ".kasmos")
 		require.NoError(t, os.MkdirAll(kasmosDir, 0o755))
@@ -246,7 +246,7 @@ parallel_planner_architect = false
 		require.NoError(t, rm.Add(repoDir))
 		repos := rm.List()
 		require.Len(t, repos, 1)
-		assert.False(t, repos[0].ParallelPlannerArchitect)
+		assert.True(t, repos[0].ParallelPlannerArchitect)
 	})
 }
 

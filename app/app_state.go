@@ -2685,7 +2685,7 @@ func (m home) spawnArchitectBaseline(planFile, description string) (tea.Model, t
 	}
 
 	spec := orchestration.BuildArchitectBaselineAgentSpec(planFile, m.taskStoreProject, description)
-	agentType := session.AgentTypeArchitectBaseline
+	agentType := "architect-baseline"
 	if err := scaffold.PatchWorktreeConfig(m.activeRepoPath, m.opencodeAgentConfigs()); err != nil {
 		return &m, m.handleError(err)
 	}

@@ -358,10 +358,8 @@ func TestDaemon_LifecycleE2E_ParallelBaselineDoesNotGatePlannerCompletion(t *tes
 	})
 
 	planStartActions := proc.ProcessFSMSignals([]taskfsm.Signal{{TaskFile: planFile, Event: taskfsm.PlanStart}})
-	require.Len(t, planStartActions, 3)
-	assert.Equal(t, "clear_architect_baseline", planStartActions[0].Kind())
-	assert.Equal(t, "spawn_planner", planStartActions[1].Kind())
-	assert.Equal(t, "spawn_architect_baseline", planStartActions[2].Kind())
+	require.Len(t, planStartActions, 1)
+	assert.Equal(t, "spawn_planner", planStartActions[0].Kind())
 
 	entry, err := store.Get(project, planFile)
 	require.NoError(t, err)
