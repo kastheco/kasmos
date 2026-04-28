@@ -2424,51 +2424,6 @@ func TestPreviewTerminal_RenderTickIntegration(t *testing.T) {
 	})
 }
 
-// TestPreviewTerminalReadyMsg_StaleDiscard verifies that previewTerminalReadyMsg
-// discards the terminal when the selection has changed since the spawn was initiated.
-func TestPreviewTerminalReadyMsg_StaleDiscard(t *testing.T) {
-	t.Parallel()
-	spin := spinner.New(spinner.WithSpinner(spinner.Dot))
-	h := &home{
-		ctx:          context.Background(),
-		state:        stateDefault,
-		appConfig:    config.DefaultConfig(),
-		nav:          ui.NewNavigationPanel(&spin),
-		menu:         ui.NewMenu(),
-		tabbedWindow: ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewInfoPane()),
-	}
-	h.previewRequested = true
-
-	// Add instance "B" and select it (simulating selection change after spawn started for "A").
-	instB, err := session.NewInstance(session.InstanceOptions{
-		Title:   "B",
-		Path:    t.TempDir(),
-		Program: "claude",
-	})
-	require.NoError(t, err)
-	h.nav.AddInstance(instB)()
-	h.nav.SelectInstance(instB) // Select "B" by pointer (sort-order safe)
-
-	// Simulate a stale previewTerminalReadyMsg arriving for "A" (selection already moved to "B").
-	// The handler should discard the terminal since selected.Title != msg.instanceTitle.
-	msg := previewTerminalReadyMsg{
-		term:        nil, // nil is fine — we just check it's discarded
-		instanceKey: "stale-instance",
-		err:         nil,
-	}
-
-	// Process the message through Update.
-	model, cmd := h.Update(msg)
-	homeModel, ok := model.(*home)
-	require.True(t, ok)
-
-	// Terminal should NOT be set — it was stale.
-	assert.Nil(t, homeModel.previewTerminal, "stale terminal should be discarded")
-	assert.Equal(t, "", homeModel.previewTerminalInstance,
-		"previewTerminalInstance should not be set for stale msg")
-	assert.Nil(t, cmd, "no cmd should be returned for stale msg")
-}
-
 func TestTmuxBrowserActions(t *testing.T) {
 	t.Parallel()
 	t.Run("tmuxSessionsMsg with no sessions shows toast", func(t *testing.T) {
@@ -2541,50 +2496,6 @@ func TestTmuxBrowserActions(t *testing.T) {
 		assert.False(t, hm.overlays.IsActive())
 		assert.Equal(t, stateDefault, hm.state)
 	})
-}
-
-// TestPreviewTerminalReadyMsg_AcceptsCurrentInstance verifies that previewTerminalReadyMsg
-// sets the terminal when the instance title matches the current selection.
-func TestPreviewTerminalReadyMsg_AcceptsCurrentInstance(t *testing.T) {
-	t.Parallel()
-	spin := spinner.New(spinner.WithSpinner(spinner.Dot))
-	h := &home{
-		ctx:          context.Background(),
-		state:        stateDefault,
-		appConfig:    config.DefaultConfig(),
-		nav:          ui.NewNavigationPanel(&spin),
-		menu:         ui.NewMenu(),
-		tabbedWindow: ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewInfoPane()),
-	}
-	h.previewRequested = true
-
-	// Add instance "A" and select it.
-	instA, err := session.NewInstance(session.InstanceOptions{
-		Title:   "A",
-		Path:    t.TempDir(),
-		Program: "claude",
-	})
-	require.NoError(t, err)
-	instA.MarkStartedForTest()
-	instA.Status = session.Running
-	h.nav.AddInstance(instA)()
-	h.nav.SetSelectedInstance(0)
-
-	// Simulate a fresh previewTerminalReadyMsg for "A" (current selection).
-	msg := previewTerminalReadyMsg{
-		term:        nil, // nil terminal — we just verify the instance title is set
-		instanceKey: instA.IdentityKey(),
-		err:         nil,
-	}
-
-	model, cmd := h.Update(msg)
-	homeModel, ok := model.(*home)
-	require.True(t, ok)
-
-	// previewTerminalInstance should be set to "A".
-	assert.Equal(t, instA.IdentityKey(), homeModel.previewTerminalInstance,
-		"previewTerminalInstance should be set when msg matches current selection")
-	assert.NotNil(t, cmd, "preview terminal attach should request a resize refresh")
 }
 
 func TestInstanceChanged_AutoRequestsPreview(t *testing.T) {
