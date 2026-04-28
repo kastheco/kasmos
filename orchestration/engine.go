@@ -289,7 +289,10 @@ func (o *WaveOrchestrator) ActiveTaskCount() int {
 // in the running state — i.e., the batch the caller should spawn agents for.
 // No-op when limit <= 0 or the orchestrator is not in WaveStateRunning.
 func (o *WaveOrchestrator) ApplyParallelismLimit(limit int) []taskparser.Task {
-	if limit <= 0 || o.state != WaveStateRunning || o.currentWave >= len(o.plan.Waves) {
+	if o.currentWave >= len(o.plan.Waves) {
+		return nil
+	}
+	if limit <= 0 || o.state != WaveStateRunning {
 		// Return all running tasks unchanged.
 		var running []taskparser.Task
 		for _, t := range o.plan.Waves[o.currentWave].Tasks {

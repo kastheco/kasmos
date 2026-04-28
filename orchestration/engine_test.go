@@ -879,3 +879,17 @@ func TestApplyParallelismLimit_NoOpWhenZeroLimit(t *testing.T) {
 	assert.Len(t, launched, 2)
 	assert.Equal(t, 2, orch.ActiveTaskCount())
 }
+
+func TestApplyParallelismLimit_NoOpWhenAllCompleteAndWaveExhausted(t *testing.T) {
+	plan := &taskparser.Plan{Waves: []taskparser.Wave{
+		{Number: 1, Tasks: []taskparser.Task{{Number: 1, Title: "T1"}}},
+	}}
+	orch := NewWaveOrchestrator("plan", plan)
+	orch.state = WaveStateAllComplete
+	orch.currentWave = len(plan.Waves)
+
+	require.NotPanics(t, func() {
+		launched := orch.ApplyParallelismLimit(1)
+		assert.Empty(t, launched)
+	})
+}
