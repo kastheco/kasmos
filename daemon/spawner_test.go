@@ -443,6 +443,36 @@ func TestTmuxSpawner_SpawnPlanner_HonoursOptsSkipPermissions(t *testing.T) {
 	}
 }
 
+func TestTmuxSpawner_SpawnPlannerDraftModePreservesProvidedPrompt(t *testing.T) {
+	s := NewTmuxSpawner()
+	var captured *session.Instance
+	s.startOnMain = func(inst *session.Instance) error {
+		captured = inst
+		inst.MarkStartedForTest()
+		inst.SetStatus(session.Running)
+		return nil
+	}
+
+	providedPrompt := "draft-mode instructions with /tmp/cache/feature-planner-a.md\n\n## caller-provided prompt\n\nannotate wave 2"
+	err := s.SpawnPlanner(context.Background(), loop.SpawnOpts{
+		PlanFile:         "feature.md",
+		RepoPath:         t.TempDir(),
+		Project:          "proj",
+		Program:          "true",
+		Description:      "default task description",
+		Prompt:           providedPrompt,
+		PlannerProfile:   "planner-a",
+		PlannerPrimary:   true,
+		PlannerDraftMode: true,
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, captured)
+	assert.Equal(t, "feature.md-plan-planner-a", captured.Title)
+	assert.Equal(t, "planner-a", captured.PlannerProfile)
+	assert.Equal(t, providedPrompt, captured.QueuedPrompt)
+}
+
 func TestTmuxSpawner_SpawnElaborator_HonoursOptsSkipPermissions(t *testing.T) {
 	tests := []struct {
 		name     string

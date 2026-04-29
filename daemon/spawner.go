@@ -612,7 +612,9 @@ func (s *TmuxSpawner) SpawnPlanner(ctx context.Context, opts loop.SpawnOpts) err
 			Primary:   opts.PlannerPrimary,
 			DraftMode: true,
 		})
-		opts.Prompt = spec.Prompt
+		if opts.Prompt == "" {
+			opts.Prompt = spec.Prompt
+		}
 		return s.spawnOnMainBranchWithKey(ctx, opts, session.AgentTypePlanner, spec.Title, instanceKeyForPlanner(opts.RepoPath, opts.PlanFile, opts.PlannerProfile), opts.PlannerProfile)
 	}
 	return s.spawnOnMainBranch(ctx, opts, session.AgentTypePlanner, "plan")
