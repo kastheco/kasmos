@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/kastheco/kasmos/config"
+	"github.com/kastheco/kasmos/internal/theme"
 	"github.com/kastheco/kasmos/log"
 	"github.com/kastheco/kasmos/session/git"
 	"github.com/kastheco/kasmos/session/sdk"
@@ -21,7 +22,19 @@ type localImagePromptSession interface {
 
 // Preview returns the current pane content as a string.
 // Returns an empty string if the instance has not been started or is paused.
+//
+// SDK previews use the process-global theme.Current() palette. Daemons that
+// serve multiple repositories with distinct palettes should call
+// PreviewWithPalette and pass the per-repo palette explicitly.
 func (i *Instance) Preview() (string, error) {
+	return i.PreviewWithPalette(theme.Current())
+}
+
+// PreviewWithPalette is identical to Preview but renders SDK presentations
+// using the supplied palette instead of theme.Current(). Daemons resolve a
+// per-repo palette into RepoEntry.Theme and forward it here so each repo's
+// cached SDK output uses its own colors regardless of process-global state.
+func (i *Instance) PreviewWithPalette(palette theme.Palette) (string, error) {
 	if !i.started || i.Status == Paused {
 		return "", nil
 	}
@@ -31,8 +44,7 @@ func (i *Instance) Preview() (string, error) {
 			if width <= 0 {
 				width = 80
 			}
-			// RenderPresentation reads theme.Current so cached SDK previews match the active UI palette.
-			return sdk.RenderPresentation(turns, width), nil
+			return sdk.RenderPresentationWithPalette(turns, width, sdk.PresentationPaletteFromTheme(palette)), nil
 		}
 	}
 	return i.executionSession.CapturePaneContent()

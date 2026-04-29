@@ -140,6 +140,39 @@ func TestInstance_Preview_WithSDKPresentationUsesCurrentTheme(t *testing.T) {
 	assert.Contains(t, preview, lipgloss.NewStyle().Foreground(lipgloss.Color(string(custom.Text))).Render("themed assistant text"))
 }
 
+func TestInstance_PreviewWithPalette_UsesSuppliedPaletteNotGlobal(t *testing.T) {
+	t.Cleanup(func() {
+		theme.SetCurrent(theme.DefaultPalette())
+	})
+	// Set a process-global palette that should NOT be used; the explicit
+	// palette argument must win so daemons serving multiple repos can render
+	// each repo's previews with its own colors.
+	globalCustom := theme.DefaultPalette()
+	globalCustom.Text = "#aabbcc"
+	theme.SetCurrent(globalCustom)
+
+	repoPalette := theme.DefaultPalette()
+	repoPalette.Text = "#112233"
+
+	inst := &Instance{started: true, ExecutionMode: ExecutionModeSDK}
+	turns := []*sdk.PresentationTurn{
+		{
+			ID:     "t1",
+			Number: 1,
+			Rows: []sdk.PresentationRow{
+				{Kind: sdk.RowResponse},
+				{Kind: sdk.RowProse, Text: "per-repo themed text"},
+			},
+		},
+	}
+	inst.SetExecutionSessionForTest(&mockPresentationSession{turns: turns})
+
+	preview, err := inst.PreviewWithPalette(repoPalette)
+	require.NoError(t, err)
+	assert.Contains(t, preview, lipgloss.NewStyle().Foreground(lipgloss.Color(string(repoPalette.Text))).Render("per-repo themed text"))
+	assert.NotContains(t, preview, lipgloss.NewStyle().Foreground(lipgloss.Color(string(globalCustom.Text))).Render("per-repo themed text"))
+}
+
 func TestInstance_SendPromptWithLocalImages_DelegatesToExecutionSession(t *testing.T) {
 	inst := &Instance{started: true, Program: "codex"}
 	mock := &mockLocalImagePromptSession{}
