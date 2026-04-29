@@ -162,6 +162,29 @@ accent_color = "#112233"
 		require.NoError(t, err)
 		assert.Equal(t, "#112233", result.AccentColor)
 	})
+
+	t.Run("omitted theme keys keep empty runtime fields", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		tomlPath := filepath.Join(tmpDir, "config.toml")
+		content := `
+[ui]
+accent_color = "#112233"
+`
+		err := os.WriteFile(tomlPath, []byte(content), 0o644)
+		require.NoError(t, err)
+
+		result, err := LoadTOMLConfigFrom(tomlPath)
+		require.NoError(t, err)
+		assert.Empty(t, result.ThemeSource)
+		assert.Empty(t, result.SystemThemeProvider)
+		assert.Empty(t, result.ThemePaletteFile)
+
+		cfg := configFromTOML(result)
+		assert.Equal(t, "#112233", cfg.AccentColor)
+		assert.Empty(t, cfg.ThemeSource)
+		assert.Empty(t, cfg.SystemThemeProvider)
+		assert.Empty(t, cfg.ThemePaletteFile)
+	})
 }
 
 func TestSaveTOMLConfig(t *testing.T) {
@@ -188,6 +211,9 @@ func TestSaveTOMLConfig(t *testing.T) {
 			},
 		}
 		original.UI.AccentColor = "#112233"
+		original.UI.ThemeSource = "system"
+		original.UI.SystemThemeProvider = "file"
+		original.UI.ThemePaletteFile = "~/.config/caelestia/kasmos-theme.json"
 
 		err := SaveTOMLConfigTo(original, tomlPath)
 		require.NoError(t, err)
@@ -203,6 +229,27 @@ func TestSaveTOMLConfig(t *testing.T) {
 		assert.Equal(t, "anthropic/claude-sonnet-4-6", coder.Model)
 		assert.InDelta(t, 0.5, *coder.Temperature, 0.001)
 		assert.Equal(t, "#112233", loaded.AccentColor)
+		assert.Equal(t, "system", loaded.ThemeSource)
+		assert.Equal(t, "file", loaded.SystemThemeProvider)
+		assert.Equal(t, "~/.config/caelestia/kasmos-theme.json", loaded.ThemePaletteFile)
+	})
+
+	t.Run("unknown theme values round-trip through save and load", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		tomlPath := filepath.Join(tmpDir, "config.toml")
+		original := &TOMLConfig{}
+		original.UI.ThemeSource = "raw-source"
+		original.UI.SystemThemeProvider = "raw-provider"
+		original.UI.ThemePaletteFile = "~/raw-palette.json"
+
+		err := SaveTOMLConfigTo(original, tomlPath)
+		require.NoError(t, err)
+
+		loaded, err := LoadTOMLConfigFrom(tomlPath)
+		require.NoError(t, err)
+		assert.Equal(t, "raw-source", loaded.ThemeSource)
+		assert.Equal(t, "raw-provider", loaded.SystemThemeProvider)
+		assert.Equal(t, "~/raw-palette.json", loaded.ThemePaletteFile)
 	})
 }
 

@@ -142,6 +142,9 @@ func TestDefaultConfig(t *testing.T) {
 		assert.Equal(t, 1000, config.DaemonPollInterval)
 		assert.NotEmpty(t, config.BranchPrefix)
 		assert.True(t, strings.HasSuffix(config.BranchPrefix, "/"))
+		assert.Empty(t, config.ThemeSource)
+		assert.Empty(t, config.SystemThemeProvider)
+		assert.Empty(t, config.ThemePaletteFile)
 	})
 
 	t.Run("falls back to codex when command detection fails", func(t *testing.T) {
@@ -305,6 +308,9 @@ func TestConfigFromTOML(t *testing.T) {
 		Profiles:               map[string]AgentProfile{"coder": {Program: "opencode", Enabled: true}},
 		PhaseRoles:             map[string]string{"implementing": "coder"},
 		AnimateBanner:          true,
+		ThemeSource:            "system",
+		SystemThemeProvider:    "file",
+		ThemePaletteFile:       "~/.config/caelestia/kasmos-theme.json",
 		AutoAdvanceWaves:       &trueVal,
 		AutoAdvance:            &trueVal,
 		AutoReviewFix:          &falseVal,
@@ -332,6 +338,9 @@ func TestConfigFromTOML(t *testing.T) {
 	assert.Equal(t, "https://example.test/store", cfg.DatabaseURL)
 	assert.Equal(t, 3, cfg.BlueprintSkipThreshold())
 	assert.Equal(t, "opencode", cfg.Profiles["coder"].Program)
+	assert.Equal(t, "system", cfg.ThemeSource)
+	assert.Equal(t, "file", cfg.SystemThemeProvider)
+	assert.Equal(t, "~/.config/caelestia/kasmos-theme.json", cfg.ThemePaletteFile)
 }
 
 func TestConfigFromTOML_Defaults(t *testing.T) {
@@ -349,6 +358,29 @@ func TestConfigFromTOML_Defaults(t *testing.T) {
 	assert.True(t, cfg.AutoAdvance)
 	assert.True(t, cfg.AutoReviewFix)
 	assert.True(t, cfg.AreNotificationsEnabled())
+	assert.Empty(t, cfg.ThemeSource)
+	assert.Empty(t, cfg.SystemThemeProvider)
+	assert.Empty(t, cfg.ThemePaletteFile)
+}
+
+func TestThemeConfigRawValuesRoundTrip(t *testing.T) {
+	result := &TOMLConfigResult{
+		Profiles:            map[string]AgentProfile{},
+		PhaseRoles:          map[string]string{},
+		ThemeSource:         "unexpected-source",
+		SystemThemeProvider: "custom-provider",
+		ThemePaletteFile:    "~/palette.unknown",
+	}
+
+	cfg := configFromTOML(result)
+	assert.Equal(t, "unexpected-source", cfg.ThemeSource)
+	assert.Equal(t, "custom-provider", cfg.SystemThemeProvider)
+	assert.Equal(t, "~/palette.unknown", cfg.ThemePaletteFile)
+
+	tc := configToTOML(cfg)
+	assert.Equal(t, "unexpected-source", tc.UI.ThemeSource)
+	assert.Equal(t, "custom-provider", tc.UI.SystemThemeProvider)
+	assert.Equal(t, "~/palette.unknown", tc.UI.ThemePaletteFile)
 }
 
 func TestLoadConfig(t *testing.T) {

@@ -43,6 +43,9 @@ func (a TOMLAgent) toProfile() AgentProfile {
 type TOMLUIConfig struct {
 	AnimateBanner            bool   `toml:"animate_banner"`
 	AccentColor              string `toml:"accent_color,omitempty"`
+	ThemeSource              string `toml:"theme_source,omitempty"`
+	SystemThemeProvider      string `toml:"system_theme_provider,omitempty"`
+	ThemePaletteFile         string `toml:"theme_palette_file,omitempty"`
 	AutoAdvanceWaves         *bool  `toml:"auto_advance_waves"`
 	AutoAdvance              *bool  `toml:"auto_advance"`
 	AutoReviewFix            *bool  `toml:"auto_review_fix"`
@@ -132,6 +135,9 @@ type TOMLConfigResult struct {
 	PhaseRoles               map[string]string
 	AnimateBanner            bool
 	AccentColor              string
+	ThemeSource              string
+	SystemThemeProvider      string
+	ThemePaletteFile         string
 	AutoAdvanceWaves         *bool
 	AutoAdvance              *bool
 	AutoReviewFix            *bool
@@ -203,6 +209,9 @@ func LoadTOMLConfigFrom(path string) (*TOMLConfigResult, error) {
 		PhaseRoles:               tc.Phases,
 		AnimateBanner:            tc.UI.AnimateBanner,
 		AccentColor:              tc.UI.AccentColor,
+		ThemeSource:              tc.UI.ThemeSource,
+		SystemThemeProvider:      tc.UI.SystemThemeProvider,
+		ThemePaletteFile:         tc.UI.ThemePaletteFile,
 		AutoAdvanceWaves:         tc.UI.AutoAdvanceWaves,
 		AutoAdvance:              tc.UI.AutoAdvance,
 		AutoReviewFix:            tc.UI.AutoReviewFix,
