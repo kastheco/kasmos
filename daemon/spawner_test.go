@@ -507,6 +507,29 @@ func TestTmuxSpawner_SpawnElaborator_HonoursOptsSkipPermissions(t *testing.T) {
 	}
 }
 
+func TestTmuxSpawner_SpawnElaborator_DefaultPromptQueued(t *testing.T) {
+	s := NewTmuxSpawner()
+	var captured *session.Instance
+	s.startOnMain = func(inst *session.Instance) error {
+		captured = inst
+		inst.MarkStartedForTest()
+		inst.SetStatus(session.Running)
+		return nil
+	}
+
+	err := s.SpawnElaborator(context.Background(), loop.SpawnOpts{
+		PlanFile: "feature.md",
+		RepoPath: t.TempDir(),
+		Project:  "proj",
+		Program:  "true",
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, captured)
+	spec := orchestration.BuildArchitectAgentSpec("feature.md", "proj")
+	assert.Equal(t, spec.Prompt, captured.QueuedPrompt)
+}
+
 func TestTmuxSpawner_PlannerProfilesAndArchitectCanCoexist(t *testing.T) {
 	s := NewTmuxSpawner()
 	var captured []*session.Instance

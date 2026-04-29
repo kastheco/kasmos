@@ -696,6 +696,7 @@ func (s *TmuxSpawner) spawnOnMainBranch(_ context.Context, opts loop.SpawnOpts, 
 		planName := taskstate.DisplayName(opts.PlanFile)
 		title = fmt.Sprintf("%s-%s", planName, titleSuffix)
 	}
+	opts.Prompt = prompt
 	return s.spawnOnMainBranchWithKey(context.Background(), opts, agentType, title, instanceKey(opts.RepoPath, opts.PlanFile, agentType), opts.PlannerProfile)
 }
 
