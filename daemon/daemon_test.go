@@ -1986,6 +1986,56 @@ func TestDaemon_TickRepoGateway_InvalidTaskSignalMarkedFailed(t *testing.T) {
 	assert.Empty(t, done)
 }
 
+func TestDaemon_TickRepoGateway_InvalidPlannerDraftSignalMarkedFailed(t *testing.T) {
+	dir := t.TempDir()
+	store := taskstore.NewTestStore(t)
+	project := "test-project"
+	planFile := "gw-bad-draft"
+	require.NoError(t, store.Create(project, taskstore.TaskEntry{Filename: planFile, Status: taskstore.StatusPlanning}))
+
+	gw, err := taskstore.NewSQLiteSignalGateway(":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = gw.Close() })
+	require.NoError(t, gw.Create(project, taskstore.SignalEntry{
+		PlanFile:   planFile,
+		SignalType: "planner_draft_finished",
+		Payload:    `{"planner_id":"typo-planner"}`,
+	}))
+
+	entry := RepoEntry{
+		Path:    dir,
+		Project: project,
+		Store:   store,
+		Processor: loop.NewProcessor(loop.ProcessorConfig{
+			Store:            store,
+			Project:          project,
+			PlannerDraftMode: true,
+			PlannerProfiles:  []string{"planner-a", "planner-b"},
+		}),
+		SignalGateway: gw,
+	}
+	d := &Daemon{
+		cfg:         &DaemonConfig{PollInterval: time.Second},
+		repos:       NewRepoManager(),
+		spawner:     newTmuxSpawner(slog.Default()),
+		logger:      slog.Default(),
+		broadcaster: api.NewEventBroadcaster(),
+	}
+
+	d.tickRepo(context.Background(), entry)
+
+	failed, err := gw.List(project, taskstore.SignalFailed)
+	require.NoError(t, err)
+	require.Len(t, failed, 1)
+	assert.Equal(t, "planner_draft_finished", failed[0].SignalType)
+	assert.Contains(t, failed[0].Result, "unknown planner draft profile")
+	assert.Contains(t, failed[0].Result, "typo-planner")
+
+	done, err := gw.List(project, taskstore.SignalDone)
+	require.NoError(t, err)
+	assert.Empty(t, done)
+}
+
 func TestDaemon_ExecuteAction_ReviewCycleLimit(t *testing.T) {
 	action := loop.ReviewCycleLimitAction{
 		PlanFile: "test.md",

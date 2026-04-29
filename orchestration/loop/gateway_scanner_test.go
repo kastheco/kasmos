@@ -280,7 +280,7 @@ func TestGatewayNoopOutcome(t *testing.T) {
 		status     taskstore.SignalStatus
 		result     string
 	}{
-		{"planner_draft_finished", taskstore.SignalDone, "planner draft recorded or waiting for peers"},
+		{"planner_draft_finished", taskstore.SignalFailed, "planner draft signal rejected by processor"},
 		{"implement_finished", taskstore.SignalDone, "suppressed implement-finished signal"},
 		{"implement_task_finished", taskstore.SignalFailed, "no active orchestrator / wrong wave / already-finished task"},
 		{"implement_wave", taskstore.SignalFailed, "processor could not start the requested wave"},

@@ -250,20 +250,30 @@ func ActionPlanFile(a Action) string {
 	return f.String()
 }
 
+// GatewaySignalOutcome describes how to acknowledge a gateway row that did not
+// produce actions.
+type GatewaySignalOutcome struct {
+	Status taskstore.SignalStatus
+	Result string
+}
+
 // GatewayNoopOutcome classifies a gateway signal entry that produced no
-// processor actions. Daemon and TUI both use this so a no-op signal row gets
-// either a descriptive SignalDone result (for legitimate no-ops, e.g. a
-// planner draft waiting on peers) or SignalFailed (for signals that the
-// processor cannot dispatch in the current state, e.g. wrong-wave
-// implement_task_finished or out-of-phase verify signals). Marking everything
-// SignalDone unconditionally hides those mismatches and makes recovery harder.
+// processor actions when no processor-specific context is available. Daemon and
+// TUI paths should prefer Processor.GatewayNoopOutcome after processing a row,
+// because some no-ops such as planner_draft_finished need per-row acceptance
+// state to distinguish "waiting for peers" from invalid input. This stateless
+// fallback keeps clearly rejected lifecycle signals failed instead of silently
+// acknowledging them as done.
 func GatewayNoopOutcome(entry *taskstore.SignalEntry) (taskstore.SignalStatus, string) {
+	if entry == nil {
+		return taskstore.SignalFailed, "signal rejected by processor"
+	}
 	canonicalType, err := taskfsm.CanonicalGatewaySignalType(entry.SignalType)
 	if err != nil {
 		return taskstore.SignalFailed, "signal rejected by processor"
 	}
 	if canonicalType == "planner_draft_finished" {
-		return taskstore.SignalDone, "planner draft recorded or waiting for peers"
+		return taskstore.SignalFailed, "planner draft signal rejected by processor"
 	}
 	internalType := canonicalType
 	if canonicalType == "elaborator_finished" {

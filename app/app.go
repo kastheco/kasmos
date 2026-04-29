@@ -1848,7 +1848,11 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				status := taskstore.SignalDone
 				result := ""
 				if !gatewayProcessedEntryIDs[entry.ID] {
-					status, result = loop.GatewayNoopOutcome(entry)
+					if proc != nil {
+						status, result = proc.GatewayNoopOutcome(entry)
+					} else {
+						status, result = loop.GatewayNoopOutcome(entry)
+					}
 				}
 				if err := m.signalGateway.MarkProcessed(entry.ID, status, result); err != nil {
 					log.WarningLog.Printf("could not mark gateway signal %d %s: %v", entry.ID, status, err)

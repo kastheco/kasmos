@@ -1223,6 +1223,93 @@ func TestProcessor_ProcessPlannerDraftSignals_DuplicateProfileIsIgnored(t *testi
 	assert.Empty(t, actions, "duplicate signal must produce no actions")
 }
 
+func TestProcessor_GatewayNoopOutcome_PlannerDraftSignalOutcomes(t *testing.T) {
+	t.Parallel()
+
+	t.Run("accepted draft waits for peers", func(t *testing.T) {
+		store := taskstore.NewTestStore(t)
+		require.NoError(t, store.Create("test", taskstore.TaskEntry{
+			Filename: "my-plan.md",
+			Status:   taskstore.StatusPlanning,
+		}))
+		p := NewProcessor(ProcessorConfig{
+			Store:            store,
+			Project:          "test",
+			PlannerDraftMode: true,
+			PlannerProfiles:  []string{"planner", "planner-alt"},
+		})
+
+		actions := p.ProcessPlannerDraftSignals([]taskfsm.PlannerDraftSignal{{
+			TaskFile:       "my-plan.md",
+			PlannerID:      "planner",
+			GatewayEntryID: 101,
+		}})
+		assert.Empty(t, actions)
+		status, result := p.GatewayNoopOutcome(&taskstore.SignalEntry{ID: 101, SignalType: "planner_draft_finished"})
+		assert.Equal(t, taskstore.SignalDone, status)
+		assert.Equal(t, "planner draft recorded or waiting for peers", result)
+	})
+
+	t.Run("unknown profile fails", func(t *testing.T) {
+		store := taskstore.NewTestStore(t)
+		require.NoError(t, store.Create("test", taskstore.TaskEntry{
+			Filename: "my-plan.md",
+			Status:   taskstore.StatusPlanning,
+		}))
+		p := NewProcessor(ProcessorConfig{
+			Store:            store,
+			Project:          "test",
+			PlannerDraftMode: true,
+			PlannerProfiles:  []string{"planner", "planner-alt"},
+		})
+
+		actions := p.ProcessPlannerDraftSignals([]taskfsm.PlannerDraftSignal{{
+			TaskFile:       "my-plan.md",
+			PlannerID:      "typo-planner",
+			GatewayEntryID: 102,
+		}})
+		assert.Empty(t, actions)
+		status, result := p.GatewayNoopOutcome(&taskstore.SignalEntry{ID: 102, SignalType: "planner_draft_finished"})
+		assert.Equal(t, taskstore.SignalFailed, status)
+		assert.Contains(t, result, "unknown planner draft profile")
+		assert.Contains(t, result, "typo-planner")
+	})
+
+	t.Run("duplicate profile fails", func(t *testing.T) {
+		store := taskstore.NewTestStore(t)
+		require.NoError(t, store.Create("test", taskstore.TaskEntry{
+			Filename: "my-plan.md",
+			Status:   taskstore.StatusPlanning,
+		}))
+		p := NewProcessor(ProcessorConfig{
+			Store:            store,
+			Project:          "test",
+			PlannerDraftMode: true,
+			PlannerProfiles:  []string{"planner", "planner-alt"},
+		})
+
+		first := p.ProcessPlannerDraftSignals([]taskfsm.PlannerDraftSignal{{
+			TaskFile:       "my-plan.md",
+			PlannerID:      "planner",
+			GatewayEntryID: 201,
+		}})
+		assert.Empty(t, first)
+		status, result := p.GatewayNoopOutcome(&taskstore.SignalEntry{ID: 201, SignalType: "planner_draft_finished"})
+		assert.Equal(t, taskstore.SignalDone, status)
+		assert.Equal(t, "planner draft recorded or waiting for peers", result)
+
+		duplicate := p.ProcessPlannerDraftSignals([]taskfsm.PlannerDraftSignal{{
+			TaskFile:       "my-plan.md",
+			PlannerID:      "planner",
+			GatewayEntryID: 202,
+		}})
+		assert.Empty(t, duplicate)
+		status, result = p.GatewayNoopOutcome(&taskstore.SignalEntry{ID: 202, SignalType: "planner_draft_finished"})
+		assert.Equal(t, taskstore.SignalFailed, status)
+		assert.Contains(t, result, "duplicate planner draft profile")
+	})
+}
+
 // TestProcessor_ProcessPlannerDraftSignals_AllProfilesReceivedSynthesizesPlannerFinished
 // verifies that when all configured profiles emit draft signals, a synthesized
 // planner_finished action is produced.

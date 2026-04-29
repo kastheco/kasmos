@@ -130,7 +130,8 @@ type Processor struct {
 	activeWaveOrchs map[string]bool
 	// plannerDraftAggs tracks per-plan aggregation state for multi-planner runs.
 	// Keyed by plan file.
-	plannerDraftAggs map[string]*plannerDraftAgg
+	plannerDraftAggs      map[string]*plannerDraftAgg
+	gatewaySignalOutcomes map[int64]GatewaySignalOutcome
 }
 
 // NewProcessor creates a Processor backed by the given store and project.
@@ -140,11 +141,12 @@ func NewProcessor(cfg ProcessorConfig) *Processor {
 		fsm.SetHooks(cfg.Hooks)
 	}
 	return &Processor{
-		config:            cfg,
-		fsm:               fsm,
-		waveOrchestrators: make(map[string]*orchestration.WaveOrchestrator),
-		activeWaveOrchs:   make(map[string]bool),
-		plannerDraftAggs:  make(map[string]*plannerDraftAgg),
+		config:                cfg,
+		fsm:                   fsm,
+		waveOrchestrators:     make(map[string]*orchestration.WaveOrchestrator),
+		activeWaveOrchs:       make(map[string]bool),
+		plannerDraftAggs:      make(map[string]*plannerDraftAgg),
+		gatewaySignalOutcomes: make(map[int64]GatewaySignalOutcome),
 	}
 }
 
@@ -689,6 +691,9 @@ func (p *Processor) ProcessElaborationSignals(signals []taskfsm.ElaborationSigna
 func (p *Processor) ProcessPlannerDraftSignals(signals []taskfsm.PlannerDraftSignal) []Action {
 	if !p.config.PlannerDraftMode || len(p.config.PlannerProfiles) == 0 {
 		// Not in multi-planner mode; planner_finished comes directly via FSM.
+		for _, sig := range signals {
+			p.setGatewaySignalOutcome(sig.GatewayEntryID, taskstore.SignalFailed, "planner draft signal rejected outside draft mode")
+		}
 		return nil
 	}
 
@@ -697,6 +702,7 @@ func (p *Processor) ProcessPlannerDraftSignals(signals []taskfsm.PlannerDraftSig
 		agg := p.getOrInitDraftAgg(sig.TaskFile)
 		if agg.done {
 			// Already synthesized for this plan — ignore further signals.
+			p.setGatewaySignalOutcome(sig.GatewayEntryID, taskstore.SignalFailed, "planner draft signal ignored after aggregation completed")
 			continue
 		}
 		// Seed from on-disk cache before evaluating the current signal so that
@@ -705,27 +711,61 @@ func (p *Processor) ProcessPlannerDraftSignals(signals []taskfsm.PlannerDraftSig
 			p.seedDraftAggFromCache(agg, sig.TaskFile)
 		}
 		if len(agg.receivedProfiles) >= len(agg.expectedProfiles) {
-			actions = append(actions, p.synthesizePlannerFinished(sig.TaskFile, agg)...)
+			sigActions := p.synthesizePlannerFinished(sig.TaskFile, agg)
+			if len(sigActions) == 0 {
+				p.setGatewaySignalOutcome(sig.GatewayEntryID, taskstore.SignalFailed, "planner_finished synthesis rejected by processor")
+				continue
+			}
+			actions = append(actions, sigActions...)
 			continue
 		}
 		// Unknown profile — ignore.
 		if !agg.expectedProfiles[sig.PlannerID] {
+			p.setGatewaySignalOutcome(sig.GatewayEntryID, taskstore.SignalFailed, fmt.Sprintf("unknown planner draft profile %q", sig.PlannerID))
 			continue
 		}
 		// Duplicate — ignore.
 		if agg.receivedProfiles[sig.PlannerID] {
+			p.setGatewaySignalOutcome(sig.GatewayEntryID, taskstore.SignalFailed, fmt.Sprintf("duplicate planner draft profile %q", sig.PlannerID))
 			continue
 		}
 		agg.receivedProfiles[sig.PlannerID] = true
 
 		if len(agg.receivedProfiles) < len(agg.expectedProfiles) {
 			// Still waiting for more profiles.
+			p.setGatewaySignalOutcome(sig.GatewayEntryID, taskstore.SignalDone, "planner draft recorded or waiting for peers")
 			continue
 		}
 
-		actions = append(actions, p.synthesizePlannerFinished(sig.TaskFile, agg)...)
+		sigActions := p.synthesizePlannerFinished(sig.TaskFile, agg)
+		if len(sigActions) == 0 {
+			p.setGatewaySignalOutcome(sig.GatewayEntryID, taskstore.SignalFailed, "planner_finished synthesis rejected by processor")
+			continue
+		}
+		actions = append(actions, sigActions...)
 	}
 	return actions
+}
+
+func (p *Processor) setGatewaySignalOutcome(entryID int64, status taskstore.SignalStatus, result string) {
+	if entryID == 0 {
+		return
+	}
+	p.gatewaySignalOutcomes[entryID] = GatewaySignalOutcome{Status: status, Result: result}
+}
+
+// GatewayNoopOutcome returns the processor-specific acknowledgement outcome for
+// a claimed gateway row that produced no actions. Planner draft rows need this
+// context because a no-op can mean either "accepted and waiting for peers" or
+// "rejected as unusable"; other signal types use the shared stateless fallback.
+func (p *Processor) GatewayNoopOutcome(entry *taskstore.SignalEntry) (taskstore.SignalStatus, string) {
+	if entry != nil && entry.ID != 0 {
+		if outcome, ok := p.gatewaySignalOutcomes[entry.ID]; ok {
+			delete(p.gatewaySignalOutcomes, entry.ID)
+			return outcome.Status, outcome.Result
+		}
+	}
+	return GatewayNoopOutcome(entry)
 }
 
 func (p *Processor) synthesizePlannerFinished(planFile string, agg *plannerDraftAgg) []Action {

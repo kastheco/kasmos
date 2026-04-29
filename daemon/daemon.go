@@ -1174,7 +1174,7 @@ func (d *Daemon) tickRepo(ctx context.Context, e RepoEntry) {
 
 		actions := e.Processor.Tick(scan)
 		if len(actions) == 0 {
-			status, result := loop.GatewayNoopOutcome(entry)
+			status, result := e.Processor.GatewayNoopOutcome(entry)
 			if err := e.SignalGateway.MarkProcessed(entry.ID, status, result); err != nil {
 				d.logger.Error("mark noop signal failed", "repo", e.Path, "id", entry.ID, "err", err)
 			}
