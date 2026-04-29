@@ -160,6 +160,15 @@ func BuildPlannerAgentSpecWithOptions(planFile, project, description string, opt
 	}
 }
 
+// PlannerDraftPromptWithCallerPrompt preserves caller-specific planning
+// instructions when draft mode replaces the legacy single-planner prompt.
+func PlannerDraftPromptWithCallerPrompt(draftPrompt, callerPrompt string) string {
+	if callerPrompt == "" {
+		return draftPrompt
+	}
+	return fmt.Sprintf("%s\n\n## caller-provided prompt\n\nFollow this caller-provided planning request while preserving the draft-mode cache and planner_draft_finished instructions above:\n\n%s", draftPrompt, callerPrompt)
+}
+
 // BuildMasterAgentSpec returns the shared prompt/title metadata for the master
 // agent holistic readiness review. The session title follows the canonical
 // "<plan>-verify-<cycle>" pattern so multiple verifiers can run concurrently

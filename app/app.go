@@ -1457,7 +1457,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 								startGroupID = m.nextPlannerFanoutStartGroup(a.PlanFile)
 								draftSpawnGroups[a.PlanFile] = startGroupID
 							}
-							cmd, err := m.spawnPlannerProfileForTask(a.PlanFile, a.PlannerProfile, a.Primary, entry.Description, startGroupID)
+							cmd, err := m.spawnPlannerProfileForTask(a.PlanFile, a.PlannerProfile, a.Primary, entry.Description, "", startGroupID)
 							if err != nil {
 								log.WarningLog.Printf("could not spawn planner profile %q for %q: %v", a.PlannerProfile, a.PlanFile, err)
 								m.markInstanceStartGroupAborted(startGroupID)

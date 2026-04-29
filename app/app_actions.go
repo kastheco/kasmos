@@ -1173,7 +1173,7 @@ func (m *home) spawnPlannersForTask(planFile, legacyPrompt, description string) 
 	var startCmds []tea.Cmd
 	startGroupID := m.nextPlannerFanoutStartGroup(planFile)
 	for i, profileName := range profiles {
-		startCmd, err := m.spawnPlannerProfileForTask(planFile, profileName, i == 0, description, startGroupID)
+		startCmd, err := m.spawnPlannerProfileForTask(planFile, profileName, i == 0, description, legacyPrompt, startGroupID)
 		if err != nil {
 			return m, m.handleError(err)
 		}
@@ -1183,7 +1183,7 @@ func (m *home) spawnPlannersForTask(planFile, legacyPrompt, description string) 
 	return m, tea.Sequence(clearCmd, tea.Batch(startCmds...))
 }
 
-func (m *home) spawnPlannerProfileForTask(planFile, profileName string, primary bool, description, startGroupID string) (tea.Cmd, error) {
+func (m *home) spawnPlannerProfileForTask(planFile, profileName string, primary bool, description, legacyPrompt, startGroupID string) (tea.Cmd, error) {
 	profile, err := m.profileForNamedPlanner(profileName)
 	if err != nil {
 		return nil, err
@@ -1213,7 +1213,7 @@ func (m *home) spawnPlannerProfileForTask(planFile, profileName string, primary 
 		return nil, err
 	}
 	inst.PlannerProfile = profileName
-	inst.QueuedPrompt = spec.Prompt
+	inst.QueuedPrompt = orchestration.PlannerDraftPromptWithCallerPrompt(spec.Prompt, legacyPrompt)
 	inst.SetStatus(session.Loading)
 	inst.LoadingTotal = 5
 	inst.LoadingMessage = "Preparing session..."

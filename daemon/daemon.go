@@ -713,10 +713,7 @@ func (d *Daemon) spawnPlannerForProfile(ctx context.Context, e RepoEntry, planFi
 			DraftMode: true,
 			CachePath: cachePath,
 		})
-		opts.Prompt = spec.Prompt
-		if legacyPrompt != "" {
-			opts.Prompt = fmt.Sprintf("%s\n\n## caller-provided prompt\n\nFollow this caller-provided planning request while preserving the draft-mode cache and planner_draft_finished instructions above:\n\n%s", opts.Prompt, legacyPrompt)
-		}
+		opts.Prompt = orchestration.PlannerDraftPromptWithCallerPrompt(spec.Prompt, legacyPrompt)
 		opts.Program = programForNamedProfile(e.Path, profile)
 		if opts.Program == "" {
 			opts.Program = legacyProgram
@@ -1618,7 +1615,11 @@ func (d *Daemon) executeAction(ctx context.Context, e RepoEntry, action loop.Act
 			}
 		}
 		spec := orchestration.BuildPlannerAgentSpec(a.PlanFile, e.Project, entry.Description)
-		if err := d.spawnPlannerForProfile(ctx, e, a.PlanFile, a.PlannerProfile, a.Primary, a.DraftMode, spec.Prompt, programForAgent(e.Path, session.AgentTypePlanner)); err != nil {
+		prompt := spec.Prompt
+		if a.DraftMode {
+			prompt = ""
+		}
+		if err := d.spawnPlannerForProfile(ctx, e, a.PlanFile, a.PlannerProfile, a.Primary, a.DraftMode, prompt, programForAgent(e.Path, session.AgentTypePlanner)); err != nil {
 			d.logger.Error("spawn planner failed", "plan", a.PlanFile, "err", err)
 			return err
 		}

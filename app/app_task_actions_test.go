@@ -506,7 +506,8 @@ func TestSpawnPlannersForTask_DraftModeSpawnsConfiguredProfiles(t *testing.T) {
 		instanceFinalizers: make(map[*session.Instance]func()),
 	}
 
-	model, cmd := h.spawnPlannersForTask(planFile, "plan prompt", description)
+	const callerPrompt = "plan prompt with clickup import instructions"
+	model, cmd := h.spawnPlannersForTask(planFile, callerPrompt, description)
 	require.NotNil(t, cmd)
 	updated := model.(*home)
 
@@ -516,8 +517,12 @@ func TestSpawnPlannersForTask_DraftModeSpawnsConfiguredProfiles(t *testing.T) {
 	assert.Equal(t, "planner_b", instances[1].PlannerProfile)
 	assert.Contains(t, instances[0].QueuedPrompt, ".kasmos/cache/"+planFile+"-planner-planner_a.md")
 	assert.Contains(t, instances[0].QueuedPrompt, "Write the same draft to the task store as preview content")
+	assert.Contains(t, instances[0].QueuedPrompt, "## caller-provided prompt")
+	assert.Contains(t, instances[0].QueuedPrompt, callerPrompt)
 	assert.Contains(t, instances[1].QueuedPrompt, ".kasmos/cache/"+planFile+"-planner-planner_b.md")
 	assert.NotContains(t, instances[1].QueuedPrompt, "Write the same draft to the task store as preview content")
+	assert.Contains(t, instances[1].QueuedPrompt, "## caller-provided prompt")
+	assert.Contains(t, instances[1].QueuedPrompt, callerPrompt)
 
 	entry, ok := updated.taskState.Entry(planFile)
 	require.True(t, ok)

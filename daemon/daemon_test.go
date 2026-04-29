@@ -1053,6 +1053,57 @@ enabled = true
 		"daemon must kill the partial fan-out on spawn failure (initial kill + cleanup kill)")
 }
 
+func TestDaemon_ExecuteAction_DraftPlannerDoesNotAppendGeneratedLegacyPrompt(t *testing.T) {
+	project := "proj"
+	planFile := "feature.md"
+	store := taskstore.NewTestStore(t)
+	require.NoError(t, store.Create(project, taskstore.TaskEntry{
+		Filename:    planFile,
+		Status:      taskstore.StatusPlanning,
+		Description: "ship feature",
+	}))
+
+	spawned := make(chan loop.SpawnOpts, 1)
+	d := &Daemon{
+		logger:      slog.Default(),
+		broadcaster: api.NewEventBroadcaster(),
+		killAgent: func(repoPath, planFile, agentType string) error {
+			return nil
+		},
+		spawnPlanner: func(_ context.Context, opts loop.SpawnOpts) error {
+			spawned <- opts
+			return nil
+		},
+	}
+	t.Cleanup(func() { d.broadcaster.Close() })
+
+	cacheDir := filepath.Join(t.TempDir(), "cache")
+	require.NoError(t, os.MkdirAll(cacheDir, 0o755))
+	err := d.executeAction(context.Background(), RepoEntry{
+		Path:     t.TempDir(),
+		Project:  project,
+		Store:    store,
+		CacheDir: cacheDir,
+	}, loop.SpawnPlannerAction{
+		PlanFile:       planFile,
+		PlannerProfile: "planner-a",
+		Primary:        true,
+		DraftMode:      true,
+	})
+	require.NoError(t, err)
+
+	select {
+	case opts := <-spawned:
+		assert.Equal(t, "planner-a", opts.PlannerProfile)
+		assert.True(t, opts.PlannerDraftMode)
+		assert.Contains(t, opts.Prompt, filepath.Join(cacheDir, "feature.md-planner-planner-a.md"))
+		assert.Contains(t, opts.Prompt, "planner_draft_finished")
+		assert.NotContains(t, opts.Prompt, "## caller-provided prompt")
+	case <-time.After(time.Second):
+		t.Fatal("planner spawn did not run")
+	}
+}
+
 func TestDaemon_ExecuteAction_DraftPlannerStoreUnavailableReturnsError(t *testing.T) {
 	var spawnCalled bool
 	d := &Daemon{
