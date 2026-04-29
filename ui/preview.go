@@ -813,7 +813,7 @@ func renderComposerFooter(width int, composer string, cursor int, images []strin
 	ruleStyle := lipgloss.NewStyle().Foreground(ColorMuted)
 	promptPrefixStyle := lipgloss.NewStyle().Foreground(ColorRose)
 	placeholderStyle := lipgloss.NewStyle().Foreground(ColorSubtle)
-	composerStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#ffffff"))
+	composerStyle := lipgloss.NewStyle().Foreground(ColorText)
 	hintStyle := lipgloss.NewStyle().Foreground(ColorSubtle)
 	metaStyle := lipgloss.NewStyle().Foreground(ColorIris)
 	attachmentStyle := lipgloss.NewStyle().Foreground(ColorGold)

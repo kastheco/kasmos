@@ -903,7 +903,7 @@ func TestPreviewPane_SDKPresentation_FocusedComposerShowsTypedText(t *testing.T)
 
 	require.Contains(t, stripPreviewANSI(pane.previewState.text), "> hello█")
 	// cursor at end: composed as prefix + composerStyle("hello") + cursorStyle("█")
-	composerStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#ffffff"))
+	composerStyle := lipgloss.NewStyle().Foreground(ColorText)
 	cursorStyle := composerStyle.Reverse(true)
 	require.Contains(t, pane.previewState.text,
 		lipgloss.NewStyle().Foreground(ColorRose).Render(">")+
@@ -2344,7 +2344,7 @@ func TestPreviewPane_SDKComposerCursor_LineMovement(t *testing.T) {
 // verifies that renderComposerPromptBody draws the block cursor at the correct
 // position in the rendered output.
 func TestPreviewPane_SDKPresentation_FocusedComposerShowsCursorAtStartMiddleAndEnd(t *testing.T) {
-	composerSty := lipgloss.NewStyle().Foreground(lipgloss.Color("#ffffff"))
+	composerSty := lipgloss.NewStyle().Foreground(ColorText)
 	cursorSty := composerSty.Reverse(true)
 
 	t.Run("cursor at end appends block glyph", func(t *testing.T) {
