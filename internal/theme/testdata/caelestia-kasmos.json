@@ -1,0 +1,19 @@
+{
+  "colours": {
+    "background": "#101216",
+    "surface": "#1a1d24",
+    "overlay": "#252a33",
+    "muted": "#6d7480",
+    "subtle": "#939aa6",
+    "foreground": "#e6eaf0",
+    "red": "#f07178",
+    "yellow": "#ffcb6b",
+    "accent": "#c792ea",
+    "blue": "#82aaff",
+    "cyan": "#89ddff",
+    "mauve": "#c3a6ff",
+    "gradient_start": "#89ddff",
+    "gradient_end": "#c3a6ff"
+  }
+}
+
