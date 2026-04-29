@@ -12,12 +12,14 @@ import (
 	"testing"
 	"time"
 
+	"charm.land/lipgloss/v2"
 	"github.com/kastheco/kasmos/cmd"
 	"github.com/kastheco/kasmos/config"
 	"github.com/kastheco/kasmos/config/taskfsm"
 	"github.com/kastheco/kasmos/config/taskparser"
 	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/kastheco/kasmos/daemon/api"
+	"github.com/kastheco/kasmos/internal/theme"
 	"github.com/kastheco/kasmos/orchestration"
 	"github.com/kastheco/kasmos/orchestration/loop"
 	"github.com/kastheco/kasmos/session"
@@ -341,6 +343,7 @@ type shellCommandExecutionSession struct {
 	command string
 	err     error
 	stats   sessionsdk.RendererStats
+	turns   []*sessionsdk.PresentationTurn
 }
 
 var _ session.ExecutionSession = (*shellCommandExecutionSession)(nil)
@@ -380,9 +383,76 @@ func (s *shellCommandExecutionSession) SetResourceControls(config.ResolvedResour
 func (s *shellCommandExecutionSession) RendererStats() sessionsdk.RendererStats {
 	return s.stats
 }
+func (s *shellCommandExecutionSession) CapturePresentation() []*sessionsdk.PresentationTurn {
+	return s.turns
+}
 func (s *shellCommandExecutionSession) RunShellCommand(_ context.Context, command string) error {
 	s.command = command
 	return s.err
+}
+
+func TestDaemonStateAdapter_CaptureInstance_RangeUsesRepoPaletteForSDK(t *testing.T) {
+	const (
+		project  = "proj"
+		repoPath = "/tmp/proj"
+		title    = "sdk-agent"
+	)
+	t.Cleanup(func() {
+		theme.SetCurrent(theme.DefaultPalette())
+	})
+	globalPalette := theme.DefaultPalette()
+	globalPalette.Text = "#aabbcc"
+	theme.SetCurrent(globalPalette)
+	repoPalette := theme.DefaultPalette()
+	repoPalette.Text = "#112233"
+
+	spawner := NewTmuxSpawner()
+	broadcaster := api.NewEventBroadcaster()
+	t.Cleanup(func() { broadcaster.Close() })
+	d := &Daemon{
+		repos:       NewRepoManager(),
+		spawner:     spawner,
+		logger:      slog.Default(),
+		broadcaster: broadcaster,
+	}
+	d.repos.repos = []RepoEntry{{
+		Path:    repoPath,
+		Project: project,
+		Theme:   theme.Result{Palette: repoPalette},
+	}}
+
+	execSession := &shellCommandExecutionSession{
+		turns: []*sessionsdk.PresentationTurn{
+			{
+				ID:     "t1",
+				Number: 1,
+				Rows: []sessionsdk.PresentationRow{
+					{Kind: sessionsdk.RowResponse},
+					{Kind: sessionsdk.RowProse, Text: "daemon ranged text"},
+				},
+			},
+		},
+	}
+	inst := &session.Instance{
+		Title:         title,
+		Path:          repoPath,
+		ExecutionMode: session.ExecutionModeSDK,
+		Status:        session.Running,
+	}
+	inst.MarkStartedForTest()
+	inst.SetExecutionSessionForTest(execSession)
+	spawner.commitInstance(
+		instanceKey(repoPath, "plan.md", session.AgentTypeCoder),
+		"plan.md",
+		session.AgentTypeCoder,
+		project,
+		inst,
+	)
+
+	preview, err := (&daemonStateAdapter{d: d}).CaptureInstance(project, title, "0", "999")
+	require.NoError(t, err)
+	assert.Contains(t, preview, lipgloss.NewStyle().Foreground(lipgloss.Color(string(repoPalette.Text))).Render("daemon ranged text"))
+	assert.NotContains(t, preview, lipgloss.NewStyle().Foreground(lipgloss.Color(string(globalPalette.Text))).Render("daemon ranged text"))
 }
 
 func TestDaemonStateAdapter_RunInstanceShellCommand_DelegatesToTrackedSDKInstance(t *testing.T) {

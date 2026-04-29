@@ -50,6 +50,27 @@ func (i *Instance) PreviewWithPalette(palette theme.Palette) (string, error) {
 	return i.executionSession.CapturePaneContent()
 }
 
+// PreviewRangeWithPalette captures a line-range slice of the preview rendered
+// with the supplied palette. SDK-backed instances render the structured
+// presentation first so ranged daemon captures stay visually consistent with
+// full daemon captures; tmux-backed instances keep using native range capture.
+func (i *Instance) PreviewRangeWithPalette(start, end string, palette theme.Palette) (string, error) {
+	if !i.started || i.Status == Paused {
+		return "", nil
+	}
+	if NormalizeExecutionMode(i.ExecutionMode) == ExecutionModeSDK {
+		if turns := i.CapturePresentation(); len(turns) > 0 {
+			width := i.Width
+			if width <= 0 {
+				width = 80
+			}
+			content := sdk.RenderPresentationWithPalette(turns, width, sdk.PresentationPaletteFromTheme(palette))
+			return previewLineRange(content, start, end), nil
+		}
+	}
+	return i.executionSession.CapturePaneContentWithOptions(start, end)
+}
+
 // HasUpdated reports whether the pane content has changed since the last check.
 // Returns (false, false) if the instance has not been started.
 func (i *Instance) HasUpdated() (updated bool, hasPrompt bool) {
@@ -185,10 +206,46 @@ func (i *Instance) PreviewFullHistory() (string, error) {
 // 0-based line offsets, negative values count from the end).
 // Returns an empty string if the instance is not started or is paused.
 func (i *Instance) PreviewRange(start, end string) (string, error) {
-	if !i.started || i.Status == Paused {
-		return "", nil
+	return i.PreviewRangeWithPalette(start, end, theme.Current())
+}
+
+func previewLineRange(content, start, end string) string {
+	if content == "" {
+		return ""
 	}
-	return i.executionSession.CapturePaneContentWithOptions(start, end)
+	lines := strings.Split(content, "\n")
+	n := len(lines)
+	if n == 0 {
+		return ""
+	}
+
+	s := resolvePreviewLineIndex(start, n, 0)
+	e := resolvePreviewLineIndex(end, n, n-1)
+	if s < 0 {
+		s = 0
+	}
+	if e >= n {
+		e = n - 1
+	}
+	if s > e {
+		return ""
+	}
+	return strings.Join(lines[s:e+1], "\n")
+}
+
+func resolvePreviewLineIndex(value string, n, defaultIndex int) int {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" || trimmed == "-" {
+		return defaultIndex
+	}
+	idx, err := strconv.Atoi(trimmed)
+	if err != nil {
+		return defaultIndex
+	}
+	if idx < 0 {
+		return n + idx
+	}
+	return idx
 }
 
 // Interrupt sends a ctrl-C interrupt to the agent.

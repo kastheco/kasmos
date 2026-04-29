@@ -614,7 +614,7 @@ func (h *Handler) handleInstanceAction(w http.ResponseWriter, r *http.Request, a
 
 // handleInstanceCapture serves GET /v1/repos/{project}/instances/{title}/capture.
 // It delegates to the StateProvider which resolves the tracked instance and
-// calls Preview() / PreviewRange(start,end) on it.
+// captures either the full preview or the requested line range.
 func (h *Handler) handleInstanceCapture(w http.ResponseWriter, r *http.Request) {
 	project := r.PathValue("project")
 	title := r.PathValue("title")

@@ -173,6 +173,36 @@ func TestInstance_PreviewWithPalette_UsesSuppliedPaletteNotGlobal(t *testing.T) 
 	assert.NotContains(t, preview, lipgloss.NewStyle().Foreground(lipgloss.Color(string(globalCustom.Text))).Render("per-repo themed text"))
 }
 
+func TestInstance_PreviewRangeWithPalette_UsesSuppliedPaletteForSDKPresentation(t *testing.T) {
+	t.Cleanup(func() {
+		theme.SetCurrent(theme.DefaultPalette())
+	})
+	globalCustom := theme.DefaultPalette()
+	globalCustom.Text = "#aabbcc"
+	theme.SetCurrent(globalCustom)
+
+	repoPalette := theme.DefaultPalette()
+	repoPalette.Text = "#112233"
+
+	inst := &Instance{started: true, ExecutionMode: ExecutionModeSDK}
+	turns := []*sdk.PresentationTurn{
+		{
+			ID:     "t1",
+			Number: 1,
+			Rows: []sdk.PresentationRow{
+				{Kind: sdk.RowResponse},
+				{Kind: sdk.RowProse, Text: "ranged themed text"},
+			},
+		},
+	}
+	inst.SetExecutionSessionForTest(&mockPresentationSession{turns: turns})
+
+	preview, err := inst.PreviewRangeWithPalette("0", "999", repoPalette)
+	require.NoError(t, err)
+	assert.Contains(t, preview, lipgloss.NewStyle().Foreground(lipgloss.Color(string(repoPalette.Text))).Render("ranged themed text"))
+	assert.NotContains(t, preview, lipgloss.NewStyle().Foreground(lipgloss.Color(string(globalCustom.Text))).Render("ranged themed text"))
+}
+
 func TestInstance_SendPromptWithLocalImages_DelegatesToExecutionSession(t *testing.T) {
 	inst := &Instance{started: true, Program: "codex"}
 	mock := &mockLocalImagePromptSession{}
