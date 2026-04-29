@@ -73,7 +73,7 @@ func ValidateArchitectDecisionAudit(a *ArchitectDecisionAudit, planFile, project
 		return fmt.Errorf("architect decision audit project mismatch: got %q, want %q", a.Project, project)
 	}
 	switch strings.TrimSpace(a.BaselineSource) {
-	case "parallel_cache", "inline", "absent", "stale":
+	case "planner_drafts", "parallel_cache", "inline", "absent", "stale":
 	case "":
 		return fmt.Errorf("architect decision audit baseline source is empty")
 	default:

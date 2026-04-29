@@ -74,6 +74,7 @@ func TestArchitectDecisionHandler_PlannerDraftsInAudit(t *testing.T) {
 	decodeResponse(t, resp, &body)
 	assert.True(t, body.Available)
 	require.NotNil(t, body.DecisionAudit)
+	assert.Equal(t, "planner_drafts", body.DecisionAudit.BaselineSource)
 	require.Len(t, body.DecisionAudit.PlannerDrafts, 2)
 	assert.Equal(t, "alpha", body.DecisionAudit.PlannerDrafts[0].Profile)
 	assert.Equal(t, "accept", body.DecisionAudit.PlannerDrafts[0].Decision)
@@ -272,7 +273,7 @@ func writeArchitectMetaWithDrafts(t *testing.T, cacheDir string, createdAt time.
 			PlanFile:       testFilename,
 			Project:        testProject,
 			CreatedAt:      createdAt,
-			BaselineSource: "inline",
+			BaselineSource: "planner_drafts",
 			FinalDecision:  "accepted merged plan",
 			PlannerDrafts: []orchestration.ArchitectPlannerDraftDecision{
 				{Profile: "alpha", Decision: "accept", Summary: "alpha draft accepted"},

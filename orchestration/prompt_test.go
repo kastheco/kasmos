@@ -249,7 +249,7 @@ func TestBuildElaborationPrompt(t *testing.T) {
 	assert.Contains(t, prompt, "planner_summary")
 	assert.Contains(t, prompt, "baseline_summary")
 	assert.Contains(t, prompt, "final_decision")
-	assert.Contains(t, prompt, "`parallel_cache`, `inline`, `absent`, or `stale`")
+	assert.Contains(t, prompt, "`planner_drafts`, `inline`, `absent`, or `stale`")
 	assert.NotContains(t, prompt, "architect-baseline.json")
 	assert.NotContains(t, prompt, "raw planner snapshot")
 	assert.NotContains(t, prompt, "architect-finished")
@@ -311,6 +311,7 @@ func TestBuildArchitectPrompt(t *testing.T) {
 	assert.Contains(t, prompt, "baseline_summary")
 	assert.Contains(t, prompt, "final_decision")
 	assert.Contains(t, prompt, "differences")
+	assert.Contains(t, prompt, "`planner_drafts`, `parallel_cache`, `inline`, `absent`, or `stale`")
 	assert.NotContains(t, prompt, "architect-baseline.json")
 	assert.Contains(t, prompt, "signal_create` (signal_type: \"elaborator-finished\", plan_file: \"my-feature\", project: \"myproject\")")
 	// Signal completion should prefer MCP with filesystem fallback

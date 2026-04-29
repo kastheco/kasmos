@@ -296,8 +296,17 @@ func TestValidateArchitectDecisionAudit(t *testing.T) {
 		FinalDecision:  "accepted unchanged",
 		Summary:        "planner draft accepted unchanged",
 	}, planFile, project))
+	require.NoError(t, ValidateArchitectDecisionAudit(&ArchitectDecisionAudit{
+		SchemaVersion:  architectDecisionAuditSchemaVersion,
+		PlanFile:       planFile,
+		Project:        project,
+		BaselineSource: "planner_drafts",
+		FinalDecision:  "merged the strongest planner drafts",
+		Summary:        "architect consumed planner draft caches",
+	}, planFile, project))
 	// valid planner drafts
 	withDrafts := valid()
+	withDrafts.BaselineSource = "planner_drafts"
 	withDrafts.PlannerDrafts = []ArchitectPlannerDraftDecision{
 		{Profile: "claude", Decision: "accept"},
 		{Profile: "codex", Decision: "reject", Rationale: "too broad"},

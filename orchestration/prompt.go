@@ -331,7 +331,7 @@ func BuildElaborationPromptWithOptions(planFile, project string, opts ArchitectP
 func elaborationDecisionAuditInstructions(planFile, project string) string {
 	return fmt.Sprintf(
 		"   - Preserve the existing wave/task metadata fields and add optional `decision_audit`; do not replace the task metadata with only the audit.\n"+
-			"   - `decision_audit.baseline_source` must be one of `parallel_cache`, `inline`, `absent`, or `stale`.\n"+
+			"   - `decision_audit.baseline_source` must be one of `planner_drafts`, `inline`, `absent`, or `stale`.\n"+
 			"   - Include a short `planner_summary`, a short `baseline_summary`, a `differences` list for each meaningful file, wave, API, UI, docs, or verification change, and a `final_decision` sentence that states the implementation path coders should follow.\n"+
 			"   - Include `summary` as the concise overall audit summary.\n"+
 			"   - Include `planner_drafts` with one entry per consumed planner draft: each entry must have `profile`, `cache_path` (the `.kasmos/cache/%[1]s-planner-<profile>.md` path), `summary`, and `decision`.\n"+
@@ -345,7 +345,7 @@ func elaborationDecisionAuditInstructions(planFile, project string) string {
 			"    \"plan_file\": \"%[1]s\",\n"+
 			"    \"project\": \"%[2]s\",\n"+
 			"    \"created_at\": \"<rfc3339>\",\n"+
-			"    \"baseline_source\": \"inline\",\n"+
+			"    \"baseline_source\": \"planner_drafts\",\n"+
 			"    \"summary\": \"...\",\n"+
 			"    \"planner_summary\": \"...\",\n"+
 			"    \"baseline_summary\": \"...\",\n"+
@@ -364,7 +364,7 @@ func elaborationDecisionAuditInstructions(planFile, project string) string {
 func architectDecisionAuditInstructions(planFile, project string) string {
 	return fmt.Sprintf(
 		"   - Preserve the existing wave/task metadata fields and add optional `decision_audit`; do not replace the task metadata with only the audit.\n"+
-			"   - `decision_audit.baseline_source` must be one of `parallel_cache`, `inline`, `absent`, or `stale`.\n"+
+			"   - `decision_audit.baseline_source` must be one of `planner_drafts`, `parallel_cache`, `inline`, `absent`, or `stale`.\n"+
 			"   - Include a short `planner_summary`, a short `baseline_summary`, a `differences` list for each meaningful file, wave, API, UI, docs, or verification change, and a `final_decision` sentence that states the implementation path coders should follow.\n"+
 			"   - Include `summary` as the concise overall audit summary.\n"+
 			"   - Prefer this metadata shape:\n\n"+
