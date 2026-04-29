@@ -9,10 +9,11 @@ import (
 
 // Options configures palette resolution.
 type Options struct {
-	Source      string
-	Provider    string
-	PaletteFile string
-	GOOS        string
+	Source             string
+	Provider           string
+	PaletteFile        string
+	PaletteFileBaseDir string
+	GOOS               string
 }
 
 // Dependencies contains side-effecting operations used by providers.

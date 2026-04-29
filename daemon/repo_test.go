@@ -94,6 +94,29 @@ theme_palette_file = "` + palettePath + `"
 	assert.False(t, repos[0].Theme.Fallback)
 }
 
+func TestRepoManager_ThemeResolvesRelativePaletteFileFromConfigDir(t *testing.T) {
+	repoDir := t.TempDir()
+	kasmosDir := filepath.Join(repoDir, ".kasmos")
+	require.NoError(t, os.MkdirAll(filepath.Join(kasmosDir, "themes"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(kasmosDir, "themes", "palette.json"), []byte(`{"base":"#203040","foam":"#607080"}`), 0o644))
+	content := `
+[ui]
+theme_source = "system"
+system_theme_provider = "file"
+theme_palette_file = "themes/palette.json"
+`
+	require.NoError(t, os.WriteFile(filepath.Join(kasmosDir, "config.toml"), []byte(content), 0o644))
+
+	rm := newTestRepoManager(t)
+	require.NoError(t, rm.Add(repoDir))
+
+	repos := rm.List()
+	require.Len(t, repos, 1)
+	assert.Equal(t, theme.Color("#203040"), repos[0].Theme.Palette.Base)
+	assert.Equal(t, theme.Color("#607080"), repos[0].Theme.Palette.Foam)
+	assert.False(t, repos[0].Theme.Fallback)
+}
+
 func TestRepoManager_AddDuplicateBasename(t *testing.T) {
 	rm := newTestRepoManager(t)
 	require.NoError(t, rm.Add("/org-a/my-project"))

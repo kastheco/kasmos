@@ -45,6 +45,29 @@ func TestResolveFileProviderAppliesExplicitRolesAndFillsDefaults(t *testing.T) {
 	require.Equal(t, want, result.Palette)
 }
 
+func TestResolveFileProviderResolvesRelativePathFromBaseDir(t *testing.T) {
+	baseDir := filepath.Join(t.TempDir(), ".kasmos")
+	palettePath := filepath.Join("themes", "kasmos.json")
+	deps := Dependencies{
+		ReadFile: func(path string) ([]byte, error) {
+			require.Equal(t, filepath.Join(baseDir, palettePath), path)
+			return []byte(`{"base":"#112233"}`), nil
+		},
+	}
+
+	result := Resolve(context.Background(), Options{
+		Source:             "system",
+		Provider:           "file",
+		PaletteFile:        palettePath,
+		PaletteFileBaseDir: baseDir,
+	}, deps)
+
+	want := DefaultPalette()
+	want.Base = "#112233"
+	require.False(t, result.Fallback)
+	require.Equal(t, want, result.Palette)
+}
+
 func TestResolveBadHexFallsBackWithWarning(t *testing.T) {
 	result := Resolve(context.Background(), Options{
 		Source:      "system",

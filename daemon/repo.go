@@ -256,7 +256,7 @@ func resolveRepoTheme(ctx context.Context, path string) theme.Result {
 	cfg := config.DefaultConfig()
 	projTomlPath := filepath.Join(path, ".kasmos", config.TOMLConfigFileName)
 	if _, err := os.Stat(projTomlPath); err != nil {
-		return resolveTheme(ctx, cfg)
+		return resolveTheme(ctx, cfg, filepath.Dir(projTomlPath))
 	}
 	if result, err := config.LoadTOMLConfigFrom(projTomlPath); err != nil {
 		slog.Warn("daemon: failed to read project theme config, using default theme", "repo", path, "error", err)
@@ -266,14 +266,15 @@ func resolveRepoTheme(ctx context.Context, path string) theme.Result {
 		cfg.ThemePaletteFile = result.ThemePaletteFile
 	}
 
-	return resolveTheme(ctx, cfg)
+	return resolveTheme(ctx, cfg, filepath.Dir(projTomlPath))
 }
 
-func resolveTheme(ctx context.Context, cfg *config.Config) theme.Result {
+func resolveTheme(ctx context.Context, cfg *config.Config, paletteFileBaseDir string) theme.Result {
 	return theme.Resolve(ctx, theme.Options{
-		Source:      cfg.ThemeSource,
-		Provider:    cfg.SystemThemeProvider,
-		PaletteFile: cfg.ThemePaletteFile,
+		Source:             cfg.ThemeSource,
+		Provider:           cfg.SystemThemeProvider,
+		PaletteFile:        cfg.ThemePaletteFile,
+		PaletteFileBaseDir: paletteFileBaseDir,
 	}, theme.Dependencies{
 		ReadFile: os.ReadFile,
 		HomeDir:  os.UserHomeDir,

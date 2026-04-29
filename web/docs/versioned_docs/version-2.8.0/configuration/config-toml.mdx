@@ -76,7 +76,7 @@ effort         = "high"
 | `readiness_max_verify_cycles` | int? | `2` | maximum number of verify-round attempts before the loop is force-promoted to `verify_approved`. Must be a positive integer — values `≤ 0` are rejected at load time and fall back to the default. To disable the readiness gate entirely, set `auto_readiness_review = false` instead. |
 | `theme_source` | string | `"static"` | color palette source: empty/`"static"` uses the built-in Rose Pine Moon palette; `"system"` resolves a Linux system-derived palette |
 | `system_theme_provider` | string | `"auto"` | provider used when `theme_source = "system"`: empty/`"auto"`, `"file"`, `"caelestia"`, `"freedesktop"`, or `"gnome"` |
-| `theme_palette_file` | string | — | palette JSON file used by the `"file"` and `"caelestia"` providers; `~` is expanded |
+| `theme_palette_file` | string | — | palette JSON file used by the `"file"` and `"caelestia"` providers; `~` is expanded, and relative paths resolve from `.kasmos/config.toml`'s directory |
 
 ```toml
 [ui]
@@ -117,7 +117,7 @@ The `"file"` and `"caelestia"` providers read a JSON palette with kasmos semanti
 }
 ```
 
-For Caelestia, configure Caelestia to generate a kasmos-specific palette/template target at the file path you set in `theme_palette_file`; the path above is only an example. Use `system_theme_provider = "file"` for a plain generated JSON file, or `system_theme_provider = "caelestia"` when you want the config to document that Caelestia owns the generated target. kasmos resolves the palette on startup only, so restart kasmos after regenerating the file.
+For Caelestia, configure Caelestia to generate a kasmos-specific palette/template target at the file path you set in `theme_palette_file`; the path above is only an example. Relative paths are resolved from the directory containing `.kasmos/config.toml`, so `theme_palette_file = "themes/kasmos-theme.json"` points at `.kasmos/themes/kasmos-theme.json`. Use `system_theme_provider = "file"` for a plain generated JSON file, or `system_theme_provider = "caelestia"` when you want the config to document that Caelestia owns the generated target. kasmos resolves the palette on startup only, so restart kasmos after regenerating the file.
 
 ## `[telemetry]` — crash reporting
 

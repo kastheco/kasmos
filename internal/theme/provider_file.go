@@ -34,7 +34,7 @@ func resolveFileProvider(opts Options, deps Dependencies, provider Provider) Res
 		return result
 	}
 
-	expanded, err := expandHome(path, deps)
+	expanded, err := resolvePaletteFilePath(path, opts.PaletteFileBaseDir, deps)
 	if err != nil {
 		result.Fallback = true
 		result.Reason = fmt.Sprintf("expand palette file path: %v", err)
@@ -68,6 +68,17 @@ func resolveFileProvider(opts Options, deps Dependencies, provider Provider) Res
 	result.Palette = palette
 	result.Warnings = append(result.Warnings, warnings...)
 	return result
+}
+
+func resolvePaletteFilePath(path, baseDir string, deps Dependencies) (string, error) {
+	expanded, err := expandHome(path, deps)
+	if err != nil {
+		return "", err
+	}
+	if filepath.IsAbs(expanded) || strings.TrimSpace(baseDir) == "" {
+		return filepath.Clean(expanded), nil
+	}
+	return filepath.Join(baseDir, expanded), nil
 }
 
 func expandHome(path string, deps Dependencies) (string, error) {

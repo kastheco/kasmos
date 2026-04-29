@@ -161,6 +161,28 @@ theme_palette_file = %q
 	assert.Equal(t, theme.Color("#101820"), theme.Current().Base)
 }
 
+func TestResolveStartupThemeResolvesRelativePaletteFileFromConfigDir(t *testing.T) {
+	resetThemeForTest(t)
+	t.Setenv("HOME", t.TempDir())
+
+	repoDir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(repoDir, ".git"), 0o755))
+	kasmosDir := filepath.Join(repoDir, ".kasmos")
+	require.NoError(t, os.MkdirAll(filepath.Join(kasmosDir, "themes"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(kasmosDir, "themes", "palette.json"), []byte(`{"base":"#112244"}`), 0o644))
+	t.Chdir(repoDir)
+
+	cfg := config.DefaultConfig()
+	cfg.ThemeSource = "system"
+	cfg.SystemThemeProvider = "file"
+	cfg.ThemePaletteFile = "themes/palette.json"
+
+	result := resolveStartupTheme(context.Background(), cfg)
+
+	require.False(t, result.Fallback)
+	assert.Equal(t, theme.Color("#112244"), result.Palette.Base)
+}
+
 func TestRun_ThemeProviderFailureFallsBackAndInitializesHome(t *testing.T) {
 	resetThemeForTest(t)
 	setupStartupRunTest(t, `

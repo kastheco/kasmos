@@ -118,9 +118,10 @@ func resolveStartupTheme(ctx context.Context, cfg *config.Config) theme.Result {
 		cfg = config.DefaultConfig()
 	}
 	return theme.Resolve(ctx, theme.Options{
-		Source:      cfg.ThemeSource,
-		Provider:    cfg.SystemThemeProvider,
-		PaletteFile: cfg.ThemePaletteFile,
+		Source:             cfg.ThemeSource,
+		Provider:           cfg.SystemThemeProvider,
+		PaletteFile:        cfg.ThemePaletteFile,
+		PaletteFileBaseDir: startupThemeBaseDir(),
 	}, theme.Dependencies{
 		ReadFile: os.ReadFile,
 		HomeDir:  os.UserHomeDir,
@@ -128,6 +129,14 @@ func resolveStartupTheme(ctx context.Context, cfg *config.Config) theme.Result {
 			return exec.CommandContext(ctx, name, args...).Output()
 		},
 	})
+}
+
+func startupThemeBaseDir() string {
+	configDir, err := config.GetConfigDir()
+	if err != nil {
+		return ""
+	}
+	return configDir
 }
 
 func applyStartupTheme(result theme.Result) {
