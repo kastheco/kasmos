@@ -1302,8 +1302,6 @@ func (n *NavigationPanel) RowCount() int { return len(n.rows) }
 // navInstanceTitle returns the human-readable display label for an instance.
 func navInstanceTitle(inst *session.Instance) string {
 	switch {
-	case inst.AgentType == session.AgentTypeArchitectBaseline && inst.TaskFile != "":
-		return "architect baseline"
 	case inst.WaveNumber > 0 && inst.TaskNumber > 0:
 		taskIndex := inst.WaveTaskIndex
 		if taskIndex == 0 {
@@ -1316,6 +1314,9 @@ func navInstanceTitle(inst *session.Instance) string {
 		}
 		return "review"
 	case inst.AgentType == session.AgentTypePlanner && inst.TaskFile != "":
+		if profile := strings.TrimSpace(inst.PlannerProfile); profile != "" {
+			return "planning " + profile
+		}
 		return "planning"
 	case inst.SoloAgent && inst.TaskFile != "":
 		return taskstate.DisplayName(inst.TaskFile)
@@ -1340,20 +1341,10 @@ func navInstanceLifecycleComplete(inst *session.Instance, row navRow) bool {
 	if inst == nil {
 		return false
 	}
-	phase := strings.TrimSpace(row.PlanPhase)
 	status := strings.TrimSpace(row.PlanStatus)
 	switch inst.AgentType {
 	case session.AgentTypePlanner:
 		return status != "" && status != "planning"
-	case session.AgentTypeArchitectBaseline:
-		switch phase {
-		case "architecting", "wave_running", "wave_waiting", "fixing", "single_agent_implementing", "reviewing", "readiness_reviewing":
-			return true
-		}
-		switch status {
-		case "implementing", "reviewing", "verifying", "done":
-			return true
-		}
 	}
 	return false
 }

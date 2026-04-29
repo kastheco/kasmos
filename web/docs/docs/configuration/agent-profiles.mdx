@@ -132,6 +132,8 @@ kasmos resolves a profile for a given lifecycle phase via `config.Config.Resolve
 
 This means you can disable a role without removing it from the config — just set `enabled = false`.
 
+`[orchestration].planners` resolves profile names directly from `[agents.<profile>]`, not through `[phases].planning`. For example, `planners = ["planner", "planner_x"]` requires both `[agents.planner]` and `[agents.planner_x]` to exist and be enabled. If the list is unset or empty, kasmos uses the legacy single-planner resolution through `[phases].planning`.
+
 ## examples
 
 ### claude (tmux, interactive)
@@ -188,6 +190,12 @@ program        = "opencode"
 execution_mode = "tmux"
 effort         = "high"
 
+[agents.planner_x]
+enabled        = true
+program        = "codex"
+execution_mode = "sdk"
+effort         = "high"
+
 [agents.architect]
 enabled        = true
 program        = "claude"
@@ -206,6 +214,9 @@ enabled        = true
 program        = "claude"
 model          = "claude-opus-4-5"
 execution_mode = "sdk"
+
+[orchestration]
+planners = ["planner", "planner_x"]
 ```
 
 ## disabling a role

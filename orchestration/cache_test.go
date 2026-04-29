@@ -10,6 +10,114 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// --- planner draft cache helpers ---
+
+func TestPlannerDraftCacheFilename(t *testing.T) {
+	name, err := PlannerDraftCacheFilename("my-plan", "claude")
+	require.NoError(t, err)
+	assert.Equal(t, "my-plan-planner-claude.md", name)
+
+	_, err = PlannerDraftCacheFilename("", "claude")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "plan slug")
+
+	_, err = PlannerDraftCacheFilename("plan", "")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "profile")
+
+	_, err = PlannerDraftCacheFilename("plan/bad", "claude")
+	require.Error(t, err)
+
+	_, err = PlannerDraftCacheFilename("plan", "pro/file")
+	require.Error(t, err)
+}
+
+func TestSaveAndLoadPlannerDraft(t *testing.T) {
+	tmp := t.TempDir()
+	cacheDir := filepath.Join(tmp, "cache")
+	markdown := "## draft\n\n- wave 1\n- wave 2\n"
+
+	require.NoError(t, SavePlannerDraft(cacheDir, "my-plan", "claude", markdown))
+
+	entry, err := LoadPlannerDraft(cacheDir, "my-plan", "claude")
+	require.NoError(t, err)
+	require.NotNil(t, entry)
+	assert.Equal(t, "claude", entry.Profile)
+	assert.Equal(t, markdown, entry.Markdown)
+	assert.True(t, entry.ModTime.IsZero() == false)
+	assert.NotEmpty(t, entry.Path)
+
+	// cacheDir created
+	info, err := os.Stat(cacheDir)
+	require.NoError(t, err)
+	assert.True(t, info.IsDir())
+}
+
+func TestLoadPlannerDraft_Missing(t *testing.T) {
+	tmp := t.TempDir()
+	entry, err := LoadPlannerDraft(filepath.Join(tmp, "cache"), "plan", "codex")
+	require.NoError(t, err)
+	assert.Nil(t, entry)
+}
+
+func TestListPlannerDraftCaches(t *testing.T) {
+	tmp := t.TempDir()
+	cacheDir := filepath.Join(tmp, "cache")
+
+	require.NoError(t, SavePlannerDraft(cacheDir, "plan", "zephyr", "zephyr draft"))
+	require.NoError(t, SavePlannerDraft(cacheDir, "plan", "alpha", "alpha draft"))
+	require.NoError(t, SavePlannerDraft(cacheDir, "plan", "bravo", "bravo draft"))
+	// unrelated file – should be ignored
+	require.NoError(t, os.WriteFile(filepath.Join(cacheDir, "plan-architect.json"), []byte("{}"), 0o644))
+
+	entries, err := ListPlannerDraftCaches(cacheDir, "plan")
+	require.NoError(t, err)
+	require.Len(t, entries, 3)
+	// sorted by profile
+	assert.Equal(t, "alpha", entries[0].Profile)
+	assert.Equal(t, "bravo", entries[1].Profile)
+	assert.Equal(t, "zephyr", entries[2].Profile)
+	assert.Equal(t, "alpha draft", entries[0].Markdown)
+}
+
+func TestListPlannerDraftCaches_MissingDir(t *testing.T) {
+	tmp := t.TempDir()
+	entries, err := ListPlannerDraftCaches(filepath.Join(tmp, "no-such-dir"), "plan")
+	require.NoError(t, err)
+	assert.Nil(t, entries)
+}
+
+func TestClearPlannerDraftCaches(t *testing.T) {
+	tmp := t.TempDir()
+	cacheDir := filepath.Join(tmp, "cache")
+	planSlug := "plan"
+
+	require.NoError(t, SavePlannerDraft(cacheDir, planSlug, "alpha", "alpha draft"))
+	require.NoError(t, SavePlannerDraft(cacheDir, planSlug, "bravo", "bravo draft"))
+	// legacy baseline file
+	legacyPath := filepath.Join(cacheDir, planSlug+"-architect-baseline.json")
+	require.NoError(t, os.WriteFile(legacyPath, []byte(`{}`), 0o644))
+	// unrelated file – must survive
+	survivorPath := filepath.Join(cacheDir, planSlug+"-architect.json")
+	require.NoError(t, os.WriteFile(survivorPath, []byte(`{}`), 0o644))
+
+	require.NoError(t, ClearPlannerDraftCaches(cacheDir, planSlug))
+
+	entries, err := ListPlannerDraftCaches(cacheDir, planSlug)
+	require.NoError(t, err)
+	assert.Empty(t, entries)
+	assert.NoFileExists(t, legacyPath)
+	assert.FileExists(t, survivorPath)
+
+	// idempotent – missing files are not errors
+	require.NoError(t, ClearPlannerDraftCaches(cacheDir, planSlug))
+}
+
+func TestClearPlannerDraftCaches_MissingDir(t *testing.T) {
+	tmp := t.TempDir()
+	require.NoError(t, ClearPlannerDraftCaches(filepath.Join(tmp, "no-such-dir"), "plan"))
+}
+
 func TestSaveAndLoadArchitectMeta(t *testing.T) {
 	tmp := t.TempDir()
 	cacheDir := filepath.Join(tmp, "cache")
@@ -52,15 +160,24 @@ func TestSaveAndLoadArchitectMeta(t *testing.T) {
 			BaselineSummary: "baseline kept metadata scoped to orchestration cache",
 			FinalDecision:   "store the decision audit inside architect metadata",
 			Differences: []ArchitectDecisionDifference{{
-				Area:              "metadata cache",
-				Scope:             "orchestration",
-				PlannerProposal:   "add an external planner snapshot",
-				ArchitectBaseline: "reuse existing architect cache",
-				FinalDecision:     "add an optional decision_audit object",
-				Rationale:         "keeps cache ownership in one artifact",
-				RelatedFiles:      []string{"orchestration/meta.go", "orchestration/cache.go"},
-				TaskNumbers:       []int{1, 2},
+				Area:             "metadata cache",
+				Scope:            "orchestration",
+				PlannerProposal:  "add an external planner snapshot",
+				BaselineProposal: "reuse existing architect cache",
+				FinalDecision:    "add an optional decision_audit object",
+				Rationale:        "keeps cache ownership in one artifact",
+				RelatedFiles:     []string{"orchestration/meta.go", "orchestration/cache.go"},
+				TaskNumbers:      []int{1, 2},
 			}},
+			PlannerDrafts: []ArchitectPlannerDraftDecision{
+				{
+					Profile:   "claude",
+					CachePath: ".kasmos/cache/planner-planner-claude.md",
+					Summary:   "claude proposed two waves",
+					Decision:  "accept",
+					Rationale: "well-structured",
+				},
+			},
 		},
 	}
 
@@ -179,6 +296,22 @@ func TestValidateArchitectDecisionAudit(t *testing.T) {
 		FinalDecision:  "accepted unchanged",
 		Summary:        "planner draft accepted unchanged",
 	}, planFile, project))
+	require.NoError(t, ValidateArchitectDecisionAudit(&ArchitectDecisionAudit{
+		SchemaVersion:  architectDecisionAuditSchemaVersion,
+		PlanFile:       planFile,
+		Project:        project,
+		BaselineSource: "planner_drafts",
+		FinalDecision:  "merged the strongest planner drafts",
+		Summary:        "architect consumed planner draft caches",
+	}, planFile, project))
+	// valid planner drafts
+	withDrafts := valid()
+	withDrafts.BaselineSource = "planner_drafts"
+	withDrafts.PlannerDrafts = []ArchitectPlannerDraftDecision{
+		{Profile: "claude", Decision: "accept"},
+		{Profile: "codex", Decision: "reject", Rationale: "too broad"},
+	}
+	require.NoError(t, ValidateArchitectDecisionAudit(withDrafts, planFile, project))
 
 	tests := []struct {
 		name      string
@@ -262,6 +395,24 @@ func TestValidateArchitectDecisionAudit(t *testing.T) {
 			}(),
 			errSubstr: "difference 0 final decision is empty",
 		},
+		{
+			name: "planner draft missing profile",
+			audit: func() *ArchitectDecisionAudit {
+				a := valid()
+				a.PlannerDrafts = []ArchitectPlannerDraftDecision{{Profile: "", Decision: "accept"}}
+				return a
+			}(),
+			errSubstr: "planner draft 0 profile is empty",
+		},
+		{
+			name: "planner draft missing decision",
+			audit: func() *ArchitectDecisionAudit {
+				a := valid()
+				a.PlannerDrafts = []ArchitectPlannerDraftDecision{{Profile: "claude", Decision: "  "}}
+				return a
+			}(),
+			errSubstr: "planner draft 0 decision is empty",
+		},
 	}
 
 	for _, tt := range tests {
@@ -271,173 +422,4 @@ func TestValidateArchitectDecisionAudit(t *testing.T) {
 			assert.Contains(t, err.Error(), tt.errSubstr)
 		})
 	}
-}
-
-func TestSaveAndLoadArchitectBaseline(t *testing.T) {
-	tmp := t.TempDir()
-	cacheDir := filepath.Join(tmp, "cache")
-	planSlug := "planner"
-	identity := NewArchitectBaselineIdentity("planner", "kasmos", "goal text")
-	original := &ArchitectBaseline{
-		SchemaVersion:    architectBaselineSchemaVersion,
-		PlanFile:         identity.PlanFile,
-		Project:          identity.Project,
-		DescriptionHash:  identity.DescriptionHash,
-		CreatedAt:        time.Date(2026, 4, 24, 12, 0, 0, 0, time.UTC),
-		BaselineMarkdown: "## baseline\n\n- task shape",
-		Surfaces:         []string{"orchestration"},
-		Risks:            []string{"stale draft"},
-		Notes:            []string{"advisory only"},
-	}
-
-	require.NoError(t, SaveArchitectBaseline(cacheDir, planSlug, original))
-	loaded, err := LoadArchitectBaseline(cacheDir, planSlug)
-	require.NoError(t, err)
-
-	assert.Equal(t, original, loaded)
-	require.NoError(t, ValidateArchitectBaseline(loaded, identity))
-	assert.True(t, ArchitectBaselineExists(cacheDir, planSlug))
-
-	filename := filepath.Join(cacheDir, planSlug+"-architect-baseline.json")
-	require.FileExists(t, filename)
-	data, err := os.ReadFile(filename)
-	require.NoError(t, err)
-	assert.Equal(t, byte('\n'), data[len(data)-1])
-}
-
-func TestArchitectBaselineDescriptionHash(t *testing.T) {
-	assert.Equal(t, ArchitectBaselineDescriptionHash("goal text"), ArchitectBaselineDescriptionHash("goal text"))
-	assert.NotEqual(t, ArchitectBaselineDescriptionHash("goal text"), ArchitectBaselineDescriptionHash("goal text "))
-}
-
-func TestLoadArchitectBaseline_Missing(t *testing.T) {
-	tmp := t.TempDir()
-	cacheDir := filepath.Join(tmp, "cache")
-
-	baseline, err := LoadArchitectBaseline(cacheDir, "missing")
-	require.NoError(t, err)
-	assert.Nil(t, baseline)
-	assert.False(t, ArchitectBaselineExists(cacheDir, "missing"))
-}
-
-func TestLoadArchitectBaseline_CorruptJSON(t *testing.T) {
-	tmp := t.TempDir()
-	cacheDir := filepath.Join(tmp, "cache")
-	require.NoError(t, os.MkdirAll(cacheDir, 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(cacheDir, architectBaselineFilename("planner")), []byte("{bad json"), 0o644))
-
-	baseline, err := LoadArchitectBaseline(cacheDir, "planner")
-	assert.Nil(t, baseline)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "read architect baseline")
-}
-
-func TestValidateArchitectBaseline(t *testing.T) {
-	identity := NewArchitectBaselineIdentity("planner", "kasmos", "goal text")
-	valid := func() *ArchitectBaseline {
-		return &ArchitectBaseline{
-			SchemaVersion:    architectBaselineSchemaVersion,
-			PlanFile:         identity.PlanFile,
-			Project:          identity.Project,
-			DescriptionHash:  identity.DescriptionHash,
-			BaselineMarkdown: "baseline",
-		}
-	}
-
-	tests := []struct {
-		name      string
-		baseline  *ArchitectBaseline
-		expected  ArchitectBaselineIdentity
-		errSubstr string
-	}{
-		{
-			name:      "nil baseline",
-			baseline:  nil,
-			expected:  identity,
-			errSubstr: "nil",
-		},
-		{
-			name: "empty baseline markdown",
-			baseline: func() *ArchitectBaseline {
-				b := valid()
-				b.BaselineMarkdown = ""
-				return b
-			}(),
-			expected:  identity,
-			errSubstr: "markdown is empty",
-		},
-		{
-			name: "mismatched plan file",
-			baseline: func() *ArchitectBaseline {
-				b := valid()
-				b.PlanFile = "other"
-				return b
-			}(),
-			expected:  identity,
-			errSubstr: "plan file mismatch",
-		},
-		{
-			name: "mismatched project",
-			baseline: func() *ArchitectBaseline {
-				b := valid()
-				b.Project = "other"
-				return b
-			}(),
-			expected:  identity,
-			errSubstr: "project mismatch",
-		},
-		{
-			name: "stale identity",
-			baseline: func() *ArchitectBaseline {
-				b := valid()
-				b.DescriptionHash = ArchitectBaselineDescriptionHash("old goal")
-				return b
-			}(),
-			expected:  identity,
-			errSubstr: "description hash mismatch",
-		},
-		{
-			name: "unsupported schema version",
-			baseline: func() *ArchitectBaseline {
-				b := valid()
-				b.SchemaVersion = 999
-				return b
-			}(),
-			expected:  identity,
-			errSubstr: "unsupported",
-		},
-	}
-
-	require.NoError(t, ValidateArchitectBaseline(valid(), identity))
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := ValidateArchitectBaseline(tt.baseline, tt.expected)
-			require.Error(t, err)
-			assert.Contains(t, err.Error(), tt.errSubstr)
-			if tt.name == "stale identity" {
-				assert.Contains(t, err.Error(), tt.baseline.DescriptionHash)
-				assert.Contains(t, err.Error(), tt.expected.DescriptionHash)
-			}
-		})
-	}
-}
-
-func TestClearArchitectBaseline(t *testing.T) {
-	tmp := t.TempDir()
-	cacheDir := filepath.Join(tmp, "cache")
-	planSlug := "planner"
-
-	require.NoError(t, SaveArchitectMeta(cacheDir, planSlug, &ArchitectMeta{}))
-	require.NoError(t, SaveArchitectBaseline(cacheDir, planSlug, &ArchitectBaseline{
-		SchemaVersion:    architectBaselineSchemaVersion,
-		PlanFile:         "planner",
-		Project:          "kasmos",
-		DescriptionHash:  ArchitectBaselineDescriptionHash("goal"),
-		BaselineMarkdown: "baseline",
-	}))
-
-	require.NoError(t, ClearArchitectBaseline(cacheDir, planSlug))
-	assert.False(t, ArchitectBaselineExists(cacheDir, planSlug))
-	assert.True(t, ArchitectMetaExists(cacheDir, planSlug))
-	require.NoError(t, ClearArchitectBaseline(cacheDir, planSlug))
 }

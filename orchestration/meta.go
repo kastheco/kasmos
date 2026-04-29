@@ -18,49 +18,39 @@ type ArchitectMeta struct {
 // ArchitectDecisionAudit records the architect's baseline-vs-planner comparison
 // and the final decision set that shaped the architect metadata.
 type ArchitectDecisionAudit struct {
-	SchemaVersion   int                           `json:"schema_version"`
-	PlanFile        string                        `json:"plan_file"`
-	Project         string                        `json:"project"`
-	CreatedAt       time.Time                     `json:"created_at"`
-	BaselineSource  string                        `json:"baseline_source,omitempty"`
-	Summary         string                        `json:"summary,omitempty"`
-	PlannerSummary  string                        `json:"planner_summary,omitempty"`
-	BaselineSummary string                        `json:"baseline_summary,omitempty"`
-	FinalDecision   string                        `json:"final_decision,omitempty"`
-	Differences     []ArchitectDecisionDifference `json:"differences,omitempty"`
+	SchemaVersion   int                             `json:"schema_version"`
+	PlanFile        string                          `json:"plan_file"`
+	Project         string                          `json:"project"`
+	CreatedAt       time.Time                       `json:"created_at"`
+	BaselineSource  string                          `json:"baseline_source,omitempty"`
+	Summary         string                          `json:"summary,omitempty"`
+	PlannerSummary  string                          `json:"planner_summary,omitempty"`
+	BaselineSummary string                          `json:"baseline_summary,omitempty"`
+	FinalDecision   string                          `json:"final_decision,omitempty"`
+	Differences     []ArchitectDecisionDifference   `json:"differences,omitempty"`
+	PlannerDrafts   []ArchitectPlannerDraftDecision `json:"planner_drafts,omitempty"`
+}
+
+// ArchitectPlannerDraftDecision records how the architect evaluated one planner's draft
+// during the multi-planner aggregation step.
+type ArchitectPlannerDraftDecision struct {
+	Profile   string `json:"profile"`
+	CachePath string `json:"cache_path,omitempty"`
+	Summary   string `json:"summary,omitempty"`
+	Decision  string `json:"decision"`
+	Rationale string `json:"rationale,omitempty"`
 }
 
 // ArchitectDecisionDifference describes one planner-vs-architect decision point.
 type ArchitectDecisionDifference struct {
-	Area              string   `json:"area"`
-	Scope             string   `json:"scope,omitempty"`
-	PlannerProposal   string   `json:"planner_proposal,omitempty"`
-	ArchitectBaseline string   `json:"architect_baseline,omitempty"`
-	FinalDecision     string   `json:"final_decision"`
-	Rationale         string   `json:"rationale,omitempty"`
-	RelatedFiles      []string `json:"related_files,omitempty"`
-	TaskNumbers       []int    `json:"task_numbers,omitempty"`
-}
-
-// ArchitectBaseline holds advisory self-planning output produced before the final architect pass.
-// It is serialized to .kasmos/cache/<plan-slug>-architect-baseline.json and never replaces final metadata.
-type ArchitectBaseline struct {
-	SchemaVersion    int       `json:"schema_version"`
-	PlanFile         string    `json:"plan_file"`
-	Project          string    `json:"project"`
-	DescriptionHash  string    `json:"description_hash"`
-	CreatedAt        time.Time `json:"created_at"`
-	BaselineMarkdown string    `json:"baseline_markdown"`
-	Surfaces         []string  `json:"surfaces,omitempty"`
-	Risks            []string  `json:"risks,omitempty"`
-	Notes            []string  `json:"notes,omitempty"`
-}
-
-// ArchitectBaselineIdentity identifies the planner input that a baseline cache entry belongs to.
-type ArchitectBaselineIdentity struct {
-	PlanFile        string
-	Project         string
-	DescriptionHash string
+	Area             string   `json:"area"`
+	Scope            string   `json:"scope,omitempty"`
+	PlannerProposal  string   `json:"planner_proposal,omitempty"`
+	BaselineProposal string   `json:"baseline_proposal,omitempty"`
+	FinalDecision    string   `json:"final_decision"`
+	Rationale        string   `json:"rationale,omitempty"`
+	RelatedFiles     []string `json:"related_files,omitempty"`
+	TaskNumbers      []int    `json:"task_numbers,omitempty"`
 }
 
 // WaveMeta describes a single wave within an architect metadata document,

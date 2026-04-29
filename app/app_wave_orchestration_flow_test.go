@@ -653,10 +653,10 @@ func TestTriggerPlanStage_ImplementNoWaves_RespawnsPlanner(t *testing.T) {
 
 	sp := spinner.New(spinner.WithSpinner(spinner.Dot))
 	list := ui.NewNavigationPanel(&sp)
-	// Use planner-only config: this test covers wave-parse failure re-planning,
-	// not the parallel architect-baseline default behaviour.
+	// Use legacy planner config: this test covers wave-parse failure re-planning,
+	// not parallel planner fan-out.
 	noParallelCfg := config.DefaultConfig()
-	noParallelCfg.ParallelPlannerArchitect = false
+	noParallelCfg.Planners = nil // nil = legacy single-planner mode (no parallel planners)
 	h := &home{
 		ctx:               context.Background(),
 		state:             stateDefault,
@@ -2419,22 +2419,13 @@ func TestImplementTriggersElaborationBeforeWave1(t *testing.T) {
 	assert.True(t, foundArchitect, "architect instance must be spawned")
 }
 
-func TestImplementFinalArchitectPromptUsesParallelBaselineOptionsWhenEnabled(t *testing.T) {
+func TestImplementFinalArchitectPromptReadsPlannerDraftCaches(t *testing.T) {
 	t.Parallel()
 	h := newWaveElabTestHarness(t)
-	h.h.appConfig.ParallelPlannerArchitect = true
 
 	const planFile = "parallel-elab-test"
-	const description = "merge planner draft with cached baseline"
 	planContent := "**Goal:** test\n\n## Wave 1\n\n### Task 1: Do thing\n\n**Files:**\n- Create: `foo.go`\n\nImplement foo."
 	h.registerPlan(planFile, planContent, "plan/parallel-elab-test")
-	entry, err := h.store.Get("proj", planFile)
-	require.NoError(t, err)
-	entry.Description = description
-	require.NoError(t, h.store.Update("proj", planFile, entry))
-	ps, err := taskstate.Load(h.store, "proj", h.plansDir)
-	require.NoError(t, err)
-	h.h.taskState = ps
 
 	model, _ := h.executeTaskStage(planFile, "implement")
 	m := model.(*home)
@@ -2447,9 +2438,9 @@ func TestImplementFinalArchitectPromptUsesParallelBaselineOptionsWhenEnabled(t *
 		}
 	}
 	require.NotNil(t, architect)
-	assert.Contains(t, architect.QueuedPrompt, ".kasmos/cache/"+planFile+"-architect-baseline.json")
-	assert.Contains(t, architect.QueuedPrompt, "`description_hash` equals \""+orchestration.ArchitectBaselineDescriptionHash(description)+"\"")
-	assert.Contains(t, architect.QueuedPrompt, "merge the planner draft plus cached baseline")
+	assert.Contains(t, architect.QueuedPrompt, ".kasmos/cache/"+planFile+"-planner-")
+	assert.Contains(t, architect.QueuedPrompt, "derive an independent implementation baseline")
+	assert.NotContains(t, architect.QueuedPrompt, "description_hash")
 }
 
 func TestImplementFinalArchitectPromptStaysInlineBaselineWhenDisabled(t *testing.T) {
@@ -2471,33 +2462,8 @@ func TestImplementFinalArchitectPromptStaysInlineBaselineWhenDisabled(t *testing
 		}
 	}
 	require.NotNil(t, architect)
-	assert.NotContains(t, architect.QueuedPrompt, "architect-baseline.json")
+	assert.NotContains(t, architect.QueuedPrompt, "description_hash")
 	assert.Contains(t, architect.QueuedPrompt, "derive an independent implementation baseline")
-}
-
-func TestClearArchitectBaselineCmdRemovesOnlyBaselineArtifact(t *testing.T) {
-	t.Parallel()
-	dir := t.TempDir()
-	const planFile = "stale-baseline"
-	cacheDir := filepath.Join(dir, ".kasmos", "cache")
-	require.NoError(t, orchestration.SaveArchitectBaseline(cacheDir, planFile, &orchestration.ArchitectBaseline{
-		SchemaVersion:    1,
-		PlanFile:         planFile,
-		Project:          "proj",
-		DescriptionHash:  orchestration.ArchitectBaselineDescriptionHash("old"),
-		BaselineMarkdown: "old baseline",
-	}))
-	require.NoError(t, orchestration.SaveArchitectMeta(cacheDir, planFile, &orchestration.ArchitectMeta{}))
-
-	h := home{
-		appConfig:      &config.Config{ParallelPlannerArchitect: true},
-		activeRepoPath: dir,
-	}
-	cmd := h.clearArchitectBaselineCmd(planFile)
-	require.NotNil(t, cmd)
-	assert.Nil(t, cmd())
-	assert.False(t, orchestration.ArchitectBaselineExists(cacheDir, planFile))
-	assert.True(t, orchestration.ArchitectMetaExists(cacheDir, planFile))
 }
 
 func TestElaborationSignal_RefreshesWavePlanAndTaskStateBeforeWave1Starts(t *testing.T) {

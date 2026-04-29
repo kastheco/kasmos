@@ -8,6 +8,7 @@ import (
 	"github.com/kastheco/kasmos/config/taskfsm"
 	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/kastheco/kasmos/daemon/api"
+	"github.com/kastheco/kasmos/orchestration/loop"
 	"github.com/kastheco/kasmos/session"
 	tmuxpkg "github.com/kastheco/kasmos/session/tmux"
 	"github.com/stretchr/testify/assert"
@@ -32,12 +33,13 @@ func TestGatewayNoopOutcome_Characterization(t *testing.T) {
 		{name: "stray verify_failed is explicit", signalType: "verify_failed", status: taskstore.SignalFailed, result: "signal rejected outside verifying state"},
 		{name: "deprecated readiness_approved alias is explicit", signalType: "readiness_approved", status: taskstore.SignalFailed, result: "signal rejected outside verifying state"},
 		{name: "deprecated readiness_changes_requested alias is explicit", signalType: "readiness_changes_requested", status: taskstore.SignalFailed, result: "signal rejected outside verifying state"},
+		{name: "planner draft no-op without processor context fails", signalType: "planner_draft_finished", status: taskstore.SignalFailed, result: "planner draft signal rejected by processor"},
 		{name: "unexpected signals are rejected", signalType: "planner_finished", status: taskstore.SignalFailed, result: "signal rejected by processor"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			status, result := gatewayNoopOutcome(&taskstore.SignalEntry{SignalType: tt.signalType})
+			status, result := loop.GatewayNoopOutcome(&taskstore.SignalEntry{SignalType: tt.signalType})
 			assert.Equal(t, tt.status, status)
 			assert.Equal(t, tt.result, result)
 		})

@@ -553,6 +553,68 @@ func TestSignalCreateHandler_SingleProjectInMultiModeAcceptsWithoutArg(t *testin
 	assert.Equal(t, "solo-plan", signals[0].PlanFile)
 }
 
+func TestSignalCreateHandler_PlannerDraftFinished(t *testing.T) {
+	tests := []struct {
+		name      string
+		payload   string
+		wantError string
+	}{
+		{
+			name:      "valid payload accepted",
+			payload:   `{"planner_id":"planner_x"}`,
+			wantError: "",
+		},
+		{
+			name:      "empty payload rejected",
+			payload:   "",
+			wantError: "requires JSON with a non-empty planner_id",
+		},
+		{
+			name:      "non-string planner_id rejected",
+			payload:   `{"planner_id":42}`,
+			wantError: "planner_id must be a string",
+		},
+		{
+			name:      "empty string planner_id rejected",
+			payload:   `{"planner_id":""}`,
+			wantError: "planner_id must not be empty",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dbPath := filepath.Join(t.TempDir(), "signals.db")
+			gw, err := taskstore.NewSQLiteSignalGateway(dbPath)
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = gw.Close() })
+
+			handler := makeSignalCreateHandler(routing.NewRegisterConfig("test-project", nil), gw)
+			result, err := handler(context.Background(), mockReq(map[string]any{
+				"signal_type": "planner_draft_finished",
+				"plan_file":   "my-feature",
+				"payload":     tt.payload,
+			}))
+			require.NoError(t, err)
+
+			if tt.wantError != "" {
+				require.True(t, result.IsError)
+				assert.Contains(t, textResult(t, result), tt.wantError)
+				signals, listErr := gw.List("test-project", taskstore.SignalPending)
+				require.NoError(t, listErr)
+				assert.Empty(t, signals)
+				return
+			}
+
+			assert.False(t, result.IsError)
+			signals, listErr := gw.List("test-project", taskstore.SignalPending)
+			require.NoError(t, listErr)
+			require.Len(t, signals, 1)
+			assert.Equal(t, "planner_draft_finished", signals[0].SignalType)
+			assert.JSONEq(t, tt.payload, signals[0].Payload)
+		})
+	}
+}
+
 func TestSignalCreateHandler_UsesGlobalSQLiteWhenGatewayNil(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	project := "test-project"

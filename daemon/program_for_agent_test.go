@@ -268,6 +268,37 @@ func TestProgramForAgent(t *testing.T) {
 	})
 }
 
+func TestNamedPlannerProfileHelpers(t *testing.T) {
+	repoDir := t.TempDir()
+	kasmosDir := filepath.Join(repoDir, ".kasmos")
+	require.NoError(t, os.MkdirAll(kasmosDir, 0o755))
+
+	configContent := `
+[agents]
+  [agents.planner-a]
+    enabled = true
+    program = "codex"
+    model = "gpt-5.5"
+    effort = "low"
+    execution_mode = "headless"
+    tier = "default"
+    permission_default = "prompt"
+`
+	require.NoError(t, os.WriteFile(
+		filepath.Join(kasmosDir, "config.toml"),
+		[]byte(configContent),
+		0o644,
+	))
+
+	registry := harness.NewRegistry()
+	got := programForNamedProfileWithRegistry(repoDir, "planner-a", registry)
+	assert.Contains(t, got, "codex -m gpt-5.5")
+	assert.Contains(t, got, "-c model_reasoning_effort=low")
+	assert.Equal(t, session.ExecutionMode(config.ExecutionModeSDK), executionModeForNamedProfile(repoDir, "planner-a"))
+	assert.Equal(t, "flex", sdkSpeedTierForNamedProfile(repoDir, "planner-a"))
+	assert.False(t, skipPermissionsForNamedProfile(repoDir, "planner-a"))
+}
+
 func TestExecutionModeForAgent(t *testing.T) {
 	repoDir := t.TempDir()
 	kasmosDir := filepath.Join(repoDir, ".kasmos")

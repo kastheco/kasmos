@@ -162,13 +162,14 @@ the `Claim` operation is a serializable transaction: it updates the row to `proc
 | `elaborator_finished` | architect | update plan content, begin wave 1 |
 | `review_approved` | reviewer | FSM transition `reviewing → verifying` (spawn master agent) when `auto_readiness_review = true`; otherwise `reviewing → done` |
 | `review_changes_requested` | reviewer | FSM transition → `implementing`, spawn fixer |
-| `planner_finished` | planner | FSM transition → `ready` |
+| `planner_finished` | planner | legacy/manual FSM transition → `ready` |
+| `planner_draft_finished` | draft-mode planner | gateway-only planner draft aggregation; payload must be `{"planner_id":"<profile>"}` |
 | `verify_approved` | master agent | FSM transition `verifying → done`. **No loop-cap signal is ever written to the gateway.** |
 | `verify_failed` | master agent | FSM transition `verifying → implementing`, spawn fixer. when `readiness_max_verify_cycles` is reached, the processor consumes the `verify_failed` signal but applies the `verifying → done` transition instead — no new `verify_approved` signal row is created, and the original `verify_failed` row is still marked processed. callers distinguish the in-memory force-promotion via the `ForcePromoted` flag on the emitted `VerifyApprovedAction`. |
 
 > **architect completion:** the canonical internal event is `architect_finished`, but the persisted gateway signal wire name is `elaborator_finished` (a legacy alias preserved for compatibility). `kas signal emit architect_finished` is accepted and normalized to `elaborator_finished` transparently.
 
-> **parallel architect baseline:** the `architect baseline` session is default-on, is not a lifecycle phase, and emits no signal. `plan_start` clears the advisory cache and spawns the planner plus the baseline session by default; normal progress still flows through `planner_finished` and then `elaborator_finished`. Set `[orchestration].parallel_planner_architect = false` to disable.
+> **planner drafts:** when `[orchestration].planners` is unset or empty, planning uses the legacy single-planner `planner_finished` signal. when the planner list is set, `plan_start` clears stale planner draft caches, spawns each listed profile in draft mode, and waits for `planner_draft_finished` gateway rows. the processor aggregates those rows and internally applies the planning completion transition once all configured profiles have reported.
 
 > **deprecated aliases:** `readiness_approved` → `verify_approved`; `readiness_changes_requested` / `readiness-changes` / `readiness-changes-requested` / `master_approved` → `verify_failed`. these aliases are accepted at ingress and canonicalized — use `verify_approved` / `verify_failed` in new automation.
 
@@ -180,7 +181,7 @@ Wave-processing outcomes are also emitted to the audit log and daemon event stre
 kas signal emit implement_task_finished my-plan --payload '{"wave_number":2,"task_number":3}'
 ```
 
-this calls `gateway.Create(project, entry)` which inserts a row with `status = 'pending'`. in agent workflows, use mcp `signal_create` for the same gateway-backed result without shelling out to the cli.
+this calls `gateway.Create(project, entry)` which inserts a row with `status = 'pending'`. in agent workflows, use mcp `signal_create` for the same gateway-backed result without shelling out to the cli. draft-mode planners should use `planner_draft_finished` with a payload such as `{"planner_id":"planner_x"}`; that signal is gateway-only and is not bridged through filesystem sentinels.
 
 ### stuck signal reaper
 

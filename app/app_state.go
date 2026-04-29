@@ -60,7 +60,7 @@ func waitForDaemonPlannerInstance(project string, data session.InstanceData) (*s
 			statuses, err := listDaemonInstances(project)
 			if err == nil {
 				for _, status := range statuses {
-					if status.Title != data.Title || !status.Active {
+					if !daemonPlannerStatusMatches(data, status) {
 						continue
 					}
 					inst, restoreErr := restoreDaemonInstance(data.Path, status)
@@ -90,6 +90,28 @@ func waitForDaemonPlannerInstance(project string, data session.InstanceData) (*s
 		return nil, lastErr
 	}
 	return nil, fmt.Errorf("planner session did not appear")
+}
+
+func daemonPlannerStatusMatches(data session.InstanceData, status api.InstanceStatus) bool {
+	if !status.Active {
+		return false
+	}
+	if status.Title == data.Title {
+		if data.CreatedAt.IsZero() {
+			return true
+		}
+		return status.CreatedAt != nil && !status.CreatedAt.Before(data.CreatedAt)
+	}
+	if data.TaskFile == "" || status.Plan != data.TaskFile || status.Role != session.AgentTypePlanner {
+		return false
+	}
+	if !strings.HasPrefix(status.Title, data.Title+"-") {
+		return false
+	}
+	if data.CreatedAt.IsZero() || status.CreatedAt == nil {
+		return false
+	}
+	return !status.CreatedAt.Before(data.CreatedAt)
 }
 
 // spawnSoloWithDaemon is a seam for tests. It POSTs to the daemon's
@@ -125,6 +147,7 @@ func waitForDaemonTitle(project, title string) error {
 
 var spawnPlannerWithDaemon = func(repoPath, project, planFile, title, prompt, program string) (*session.Instance, error) {
 	client := daemonpkg.NewSocketClient(taskstore.ResolvedDaemonSocketPath())
+	requestedAt := time.Now()
 	if err := client.StartPlan(project, planFile, prompt, program); err != nil {
 		return nil, err
 	}
@@ -132,8 +155,8 @@ var spawnPlannerWithDaemon = func(repoPath, project, planFile, title, prompt, pr
 	data := session.InstanceData{
 		Title:         title,
 		Path:          repoPath,
-		CreatedAt:     time.Now(),
-		UpdatedAt:     time.Now(),
+		CreatedAt:     requestedAt,
+		UpdatedAt:     requestedAt,
 		Program:       program,
 		ExecutionMode: session.ExecutionModeTmux,
 		TaskFile:      planFile,
@@ -227,6 +250,11 @@ func (m *home) ensureProcessor() *loop.Processor {
 		maxCycles = m.appConfig.MaxReviewFixCycles
 		autoReadinessReview = m.appConfig.AutoReadinessReview
 	}
+	var plannerProfiles []string
+	if m.appConfig != nil {
+		plannerProfiles = m.appConfig.PlannerProfileNames()
+	}
+	plannerDraftMode := len(plannerProfiles) > 0
 	if m.processor != nil {
 		m.processor.SetReviewFixConfig(autoReviewFix, maxCycles)
 		m.processor.SetReadinessReviewConfig(autoReadinessReview)
@@ -249,6 +277,9 @@ func (m *home) ensureProcessor() *loop.Processor {
 		Dir:                 m.taskStateDir,
 		MaxReviewFixCycles:  maxCycles,
 		Hooks:               hooks,
+		PlannerProfiles:     plannerProfiles,
+		PlannerDraftMode:    plannerDraftMode,
+		CacheDir:            filepath.Join(m.activeRepoPath, ".kasmos", "cache"),
 	})
 	return m.processor
 }
@@ -1245,6 +1276,36 @@ func (m *home) removeFromAllInstances(title string) {
 	m.allInstances = filtered
 }
 
+func (m *home) isDraftPlannerFanoutInstance(inst *session.Instance) bool {
+	return inst != nil &&
+		inst.TaskFile != "" &&
+		inst.AgentType == session.AgentTypePlanner &&
+		inst.PlannerProfile != ""
+}
+
+func (m *home) nextPlannerFanoutStartGroup(planFile string) string {
+	m.plannerFanoutSeq++
+	return fmt.Sprintf("planner:%s:%d", planFile, m.plannerFanoutSeq)
+}
+
+func (m *home) markInstanceStartGroupAborted(groupID string) {
+	if groupID == "" {
+		return
+	}
+	if m.abortedInstanceStartGroups == nil {
+		m.abortedInstanceStartGroups = make(map[string]struct{})
+	}
+	m.abortedInstanceStartGroups[groupID] = struct{}{}
+}
+
+func (m *home) instanceStartGroupAborted(groupID string) bool {
+	if groupID == "" || m.abortedInstanceStartGroups == nil {
+		return false
+	}
+	_, ok := m.abortedInstanceStartGroups[groupID]
+	return ok
+}
+
 // dismissInstanceFromList removes inst from the sidebar, allInstances, and
 // persistence in a single step. Both the delete/backspace path and the k+k+k
 // triple-tap path use this helper so list-mutation semantics stay single-sourced.
@@ -1587,6 +1648,7 @@ func (m *home) updateInfoPane() {
 		Path:            selected.Path,
 		Status:          statusString(selected.Status),
 		AgentType:       selected.AgentType,
+		PlannerProfile:  selected.PlannerProfile,
 		TaskNumber:      selected.TaskNumber,
 		WaveNumber:      selected.WaveNumber,
 		WaveTaskIndex:   selected.WaveTaskIndex,
@@ -2147,6 +2209,17 @@ func (m *home) profileForAgent(agentType string) config.AgentProfile {
 	return profile
 }
 
+func (m *home) profileForNamedPlanner(name string) (config.AgentProfile, error) {
+	if m.appConfig == nil {
+		return config.AgentProfile{}, fmt.Errorf("planner profile %q requires app config", name)
+	}
+	profile, ok := m.appConfig.ResolveNamedProfile(name, m.program)
+	if !ok {
+		return config.AgentProfile{}, fmt.Errorf("planner profile %q is not configured or enabled", name)
+	}
+	return profile, nil
+}
+
 // programForAgent resolves the program command for a given agent type
 // (e.g. "coder", "planner") using the kasmos config profile. Falls back to
 // m.program if no profile is configured.
@@ -2482,6 +2555,7 @@ func (m *home) killExistingPlanAgent(planFile, agentType string) {
 			m.previewTerminalInstance = ""
 		}
 		if inst != nil {
+			delete(m.instanceFinalizers, inst)
 			if err := inst.Kill(); err != nil {
 				log.WarningLog.Printf("could not kill old %s for %q: %v", agentType, planFile, err)
 			}
@@ -2594,16 +2668,7 @@ func (m *home) spawnElaborator(planFile string) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	planName := taskstate.DisplayName(planFile)
-	description := ""
-	if m.taskState != nil {
-		if entry, ok := m.taskState.Entry(planFile); ok {
-			description = entry.Description
-		}
-	}
-	spec := orchestration.BuildArchitectAgentSpecWithOptions(planFile, m.taskStoreProject, orchestration.ArchitectPromptOptions{
-		ParallelBaseline: m.parallelPlannerArchitectEnabled(),
-		DescriptionHash:  orchestration.ArchitectBaselineDescriptionHash(description),
-	})
+	spec := orchestration.BuildArchitectAgentSpec(planFile, m.taskStoreProject)
 
 	// Clear any stale elaborator_finished sentinel before starting a new architect pass.
 	// Signal processing is edge-unaware, so a stale file would advance the current
@@ -2651,75 +2716,6 @@ func (m *home) spawnElaborator(planFile string) (tea.Model, tea.Cmd) {
 
 	m.toastManager.Info(fmt.Sprintf("running architect pass for '%s' before implementation", planName))
 	return m, tea.Batch(tea.RequestWindowSize, startCmd, m.toastTickCmd())
-}
-
-func (m home) parallelPlannerArchitectEnabled() bool {
-	return m.appConfig != nil && m.appConfig.ParallelPlannerArchitect
-}
-
-func (m home) architectBaselineCacheDir() string {
-	return filepath.Join(m.activeRepoPath, ".kasmos", "cache")
-}
-
-func (m home) clearArchitectBaselineCmd(planFile string) tea.Cmd {
-	if !m.parallelPlannerArchitectEnabled() || repoManagedByDaemon(m.activeRepoPath) {
-		return nil
-	}
-	cacheDir := m.architectBaselineCacheDir()
-	return func() tea.Msg {
-		if err := orchestration.ClearArchitectBaseline(cacheDir, planFile); err != nil {
-			return err
-		}
-		return nil
-	}
-}
-
-func (m home) spawnArchitectBaseline(planFile, description string) (tea.Model, tea.Cmd) {
-	if !m.requireDaemonForAgents() {
-		return &m, nil
-	}
-	if repoManagedByDaemon(m.activeRepoPath) {
-		return &m, nil
-	}
-
-	spec := orchestration.BuildArchitectBaselineAgentSpec(planFile, m.taskStoreProject, description)
-	agentType := session.AgentTypeArchitectBaseline
-	if err := scaffold.PatchWorktreeConfig(m.activeRepoPath, m.opencodeAgentConfigs()); err != nil {
-		return &m, m.handleError(err)
-	}
-	m.killExistingPlanAgent(planFile, agentType)
-
-	inst, err := session.NewInstance(m.withRetentionOpts(session.InstanceOptions{
-		Title:           spec.Title,
-		Path:            m.activeRepoPath,
-		Program:         m.programForAgent(session.AgentTypeElaborator),
-		ExecutionMode:   m.executionModeForAgent(session.AgentTypeElaborator),
-		SDKSpeedTier:    m.sdkSpeedTierForAgent(session.AgentTypeElaborator),
-		SkipPermissions: m.skipPermissionsForAgent(session.AgentTypeElaborator),
-		TaskFile:        planFile,
-		AgentType:       agentType,
-		ClaudeNoFlicker: m.claudeNoFlicker(),
-	}))
-	if err != nil {
-		return &m, m.handleError(err)
-	}
-	inst.QueuedPrompt = spec.Prompt
-	inst.SetStatus(session.Loading)
-	inst.LoadingTotal = 5
-	inst.LoadingMessage = "Preparing session..."
-
-	m.audit(auditlog.EventAgentSpawned, fmt.Sprintf("spawned architect-baseline for plan %s", taskstate.DisplayName(planFile)),
-		auditlog.WithPlan(planFile),
-		auditlog.WithInstance(spec.Title),
-		auditlog.WithAgent(agentType),
-	)
-
-	m.addInstanceFinalizer(inst, m.nav.AddInstance(inst))
-	m.nav.SelectInstance(inst)
-	startCmd := func() tea.Msg {
-		return instanceStartedMsg{instance: inst, err: inst.StartOnMainBranch()}
-	}
-	return &m, tea.Batch(tea.RequestWindowSize, startCmd)
 }
 
 // blueprintSkipThreshold returns the configured threshold for blueprint-skip mode.
@@ -3022,7 +3018,7 @@ Determine if the task is well-specified enough for implementation or needs furth
 Retrieve the current plan content with: kas task show %s`, filename)
 
 	m.toastManager.Success("imported! spawning planner...")
-	model, cmd := m.spawnPlannerWithOptionalBaseline(filename, prompt, task.Description)
+	model, cmd := m.spawnPlannersForTask(filename, prompt, task.Description)
 	if cmd == nil {
 		return model, m.toastTickCmd()
 	}
@@ -4258,6 +4254,7 @@ func (m *home) adoptOrphanSession(item overlay.TmuxBrowserItem) (tea.Model, tea.
 		SkipPermissions: m.skipPermissionsForAgent(candidate.AgentType),
 		TaskFile:        candidate.TaskFile,
 		AgentType:       candidate.AgentType,
+		PlannerProfile:  candidate.PlannerProfile,
 		TaskNumber:      candidate.TaskNumber,
 		WaveNumber:      candidate.WaveNumber,
 		ReviewCycle:     candidate.ReviewCycle,

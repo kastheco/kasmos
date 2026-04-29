@@ -33,13 +33,14 @@ func TestNavInstanceTitle_ElaboratorUsesCreatingBlueprint(t *testing.T) {
 	assert.Equal(t, "creating blueprint", navInstanceTitle(instance))
 }
 
-func TestNavInstanceTitle_ArchitectBaselineUsesLowercaseLabel(t *testing.T) {
+func TestNavInstanceTitle_PlannerProfileUsesLowercaseLabel(t *testing.T) {
 	instance := &session.Instance{
-		AgentType: session.AgentTypeArchitectBaseline,
-		TaskFile:  "parallel-planner-architect",
+		AgentType:      session.AgentTypePlanner,
+		TaskFile:       "parallel-planner",
+		PlannerProfile: "planner_x",
 	}
 
-	assert.Equal(t, "architect baseline", navInstanceTitle(instance))
+	assert.Equal(t, "planning planner_x", navInstanceTitle(instance))
 }
 
 func TestNavInstanceStatusIcon_PlannerCompleteAfterPlanning(t *testing.T) {
@@ -55,33 +56,6 @@ func TestNavInstanceStatusIcon_PlannerCompleteAfterPlanning(t *testing.T) {
 	}
 
 	assert.Equal(t, "✓", stripANSI(n.navInstanceStatusIcon(instance, row)))
-}
-
-func TestNavInstanceStatusIcon_ArchitectBaselineCompleteWhenArchitecting(t *testing.T) {
-	n := newTestPanel()
-	instance := &session.Instance{
-		AgentType: session.AgentTypeArchitectBaseline,
-		TaskFile:  "parallel-planner-architect",
-		Status:    session.Running,
-	}
-	row := navRow{
-		PlanStatus: string(taskstate.StatusImplementing),
-		PlanPhase:  "architecting",
-	}
-
-	assert.Equal(t, "✓", stripANSI(n.navInstanceStatusIcon(instance, row)))
-}
-
-func TestNavInstanceStatusIcon_ArchitectBaselineRunningWhilePlanning(t *testing.T) {
-	n := newTestPanel()
-	instance := &session.Instance{
-		AgentType: session.AgentTypeArchitectBaseline,
-		TaskFile:  "parallel-planner-architect",
-		Status:    session.Running,
-	}
-	row := navRow{PlanStatus: string(taskstate.StatusPlanning)}
-
-	assert.NotEqual(t, "✓", stripANSI(n.navInstanceStatusIcon(instance, row)))
 }
 
 func TestNavInstanceTitle_AdhocInstanceFallsBackToTitle(t *testing.T) {
@@ -971,24 +945,24 @@ func TestString_BasicOutput(t *testing.T) {
 	assert.Contains(t, output, "worker")
 }
 
-func TestString_ArchitectBaselineInstanceShowsLowercaseLabel(t *testing.T) {
+func TestString_PlannerProfileInstanceShowsLowercaseLabel(t *testing.T) {
 	n := newTestPanel()
 	n.SetSize(60, 30)
-	plans := []PlanDisplay{{Filename: "parallel-planner-architect"}}
+	plans := []PlanDisplay{{Filename: "parallel-planner"}}
 	instances := []*session.Instance{{
-		Title:     "parallel-planner-architect-architect-baseline",
-		TaskFile:  "parallel-planner-architect",
-		Status:    session.Running,
-		AgentType: session.AgentTypeArchitectBaseline,
+		Title:          "parallel-planner-plan-planner_x",
+		TaskFile:       "parallel-planner",
+		Status:         session.Running,
+		AgentType:      session.AgentTypePlanner,
+		PlannerProfile: "planner_x",
 	}}
-	statuses := map[string]TopicStatus{"parallel-planner-architect": {HasRunning: true}}
+	statuses := map[string]TopicStatus{"parallel-planner": {HasRunning: true}}
 	n.SetData(plans, instances, nil, nil, statuses)
 
 	output := n.String()
-	assert.Contains(t, output, "architect baseline")
-	assert.NotContains(t, output, "architect-baseline")
+	assert.Contains(t, output, "planning planner_x")
+	assert.NotContains(t, output, "architect")
 	assert.NotContains(t, output, "creating blueprint")
-	assert.NotContains(t, output, "architecting")
 }
 
 func TestString_EmptyPanel(t *testing.T) {

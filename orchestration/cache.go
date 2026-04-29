@@ -1,26 +1,22 @@
 package orchestration
 
 import (
-	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
+	"time"
 )
 
 const (
-	architectBaselineSchemaVersion      = 1
 	architectDecisionAuditSchemaVersion = 1
 )
 
 func architectMetaFilename(planSlug string) string {
 	return planSlug + "-architect.json"
-}
-
-func architectBaselineFilename(planSlug string) string {
-	return planSlug + "-architect-baseline.json"
 }
 
 // SaveArchitectMeta serializes meta to JSON and writes it to cacheDir/<planSlug>-architect.json,
@@ -77,7 +73,7 @@ func ValidateArchitectDecisionAudit(a *ArchitectDecisionAudit, planFile, project
 		return fmt.Errorf("architect decision audit project mismatch: got %q, want %q", a.Project, project)
 	}
 	switch strings.TrimSpace(a.BaselineSource) {
-	case "parallel_cache", "inline", "absent", "stale":
+	case "planner_drafts", "parallel_cache", "inline", "absent", "stale":
 	case "":
 		return fmt.Errorf("architect decision audit baseline source is empty")
 	default:
@@ -94,6 +90,14 @@ func ValidateArchitectDecisionAudit(a *ArchitectDecisionAudit, planFile, project
 			return fmt.Errorf("architect decision audit difference %d final decision is empty", i)
 		}
 	}
+	for i, draft := range a.PlannerDrafts {
+		if strings.TrimSpace(draft.Profile) == "" {
+			return fmt.Errorf("architect decision audit planner draft %d profile is empty", i)
+		}
+		if strings.TrimSpace(draft.Decision) == "" {
+			return fmt.Errorf("architect decision audit planner draft %d decision is empty", i)
+		}
+	}
 	return nil
 }
 
@@ -104,100 +108,155 @@ func ArchitectMetaExists(cacheDir, planSlug string) bool {
 	return err == nil
 }
 
-// ArchitectBaselineDescriptionHash returns the stable SHA-256 hash for planner prompt description text.
-func ArchitectBaselineDescriptionHash(description string) string {
-	sum := sha256.Sum256([]byte(description))
-	return fmt.Sprintf("%x", sum[:])
+// PlannerDraftCacheEntry holds the content and metadata of a single planner draft file.
+type PlannerDraftCacheEntry struct {
+	Profile  string
+	Path     string
+	Markdown string
+	ModTime  time.Time
 }
 
-// NewArchitectBaselineIdentity builds the expected identity for a baseline artifact.
-func NewArchitectBaselineIdentity(planFile, project, description string) ArchitectBaselineIdentity {
-	return ArchitectBaselineIdentity{
-		PlanFile:        planFile,
-		Project:         project,
-		DescriptionHash: ArchitectBaselineDescriptionHash(description),
+// PlannerDraftCacheFilename returns the filename for a planner draft cache file.
+// Returns an error if planSlug or profile are empty or contain path-unsafe characters.
+func PlannerDraftCacheFilename(planSlug, profile string) (string, error) {
+	if planSlug == "" {
+		return "", fmt.Errorf("plan slug must not be empty")
 	}
+	if profile == "" {
+		return "", fmt.Errorf("profile must not be empty")
+	}
+	if strings.ContainsAny(planSlug, `/\`) || strings.Contains(planSlug, "..") {
+		return "", fmt.Errorf("plan slug contains invalid characters")
+	}
+	if strings.ContainsAny(profile, `/\`) || strings.Contains(profile, "..") {
+		return "", fmt.Errorf("profile contains invalid characters")
+	}
+	return planSlug + "-planner-" + profile + ".md", nil
 }
 
-// SaveArchitectBaseline serializes baseline to JSON and writes it to cacheDir/<planSlug>-architect-baseline.json,
+// SavePlannerDraft writes markdown to cacheDir/<planSlug>-planner-<profile>.md,
 // creating cacheDir with mode 0755 if it does not exist.
-func SaveArchitectBaseline(cacheDir, planSlug string, baseline *ArchitectBaseline) error {
-	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
-		return fmt.Errorf("create architect baseline cache dir: %w", err)
-	}
-
-	encoded, err := json.MarshalIndent(baseline, "", "  ")
+func SavePlannerDraft(cacheDir, planSlug, profile, markdown string) error {
+	filename, err := PlannerDraftCacheFilename(planSlug, profile)
 	if err != nil {
-		return fmt.Errorf("marshal architect baseline: %w", err)
+		return err
 	}
-
-	filename := filepath.Join(cacheDir, architectBaselineFilename(planSlug))
-	encoded = append(encoded, '\n')
-	if err := os.WriteFile(filename, encoded, 0o644); err != nil {
-		return fmt.Errorf("write architect baseline: %w", err)
+	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
+		return fmt.Errorf("create planner draft cache dir: %w", err)
 	}
-	return nil
+	return os.WriteFile(filepath.Join(cacheDir, filename), []byte(markdown), 0o644)
 }
 
-// LoadArchitectBaseline reads and deserializes the architect baseline file for planSlug from cacheDir.
+// LoadPlannerDraft reads a single planner draft from cacheDir for the given planSlug and profile.
 // Returns (nil, nil) when the file does not exist.
-func LoadArchitectBaseline(cacheDir, planSlug string) (*ArchitectBaseline, error) {
-	filename := filepath.Join(cacheDir, architectBaselineFilename(planSlug))
-	data, err := os.ReadFile(filename)
+func LoadPlannerDraft(cacheDir, planSlug, profile string) (*PlannerDraftCacheEntry, error) {
+	filename, err := PlannerDraftCacheFilename(planSlug, profile)
+	if err != nil {
+		return nil, err
+	}
+	path := filepath.Join(cacheDir, filename)
+	data, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, nil
 		}
-
-		return nil, fmt.Errorf("read architect baseline: %w", err)
+		return nil, fmt.Errorf("read planner draft %s: %w", filename, err)
 	}
-
-	var baseline ArchitectBaseline
-	if err := json.Unmarshal(data, &baseline); err != nil {
-		return nil, fmt.Errorf("read architect baseline: %w", err)
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, fmt.Errorf("stat planner draft %s: %w", filename, err)
 	}
-
-	return &baseline, nil
+	return &PlannerDraftCacheEntry{
+		Profile:  profile,
+		Path:     path,
+		Markdown: string(data),
+		ModTime:  info.ModTime(),
+	}, nil
 }
 
-// ValidateArchitectBaseline confirms baseline belongs to the expected planner input.
-func ValidateArchitectBaseline(b *ArchitectBaseline, expected ArchitectBaselineIdentity) error {
-	if b == nil {
-		return fmt.Errorf("architect baseline is nil")
+// ListPlannerDraftCaches returns all planner draft entries for planSlug found in cacheDir.
+// Results are sorted by profile name for deterministic ordering.
+// Returns nil (not an error) when cacheDir does not exist or contains no matching files.
+func ListPlannerDraftCaches(cacheDir, planSlug string) ([]PlannerDraftCacheEntry, error) {
+	prefix := planSlug + "-planner-"
+	suffix := ".md"
+
+	dirEntries, err := os.ReadDir(cacheDir)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("list planner draft caches: %w", err)
 	}
-	if b.SchemaVersion != architectBaselineSchemaVersion {
-		return fmt.Errorf("unsupported architect baseline schema version: %d", b.SchemaVersion)
+
+	var results []PlannerDraftCacheEntry
+	for _, de := range dirEntries {
+		if de.IsDir() {
+			continue
+		}
+		name := de.Name()
+		if !strings.HasPrefix(name, prefix) || !strings.HasSuffix(name, suffix) {
+			continue
+		}
+		profile := strings.TrimSuffix(strings.TrimPrefix(name, prefix), suffix)
+		if profile == "" {
+			continue
+		}
+		path := filepath.Join(cacheDir, name)
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil, fmt.Errorf("read planner draft %s: %w", name, err)
+		}
+		info, err := de.Info()
+		if err != nil {
+			return nil, fmt.Errorf("stat planner draft %s: %w", name, err)
+		}
+		results = append(results, PlannerDraftCacheEntry{
+			Profile:  profile,
+			Path:     path,
+			Markdown: string(data),
+			ModTime:  info.ModTime(),
+		})
 	}
-	if b.BaselineMarkdown == "" {
-		return fmt.Errorf("architect baseline markdown is empty")
-	}
-	if b.PlanFile != expected.PlanFile {
-		return fmt.Errorf("architect baseline plan file mismatch: got %q, want %q", b.PlanFile, expected.PlanFile)
-	}
-	if b.Project != expected.Project {
-		return fmt.Errorf("architect baseline project mismatch: got %q, want %q", b.Project, expected.Project)
-	}
-	if b.DescriptionHash != expected.DescriptionHash {
-		return fmt.Errorf("architect baseline description hash mismatch: got %q, want %q", b.DescriptionHash, expected.DescriptionHash)
-	}
-	return nil
+
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].Profile < results[j].Profile
+	})
+	return results, nil
 }
 
-// ArchitectBaselineExists reports whether the architect baseline file for planSlug exists in cacheDir.
-func ArchitectBaselineExists(cacheDir, planSlug string) bool {
-	filename := filepath.Join(cacheDir, architectBaselineFilename(planSlug))
-	_, err := os.Stat(filename)
-	return err == nil
-}
+// ClearPlannerDraftCaches removes all planner draft cache files for planSlug from cacheDir.
+// It also silently removes the legacy <planSlug>-architect-baseline.json file if present
+// so older runs do not leave stale artifacts behind.
+// Missing files and a missing cacheDir are not errors.
+func ClearPlannerDraftCaches(cacheDir, planSlug string) error {
+	prefix := planSlug + "-planner-"
+	suffix := ".md"
 
-// ClearArchitectBaseline removes only the architect baseline artifact for planSlug.
-func ClearArchitectBaseline(cacheDir, planSlug string) error {
-	filename := filepath.Join(cacheDir, architectBaselineFilename(planSlug))
-	if err := os.Remove(filename); err != nil {
+	dirEntries, err := os.ReadDir(cacheDir)
+	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil
 		}
-		return fmt.Errorf("clear architect baseline: %w", err)
+		return fmt.Errorf("clear planner draft caches: %w", err)
+	}
+
+	for _, de := range dirEntries {
+		if de.IsDir() {
+			continue
+		}
+		name := de.Name()
+		if strings.HasPrefix(name, prefix) && strings.HasSuffix(name, suffix) {
+			if err := os.Remove(filepath.Join(cacheDir, name)); err != nil && !errors.Is(err, os.ErrNotExist) {
+				return fmt.Errorf("remove planner draft %s: %w", name, err)
+			}
+		}
+	}
+
+	// Silently remove the legacy <planSlug>-architect-baseline.json file if present.
+	legacy := filepath.Join(cacheDir, planSlug+"-architect-baseline.json")
+	if err := os.Remove(legacy); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("remove legacy architect baseline: %w", err)
 	}
 	return nil
 }

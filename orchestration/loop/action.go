@@ -40,30 +40,29 @@ func (SpawnCoderAction) sealedAction() {}
 // given plan file. Emitted when a plan_start gateway signal is processed; the
 // daemon executes it by building a planner prompt from the task store entry
 // and spawning a planner session on the main branch (no worktree).
+//
+// In draft mode (DraftMode=true), the spawned agent writes its output to
+// the planner draft cache instead of directly to the task store. Primary
+// is true only for the first listed planner profile, which is allowed to
+// also update the task store as a preview.
 type SpawnPlannerAction struct {
-	PlanFile string
+	PlanFile       string
+	PlannerProfile string
+	Primary        bool
+	DraftMode      bool
 }
 
 func (SpawnPlannerAction) Kind() string  { return "spawn_planner" }
 func (SpawnPlannerAction) sealedAction() {}
 
-// ClearArchitectBaselineAction instructs the caller to clear any stale advisory
-// architect-baseline cache before planner/baseline work starts.
-type ClearArchitectBaselineAction struct {
+// ClearPlannerDraftsAction instructs the caller to clear any stale planner
+// draft caches before a new multi-planner run starts.
+type ClearPlannerDraftsAction struct {
 	PlanFile string
 }
 
-func (ClearArchitectBaselineAction) Kind() string  { return "clear_architect_baseline" }
-func (ClearArchitectBaselineAction) sealedAction() {}
-
-// SpawnArchitectBaselineAction instructs the caller to launch the cache-only
-// architect baseline agent alongside planner work.
-type SpawnArchitectBaselineAction struct {
-	PlanFile string
-}
-
-func (SpawnArchitectBaselineAction) Kind() string  { return "spawn_architect_baseline" }
-func (SpawnArchitectBaselineAction) sealedAction() {}
+func (ClearPlannerDraftsAction) Kind() string  { return "clear_planner_drafts" }
+func (ClearPlannerDraftsAction) sealedAction() {}
 
 // ReviewChangesAction signals a validated review-changes transition and carries
 // the reviewer feedback so callers can perform side effects only after the FSM
@@ -295,6 +294,15 @@ type SpawnOpts struct {
 	// profile — callers do not need to initialise this field unless a non-normal
 	// profile is configured.
 	ResourceControls config.ResolvedResourceControls
+	// PlannerProfile is the agent profile name for the planner being spawned
+	// (e.g. "planner", "planner-alt"). Empty for non-planner agents.
+	PlannerProfile string
+	// PlannerPrimary is true when this is the primary planner in a multi-planner
+	// run. The primary planner is also allowed to update the task store preview.
+	PlannerPrimary bool
+	// PlannerDraftMode is true when the spawned planner should write its output
+	// to the draft cache rather than directly committing to the task store.
+	PlannerDraftMode bool
 }
 
 // AgentSpawner abstracts tmux session management so the daemon and TUI can
@@ -302,9 +310,6 @@ type SpawnOpts struct {
 type AgentSpawner interface {
 	// SpawnPlanner launches a planner agent for the given plan on the main branch.
 	SpawnPlanner(ctx context.Context, opts SpawnOpts) error
-	// SpawnArchitectBaseline launches a cache-only architect baseline agent
-	// for the given plan on the main branch.
-	SpawnArchitectBaseline(ctx context.Context, opts SpawnOpts) error
 	// SpawnReviewer launches a reviewer agent for the given plan.
 	SpawnReviewer(ctx context.Context, opts SpawnOpts) error
 	// SpawnCoder launches a coder agent for the given plan.

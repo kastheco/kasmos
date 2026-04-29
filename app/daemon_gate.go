@@ -189,6 +189,12 @@ func daemonInstanceData(repoPath string, status api.InstanceStatus) session.Inst
 		SDKSpeedTier:    status.SDKSpeedTier,
 		ResourceProfile: status.ResourceProfile,
 	}
+	if status.CreatedAt != nil {
+		data.CreatedAt = *status.CreatedAt
+	}
+	if status.LastActivity != nil {
+		data.UpdatedAt = *status.LastActivity
+	}
 	if status.Branch != "" {
 		shared := gitpkg.NewSharedTaskWorktree(repoPath, status.Branch)
 		data.Worktree = session.GitWorktreeData{

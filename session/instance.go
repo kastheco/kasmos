@@ -28,13 +28,12 @@ const (
 
 // AgentType constants identify the role of an agent session within a plan lifecycle.
 const (
-	AgentTypePlanner           = "planner"
-	AgentTypeCoder             = "coder"
-	AgentTypeReviewer          = "reviewer"
-	AgentTypeFixer             = "fixer"
-	AgentTypeElaborator        = "architect"
-	AgentTypeArchitectBaseline = "architect-baseline"
-	AgentTypeMaster            = "master"
+	AgentTypePlanner    = "planner"
+	AgentTypeCoder      = "coder"
+	AgentTypeReviewer   = "reviewer"
+	AgentTypeFixer      = "fixer"
+	AgentTypeElaborator = "architect"
+	AgentTypeMaster     = "master"
 )
 
 // Instance represents a managed agent session with its associated execution backend and git state.
@@ -71,6 +70,9 @@ type Instance struct {
 	Topic string
 	// AgentType identifies the role within a plan lifecycle: planner, coder, reviewer, fixer, architect, master, or empty.
 	AgentType string
+	// PlannerProfile identifies the named [agents.<profile>] used by planner instances.
+	// It is empty for legacy single-planner sessions and all non-planner agents.
+	PlannerProfile string
 	// TaskNumber is the 1-indexed task number within a plan wave (0 = not a wave task).
 	TaskNumber int
 	// WaveNumber is the 1-indexed wave number this task belongs to (0 = not a wave task).
@@ -203,6 +205,7 @@ func (i *Instance) ToInstanceData() InstanceData {
 		SkipPermissions:        i.SkipPermissions,
 		TaskFile:               i.TaskFile,
 		AgentType:              i.AgentType,
+		PlannerProfile:         i.PlannerProfile,
 		TaskNumber:             i.TaskNumber,
 		WaveNumber:             i.WaveNumber,
 		PeerCount:              i.PeerCount,
@@ -289,6 +292,7 @@ func FromInstanceData(data InstanceData) (*Instance, error) {
 		SkipPermissions:        data.SkipPermissions,
 		TaskFile:               data.TaskFile,
 		AgentType:              agentType,
+		PlannerProfile:         data.PlannerProfile,
 		TaskNumber:             data.TaskNumber,
 		WaveNumber:             data.WaveNumber,
 		PeerCount:              data.PeerCount,
@@ -413,6 +417,8 @@ type InstanceOptions struct {
 	TaskFile string
 	// AgentType is the role of this instance within a plan: planner, coder, reviewer, fixer, architect, master, or empty.
 	AgentType string
+	// PlannerProfile identifies the named [agents.<profile>] used by planner instances.
+	PlannerProfile string
 	// TaskNumber is the 1-indexed task number within a plan wave (0 = not a wave task).
 	TaskNumber int
 	// WaveNumber is the 1-indexed wave this task belongs to (0 = not a wave task).
@@ -477,6 +483,7 @@ func NewInstance(opts InstanceOptions) (*Instance, error) {
 		SkipPermissions:        opts.SkipPermissions,
 		TaskFile:               opts.TaskFile,
 		AgentType:              opts.AgentType,
+		PlannerProfile:         opts.PlannerProfile,
 		IsReviewer:             opts.AgentType == AgentTypeReviewer,
 		TaskNumber:             opts.TaskNumber,
 		WaveNumber:             opts.WaveNumber,

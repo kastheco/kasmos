@@ -39,18 +39,15 @@ type handler struct {
 }
 
 type response struct {
-	Available                 bool                                  `json:"available"`
-	Reason                    string                                `json:"reason,omitempty"`
-	FinalMarkdown             string                                `json:"final_markdown,omitempty"`
-	DecisionAudit             *orchestration.ArchitectDecisionAudit `json:"decision_audit,omitempty"`
-	ArchitectBaselineMarkdown string                                `json:"architect_baseline_markdown,omitempty"`
-	BaselineReason            string                                `json:"baseline_reason,omitempty"`
-	Timestamps                responseTimestamps                    `json:"timestamps,omitempty"`
+	Available     bool                                  `json:"available"`
+	Reason        string                                `json:"reason,omitempty"`
+	FinalMarkdown string                                `json:"final_markdown,omitempty"`
+	DecisionAudit *orchestration.ArchitectDecisionAudit `json:"decision_audit,omitempty"`
+	Timestamps    responseTimestamps                    `json:"timestamps,omitempty"`
 }
 
 type responseTimestamps struct {
 	ArchitectMetaAt        *time.Time `json:"architect_meta_at,omitempty"`
-	BaselineCreatedAt      *time.Time `json:"baseline_created_at,omitempty"`
 	DecisionAuditCreatedAt *time.Time `json:"decision_audit_created_at,omitempty"`
 }
 
@@ -128,33 +125,7 @@ func (h *handler) handleArchitectDecisions(w http.ResponseWriter, r *http.Reques
 		},
 	}
 
-	loadBaseline(cacheDir, filename, project, entry.Description, &resp)
 	writeJSON(w, http.StatusOK, resp)
-}
-
-func loadBaseline(cacheDir, filename, project, description string, resp *response) {
-	baseline, err := orchestration.LoadArchitectBaseline(cacheDir, filename)
-	if err != nil {
-		resp.BaselineReason = "baseline_error"
-		return
-	}
-	if baseline == nil {
-		resp.BaselineReason = "baseline_absent"
-		return
-	}
-
-	identity := orchestration.NewArchitectBaselineIdentity(filename, project, description)
-	if err := orchestration.ValidateArchitectBaseline(baseline, identity); err != nil {
-		if strings.Contains(err.Error(), "mismatch") {
-			resp.BaselineReason = "baseline_stale"
-			return
-		}
-		resp.BaselineReason = "baseline_error"
-		return
-	}
-
-	resp.ArchitectBaselineMarkdown = baseline.BaselineMarkdown
-	resp.Timestamps.BaselineCreatedAt = &baseline.CreatedAt
 }
 
 func normalizeFilename(raw string) string {

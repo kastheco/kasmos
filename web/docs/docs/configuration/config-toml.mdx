@@ -180,7 +180,7 @@ See the [interactive resource controls guide](../guides/interactive-resources.md
 | field | type | default | description |
 |-------|------|---------|-------------|
 | `blueprint_skip_threshold` | int? | `2` | when a plan has ≤ this many tasks, kasmos skips elaboration and wave orchestration and runs a single-agent "blueprint" mode instead |
-| `parallel_planner_architect` | bool | `true` | plan start launches a cache-only architect baseline session beside the planner by default; set to `false` to disable and restore planner-first behavior where the planner finishes first and the architect pass derives its own baseline inline |
+| `planners` | []string? | unset | ordered `[agents.<profile>]` names to run as parallel planners during `plan_start`; unset or `[]` keeps the legacy single-planner path |
 
 ```toml
 [orchestration]
@@ -189,25 +189,35 @@ blueprint_skip_threshold = 2
 
 Setting this to `0` forces multi-agent wave orchestration for every plan, including single-task ones. Setting it higher causes more plans to run in single-agent mode.
 
-`parallel_planner_architect` is default-on. When unset or `true`, plan start launches the planner and an advisory cache-only architect baseline session together. To opt out and restore planner-first behavior where the planner finishes before the architect pass starts, set:
+To run multiple planners, list the agent profiles in the order they should run:
 
 ```toml
 [orchestration]
-parallel_planner_architect = false
+planners = ["planner", "planner_x"]
+
+[agents.planner]
+enabled = true
+program = "opencode"
+
+[agents.planner_x]
+enabled = true
+program = "codex"
 ```
 
-The runtime sequence when active (the default) is:
+When `planners` is unset or `[]`, kasmos keeps the legacy path: the configured planning profile writes the task store and emits `planner_finished`.
 
-1. plan start clears stale `.kasmos/cache/<planSlug>-architect-baseline.json`
-2. the planner starts
-3. an `architect-baseline` runtime session starts separately
-4. the planner writes the draft and emits `planner-finished`
-5. the final architect reads the planner draft plus a valid cached baseline, or falls back to its inline self-baseline when the cache is absent or invalid
-6. coder waves proceed normally
+When `planners` contains profile names, the runtime sequence is:
 
-The baseline cache is advisory, safe to delete, and not task-store state. The baseline session writes the cache artifact only; it does not mutate task content, change lifecycle status, or emit lifecycle signals. Signal names are unchanged.
+1. `plan_start` clears stale `.kasmos/cache/<planSlug>-planner-<profile>.md` files
+2. kasmos spawns one planner per listed profile in draft mode
+3. the first listed planner also updates the task store as a preview
+4. each draft-mode planner writes its cache file and emits gateway-only `planner_draft_finished` with `{"planner_id":"<profile>"}`
+5. the processor aggregates draft signals and internally advances planning when every expected profile has reported
+6. the final architect reads all planner draft caches, derives its own implementation baseline inline, writes the final task-store plan, and records consumed drafts in `decision_audit.planner_drafts`
 
-Blueprint skip still applies after the planner draft is available. A small planner draft can skip the final architect pass, so a baseline cache may be produced but unused.
+`parallel_planner_architect` is a legacy key. If it remains in an older config, kasmos ignores it and logs a warning; use `[orchestration].planners` for current multi-planner behavior.
+
+Blueprint skip still applies after the planner draft is available. A small planner draft can skip the final architect pass, so planner draft caches may be produced but unused.
 
 ## `[[hooks]]` — FSM transition hooks
 
@@ -274,6 +284,12 @@ program        = "opencode"
 execution_mode = "tmux"
 effort         = "high"
 
+[agents.planner_x]
+enabled        = true
+program        = "codex"
+execution_mode = "sdk"
+effort         = "high"
+
 [agents.architect]
 enabled        = true
 program        = "claude"
@@ -320,7 +336,7 @@ enabled = true
 
 [orchestration]
 blueprint_skip_threshold = 2
-parallel_planner_architect = true
+planners = ["planner", "planner_x"]
 
 [sdk]
 transcript_max_bytes = 4194304   # 4 MiB per sdk session renderer

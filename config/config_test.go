@@ -490,11 +490,13 @@ func TestLoadConfig_MigratesJSON(t *testing.T) {
 	assert.Contains(t, string(written), `auto_review_fix = false`)
 	assert.Contains(t, string(written), `max_review_fix_cycles = 0`)
 	assert.Contains(t, string(written), `notifications_enabled = false`)
-	assert.Contains(t, string(written), `parallel_planner_architect = true`)
-	assert.True(t, cfg.ParallelPlannerArchitect)
+	// Legacy parallel_planner_architect key must not appear in migrated TOML.
+	assert.NotContains(t, string(written), `parallel_planner_architect`)
 }
 
-func TestLoadConfig_MigratesJSONParallelPlannerArchitectExplicitFalse(t *testing.T) {
+func TestLoadConfig_MigratesJSONLegacyPPAIgnored(t *testing.T) {
+	// parallel_planner_architect in legacy JSON is ignored during migration;
+	// the migrated TOML should not contain it.
 	tempDir := t.TempDir()
 	t.Chdir(tempDir)
 	t.Setenv("HOME", t.TempDir())
@@ -510,11 +512,11 @@ func TestLoadConfig_MigratesJSONParallelPlannerArchitectExplicitFalse(t *testing
 
 	cfg := LoadConfig()
 	require.NotNil(t, cfg)
-	assert.False(t, cfg.ParallelPlannerArchitect)
+	assert.Equal(t, "migrated-claude", cfg.DefaultProgram)
 
 	written, err := os.ReadFile(filepath.Join(configDir, TOMLConfigFileName))
 	require.NoError(t, err)
-	assert.Contains(t, string(written), `parallel_planner_architect = false`)
+	assert.NotContains(t, string(written), `parallel_planner_architect`)
 }
 
 func TestAutoReadinessReviewConfig(t *testing.T) {
@@ -887,55 +889,275 @@ func TestConfigFromTOML_DoubleTapThreshold(t *testing.T) {
 	})
 }
 
-func TestParallelPlannerArchitectConfig(t *testing.T) {
-	t.Run("DefaultConfig is true", func(t *testing.T) {
-		assert.True(t, DefaultConfig().ParallelPlannerArchitect)
+func TestPlannerProfileNames(t *testing.T) {
+	t.Run("nil config returns nil", func(t *testing.T) {
+		var c *Config
+		assert.Nil(t, c.PlannerProfileNames())
 	})
 
-	t.Run("absent TOML pointer resolves true via DefaultConfig", func(t *testing.T) {
-		// ParallelPlannerArchitect is nil (key absent) — configFromTOML starts from
-		// DefaultConfig() so the resolved value is true.
+	t.Run("nil Planners returns nil (legacy mode)", func(t *testing.T) {
+		cfg := &Config{}
+		assert.Nil(t, cfg.PlannerProfileNames())
+	})
+
+	t.Run("empty Planners returns empty slice", func(t *testing.T) {
+		cfg := &Config{Planners: []string{}}
+		assert.Empty(t, cfg.PlannerProfileNames())
+	})
+
+	t.Run("configured planners returned in order", func(t *testing.T) {
+		cfg := &Config{Planners: []string{"planner-a", "planner-b"}}
+		assert.Equal(t, []string{"planner-a", "planner-b"}, cfg.PlannerProfileNames())
+	})
+
+	t.Run("planner names are trimmed for callers", func(t *testing.T) {
+		// ValidatePlannerProfiles trims when checking, so callers must see
+		// the same trimmed names or named-profile lookups fail mysteriously.
+		cfg := &Config{Planners: []string{"  planner-a", "planner-b\t"}}
+		assert.Equal(t, []string{"planner-a", "planner-b"}, cfg.PlannerProfileNames())
+	})
+
+	t.Run("DefaultConfig has nil Planners (legacy mode)", func(t *testing.T) {
+		assert.Nil(t, DefaultConfig().Planners)
+	})
+
+	t.Run("absent planners in configFromTOML leaves Planners nil", func(t *testing.T) {
 		cfg := configFromTOML(&TOMLConfigResult{
 			Profiles:   map[string]AgentProfile{},
 			PhaseRoles: map[string]string{},
 		})
-
-		assert.True(t, cfg.ParallelPlannerArchitect)
+		assert.Nil(t, cfg.PlannerProfileNames())
 	})
 
-	t.Run("explicit false pointer overrides default", func(t *testing.T) {
-		falseVal := false
+	t.Run("explicit planners list round-trips through configFromTOML", func(t *testing.T) {
 		cfg := configFromTOML(&TOMLConfigResult{
-			Profiles:                 map[string]AgentProfile{},
-			PhaseRoles:               map[string]string{},
-			ParallelPlannerArchitect: &falseVal,
+			Profiles:   map[string]AgentProfile{},
+			PhaseRoles: map[string]string{},
+			Planners:   []string{"planner-a", "planner-b"},
 		})
-
-		assert.False(t, cfg.ParallelPlannerArchitect)
+		assert.Equal(t, []string{"planner-a", "planner-b"}, cfg.PlannerProfileNames())
 	})
 
-	t.Run("explicit true pointer preserves true", func(t *testing.T) {
-		trueVal := true
-		cfg := configFromTOML(&TOMLConfigResult{
-			Profiles:                 map[string]AgentProfile{},
-			PhaseRoles:               map[string]string{},
-			ParallelPlannerArchitect: &trueVal,
-		})
-
-		assert.True(t, cfg.ParallelPlannerArchitect)
-	})
-
-	t.Run("configToTOML returns non-nil pointer for true", func(t *testing.T) {
-		tc := configToTOML(&Config{ParallelPlannerArchitect: true})
-
-		require.NotNil(t, tc.Orchestration.ParallelPlannerArchitect)
-		assert.True(t, *tc.Orchestration.ParallelPlannerArchitect)
-	})
-
-	t.Run("configToTOML returns non-nil pointer for false", func(t *testing.T) {
+	t.Run("configToTOML omits planners when nil", func(t *testing.T) {
 		tc := configToTOML(&Config{})
+		assert.Nil(t, tc.Orchestration.Planners)
+	})
 
-		require.NotNil(t, tc.Orchestration.ParallelPlannerArchitect)
-		assert.False(t, *tc.Orchestration.ParallelPlannerArchitect)
+	t.Run("configToTOML writes planners when set", func(t *testing.T) {
+		tc := configToTOML(&Config{Planners: []string{"planner-a"}})
+		assert.Equal(t, []string{"planner-a"}, tc.Orchestration.Planners)
+	})
+}
+
+func TestResolveNamedProfile(t *testing.T) {
+	t.Run("returns false for nil config", func(t *testing.T) {
+		var c *Config
+		_, ok := c.ResolveNamedProfile("planner", "claude")
+		assert.False(t, ok)
+	})
+
+	t.Run("returns false when profiles map is nil", func(t *testing.T) {
+		cfg := &Config{}
+		_, ok := cfg.ResolveNamedProfile("planner", "claude")
+		assert.False(t, ok)
+	})
+
+	t.Run("returns false when profile not found", func(t *testing.T) {
+		cfg := &Config{Profiles: map[string]AgentProfile{"coder": {Program: "opencode", Enabled: true}}}
+		_, ok := cfg.ResolveNamedProfile("planner", "claude")
+		assert.False(t, ok)
+	})
+
+	t.Run("returns false when profile is disabled", func(t *testing.T) {
+		cfg := &Config{Profiles: map[string]AgentProfile{
+			"planner": {Program: "codex", Enabled: false},
+		}}
+		_, ok := cfg.ResolveNamedProfile("planner", "claude")
+		assert.False(t, ok)
+	})
+
+	t.Run("returns false when profile has empty program", func(t *testing.T) {
+		cfg := &Config{Profiles: map[string]AgentProfile{
+			"planner": {Program: "", Enabled: true},
+		}}
+		_, ok := cfg.ResolveNamedProfile("planner", "claude")
+		assert.False(t, ok)
+	})
+
+	t.Run("returns normalised profile when found and enabled", func(t *testing.T) {
+		cfg := &Config{Profiles: map[string]AgentProfile{
+			"planner": {Program: "codex", Enabled: true, ExecutionMode: "headless", Tier: "default", PermissionDefault: "bypass"},
+		}}
+		profile, ok := cfg.ResolveNamedProfile("planner", "claude")
+		require.True(t, ok)
+		assert.Equal(t, "codex", profile.Program)
+		assert.Equal(t, ExecutionModeSDK, profile.ExecutionMode) // headless → sdk
+		assert.Equal(t, "flex", profile.Tier)                    // default → flex
+		assert.Equal(t, PermissionDefaultBypass, profile.PermissionDefault)
+	})
+}
+
+func TestValidatePlannerProfiles(t *testing.T) {
+	t.Run("nil config returns nil", func(t *testing.T) {
+		var c *Config
+		assert.NoError(t, c.ValidatePlannerProfiles())
+	})
+
+	t.Run("empty planners returns nil", func(t *testing.T) {
+		cfg := &Config{}
+		assert.NoError(t, cfg.ValidatePlannerProfiles())
+	})
+
+	t.Run("valid single planner passes", func(t *testing.T) {
+		cfg := &Config{
+			Planners: []string{"planner-a"},
+			Profiles: map[string]AgentProfile{
+				"planner-a": {Program: "codex", Enabled: true},
+			},
+		}
+		assert.NoError(t, cfg.ValidatePlannerProfiles())
+	})
+
+	t.Run("valid multiple planners passes", func(t *testing.T) {
+		cfg := &Config{
+			Planners: []string{"planner-a", "planner-b"},
+			Profiles: map[string]AgentProfile{
+				"planner-a": {Program: "codex", Enabled: true},
+				"planner-b": {Program: "claude", Enabled: true},
+			},
+		}
+		assert.NoError(t, cfg.ValidatePlannerProfiles())
+	})
+
+	t.Run("empty name rejected", func(t *testing.T) {
+		cfg := &Config{
+			Planners: []string{""},
+			Profiles: map[string]AgentProfile{},
+		}
+		err := cfg.ValidatePlannerProfiles()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "[orchestration].planners")
+	})
+
+	t.Run("name with slash rejected", func(t *testing.T) {
+		cfg := &Config{
+			Planners: []string{"plan/ner"},
+			Profiles: map[string]AgentProfile{},
+		}
+		err := cfg.ValidatePlannerProfiles()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "plan/ner")
+		assert.Contains(t, err.Error(), "[orchestration].planners")
+	})
+
+	t.Run("name with backslash rejected", func(t *testing.T) {
+		cfg := &Config{
+			Planners: []string{`plan\ner`},
+			Profiles: map[string]AgentProfile{},
+		}
+		err := cfg.ValidatePlannerProfiles()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "[orchestration].planners")
+	})
+
+	t.Run("name with dotdot rejected", func(t *testing.T) {
+		cfg := &Config{
+			Planners: []string{"../evil"},
+			Profiles: map[string]AgentProfile{},
+		}
+		err := cfg.ValidatePlannerProfiles()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "[orchestration].planners")
+	})
+
+	t.Run("duplicate name rejected after trimming", func(t *testing.T) {
+		cfg := &Config{
+			Planners: []string{"planner-a", "planner-a"},
+			Profiles: map[string]AgentProfile{
+				"planner-a": {Program: "codex", Enabled: true},
+			},
+		}
+		err := cfg.ValidatePlannerProfiles()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "duplicate")
+		assert.Contains(t, err.Error(), "planner-a")
+		assert.Contains(t, err.Error(), "[orchestration].planners")
+	})
+
+	t.Run("unknown profile rejected", func(t *testing.T) {
+		cfg := &Config{
+			Planners: []string{"unknown-planner"},
+			Profiles: map[string]AgentProfile{
+				"coder": {Program: "codex", Enabled: true},
+			},
+		}
+		err := cfg.ValidatePlannerProfiles()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "unknown-planner")
+		assert.Contains(t, err.Error(), "[orchestration].planners")
+	})
+
+	t.Run("disabled profile rejected", func(t *testing.T) {
+		cfg := &Config{
+			Planners: []string{"planner-a"},
+			Profiles: map[string]AgentProfile{
+				"planner-a": {Program: "codex", Enabled: false},
+			},
+		}
+		err := cfg.ValidatePlannerProfiles()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "planner-a")
+		assert.Contains(t, err.Error(), "disabled")
+		assert.Contains(t, err.Error(), "[orchestration].planners")
+	})
+
+	t.Run("nil profiles map with non-empty planners rejected", func(t *testing.T) {
+		cfg := &Config{
+			Planners: []string{"planner-a"},
+		}
+		err := cfg.ValidatePlannerProfiles()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "planner-a")
+		assert.Contains(t, err.Error(), "[orchestration].planners")
+	})
+
+	t.Run("name with unsafe characters rejected", func(t *testing.T) {
+		// Names get interpolated verbatim into JSON payload and shell
+		// single-quoted commands; quotes and backslashes break both.
+		cases := []string{
+			`evil"name`,
+			`evil\name`,
+			`evil'name`,
+			`evil name`, // mid-string whitespace
+			`evil$name`,
+			`evil;name`,
+		}
+		for _, name := range cases {
+			cfg := &Config{
+				Planners: []string{name},
+				Profiles: map[string]AgentProfile{
+					name: {Program: "codex", Enabled: true},
+				},
+			}
+			err := cfg.ValidatePlannerProfiles()
+			require.Errorf(t, err, "expected name %q to be rejected", name)
+			assert.Contains(t, err.Error(), "invalid characters")
+		}
+	})
+
+	t.Run("enabled profile with empty program rejected", func(t *testing.T) {
+		// Without this guard, ResolveNamedProfile returns ok=false and the
+		// caller falls back to the default launcher, silently running the
+		// wrong agent for a configured planner profile.
+		cfg := &Config{
+			Planners: []string{"planner-a"},
+			Profiles: map[string]AgentProfile{
+				"planner-a": {Program: "", Enabled: true},
+			},
+		}
+		err := cfg.ValidatePlannerProfiles()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "planner-a")
+		assert.Contains(t, err.Error(), "empty program")
 	})
 }

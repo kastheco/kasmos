@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/BurntSushi/toml"
+	"github.com/kastheco/kasmos/log"
 )
 
 const TOMLConfigFileName = "config.toml"
@@ -72,9 +73,9 @@ type TOMLOrchestrationConfig struct {
 	// BlueprintSkipThreshold is the maximum task count for single-agent mode.
 	// When <= this value, elaboration and wave orchestration are skipped.
 	BlueprintSkipThreshold *int `toml:"blueprint_skip_threshold,omitempty"`
-	// ParallelPlannerArchitect controls whether the parallel planner/architect-baseline
-	// flow is active. When nil (key absent from TOML), the runtime default (true) applies.
-	ParallelPlannerArchitect *bool `toml:"parallel_planner_architect,omitempty"`
+	// Planners is an ordered list of [agents.*] profile names used as parallel planners.
+	// When nil or empty, the legacy single-planner path applies.
+	Planners []string `toml:"planners,omitempty"`
 }
 
 // TOMLKeybindsConfig holds key-handling settings from the [keybinds] TOML table.
@@ -141,17 +142,18 @@ type TOMLConfigResult struct {
 	TelemetryEnabled         *bool
 	DatabaseURL              string
 	BlueprintSkipThreshold   *int
-	// ParallelPlannerArchitect is nil when the TOML key is absent (runtime default applies).
-	ParallelPlannerArchitect *bool
-	DoubleTapThresholdMS     *int
-	DefaultProgram           string
-	AutoYes                  bool
-	DaemonPollInterval       int
-	BranchPrefix             string
-	NotificationsEnabled     *bool
-	ClaudeNoFlicker          *bool
-	Hooks                    []TOMLHook
-	Enforcement              map[string]bool
+	// Planners is the ordered list of planner profile names from [orchestration].planners.
+	// Nil or empty means legacy single-planner mode.
+	Planners             []string
+	DoubleTapThresholdMS *int
+	DefaultProgram       string
+	AutoYes              bool
+	DaemonPollInterval   int
+	BranchPrefix         string
+	NotificationsEnabled *bool
+	ClaudeNoFlicker      *bool
+	Hooks                []TOMLHook
+	Enforcement          map[string]bool
 	// SDK holds transcript retention limit pointers from the [sdk] TOML table.
 	// Nil fields mean the key was absent; configFromTOML applies runtime defaults.
 	SDK TOMLSDKConfig
@@ -184,8 +186,16 @@ func (r *TOMLConfigResult) IsEnforcementEnabled(harness string) bool {
 // returning the result mapped to internal types.
 func LoadTOMLConfigFrom(path string) (*TOMLConfigResult, error) {
 	var tc TOMLConfig
-	if _, err := toml.DecodeFile(path, &tc); err != nil {
+	md, err := toml.DecodeFile(path, &tc)
+	if err != nil {
 		return nil, fmt.Errorf("decode TOML config: %w", err)
+	}
+
+	// Warn when the removed legacy key is present; it is ignored and never written back.
+	if md.IsDefined("orchestration", "parallel_planner_architect") {
+		if log.WarningLog != nil {
+			log.WarningLog.Printf("config: [orchestration].parallel_planner_architect is a legacy key and is no longer supported; it is ignored. Use [orchestration].planners instead.")
+		}
 	}
 
 	result := &TOMLConfigResult{
@@ -203,7 +213,7 @@ func LoadTOMLConfigFrom(path string) (*TOMLConfigResult, error) {
 		TelemetryEnabled:         tc.Telemetry.Enabled,
 		DatabaseURL:              tc.DatabaseURL,
 		BlueprintSkipThreshold:   tc.Orchestration.BlueprintSkipThreshold,
-		ParallelPlannerArchitect: tc.Orchestration.ParallelPlannerArchitect, // nil when key absent
+		Planners:                 tc.Orchestration.Planners,
 		DoubleTapThresholdMS:     tc.Keybinds.DoubleTapThresholdMS,
 		DefaultProgram:           tc.DefaultProgram,
 		AutoYes:                  tc.AutoYes,

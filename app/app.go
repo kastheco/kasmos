@@ -209,6 +209,10 @@ type home struct {
 	// Supports concurrent batch spawns (e.g. wave tasks) where multiple
 	// instances start in parallel. Lazily initialized via addInstanceFinalizer.
 	instanceFinalizers map[*session.Instance]func()
+	// abortedInstanceStartGroups records async start batches whose rollback
+	// already ran, so late success messages from the same batch are ignored.
+	abortedInstanceStartGroups map[string]struct{}
+	plannerFanoutSeq           int
 	// newInstance is the instance currently being named in stateNew.
 	// Set when entering stateNew, cleared on Enter/Esc/ctrl+c.
 	newInstance *session.Instance
@@ -561,6 +565,7 @@ func newHome(ctx context.Context, program string, autoYes bool, version string) 
 		coderPushPrompted:          make(map[string]bool),
 		pendingReviewFeedback:      make(map[string]string),
 		deferredPermissionToastIDs: make(map[string]string),
+		abortedInstanceStartGroups: make(map[string]struct{}),
 	}
 
 	if appConfig.DatabaseURL != "" {
@@ -1022,6 +1027,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		taskStateDir := m.taskStateDir // snapshot for goroutine
 		signalsDir := m.signalsDir     // snapshot for goroutine
 		store := m.taskStore           // snapshot for goroutine
+		gateway := m.signalGateway     // snapshot for goroutine
 		project := m.taskStoreProject  // snapshot for goroutine
 		repoPath := m.activeRepoPath   // snapshot for goroutine
 		m.metadataTickCount++
@@ -1175,6 +1181,24 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if signalsDir != "" && !daemonManagedRepo {
 				elaborationSignals = taskfsm.ScanElaborationSignals(signalsDir)
 			}
+			var waveSignals []taskfsm.WaveSignal
+			if signalsDir != "" && !daemonManagedRepo {
+				waveSignals = taskfsm.ScanWaveSignals(signalsDir)
+			}
+			var plannerDraftSignals []taskfsm.PlannerDraftSignal
+			var gatewaySignalEntries []*taskstore.SignalEntry
+			if gateway != nil && project != "" && !daemonManagedRepo {
+				scan, entries, err := loop.ScanGateway(gateway, project, fmt.Sprintf("tui:%s:%d", project, os.Getpid()))
+				if err != nil {
+					log.WarningLog.Printf("gateway signal scan failed: %v", err)
+				}
+				gatewaySignalEntries = entries
+				signals = append(signals, scan.FSMSignals...)
+				taskSignals = append(taskSignals, scan.TaskSignals...)
+				waveSignals = append(waveSignals, scan.WaveSignals...)
+				elaborationSignals = append(elaborationSignals, scan.ElaborationSignals...)
+				plannerDraftSignals = append(plannerDraftSignals, scan.PlannerDraftSignals...)
+			}
 
 			// Also scan signals from active worktrees — agents write
 			// sentinel files relative to their CWD which is the worktree,
@@ -1209,11 +1233,6 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 
-			var waveSignals []taskfsm.WaveSignal
-			if signalsDir != "" && !daemonManagedRepo {
-				waveSignals = taskfsm.ScanWaveSignals(signalsDir)
-			}
-
 			tmuxCount := tmux.CountKasSessions(cmd2.MakeExecutor())
 
 			// Periodically poll PR state for plans that have a PR URL.
@@ -1244,7 +1263,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 			time.Sleep(200 * time.Millisecond)
-			return metadataResultMsg{Results: results, PlanState: ps, PlanStateLoadedAt: planStateLoadedAt, DaemonTaskState: daemonTaskStateLoaded, Signals: signals, TaskSignals: taskSignals, WaveSignals: waveSignals, ElaborationSignals: elaborationSignals, DaemonManagedRepo: daemonManagedRepo, DaemonInstances: daemonInstances, DaemonTitles: daemonTitles, TmuxSessionCount: tmuxCount, PRStateUpdates: prStateUpdates}
+			return metadataResultMsg{Results: results, PlanState: ps, PlanStateLoadedAt: planStateLoadedAt, DaemonTaskState: daemonTaskStateLoaded, Signals: signals, TaskSignals: taskSignals, WaveSignals: waveSignals, ElaborationSignals: elaborationSignals, PlannerDraftSignals: plannerDraftSignals, GatewaySignalEntries: gatewaySignalEntries, DaemonManagedRepo: daemonManagedRepo, DaemonInstances: daemonInstances, DaemonTitles: daemonTitles, TmuxSessionCount: tmuxCount, PRStateUpdates: prStateUpdates}
 		}
 	case metadataResultMsg:
 		// Process agent sentinel signals — feed to FSM and consume sentinel files.
@@ -1253,6 +1272,50 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var signalCmds []tea.Cmd
 		proc := m.ensureProcessor()
 		if !msg.DaemonManagedRepo {
+			// Track the specific claimed gateway rows whose originating signal
+			// produced actions or reached an inline happy path. Classifying by
+			// row preserves failure state for mixed batches where one signal for
+			// a plan succeeds while another same-plan signal is rejected.
+			gatewayProcessedEntryIDs := make(map[int64]bool)
+			gatewayClaimedEntryIDs := make(map[int64]bool)
+			gatewayEntriesByID := make(map[int64]*taskstore.SignalEntry, len(msg.GatewaySignalEntries))
+			for _, entry := range msg.GatewaySignalEntries {
+				if entry != nil {
+					gatewayEntriesByID[entry.ID] = entry
+				}
+			}
+			claimGatewayEntry := func(entryID int64, planFile, signalType string) *taskstore.SignalEntry {
+				if entryID == 0 || planFile == "" {
+					return nil
+				}
+				canonicalType, err := taskfsm.CanonicalGatewaySignalType(signalType)
+				if err != nil {
+					return nil
+				}
+				entry := gatewayEntriesByID[entryID]
+				if entry == nil || gatewayClaimedEntryIDs[entry.ID] || entry.PlanFile != planFile {
+					return nil
+				}
+				entryType, err := taskfsm.CanonicalGatewaySignalType(entry.SignalType)
+				if err != nil || entryType != canonicalType {
+					return nil
+				}
+				gatewayClaimedEntryIDs[entry.ID] = true
+				return entry
+			}
+			markGatewayProcessedEntry := func(entry *taskstore.SignalEntry) {
+				if entry != nil {
+					gatewayProcessedEntryIDs[entry.ID] = true
+				}
+			}
+			claimGatewayEventEntry := func(entryID int64, planFile string, event taskfsm.Event) *taskstore.SignalEntry {
+				signalType, err := taskfsm.GatewaySignalTypeForEvent(event)
+				if err != nil {
+					return nil
+				}
+				return claimGatewayEntry(entryID, planFile, signalType)
+			}
+
 			// Process FSM signals using the Processor when available, falling back to
 			// the inline test-only path when a narrow test builds home without a taskStore.
 			if proc != nil {
@@ -1266,11 +1329,28 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					feedbackBeforeTick[planFile] = true
 				}
 
-				actions := proc.ProcessFSMSignals(msg.Signals)
+				var actions []loop.Action
 				for _, sig := range msg.Signals {
+					entry := claimGatewayEventEntry(sig.GatewayEntryID, sig.TaskFile, sig.Event)
+					sigActions := proc.ProcessFSMSignals([]taskfsm.Signal{sig})
+					if len(sigActions) > 0 {
+						markGatewayProcessedEntry(entry)
+					}
+					actions = append(actions, sigActions...)
 					taskfsm.ConsumeSignal(sig)
 				}
+				for _, sig := range msg.PlannerDraftSignals {
+					entry := claimGatewayEntry(sig.GatewayEntryID, sig.TaskFile, "planner_draft_finished")
+					sigActions := proc.ProcessPlannerDraftSignals([]taskfsm.PlannerDraftSignal{sig})
+					if len(sigActions) > 0 {
+						markGatewayProcessedEntry(entry)
+					}
+					actions = append(actions, sigActions...)
+				}
 
+				draftSpawnCmds := make(map[string][]tea.Cmd)
+				failedDraftPlannerFanout := make(map[string]bool)
+				draftSpawnGroups := make(map[string]string)
 				for _, act := range actions {
 					switch a := act.(type) {
 					case loop.SpawnReviewerAction:
@@ -1357,6 +1437,49 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						if err := m.taskState.IncrementReviewCycle(a.PlanFile); err != nil {
 							log.WarningLog.Printf("could not increment review cycle for %q: %v", a.PlanFile, err)
 						}
+					case loop.ClearPlannerDraftsAction:
+						cacheDir := filepath.Join(m.activeRepoPath, ".kasmos", "cache")
+						if err := orchestration.ClearPlannerDraftCaches(cacheDir, a.PlanFile); err != nil {
+							log.WarningLog.Printf("could not clear planner draft caches for %q: %v", a.PlanFile, err)
+						}
+					case loop.SpawnPlannerAction:
+						entry, ok := m.refreshTaskEntry(a.PlanFile)
+						if !ok {
+							log.WarningLog.Printf("could not spawn planner for missing task %q", a.PlanFile)
+							continue
+						}
+						prompt := buildPlanningPrompt(a.PlanFile, taskstate.DisplayName(a.PlanFile), entry.Description, m.taskStoreProject)
+						if a.DraftMode {
+							if failedDraftPlannerFanout[a.PlanFile] {
+								continue
+							}
+							if a.Primary {
+								m.killExistingPlanAgent(a.PlanFile, session.AgentTypePlanner)
+							}
+							startGroupID := draftSpawnGroups[a.PlanFile]
+							if startGroupID == "" {
+								startGroupID = m.nextPlannerFanoutStartGroup(a.PlanFile)
+								draftSpawnGroups[a.PlanFile] = startGroupID
+							}
+							cmd, err := m.spawnPlannerProfileForTask(a.PlanFile, a.PlannerProfile, a.Primary, entry.Description, "", startGroupID)
+							if err != nil {
+								log.WarningLog.Printf("could not spawn planner profile %q for %q: %v", a.PlannerProfile, a.PlanFile, err)
+								m.markInstanceStartGroupAborted(startGroupID)
+								m.killExistingPlanAgent(a.PlanFile, session.AgentTypePlanner)
+								failedDraftPlannerFanout[a.PlanFile] = true
+								delete(draftSpawnCmds, a.PlanFile)
+								continue
+							}
+							if cmd != nil {
+								draftSpawnCmds[a.PlanFile] = append(draftSpawnCmds[a.PlanFile], cmd)
+							}
+						} else {
+							mdl, cmd := m.spawnPlannersForTask(a.PlanFile, prompt, entry.Description)
+							m = mdl.(*home)
+							if cmd != nil {
+								signalCmds = append(signalCmds, cmd)
+							}
+						}
 					case loop.SpawnCoderAction:
 						// Back-compat: older callers may still emit SpawnCoderAction for
 						// review-fix loops even though the processor now emits
@@ -1429,6 +1552,11 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 								return plannerCompleteMsg{planFile: capturedPlanFile}
 							},
 						)
+					}
+				}
+				for planFile, cmds := range draftSpawnCmds {
+					if !failedDraftPlannerFanout[planFile] {
+						signalCmds = append(signalCmds, cmds...)
 					}
 				}
 			} else {
@@ -1583,6 +1711,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 			for _, ts := range msg.TaskSignals {
+				entry := claimGatewayEntry(ts.GatewayEntryID, ts.TaskFile, "implement_task_finished")
 				orch, exists := m.waveOrchestrators[ts.TaskFile]
 				if !exists {
 					log.WarningLog.Printf("ignoring task-finished signal for %q — no active wave orchestrator", ts.TaskFile)
@@ -1600,6 +1729,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 
 				orch.MarkTaskComplete(ts.TaskNumber)
+				markGatewayProcessedEntry(entry)
 				for _, inst := range m.nav.GetInstances() {
 					if inst.TaskFile != ts.TaskFile || inst.TaskNumber != ts.TaskNumber || inst.WaveNumber != ts.WaveNumber {
 						continue
@@ -1624,6 +1754,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			// Process wave signals — trigger implementation for specific waves.
 			for _, ws := range msg.WaveSignals {
+				gatewayEntry := claimGatewayEntry(ws.GatewayEntryID, ws.TaskFile, "implement_wave")
 				taskfsm.ConsumeWaveSignal(ws)
 
 				// Check if orchestrator already exists
@@ -1658,6 +1789,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				orch := orchestration.NewWaveOrchestrator(ws.TaskFile, plan)
 				orch.SetStore(m.taskStore, m.taskStoreProject)
 				m.waveOrchestrators[ws.TaskFile] = orch
+				markGatewayProcessedEntry(gatewayEntry)
 
 				// Fast-forward to the requested wave
 				for i := 1; i < ws.WaveNumber; i++ {
@@ -1679,28 +1811,55 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// daemon both reuse the shared processor semantics for reloading the
 			// enriched plan and advancing to wave 1.
 			if proc != nil {
-				actions := proc.ProcessElaborationSignals(msg.ElaborationSignals)
 				for _, es := range msg.ElaborationSignals {
-					taskfsm.ConsumeElaborationSignal(es)
-				}
-				for _, act := range actions {
-					advance, ok := act.(loop.AdvanceWaveAction)
-					if !ok {
-						continue
+					entry := claimGatewayEntry(es.GatewayEntryID, es.TaskFile, "elaborator_finished")
+					actions := proc.ProcessElaborationSignals([]taskfsm.ElaborationSignal{es})
+					if len(actions) > 0 {
+						markGatewayProcessedEntry(entry)
 					}
-					mdl, cmd := m.applyAdvanceWaveAction(
-						advance,
-						fmt.Sprintf("architect pass complete — starting wave %d for '%s'", advance.Wave, taskstate.DisplayName(advance.PlanFile)),
-						session.AgentTypeElaborator,
-					)
-					m = mdl.(*home)
-					if cmd != nil {
-						signalCmds = append(signalCmds, cmd)
+					taskfsm.ConsumeElaborationSignal(es)
+					for _, act := range actions {
+						advance, ok := act.(loop.AdvanceWaveAction)
+						if !ok {
+							continue
+						}
+						mdl, cmd := m.applyAdvanceWaveAction(
+							advance,
+							fmt.Sprintf("architect pass complete — starting wave %d for '%s'", advance.Wave, taskstate.DisplayName(advance.PlanFile)),
+							session.AgentTypeElaborator,
+						)
+						m = mdl.(*home)
+						if cmd != nil {
+							signalCmds = append(signalCmds, cmd)
+						}
 					}
 				}
 			}
 
-			processedSignals := len(msg.Signals) > 0 || len(msg.TaskSignals) > 0 || len(msg.WaveSignals) > 0 || len(msg.ElaborationSignals) > 0
+			// Classify each claimed gateway row before acknowledging it. Rows
+			// whose own signal produced an action (or hit the inline happy path
+			// for task/wave signals) get SignalDone with an empty result; the
+			// rest fall through to GatewayNoopOutcome which matches the daemon's
+			// classification for rejected lifecycle signals.
+			for _, entry := range msg.GatewaySignalEntries {
+				if m.signalGateway == nil || entry == nil {
+					continue
+				}
+				status := taskstore.SignalDone
+				result := ""
+				if !gatewayProcessedEntryIDs[entry.ID] {
+					if proc != nil {
+						status, result = proc.GatewayNoopOutcome(entry)
+					} else {
+						status, result = loop.GatewayNoopOutcome(entry)
+					}
+				}
+				if err := m.signalGateway.MarkProcessed(entry.ID, status, result); err != nil {
+					log.WarningLog.Printf("could not mark gateway signal %d %s: %v", entry.ID, status, err)
+				}
+			}
+
+			processedSignals := len(msg.Signals) > 0 || len(msg.TaskSignals) > 0 || len(msg.WaveSignals) > 0 || len(msg.ElaborationSignals) > 0 || len(msg.PlannerDraftSignals) > 0
 			if processedSignals {
 				m.loadTaskState() // refresh after signal processing
 			}
@@ -1962,7 +2121,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Apply plan state loaded in the goroutine (replaces synchronous loadTaskState call).
 		// Skip when any signal type was processed: loadTaskState() above already gave us
 		// fresh state, and msg.PlanState was loaded before signal scanning.
-		processedSignals := len(msg.Signals) > 0 || len(msg.TaskSignals) > 0 || len(msg.WaveSignals) > 0 || len(msg.ElaborationSignals) > 0
+		processedSignals := len(msg.Signals) > 0 || len(msg.TaskSignals) > 0 || len(msg.WaveSignals) > 0 || len(msg.ElaborationSignals) > 0 || len(msg.PlannerDraftSignals) > 0
 		if msg.PlanState != nil && (msg.DaemonTaskState || !processedSignals) {
 			if msg.PlanStateLoadedAt.IsZero() || !msg.PlanStateLoadedAt.Before(m.taskStateLoadedAt) {
 				m.taskState = msg.PlanState
@@ -2374,7 +2533,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.loadTaskState()
 		m.updateSidebarTasks()
-		model, spawnCmd := m.spawnPlannerWithOptionalBaseline(
+		model, spawnCmd := m.spawnPlannersForTask(
 			msg.planFile,
 			buildPlanningPrompt(msg.planFile, msg.planName, msg.description, m.taskStoreProject),
 			msg.description,
@@ -2684,13 +2843,31 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Batch(tea.RequestWindowSize, m.instanceChanged())
 	case instanceStartedMsg:
+		if msg.instance == nil {
+			return m, m.handleError(fmt.Errorf("instance start returned no instance"))
+		}
 		if msg.err != nil {
+			if msg.startGroupID != "" && m.isDraftPlannerFanoutInstance(msg.instance) {
+				m.markInstanceStartGroupAborted(msg.startGroupID)
+				m.killExistingPlanAgent(msg.instance.TaskFile, session.AgentTypePlanner)
+				m.updateNavPanelStatus()
+				return m, m.handleError(fmt.Errorf("planner fan-out failed: %w", msg.err))
+			}
 			// Remove the specific instance that failed — not the currently selected one.
 			_ = msg.instance.Kill()
 			m.nav.RemoveByTitle(msg.instance.Title)
 			m.removeFromAllInstances(msg.instance.Title)
+			delete(m.instanceFinalizers, msg.instance)
 			m.updateNavPanelStatus()
 			return m, m.handleError(msg.err)
+		}
+		if msg.startGroupID != "" && m.instanceStartGroupAborted(msg.startGroupID) {
+			_ = msg.instance.Kill()
+			m.nav.RemoveByTitle(msg.instance.Title)
+			m.removeFromAllInstances(msg.instance.Title)
+			delete(m.instanceFinalizers, msg.instance)
+			m.updateNavPanelStatus()
+			return m, tea.Batch(tea.RequestWindowSize, m.instanceChanged())
 		}
 		// Instance started successfully — add to master list, save and finalize
 		m.allInstances = append(m.allInstances, msg.instance)
@@ -3134,8 +3311,9 @@ func (m *home) reconcileDismissedInstanceTitles(daemonTitles []string) {
 
 // instanceStartedMsg is sent when an async instance startup completes.
 type instanceStartedMsg struct {
-	instance *session.Instance
-	err      error
+	instance     *session.Instance
+	err          error
+	startGroupID string
 }
 
 // promptSubmittedMsg is sent when an async prompt delivery finishes.
@@ -3216,19 +3394,21 @@ type instanceMetadata struct {
 
 // metadataResultMsg carries all per-instance metadata collected by the async tick.
 type metadataResultMsg struct {
-	Results            []instanceMetadata
-	PlanState          *taskstate.TaskState        // pre-loaded plan state (nil if dir not set)
-	PlanStateLoadedAt  time.Time                   // when PlanState was loaded in the background tick goroutine
-	DaemonTaskState    bool                        // true when PlanState came from the daemon task-list API
-	Signals            []taskfsm.Signal            // agent sentinel files found this tick
-	TaskSignals        []taskfsm.TaskSignal        // task completion sentinel files found this tick
-	WaveSignals        []taskfsm.WaveSignal        // implement-wave-N signal files found this tick
-	ElaborationSignals []taskfsm.ElaborationSignal // architect completion signal files found this tick
-	DaemonManagedRepo  bool                        // true when the active repo is managed by a running daemon
-	DaemonInstances    []*session.Instance         // daemon-tracked instances missing from the local nav model
-	DaemonTitles       []string                    // all daemon-reported instance titles for dismissal reconciliation
-	TmuxSessionCount   int                         // number of kas_-prefixed tmux sessions
-	PRStateUpdates     []prStateUpdateMsg          // PR review/check state refreshed this tick
+	Results              []instanceMetadata
+	PlanState            *taskstate.TaskState         // pre-loaded plan state (nil if dir not set)
+	PlanStateLoadedAt    time.Time                    // when PlanState was loaded in the background tick goroutine
+	DaemonTaskState      bool                         // true when PlanState came from the daemon task-list API
+	Signals              []taskfsm.Signal             // agent sentinel files found this tick
+	TaskSignals          []taskfsm.TaskSignal         // task completion sentinel files found this tick
+	WaveSignals          []taskfsm.WaveSignal         // implement-wave-N signal files found this tick
+	ElaborationSignals   []taskfsm.ElaborationSignal  // architect completion signal files found this tick
+	PlannerDraftSignals  []taskfsm.PlannerDraftSignal // planner_draft_finished gateway rows found this tick
+	GatewaySignalEntries []*taskstore.SignalEntry     // claimed DB-backed signal rows to classify+mark after processing
+	DaemonManagedRepo    bool                         // true when the active repo is managed by a running daemon
+	DaemonInstances      []*session.Instance          // daemon-tracked instances missing from the local nav model
+	DaemonTitles         []string                     // all daemon-reported instance titles for dismissal reconciliation
+	TmuxSessionCount     int                          // number of kas_-prefixed tmux sessions
+	PRStateUpdates       []prStateUpdateMsg           // PR review/check state refreshed this tick
 }
 
 // tickUpdateMetadataCmd is the callback to update the metadata of the instances every 200ms. We iterate

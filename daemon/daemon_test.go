@@ -3,10 +3,12 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -641,6 +643,56 @@ func TestDaemon_RecoverSessions_AdoptsNumberedReviewerSessions(t *testing.T) {
 	assert.Equal(t, 6, restored.ReviewCycle)
 }
 
+func TestDaemon_RecoverSessions_AdoptsPlannerDraftProfiles(t *testing.T) {
+	project := "proj"
+	store := taskstore.NewTestStore(t)
+	require.NoError(t, store.Create(project, taskstore.TaskEntry{
+		Filename: "feature",
+		Status:   taskstore.StatusPlanning,
+	}))
+
+	d := &Daemon{
+		repos:       NewRepoManager(),
+		spawner:     NewTmuxSpawner(),
+		logger:      slog.Default(),
+		broadcaster: api.NewEventBroadcaster(),
+	}
+	d.repos.repos = []RepoEntry{{
+		Path:    "/tmp/proj",
+		Project: project,
+		Store:   store,
+	}}
+	d.spawner.discoverOrphans = func(_ []string) ([]tmuxpkg.SessionInfo, error) {
+		return []tmuxpkg.SessionInfo{
+			{Title: "feature-plan-planner-a"},
+			{Title: "feature-plan-planner-b"},
+		}, nil
+	}
+	var restoredProfiles []string
+	d.spawner.restoreInstance = func(data session.InstanceData) (*session.Instance, error) {
+		restoredProfiles = append(restoredProfiles, data.PlannerProfile)
+		return &session.Instance{
+			Title:          data.Title,
+			Path:           data.Path,
+			TaskFile:       data.TaskFile,
+			AgentType:      data.AgentType,
+			PlannerProfile: data.PlannerProfile,
+		}, nil
+	}
+
+	recovered, err := d.RecoverSessions()
+	require.NoError(t, err)
+	assert.Equal(t, 2, recovered)
+	assert.ElementsMatch(t, []string{"planner-a", "planner-b"}, restoredProfiles)
+
+	running := d.spawner.RunningInstances()
+	require.Len(t, running, 2)
+	assert.ElementsMatch(t, []string{
+		"/tmp/proj:feature:planner:planner-a",
+		"/tmp/proj:feature:planner:planner-b",
+	}, []string{running[0].Key, running[1].Key})
+}
+
 func TestDaemon_StartPlan_ReturnsBeforeSpawnCompletes(t *testing.T) {
 	project := "proj"
 	store := taskstore.NewTestStore(t)
@@ -694,7 +746,7 @@ func TestDaemon_StartPlan_ReturnsBeforeSpawnCompletes(t *testing.T) {
 	close(release)
 }
 
-func TestDaemon_StartPlan_SpawnsOnlyPlannerWhenParallelBaselineDisabled(t *testing.T) {
+func TestDaemon_StartPlan_SpawnsLegacyPlannerWhenPlannerProfilesUnset(t *testing.T) {
 	project := "proj"
 	store := taskstore.NewTestStore(t)
 	require.NoError(t, store.Create(project, taskstore.TaskEntry{
@@ -704,7 +756,6 @@ func TestDaemon_StartPlan_SpawnsOnlyPlannerWhenParallelBaselineDisabled(t *testi
 	}))
 
 	spawnedPlanner := make(chan loop.SpawnOpts, 1)
-	spawnedBaseline := make(chan loop.SpawnOpts, 1)
 	d := &Daemon{
 		repos:       NewRepoManager(),
 		logger:      slog.Default(),
@@ -714,10 +765,6 @@ func TestDaemon_StartPlan_SpawnsOnlyPlannerWhenParallelBaselineDisabled(t *testi
 		},
 		spawnPlanner: func(_ context.Context, opts loop.SpawnOpts) error {
 			spawnedPlanner <- opts
-			return nil
-		},
-		spawnArchitectBaseline: func(_ context.Context, opts loop.SpawnOpts) error {
-			spawnedBaseline <- opts
 			return nil
 		},
 	}
@@ -733,22 +780,36 @@ func TestDaemon_StartPlan_SpawnsOnlyPlannerWhenParallelBaselineDisabled(t *testi
 	select {
 	case opts := <-spawnedPlanner:
 		assert.Equal(t, "feature.md", opts.PlanFile)
+		assert.Equal(t, "plan prompt", opts.Prompt)
+		assert.Equal(t, "opencode", opts.Program)
+		assert.False(t, opts.PlannerDraftMode)
 	case <-time.After(time.Second):
 		t.Fatal("planner spawn did not run")
 	}
-	select {
-	case <-spawnedBaseline:
-		t.Fatal("baseline must not spawn when parallel mode is disabled")
-	case <-time.After(50 * time.Millisecond):
-	}
 }
 
-func TestDaemon_StartPlan_SpawnsPlannerAndArchitectBaselineWhenEnabled(t *testing.T) {
+func TestDaemon_StartPlan_SpawnsPlannerDraftProfiles(t *testing.T) {
 	project := "proj"
 	repoPath := t.TempDir()
-	cacheDir := filepath.Join(repoPath, ".kasmos", "cache")
-	require.NoError(t, os.MkdirAll(cacheDir, 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(cacheDir, "feature.md-architect-baseline.json"), []byte("{}"), 0o644))
+	kasmosDir := filepath.Join(repoPath, ".kasmos")
+	require.NoError(t, os.MkdirAll(kasmosDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(kasmosDir, "config.toml"), []byte(`
+[orchestration]
+planners = ["planner-a", "planner-b"]
+
+[agents.planner-a]
+program = "codex"
+enabled = true
+execution_mode = "sdk"
+tier = "fast"
+permission_default = "prompt"
+
+[agents.planner-b]
+program = "opencode"
+enabled = true
+execution_mode = "tmux"
+permission_default = "bypass"
+`), 0o644))
 
 	store := taskstore.NewTestStore(t)
 	require.NoError(t, store.Create(project, taskstore.TaskEntry{
@@ -762,7 +823,10 @@ func TestDaemon_StartPlan_SpawnsPlannerAndArchitectBaselineWhenEnabled(t *testin
 		opts loop.SpawnOpts
 	}
 	spawned := make(chan spawnRecord, 2)
-	killed := make(chan string, 2)
+	killed := make(chan string, 1)
+	cacheDir := filepath.Join(kasmosDir, "cache")
+	require.NoError(t, os.MkdirAll(cacheDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(cacheDir, "feature.md-planner-old.md"), []byte("stale"), 0o644))
 	d := &Daemon{
 		repos:       NewRepoManager(),
 		logger:      slog.Default(),
@@ -775,20 +839,18 @@ func TestDaemon_StartPlan_SpawnsPlannerAndArchitectBaselineWhenEnabled(t *testin
 			spawned <- spawnRecord{name: "planner", opts: opts}
 			return nil
 		},
-		spawnArchitectBaseline: func(_ context.Context, opts loop.SpawnOpts) error {
-			spawned <- spawnRecord{name: "baseline", opts: opts}
-			return nil
-		},
 	}
 	t.Cleanup(func() { d.broadcaster.Close() })
 	d.repos.repos = []RepoEntry{{
-		Path:                     repoPath,
-		Project:                  project,
-		Store:                    store,
-		ParallelPlannerArchitect: true,
+		Path:             repoPath,
+		Project:          project,
+		Store:            store,
+		PlannerProfiles:  []string{"planner-a", "planner-b"},
+		PlannerDraftMode: true,
+		CacheDir:         cacheDir,
 	}}
 
-	require.NoError(t, d.StartPlan(project, "feature.md", "plan prompt", "opencode"))
+	require.NoError(t, d.StartPlan(project, "feature.md", "caller-specific repair prompt", "legacy-program-ignored"))
 
 	var killedAgents []string
 	require.Eventually(t, func() bool {
@@ -797,11 +859,11 @@ func TestDaemon_StartPlan_SpawnsPlannerAndArchitectBaselineWhenEnabled(t *testin
 			case agentType := <-killed:
 				killedAgents = append(killedAgents, agentType)
 			default:
-				return len(killedAgents) == 2
+				return len(killedAgents) == 1
 			}
 		}
 	}, time.Second, 5*time.Millisecond)
-	assert.Equal(t, []string{session.AgentTypePlanner, session.AgentTypeArchitectBaseline}, killedAgents)
+	assert.Equal(t, []string{session.AgentTypePlanner}, killedAgents)
 
 	var records []spawnRecord
 	require.Eventually(t, func() bool {
@@ -816,13 +878,182 @@ func TestDaemon_StartPlan_SpawnsPlannerAndArchitectBaselineWhenEnabled(t *testin
 	}, time.Second, 5*time.Millisecond)
 	require.Len(t, records, 2)
 	assert.Equal(t, "planner", records[0].name)
-	assert.Equal(t, "baseline", records[1].name)
-	assert.Equal(t, "ship feature", records[1].opts.Description)
-	assert.Contains(t, records[1].opts.Prompt, "architect baseline agent")
-	assert.NoFileExists(t, filepath.Join(cacheDir, "feature.md-architect-baseline.json"))
+	assert.Equal(t, "planner-a", records[0].opts.PlannerProfile)
+	assert.True(t, records[0].opts.PlannerPrimary)
+	assert.True(t, records[0].opts.PlannerDraftMode)
+	assert.Equal(t, "codex", records[0].opts.Program)
+	assert.Equal(t, "sdk", records[0].opts.ExecutionMode)
+	assert.Equal(t, "fast", records[0].opts.SDKSpeedTier)
+	assert.False(t, records[0].opts.SkipPermissions)
+	assert.Contains(t, records[0].opts.Prompt, ".kasmos/cache/feature.md-planner-planner-a.md")
+	assert.Contains(t, records[0].opts.Prompt, "caller-specific repair prompt")
+	assert.Contains(t, records[0].opts.Prompt, "planner_draft_finished")
+	assert.Equal(t, "planner-b", records[1].opts.PlannerProfile)
+	assert.False(t, records[1].opts.PlannerPrimary)
+	assert.True(t, records[1].opts.PlannerDraftMode)
+	assert.Equal(t, "opencode", records[1].opts.Program)
+	assert.Equal(t, "tmux", records[1].opts.ExecutionMode)
+	assert.True(t, records[1].opts.SkipPermissions)
+	assert.Contains(t, records[1].opts.Prompt, "caller-specific repair prompt")
+	assert.NoFileExists(t, filepath.Join(cacheDir, "feature.md-planner-old.md"))
 }
 
-func TestDaemon_ExecuteSpawnArchitectBaseline_ReplacesExistingBaseline(t *testing.T) {
+func TestDaemon_StartPlan_DraftModeResetsProcessorAggregation(t *testing.T) {
+	project := "proj"
+	repoPath := t.TempDir()
+	kasmosDir := filepath.Join(repoPath, ".kasmos")
+	require.NoError(t, os.MkdirAll(kasmosDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(kasmosDir, "config.toml"), []byte(`
+[orchestration]
+planners = ["planner-a", "planner-b"]
+
+[agents.planner-a]
+program = "opencode"
+enabled = true
+
+[agents.planner-b]
+program = "opencode"
+enabled = true
+`), 0o644))
+
+	const planFile = "feature.md"
+	store := taskstore.NewTestStore(t)
+	require.NoError(t, store.Create(project, taskstore.TaskEntry{
+		Filename:    planFile,
+		Status:      taskstore.StatusPlanning,
+		Description: "ship feature",
+	}))
+	proc := loop.NewProcessor(loop.ProcessorConfig{
+		Store:            store,
+		Project:          project,
+		PlannerProfiles:  []string{"planner-a", "planner-b"},
+		PlannerDraftMode: true,
+	})
+
+	assert.Empty(t, proc.ProcessPlannerDraftSignals([]taskfsm.PlannerDraftSignal{{TaskFile: planFile, PlannerID: "planner-a"}}))
+	require.NotEmpty(t, proc.ProcessPlannerDraftSignals([]taskfsm.PlannerDraftSignal{{TaskFile: planFile, PlannerID: "planner-b"}}))
+	entry, err := store.Get(project, planFile)
+	require.NoError(t, err)
+	entry.Status = taskstore.StatusPlanning
+	entry.ExecutionState = taskstore.ExecutionState{}
+	require.NoError(t, store.Update(project, planFile, entry))
+
+	spawned := make(chan loop.SpawnOpts, 2)
+	cacheDir := filepath.Join(kasmosDir, "cache")
+	require.NoError(t, os.MkdirAll(cacheDir, 0o755))
+	d := &Daemon{
+		repos:       NewRepoManager(),
+		logger:      slog.Default(),
+		broadcaster: api.NewEventBroadcaster(),
+		killAgent: func(repoPath, planFile, agentType string) error {
+			return nil
+		},
+		spawnPlanner: func(_ context.Context, opts loop.SpawnOpts) error {
+			spawned <- opts
+			return nil
+		},
+	}
+	t.Cleanup(func() { d.broadcaster.Close() })
+	d.repos.repos = []RepoEntry{{
+		Path:             repoPath,
+		Project:          project,
+		Store:            store,
+		Processor:        proc,
+		PlannerProfiles:  []string{"planner-a", "planner-b"},
+		PlannerDraftMode: true,
+		CacheDir:         cacheDir,
+	}}
+
+	require.NoError(t, d.StartPlan(project, planFile, "legacy", "legacy"))
+	require.Eventually(t, func() bool {
+		return len(spawned) == 2
+	}, time.Second, 5*time.Millisecond)
+
+	assert.Empty(t, proc.ProcessPlannerDraftSignals([]taskfsm.PlannerDraftSignal{{TaskFile: planFile, PlannerID: "planner-a"}}))
+	actions := proc.ProcessPlannerDraftSignals([]taskfsm.PlannerDraftSignal{{TaskFile: planFile, PlannerID: "planner-b"}})
+	require.NotEmpty(t, actions, "fresh daemon fan-out must not be blocked by stale agg.done")
+	assert.Equal(t, "planner_complete", actions[0].Kind())
+}
+
+// TestDaemon_StartPlan_PartialFanOutFailureCleansUpSiblings verifies that when
+// the second planner spawn errors, the daemon also kills the previously
+// successful spawn so the aggregator doesn't hang waiting on a draft that
+// will never arrive.
+func TestDaemon_StartPlan_PartialFanOutFailureCleansUpSiblings(t *testing.T) {
+	project := "proj"
+	repoPath := t.TempDir()
+	kasmosDir := filepath.Join(repoPath, ".kasmos")
+	require.NoError(t, os.MkdirAll(kasmosDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(kasmosDir, "config.toml"), []byte(`
+[orchestration]
+planners = ["planner-a", "planner-b"]
+
+[agents.planner-a]
+program = "codex"
+enabled = true
+
+[agents.planner-b]
+program = "opencode"
+enabled = true
+`), 0o644))
+
+	store := taskstore.NewTestStore(t)
+	require.NoError(t, store.Create(project, taskstore.TaskEntry{
+		Filename:    "feature.md",
+		Status:      taskstore.StatusPlanning,
+		Description: "ship feature",
+	}))
+
+	killed := make(chan string, 4)
+	cacheDir := filepath.Join(kasmosDir, "cache")
+	require.NoError(t, os.MkdirAll(cacheDir, 0o755))
+	var spawnCount int32
+	d := &Daemon{
+		repos:       NewRepoManager(),
+		logger:      slog.Default(),
+		broadcaster: api.NewEventBroadcaster(),
+		killAgent: func(repoPath, planFile, agentType string) error {
+			killed <- agentType
+			return nil
+		},
+		spawnPlanner: func(_ context.Context, opts loop.SpawnOpts) error {
+			n := atomic.AddInt32(&spawnCount, 1)
+			if n == 2 {
+				return errors.New("simulated spawn failure on second profile")
+			}
+			return nil
+		},
+	}
+	t.Cleanup(func() { d.broadcaster.Close() })
+	d.repos.repos = []RepoEntry{{
+		Path:             repoPath,
+		Project:          project,
+		Store:            store,
+		PlannerProfiles:  []string{"planner-a", "planner-b"},
+		PlannerDraftMode: true,
+		CacheDir:         cacheDir,
+	}}
+
+	require.NoError(t, d.StartPlan(project, "feature.md", "legacy", "legacy"))
+
+	// We expect at least two killAgent invocations: the pre-spawn cleanup of
+	// any prior planner and the post-failure cleanup of the partial fan-out.
+	var killedAgents []string
+	require.Eventually(t, func() bool {
+		for {
+			select {
+			case agentType := <-killed:
+				killedAgents = append(killedAgents, agentType)
+			default:
+				return len(killedAgents) >= 2
+			}
+		}
+	}, time.Second, 5*time.Millisecond)
+	assert.GreaterOrEqual(t, len(killedAgents), 2,
+		"daemon must kill the partial fan-out on spawn failure (initial kill + cleanup kill)")
+}
+
+func TestDaemon_ExecuteAction_DraftPlannerDoesNotAppendGeneratedLegacyPrompt(t *testing.T) {
 	project := "proj"
 	planFile := "feature.md"
 	store := taskstore.NewTestStore(t)
@@ -832,34 +1063,107 @@ func TestDaemon_ExecuteSpawnArchitectBaseline_ReplacesExistingBaseline(t *testin
 		Description: "ship feature",
 	}))
 
-	var killed []string
-	var spawned loop.SpawnOpts
+	spawned := make(chan loop.SpawnOpts, 1)
 	d := &Daemon{
-		spawner:     NewTmuxSpawner(),
 		logger:      slog.Default(),
 		broadcaster: api.NewEventBroadcaster(),
-		killAgent: func(repoPath, taskFile, agentType string) error {
-			assert.Equal(t, planFile, taskFile)
-			killed = append(killed, agentType)
+		killAgent: func(repoPath, planFile, agentType string) error {
 			return nil
 		},
-		spawnArchitectBaseline: func(_ context.Context, opts loop.SpawnOpts) error {
-			spawned = opts
+		spawnPlanner: func(_ context.Context, opts loop.SpawnOpts) error {
+			spawned <- opts
 			return nil
 		},
 	}
 	t.Cleanup(func() { d.broadcaster.Close() })
 
-	repo := RepoEntry{
-		Path:    t.TempDir(),
-		Project: project,
-		Store:   store,
-	}
-	require.NoError(t, d.executeAction(context.Background(), repo, loop.SpawnArchitectBaselineAction{PlanFile: planFile}))
+	cacheDir := filepath.Join(t.TempDir(), "cache")
+	require.NoError(t, os.MkdirAll(cacheDir, 0o755))
+	err := d.executeAction(context.Background(), RepoEntry{
+		Path:     t.TempDir(),
+		Project:  project,
+		Store:    store,
+		CacheDir: cacheDir,
+	}, loop.SpawnPlannerAction{
+		PlanFile:       planFile,
+		PlannerProfile: "planner-a",
+		Primary:        true,
+		DraftMode:      true,
+	})
+	require.NoError(t, err)
 
-	assert.Equal(t, []string{session.AgentTypeArchitectBaseline}, killed)
-	assert.Equal(t, planFile, spawned.PlanFile)
-	assert.Equal(t, "ship feature", spawned.Description)
+	select {
+	case opts := <-spawned:
+		assert.Equal(t, "planner-a", opts.PlannerProfile)
+		assert.True(t, opts.PlannerDraftMode)
+		assert.Contains(t, opts.Prompt, filepath.Join(cacheDir, "feature.md-planner-planner-a.md"))
+		assert.Contains(t, opts.Prompt, "planner_draft_finished")
+		assert.NotContains(t, opts.Prompt, "## caller-provided prompt")
+	case <-time.After(time.Second):
+		t.Fatal("planner spawn did not run")
+	}
+}
+
+func TestDaemon_ExecuteAction_DraftPlannerStoreUnavailableReturnsError(t *testing.T) {
+	var spawnCalled bool
+	d := &Daemon{
+		logger:      slog.Default(),
+		broadcaster: api.NewEventBroadcaster(),
+		killAgent: func(repoPath, planFile, agentType string) error {
+			return nil
+		},
+		spawnPlanner: func(_ context.Context, opts loop.SpawnOpts) error {
+			spawnCalled = true
+			return nil
+		},
+	}
+	t.Cleanup(func() { d.broadcaster.Close() })
+
+	var err error
+	require.NotPanics(t, func() {
+		err = d.executeAction(context.Background(), RepoEntry{
+			Path:    t.TempDir(),
+			Project: "proj",
+		}, loop.SpawnPlannerAction{
+			PlanFile:       "feature.md",
+			PlannerProfile: "planner-a",
+			Primary:        true,
+			DraftMode:      true,
+		})
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "task store unavailable for feature.md")
+	assert.False(t, spawnCalled)
+}
+
+func TestDaemon_ExecuteClearPlannerDraftsAction(t *testing.T) {
+	project := "proj"
+	planFile := "feature.md"
+	store := taskstore.NewTestStore(t)
+	require.NoError(t, store.Create(project, taskstore.TaskEntry{
+		Filename:    planFile,
+		Status:      taskstore.StatusPlanning,
+		Description: "ship feature",
+	}))
+
+	d := &Daemon{
+		spawner:     NewTmuxSpawner(),
+		logger:      slog.Default(),
+		broadcaster: api.NewEventBroadcaster(),
+	}
+	t.Cleanup(func() { d.broadcaster.Close() })
+
+	cacheDir := filepath.Join(t.TempDir(), "cache")
+	require.NoError(t, os.MkdirAll(cacheDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(cacheDir, "feature.md-planner-old.md"), []byte("stale"), 0o644))
+	repo := RepoEntry{
+		Path:     t.TempDir(),
+		Project:  project,
+		Store:    store,
+		CacheDir: cacheDir,
+	}
+	require.NoError(t, d.executeAction(context.Background(), repo, loop.ClearPlannerDraftsAction{PlanFile: planFile}))
+	assert.NoFileExists(t, filepath.Join(cacheDir, "feature.md-planner-old.md"))
 }
 
 func TestDaemon_AutoAdvanceCompletedImplementer_TransitionsToReviewing(t *testing.T) {
@@ -1676,6 +1980,56 @@ func TestDaemon_TickRepoGateway_InvalidTaskSignalMarkedFailed(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, failed, 1)
 	assert.Equal(t, "no active orchestrator / wrong wave / already-finished task", failed[0].Result)
+
+	done, err := gw.List(project, taskstore.SignalDone)
+	require.NoError(t, err)
+	assert.Empty(t, done)
+}
+
+func TestDaemon_TickRepoGateway_InvalidPlannerDraftSignalMarkedFailed(t *testing.T) {
+	dir := t.TempDir()
+	store := taskstore.NewTestStore(t)
+	project := "test-project"
+	planFile := "gw-bad-draft"
+	require.NoError(t, store.Create(project, taskstore.TaskEntry{Filename: planFile, Status: taskstore.StatusPlanning}))
+
+	gw, err := taskstore.NewSQLiteSignalGateway(":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = gw.Close() })
+	require.NoError(t, gw.Create(project, taskstore.SignalEntry{
+		PlanFile:   planFile,
+		SignalType: "planner_draft_finished",
+		Payload:    `{"planner_id":"typo-planner"}`,
+	}))
+
+	entry := RepoEntry{
+		Path:    dir,
+		Project: project,
+		Store:   store,
+		Processor: loop.NewProcessor(loop.ProcessorConfig{
+			Store:            store,
+			Project:          project,
+			PlannerDraftMode: true,
+			PlannerProfiles:  []string{"planner-a", "planner-b"},
+		}),
+		SignalGateway: gw,
+	}
+	d := &Daemon{
+		cfg:         &DaemonConfig{PollInterval: time.Second},
+		repos:       NewRepoManager(),
+		spawner:     newTmuxSpawner(slog.Default()),
+		logger:      slog.Default(),
+		broadcaster: api.NewEventBroadcaster(),
+	}
+
+	d.tickRepo(context.Background(), entry)
+
+	failed, err := gw.List(project, taskstore.SignalFailed)
+	require.NoError(t, err)
+	require.Len(t, failed, 1)
+	assert.Equal(t, "planner_draft_finished", failed[0].SignalType)
+	assert.Contains(t, failed[0].Result, "unknown planner draft profile")
+	assert.Contains(t, failed[0].Result, "typo-planner")
 
 	done, err := gw.List(project, taskstore.SignalDone)
 	require.NoError(t, err)

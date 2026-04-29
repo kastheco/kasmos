@@ -12,7 +12,9 @@ import (
 	"github.com/kastheco/kasmos/config"
 	"github.com/kastheco/kasmos/config/taskfsm"
 	"github.com/kastheco/kasmos/config/taskstate"
+	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/kastheco/kasmos/orchestration"
+	"github.com/kastheco/kasmos/orchestration/loop"
 	"github.com/kastheco/kasmos/session"
 	"github.com/kastheco/kasmos/ui"
 	"github.com/kastheco/kasmos/ui/overlay"
@@ -102,6 +104,279 @@ func TestPlannerFinishedSignal_ShowsConfirmDialog(t *testing.T) {
 		"PlannerFinished signal must show confirmation overlay")
 	assert.Equal(t, planFile, updated.pendingPlannerTaskFile,
 		"pendingPlannerTaskFile must be set to the plan file from the signal")
+}
+
+func TestPlanStartDraftModeGatewayRespawnKillsStalePlanners(t *testing.T) {
+	t.Parallel()
+	const planFile = "feature"
+	h, ps, _, oldPlanner := plannerSignalHome(t, planFile)
+	seedPlanStatus(t, ps, planFile, taskstate.StatusReady)
+	h.taskStateDir = ""
+	h.appConfig = &config.Config{
+		Planners: []string{"planner_a", "planner_b"},
+		Profiles: map[string]config.AgentProfile{
+			"planner_a": {Enabled: true, Program: "opencode"},
+			"planner_b": {Enabled: true, Program: "opencode"},
+		},
+	}
+
+	model, _ := h.Update(metadataResultMsg{
+		PlanState: ps,
+		Signals: []taskfsm.Signal{
+			{Event: taskfsm.PlanStart, TaskFile: planFile},
+		},
+	})
+	updated := model.(*home)
+
+	var titles []string
+	var profiles []string
+	for _, inst := range updated.nav.GetInstances() {
+		titles = append(titles, inst.Title)
+		if inst.AgentType == session.AgentTypePlanner {
+			profiles = append(profiles, inst.PlannerProfile)
+		}
+	}
+	assert.NotContains(t, titles, oldPlanner.Title)
+	assert.ElementsMatch(t, []string{"planner_a", "planner_b"}, profiles)
+
+	for _, inst := range updated.allInstances {
+		assert.NotEqual(t, oldPlanner.Title, inst.Title)
+	}
+}
+
+func TestPlanStartDraftModeGatewaySpawnFailureCleansPartialFanout(t *testing.T) {
+	t.Parallel()
+	const planFile = "feature"
+	h, ps, _, _ := plannerSignalHome(t, planFile)
+	seedPlanStatus(t, ps, planFile, taskstate.StatusReady)
+	h.taskStateDir = ""
+	h.appConfig = &config.Config{
+		Planners: []string{"planner_a", "missing_profile", "planner_c"},
+		Profiles: map[string]config.AgentProfile{
+			"planner_a": {Enabled: true, Program: "opencode"},
+			"planner_c": {Enabled: true, Program: "opencode"},
+		},
+	}
+
+	model, _ := h.Update(metadataResultMsg{
+		PlanState: ps,
+		Signals: []taskfsm.Signal{
+			{Event: taskfsm.PlanStart, TaskFile: planFile},
+		},
+	})
+	updated := model.(*home)
+
+	for _, inst := range updated.nav.GetInstances() {
+		assert.NotEqual(t, session.AgentTypePlanner, inst.AgentType)
+	}
+}
+
+func TestMetadataTickProcessesPlanStartBeforePlannerDraftRows(t *testing.T) {
+	t.Parallel()
+	const planFile = "feature"
+	h, ps, _, _ := plannerSignalHome(t, planFile)
+	h.taskStateDir = ""
+	h.appConfig = &config.Config{
+		Planners: []string{"planner_a", "planner_b"},
+		Profiles: map[string]config.AgentProfile{
+			"planner_a": {Enabled: true, Program: "opencode"},
+			"planner_b": {Enabled: true, Program: "opencode"},
+		},
+	}
+
+	proc := h.ensureProcessor()
+	require.NotNil(t, proc)
+	require.Empty(t, proc.ProcessPlannerDraftSignals([]taskfsm.PlannerDraftSignal{
+		{TaskFile: planFile, PlannerID: "planner_a"},
+	}))
+	require.NotEmpty(t, proc.ProcessPlannerDraftSignals([]taskfsm.PlannerDraftSignal{
+		{TaskFile: planFile, PlannerID: "planner_b"},
+	}))
+	seedPlanStatus(t, ps, planFile, taskstate.StatusReady)
+
+	gw, err := taskstore.NewSQLiteSignalGateway(":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = gw.Close() })
+	h.signalGateway = gw
+	require.NoError(t, gw.Create("test", taskstore.SignalEntry{
+		PlanFile:   planFile,
+		SignalType: "plan_start",
+	}))
+	require.NoError(t, gw.Create("test", taskstore.SignalEntry{
+		PlanFile:   planFile,
+		SignalType: "planner_draft_finished",
+		Payload:    `{"planner_id":"planner_a"}`,
+	}))
+
+	var scan loop.ScanResult
+	claimed := make([]*taskstore.SignalEntry, 0, 2)
+	for range 2 {
+		entry, err := gw.Claim("test", "app-test")
+		require.NoError(t, err)
+		require.NotNil(t, entry)
+		require.NoError(t, loop.ConvertSignalEntry(entry, &scan))
+		claimed = append(claimed, entry)
+	}
+	require.Len(t, scan.FSMSignals, 1)
+	require.Len(t, scan.PlannerDraftSignals, 1)
+
+	model, _ := h.Update(metadataResultMsg{
+		PlanState:            ps,
+		Signals:              scan.FSMSignals,
+		PlannerDraftSignals:  scan.PlannerDraftSignals,
+		GatewaySignalEntries: claimed,
+	})
+	updated := model.(*home)
+
+	done, err := gw.List("test", taskstore.SignalDone)
+	require.NoError(t, err)
+	require.Len(t, done, 2)
+
+	actions := updated.processor.ProcessPlannerDraftSignals([]taskfsm.PlannerDraftSignal{
+		{TaskFile: planFile, PlannerID: "planner_b"},
+	})
+	require.NotEmpty(t, actions, "same-tick planner_a draft must be recorded after plan_start resets stale aggregation")
+	assert.Equal(t, "planner_complete", actions[0].Kind())
+}
+
+func TestGatewayAckClassifiesRowsIndividuallyForSamePlan(t *testing.T) {
+	t.Parallel()
+	const planFile = "feature"
+	h, ps, _, _ := plannerSignalHome(t, planFile)
+	h.appConfig.AutoAdvance = false
+
+	gw, err := taskstore.NewSQLiteSignalGateway(":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = gw.Close() })
+	h.signalGateway = gw
+
+	require.NoError(t, gw.Create("test", taskstore.SignalEntry{
+		PlanFile:   planFile,
+		SignalType: "planner_finished",
+	}))
+	require.NoError(t, gw.Create("test", taskstore.SignalEntry{
+		PlanFile:   planFile,
+		SignalType: "verify_approved",
+	}))
+
+	var scan loop.ScanResult
+	claimed := make([]*taskstore.SignalEntry, 0, 2)
+	for range 2 {
+		entry, err := gw.Claim("test", "app-test")
+		require.NoError(t, err)
+		require.NotNil(t, entry)
+		require.NoError(t, loop.ConvertSignalEntry(entry, &scan))
+		claimed = append(claimed, entry)
+	}
+
+	model, _ := h.Update(metadataResultMsg{
+		PlanState:            ps,
+		Signals:              scan.FSMSignals,
+		GatewaySignalEntries: claimed,
+	})
+	_ = model.(*home)
+
+	done, err := gw.List("test", taskstore.SignalDone)
+	require.NoError(t, err)
+	require.Len(t, done, 1)
+	assert.Equal(t, "planner_finished", done[0].SignalType)
+	assert.Empty(t, done[0].Result)
+
+	failed, err := gw.List("test", taskstore.SignalFailed)
+	require.NoError(t, err)
+	require.Len(t, failed, 1)
+	assert.Equal(t, "verify_approved", failed[0].SignalType)
+	assert.Contains(t, failed[0].Result, "outside verifying")
+}
+
+func TestGatewayAckDoesNotAttributeFilesystemSignalToGatewayRow(t *testing.T) {
+	t.Parallel()
+	const planFile = "feature"
+	h, ps, _, _ := plannerSignalHome(t, planFile)
+	h.appConfig.AutoAdvance = false
+
+	gw, err := taskstore.NewSQLiteSignalGateway(":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = gw.Close() })
+	h.signalGateway = gw
+
+	require.NoError(t, gw.Create("test", taskstore.SignalEntry{
+		PlanFile:   planFile,
+		SignalType: "planner_finished",
+	}))
+
+	entry, err := gw.Claim("test", "app-test")
+	require.NoError(t, err)
+	require.NotNil(t, entry)
+	var scan loop.ScanResult
+	require.NoError(t, loop.ConvertSignalEntry(entry, &scan))
+	require.Len(t, scan.FSMSignals, 1)
+
+	model, _ := h.Update(metadataResultMsg{
+		PlanState: ps,
+		Signals: append([]taskfsm.Signal{{
+			Event:    taskfsm.PlannerFinished,
+			TaskFile: planFile,
+		}}, scan.FSMSignals...),
+		GatewaySignalEntries: []*taskstore.SignalEntry{entry},
+	})
+	_ = model.(*home)
+
+	done, err := gw.List("test", taskstore.SignalDone)
+	require.NoError(t, err)
+	assert.Empty(t, done)
+
+	failed, err := gw.List("test", taskstore.SignalFailed)
+	require.NoError(t, err)
+	require.Len(t, failed, 1)
+	assert.Equal(t, entry.ID, failed[0].ID)
+	assert.Equal(t, "planner_finished", failed[0].SignalType)
+	assert.Contains(t, failed[0].Result, "signal rejected by processor")
+}
+
+func TestGatewayAckFailsInvalidPlannerDraftSignal(t *testing.T) {
+	t.Parallel()
+	const planFile = "feature"
+	h, ps, _, _ := plannerSignalHome(t, planFile)
+	h.appConfig.AutoAdvance = false
+	h.appConfig.Planners = []string{"planner_a", "planner_b"}
+
+	gw, err := taskstore.NewSQLiteSignalGateway(":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = gw.Close() })
+	h.signalGateway = gw
+
+	require.NoError(t, gw.Create("test", taskstore.SignalEntry{
+		PlanFile:   planFile,
+		SignalType: "planner_draft_finished",
+		Payload:    `{"planner_id":"typo_planner"}`,
+	}))
+
+	entry, err := gw.Claim("test", "app-test")
+	require.NoError(t, err)
+	require.NotNil(t, entry)
+	var scan loop.ScanResult
+	require.NoError(t, loop.ConvertSignalEntry(entry, &scan))
+	require.Len(t, scan.PlannerDraftSignals, 1)
+
+	model, _ := h.Update(metadataResultMsg{
+		PlanState:            ps,
+		PlannerDraftSignals:  scan.PlannerDraftSignals,
+		GatewaySignalEntries: []*taskstore.SignalEntry{entry},
+	})
+	_ = model.(*home)
+
+	done, err := gw.List("test", taskstore.SignalDone)
+	require.NoError(t, err)
+	assert.Empty(t, done)
+
+	failed, err := gw.List("test", taskstore.SignalFailed)
+	require.NoError(t, err)
+	require.Len(t, failed, 1)
+	assert.Equal(t, entry.ID, failed[0].ID)
+	assert.Equal(t, "planner_draft_finished", failed[0].SignalType)
+	assert.Contains(t, failed[0].Result, "unknown planner draft profile")
+	assert.Contains(t, failed[0].Result, "typo_planner")
 }
 
 // TestPlannerFinishedSignal_ConfirmKeepsPlannerAndTriggersImplement verifies that

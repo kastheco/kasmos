@@ -41,26 +41,25 @@ import (
 // repositories for signal files and executes the resulting actions via the
 // configured AgentSpawner.
 type Daemon struct {
-	cfg                    *DaemonConfig
-	repos                  *RepoManager
-	spawner                *TmuxSpawner
-	logger                 *slog.Logger
-	pidLock                *PIDLock
-	broadcaster            *api.EventBroadcaster
-	prMonitor              *PRMonitor
-	pushBranch             func(*session.Instance) error
-	killAgent              func(repoPath, planFile, agentType string) error
-	spawnPlanner           func(context.Context, loop.SpawnOpts) error
-	spawnArchitectBaseline func(context.Context, loop.SpawnOpts) error
-	spawnReviewer          func(context.Context, loop.SpawnOpts) error
-	spawnCoder             func(context.Context, loop.SpawnOpts) error
-	spawnElaborator        func(context.Context, loop.SpawnOpts) error
-	spawnFixer             func(context.Context, loop.SpawnOpts) error
-	spawnMaster            func(context.Context, loop.SpawnOpts) error
-	spawnWaveTask          func(context.Context, loop.SpawnOpts, taskparser.Task, string, int, int) error
-	killWaveAgents         func(repoPath, planFile string, wave int) error
-	reapSDKOrphan          func(project, instanceTitle, program string) error
-	createPR               func(RepoEntry, string, string) error
+	cfg             *DaemonConfig
+	repos           *RepoManager
+	spawner         *TmuxSpawner
+	logger          *slog.Logger
+	pidLock         *PIDLock
+	broadcaster     *api.EventBroadcaster
+	prMonitor       *PRMonitor
+	pushBranch      func(*session.Instance) error
+	killAgent       func(repoPath, planFile, agentType string) error
+	spawnPlanner    func(context.Context, loop.SpawnOpts) error
+	spawnReviewer   func(context.Context, loop.SpawnOpts) error
+	spawnCoder      func(context.Context, loop.SpawnOpts) error
+	spawnElaborator func(context.Context, loop.SpawnOpts) error
+	spawnFixer      func(context.Context, loop.SpawnOpts) error
+	spawnMaster     func(context.Context, loop.SpawnOpts) error
+	spawnWaveTask   func(context.Context, loop.SpawnOpts, taskparser.Task, string, int, int) error
+	killWaveAgents  func(repoPath, planFile string, wave int) error
+	reapSDKOrphan   func(project, instanceTitle, program string) error
+	createPR        func(RepoEntry, string, string) error
 	// spawnSolo is an injectable seam for tests to override standalone spawn behaviour
 	// without needing a real agent process.
 	spawnSolo               func(context.Context, SpawnSoloOpts) error
@@ -224,6 +223,11 @@ func (a *daemonStateAdapter) ListInstances(project string) []api.InstanceStatus 
 			active := !inst.Paused() && !inst.Exited && (inst.Started() || inst.Status == session.Loading)
 			ready := active && inst.Status == session.Ready
 			skipPermissions := inst.SkipPermissions
+			var createdAt *time.Time
+			if !inst.CreatedAt.IsZero() {
+				t := inst.CreatedAt
+				createdAt = &t
+			}
 			lastActivity := instanceLastActivity(inst)
 			// Only surface the profile when it is non-normal so the common case
 			// stays clean on the wire.
@@ -242,6 +246,7 @@ func (a *daemonStateAdapter) ListInstances(project string) []api.InstanceStatus 
 				Title:           inst.Title,
 				Branch:          inst.Branch,
 				Program:         inst.Program,
+				CreatedAt:       createdAt,
 				TaskNumber:      inst.TaskNumber,
 				WaveNumber:      inst.WaveNumber,
 				ReviewCycle:     inst.ReviewCycle,
@@ -638,90 +643,109 @@ func (d *Daemon) startPlanAsync(entry RepoEntry, planFile, prompt, program strin
 	if killAgent == nil {
 		killAgent = d.spawner.KillAgent
 	}
-	spawnPlanner := d.spawnPlanner
-	if spawnPlanner == nil {
-		spawnPlanner = d.spawner.SpawnPlanner
-	}
-
-	taskEntry := taskstore.TaskEntry{}
-	if entry.Store != nil {
-		if loaded, err := entry.Store.Get(entry.Project, planFile); err == nil {
-			taskEntry = loaded
-		}
-	}
-
-	if entry.ParallelPlannerArchitect {
-		cacheDir := filepath.Join(entry.Path, ".kasmos", "cache")
-		if err := orchestration.ClearArchitectBaseline(cacheDir, planFile); err != nil {
-			d.logger.Error("clear architect baseline failed", "project", entry.Project, "plan", planFile, "err", err)
-		}
-	}
 
 	if err := killAgent(entry.Path, planFile, session.AgentTypePlanner); err != nil {
 		d.logger.Error("kill existing planner failed", "project", entry.Project, "plan", planFile, "err", err)
 		return
 	}
-	if entry.ParallelPlannerArchitect {
-		if err := killAgent(entry.Path, planFile, session.AgentTypeArchitectBaseline); err != nil {
-			d.logger.Error("kill existing architect baseline failed", "project", entry.Project, "plan", planFile, "err", err)
+
+	if entry.PlannerDraftMode && len(entry.PlannerProfiles) > 0 {
+		if entry.Processor != nil {
+			entry.Processor.ResetPlannerDraftAgg(planFile)
+		}
+		if err := orchestration.ClearPlannerDraftCaches(entry.CacheDir, planFile); err != nil {
+			d.logger.Error("clear planner drafts failed", "project", entry.Project, "plan", planFile, "err", err)
 			return
 		}
+		for i, profile := range entry.PlannerProfiles {
+			if err := d.spawnPlannerForProfile(context.Background(), entry, planFile, profile, i == 0, true, prompt, program); err != nil {
+				d.logger.Error("spawn planner failed", "project", entry.Project, "plan", planFile, "profile", profile, "err", err)
+				// Kill any already-spawned siblings so the partial set
+				// doesn't strand the task in planning — without this
+				// cleanup, ProcessPlannerDraftSignals waits forever for
+				// drafts that will never arrive.
+				if cleanupErr := killAgent(entry.Path, planFile, session.AgentTypePlanner); cleanupErr != nil {
+					d.logger.Error("clean up partial planner fan-out failed", "project", entry.Project, "plan", planFile, "err", cleanupErr)
+				}
+				return
+			}
+		}
+		return
 	}
-	if err := spawnPlanner(context.Background(), withSDKTranscriptRetention(entry, loop.SpawnOpts{
-		PlanFile:        planFile,
-		RepoPath:        entry.Path,
-		Project:         entry.Project,
-		Prompt:          prompt,
-		Program:         program,
-		ExecutionMode:   executionModeForAgent(entry.Path, session.AgentTypePlanner),
-		SDKSpeedTier:    sdkSpeedTierForAgent(entry.Path, session.AgentTypePlanner),
-		SkipPermissions: skipPermissionsForAgent(entry.Path, session.AgentTypePlanner),
-	})); err != nil {
+
+	if err := d.spawnPlannerForProfile(context.Background(), entry, planFile, "", true, false, prompt, program); err != nil {
 		d.logger.Error("spawn planner failed", "project", entry.Project, "plan", planFile, "err", err)
 		return
+	}
+}
+
+func (d *Daemon) spawnPlannerForProfile(ctx context.Context, e RepoEntry, planFile string, profile string, primary bool, draftMode bool, legacyPrompt string, legacyProgram string) error {
+	spawnPlanner := d.spawnPlanner
+	if spawnPlanner == nil {
+		spawnPlanner = d.spawner.SpawnPlanner
+	}
+	cacheDir := e.CacheDir
+	if cacheDir == "" {
+		cacheDir = filepath.Join(e.Path, ".kasmos", "cache")
+	}
+
+	opts := loop.SpawnOpts{
+		PlanFile:        planFile,
+		RepoPath:        e.Path,
+		Project:         e.Project,
+		Prompt:          legacyPrompt,
+		Program:         legacyProgram,
+		ExecutionMode:   executionModeForAgent(e.Path, session.AgentTypePlanner),
+		SDKSpeedTier:    sdkSpeedTierForAgent(e.Path, session.AgentTypePlanner),
+		SkipPermissions: skipPermissionsForAgent(e.Path, session.AgentTypePlanner),
+	}
+
+	if draftMode {
+		if e.Store == nil {
+			return fmt.Errorf("task store unavailable for %s", planFile)
+		}
+		entry, err := e.Store.Get(e.Project, planFile)
+		if err != nil {
+			return fmt.Errorf("load task entry for %s: %w", planFile, err)
+		}
+		cacheName, err := orchestration.PlannerDraftCacheFilename(planFile, profile)
+		if err != nil {
+			return err
+		}
+		cachePath := filepath.Join(cacheDir, cacheName)
+		spec := orchestration.BuildPlannerAgentSpecWithOptions(planFile, e.Project, entry.Description, orchestration.PlannerAgentOptions{
+			Profile:   profile,
+			Primary:   primary,
+			DraftMode: true,
+			CachePath: cachePath,
+		})
+		opts.Prompt = orchestration.PlannerDraftPromptWithCallerPrompt(spec.Prompt, legacyPrompt)
+		opts.Program = programForNamedProfile(e.Path, profile)
+		if opts.Program == "" {
+			opts.Program = legacyProgram
+		}
+		opts.Description = entry.Description
+		opts.ExecutionMode = string(executionModeForNamedProfile(e.Path, profile))
+		opts.SDKSpeedTier = sdkSpeedTierForNamedProfile(e.Path, profile)
+		opts.SkipPermissions = skipPermissionsForNamedProfile(e.Path, profile)
+		opts.PlannerProfile = profile
+		opts.PlannerPrimary = primary
+		opts.PlannerDraftMode = true
+	}
+
+	if err := spawnPlanner(ctx, withSDKTranscriptRetention(e, opts)); err != nil {
+		return err
 	}
 	if d.broadcaster != nil {
 		d.broadcaster.Emit(api.Event{
 			Kind:      api.EventKindAgentSpawned,
 			Message:   "planner spawned for " + planFile,
-			Repo:      entry.Path,
+			Repo:      e.Path,
 			PlanFile:  planFile,
 			AgentType: session.AgentTypePlanner,
 		})
 	}
-	if !entry.ParallelPlannerArchitect {
-		return
-	}
-	spawnArchitectBaseline := d.spawnArchitectBaseline
-	if spawnArchitectBaseline == nil {
-		spawnArchitectBaseline = d.spawner.SpawnArchitectBaseline
-	}
-	baselineAgentType := session.AgentTypeArchitectBaseline
-	harnessAgentType := harnessAgentTypeForSpawn(baselineAgentType)
-	baselineSpec := orchestration.BuildArchitectBaselineAgentSpec(planFile, entry.Project, taskEntry.Description)
-	if err := spawnArchitectBaseline(context.Background(), withSDKTranscriptRetention(entry, loop.SpawnOpts{
-		PlanFile:        planFile,
-		RepoPath:        entry.Path,
-		Project:         entry.Project,
-		Prompt:          baselineSpec.Prompt,
-		Description:     taskEntry.Description,
-		Program:         programForAgent(entry.Path, harnessAgentType),
-		ExecutionMode:   executionModeForAgent(entry.Path, harnessAgentType),
-		SDKSpeedTier:    sdkSpeedTierForAgent(entry.Path, harnessAgentType),
-		SkipPermissions: skipPermissionsForAgent(entry.Path, harnessAgentType),
-	})); err != nil {
-		d.logger.Error("spawn architect baseline failed", "project", entry.Project, "plan", planFile, "err", err)
-		return
-	}
-	if d.broadcaster != nil {
-		d.broadcaster.Emit(api.Event{
-			Kind:      api.EventKindAgentSpawned,
-			Message:   "architect baseline spawned for " + planFile,
-			Repo:      entry.Path,
-			PlanFile:  planFile,
-			AgentType: baselineAgentType,
-		})
-	}
+	return nil
 }
 
 // SpawnSolo asks the daemon to launch a standalone SDK agent instance outside
@@ -1150,7 +1174,7 @@ func (d *Daemon) tickRepo(ctx context.Context, e RepoEntry) {
 
 		actions := e.Processor.Tick(scan)
 		if len(actions) == 0 {
-			status, result := gatewayNoopOutcome(entry)
+			status, result := e.Processor.GatewayNoopOutcome(entry)
 			if err := e.SignalGateway.MarkProcessed(entry.ID, status, result); err != nil {
 				d.logger.Error("mark noop signal failed", "repo", e.Path, "id", entry.ID, "err", err)
 			}
@@ -1481,31 +1505,6 @@ func (d *Daemon) monitorRunningInstances(ctx context.Context, e RepoEntry) {
 	}
 }
 
-func gatewayNoopOutcome(entry *taskstore.SignalEntry) (taskstore.SignalStatus, string) {
-	canonicalType, err := taskfsm.CanonicalGatewaySignalType(entry.SignalType)
-	if err != nil {
-		return taskstore.SignalFailed, "signal rejected by processor"
-	}
-	internalType := canonicalType
-	if canonicalType == "elaborator_finished" {
-		internalType = string(taskfsm.ArchitectFinished)
-	}
-	switch internalType {
-	case "implement_finished":
-		return taskstore.SignalDone, "suppressed implement-finished signal"
-	case "implement_task_finished":
-		return taskstore.SignalFailed, "no active orchestrator / wrong wave / already-finished task"
-	case "implement_wave":
-		return taskstore.SignalFailed, "processor could not start the requested wave"
-	case string(taskfsm.ArchitectFinished):
-		return taskstore.SignalFailed, "no active architect pass to resume"
-	case string(taskfsm.VerifyApproved), string(taskfsm.VerifyFailed):
-		return taskstore.SignalFailed, "signal rejected outside verifying state"
-	default:
-		return taskstore.SignalFailed, "signal rejected by processor"
-	}
-}
-
 // reapStuckSignals resets signals that have been stuck in "processing" for
 // longer than timeout across all repos with a SignalGateway. Returns the
 // total count of signals reset.
@@ -1610,88 +1609,36 @@ func (d *Daemon) executeAction(ctx context.Context, e RepoEntry, action loop.Act
 		// Kill any existing planner for this plan before spawning a new one —
 		// matches the StartPlan path the TUI uses so a retry from the admin UI
 		// never races with a stale planner.
-		killAgent := d.killAgent
-		if killAgent == nil {
-			killAgent = d.spawner.KillAgent
-		}
-		if err := killAgent(e.Path, a.PlanFile, session.AgentTypePlanner); err != nil {
-			d.logger.Error("kill existing planner failed", "plan", a.PlanFile, "err", err)
-			return err
-		}
 		entry := entryFor(a.PlanFile)
-		spec := orchestration.BuildPlannerAgentSpec(a.PlanFile, e.Project, entry.Description)
-		opts := withSDKTranscriptRetention(e, loop.SpawnOpts{
-			PlanFile:        a.PlanFile,
-			RepoPath:        e.Path,
-			Project:         e.Project,
-			Program:         programForAgent(e.Path, session.AgentTypePlanner),
-			Prompt:          spec.Prompt,
-			ExecutionMode:   executionModeForAgent(e.Path, session.AgentTypePlanner),
-			SDKSpeedTier:    sdkSpeedTierForAgent(e.Path, session.AgentTypePlanner),
-			SkipPermissions: skipPermissionsForAgent(e.Path, session.AgentTypePlanner),
-		})
-		spawnPlanner := d.spawnPlanner
-		if spawnPlanner == nil {
-			spawnPlanner = d.spawner.SpawnPlanner
+		if !a.DraftMode || a.Primary {
+			killAgent := d.killAgent
+			if killAgent == nil {
+				killAgent = d.spawner.KillAgent
+			}
+			if err := killAgent(e.Path, a.PlanFile, session.AgentTypePlanner); err != nil {
+				d.logger.Error("kill existing planner failed", "plan", a.PlanFile, "err", err)
+				return err
+			}
 		}
-		if err := spawnPlanner(ctx, opts); err != nil {
+		spec := orchestration.BuildPlannerAgentSpec(a.PlanFile, e.Project, entry.Description)
+		prompt := spec.Prompt
+		if a.DraftMode {
+			prompt = ""
+		}
+		if err := d.spawnPlannerForProfile(ctx, e, a.PlanFile, a.PlannerProfile, a.Primary, a.DraftMode, prompt, programForAgent(e.Path, session.AgentTypePlanner)); err != nil {
 			d.logger.Error("spawn planner failed", "plan", a.PlanFile, "err", err)
 			return err
 		}
-		d.broadcaster.Emit(api.Event{
-			Kind:      api.EventKindAgentSpawned,
-			Message:   "planner spawned for " + a.PlanFile,
-			Repo:      e.Path,
-			PlanFile:  a.PlanFile,
-			AgentType: session.AgentTypePlanner,
-		})
 		return nil
-	case loop.ClearArchitectBaselineAction:
-		cacheDir := filepath.Join(e.Path, ".kasmos", "cache")
-		if err := orchestration.ClearArchitectBaseline(cacheDir, a.PlanFile); err != nil {
-			d.logger.Error("clear architect baseline failed", "plan", a.PlanFile, "err", err)
+	case loop.ClearPlannerDraftsAction:
+		cacheDir := e.CacheDir
+		if cacheDir == "" {
+			cacheDir = filepath.Join(e.Path, ".kasmos", "cache")
+		}
+		if err := orchestration.ClearPlannerDraftCaches(cacheDir, a.PlanFile); err != nil {
+			d.logger.Error("clear planner drafts failed", "plan", a.PlanFile, "err", err)
 			return err
 		}
-		return nil
-	case loop.SpawnArchitectBaselineAction:
-		killAgent := d.killAgent
-		if killAgent == nil {
-			killAgent = d.spawner.KillAgent
-		}
-		if err := killAgent(e.Path, a.PlanFile, session.AgentTypeArchitectBaseline); err != nil {
-			d.logger.Error("kill existing architect baseline failed", "plan", a.PlanFile, "err", err)
-			return err
-		}
-		entry := entryFor(a.PlanFile)
-		spec := orchestration.BuildArchitectBaselineAgentSpec(a.PlanFile, e.Project, entry.Description)
-		agentType := session.AgentTypeArchitectBaseline
-		harnessAgentType := harnessAgentTypeForSpawn(agentType)
-		opts := withSDKTranscriptRetention(e, loop.SpawnOpts{
-			PlanFile:        a.PlanFile,
-			RepoPath:        e.Path,
-			Project:         e.Project,
-			Program:         programForAgent(e.Path, harnessAgentType),
-			Prompt:          spec.Prompt,
-			Description:     entry.Description,
-			ExecutionMode:   executionModeForAgent(e.Path, harnessAgentType),
-			SDKSpeedTier:    sdkSpeedTierForAgent(e.Path, harnessAgentType),
-			SkipPermissions: skipPermissionsForAgent(e.Path, harnessAgentType),
-		})
-		spawnArchitectBaseline := d.spawnArchitectBaseline
-		if spawnArchitectBaseline == nil {
-			spawnArchitectBaseline = d.spawner.SpawnArchitectBaseline
-		}
-		if err := spawnArchitectBaseline(ctx, opts); err != nil {
-			d.logger.Error("spawn architect baseline failed", "plan", a.PlanFile, "err", err)
-			return err
-		}
-		d.broadcaster.Emit(api.Event{
-			Kind:      api.EventKindAgentSpawned,
-			Message:   "architect baseline spawned for " + a.PlanFile,
-			Repo:      e.Path,
-			PlanFile:  a.PlanFile,
-			AgentType: agentType,
-		})
 		return nil
 	case loop.SpawnElaboratorAction:
 		if err := setRepoExecutionState(e, a.PlanFile, taskstore.ExecutionState{
@@ -1700,11 +1647,7 @@ func (d *Daemon) executeAction(ctx context.Context, e RepoEntry, action loop.Act
 		}); err != nil {
 			return fmt.Errorf("persist architect execution state: %w", err)
 		}
-		entry := entryFor(a.PlanFile)
-		spec := orchestration.BuildArchitectAgentSpecWithOptions(a.PlanFile, e.Project, orchestration.ArchitectPromptOptions{
-			ParallelBaseline: e.ParallelPlannerArchitect,
-			DescriptionHash:  orchestration.ArchitectBaselineDescriptionHash(entry.Description),
-		})
+		spec := orchestration.BuildArchitectAgentSpec(a.PlanFile, e.Project)
 		opts := withSDKTranscriptRetention(e, loop.SpawnOpts{
 			PlanFile:        a.PlanFile,
 			RepoPath:        e.Path,
@@ -2312,13 +2255,6 @@ func phaseForAgentType(agentType string) string {
 	}
 }
 
-func harnessAgentTypeForSpawn(agentType string) string {
-	if agentType == session.AgentTypeArchitectBaseline {
-		return session.AgentTypeElaborator
-	}
-	return agentType
-}
-
 func resolvedProfileForAgent(repoPath, agentType string) (config.AgentProfile, string, bool) {
 	configPath := filepath.Join(repoPath, ".kasmos", config.TOMLConfigFileName)
 	result, err := config.LoadTOMLConfigFrom(configPath)
@@ -2330,7 +2266,7 @@ func resolvedProfileForAgent(repoPath, agentType string) (config.AgentProfile, s
 		Profiles:   result.Profiles,
 	}
 
-	phase := phaseForAgentType(harnessAgentTypeForSpawn(agentType))
+	phase := phaseForAgentType(agentType)
 	if phase == "" {
 		return config.AgentProfile{}, result.DefaultProgram, false
 	}
@@ -2553,20 +2489,21 @@ func (d *Daemon) RecoverSessions() (int, error) {
 				}
 
 				data := session.InstanceData{
-					Title:         candidate.Title,
-					Path:          e.Path,
-					Branch:        candidate.Branch,
-					Status:        session.Running,
-					Program:       "opencode",
-					ExecutionMode: session.ExecutionModeTmux,
-					AutoYes:       true,
-					TaskFile:      task.Filename,
-					AgentType:     candidate.AgentType,
-					TaskNumber:    candidate.TaskNumber,
-					WaveNumber:    candidate.WaveNumber,
-					ReviewCycle:   candidate.ReviewCycle,
-					WaveTaskIndex: candidate.WaveTaskIndex,
-					WaveTaskCount: candidate.WaveTaskCount,
+					Title:          candidate.Title,
+					Path:           e.Path,
+					Branch:         candidate.Branch,
+					Status:         session.Running,
+					Program:        "opencode",
+					ExecutionMode:  session.ExecutionModeTmux,
+					AutoYes:        true,
+					TaskFile:       task.Filename,
+					AgentType:      candidate.AgentType,
+					PlannerProfile: candidate.PlannerProfile,
+					TaskNumber:     candidate.TaskNumber,
+					WaveNumber:     candidate.WaveNumber,
+					ReviewCycle:    candidate.ReviewCycle,
+					WaveTaskIndex:  candidate.WaveTaskIndex,
+					WaveTaskCount:  candidate.WaveTaskCount,
 				}
 				if candidate.Branch != "" {
 					shared := gitpkg.NewSharedTaskWorktree(e.Path, candidate.Branch)

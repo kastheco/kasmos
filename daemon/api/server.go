@@ -80,6 +80,7 @@ type InstanceStatus struct {
 	Title         string     `json:"title,omitempty"`
 	Branch        string     `json:"branch,omitempty"`
 	Program       string     `json:"program,omitempty"`
+	CreatedAt     *time.Time `json:"created_at,omitempty"`
 	TaskNumber    int        `json:"task_number,omitempty"`
 	WaveNumber    int        `json:"wave_number,omitempty"`
 	ReviewCycle   int        `json:"review_cycle,omitempty"`

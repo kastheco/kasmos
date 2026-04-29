@@ -21,7 +21,7 @@ flowchart LR
     SK --> R
 
     B -- "normal path" --> C[spawn architect agent\nSetElaborating]
-    C --> D[architect reads planner draft\nplus optional baseline cache\nenriches task bodies\nwrites updated plan to store\nwrites .kasmos/cache/&lt;planSlug&gt;-architect.json]
+    C --> D[architect reads plan content\nplus planner draft caches\nderives its own baseline\nenriches task bodies\nwrites updated plan to store\nwrites .kasmos/cache/&lt;planSlug&gt;-architect.json]
     D --> E[elaborator_finished signal\nreceived by daemon]
 
     E --> F[UpdatePlan called\norchestrator → Idle\nwave 1 starts\nStartNextWave → WaveStateRunning]
@@ -49,37 +49,33 @@ skipped entirely; the rest of the lifecycle (review → verify → done) is
 identical. See `orchestration/engine.go:ShouldBlueprintSkip` and
 `orchestration/prompt.go:BuildBlueprintSkipPrompt`.
 
-By default, `[orchestration].parallel_planner_architect` is `true` and plan start
-adds an advisory baseline session beside the planner:
+Planning has two modes:
 
-1. plan start clears stale `.kasmos/cache/<planSlug>-architect-baseline.json`
-2. the planner starts normally
-3. an `architect-baseline` runtime session starts separately and writes only the
-   baseline cache artifact
-4. the planner writes the draft and emits the existing `planner_finished` signal
-5. the final architect pass reads the planner draft plus a valid cached
-   baseline; if the cache is missing, corrupt, or for a different planner input,
-   it falls back to the existing inline self-baseline behavior
-6. coder waves proceed normally
+1. When `[orchestration].planners` is unset or empty, kasmos uses the legacy
+   single-planner path: the configured planning profile writes the task store
+   and emits `planner_finished`.
+2. When `[orchestration].planners = ["planner", "planner_x"]` is set, plan
+   start clears stale `.kasmos/cache/<planSlug>-planner-<profile>.md` files,
+   spawns one planner per listed profile, and runs each in draft mode. The first
+   listed planner also updates the task store as a preview. Draft-mode planners
+   emit gateway-only `planner_draft_finished` signals with
+   `{"planner_id":"<profile>"}` payloads. The processor waits until every
+   expected profile has reported, then internally advances planning as if
+   `planner_finished` had occurred.
 
-To restore planner-first behavior — where the planner finishes and emits
-`planner_finished` before the architect pass starts — set
-`[orchestration].parallel_planner_architect = false`. The architect pass then
-derives its own inline baseline before merging with the planner draft.
-
-The baseline cache is advisory. It is safe to delete, is not task-store state,
-and never drives lifecycle status by itself. The baseline session emits no
-lifecycle signals; signal names stay unchanged (`planner_finished`,
-`elaborator_finished`, `implement_task_finished`, and the existing review/verify
-signals). Blueprint-skip still runs before the final architect pass, so a small
-planner draft may produce a baseline cache that is never consumed.
+The architect is no longer a second planner. During implementation startup, the
+final architect pass reads the current task-store plan plus every available
+planner draft cache, derives its own implementation baseline inline, writes the
+final task-store plan, and emits `elaborator_finished`. Blueprint-skip still
+runs before the final architect pass, so very small planner drafts can bypass
+the architect and wave orchestration.
 
 The final audit artifact is the architect metadata file at
 `.kasmos/cache/<task>-architect.json`. Architect agents may add an optional,
 schema-versioned `decision_audit` object to that file with their
-baseline-vs-planner comparison and final decisions. The parallel
-`.kasmos/cache/<task>-architect-baseline.json` cache is only advisory input for
-that comparison; it is not the durable audit artifact.
+planner-draft comparison and final decisions. For multi-planner runs,
+`decision_audit.planner_drafts` records which draft caches were consumed and how
+the architect evaluated them.
 
 ---
 
@@ -91,7 +87,7 @@ The sequence below shows a plan with Wave 1 (tasks 1–3) and Wave 2 (tasks 4–
 sequenceDiagram
     actor User
     participant D as Daemon / Processor
-    participant B as Architect baseline
+    participant P as Planner draft caches
     participant A as Architect agent
     participant C1 as Coder W1-T1
     participant C2 as Coder W1-T2
@@ -102,18 +98,14 @@ sequenceDiagram
     participant Ver as Master/Verifier
 
     User->>D: implement_start signal
-    Note over D: FSM to implementing, optional stale baseline cache cleared
-
-    opt parallel_planner_architect active (default; disabled when set to false)
-        D->>B: spawn architect-baseline session
-        Note over B: writes .kasmos/cache/&lt;planSlug&gt;-architect-baseline.json only; emits no lifecycle signal
-    end
+    Note over D: FSM to implementing; planner draft caches already came from plan_start when configured
 
     D->>A: spawn architect agent (BuildElaborationPrompt)
-    Note over A: reads codebase, planner draft, and valid baseline cache if present; falls back inline if missing
+    A->>P: read .kasmos/cache/&lt;planSlug&gt;-planner-&lt;profile&gt;.md entries
+    Note over A: reads codebase, task-store plan, and planner draft caches; derives its own baseline inline
     Note over A: enriches task bodies, assigns preferred_model per task
     A->>D: writes enriched plan to store
-    A->>D: writes .kasmos/cache/&lt;planSlug&gt;-architect.json (SaveArchitectMeta)
+    A->>D: writes .kasmos/cache/&lt;planSlug&gt;-architect.json with decision_audit.planner_drafts
     A->>D: elaborator_finished signal
 
     Note over D: ProcessElaborationSignals: UpdatePlan to WaveStateIdle, StartNextWave to WaveStateRunning, ExecutionPhase = wave_running (wave 1)

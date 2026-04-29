@@ -88,15 +88,16 @@ type InfoData struct {
 	TranscriptTruncatedRows int64
 
 	// Wave / task context (zero values mean no wave info)
-	AgentType     string
-	WaveNumber    int
-	TotalWaves    int
-	TaskNumber    int
-	TotalTasks    int
-	WaveTasks     []WaveTaskInfo
-	TaskTitle     string
-	WaveTaskIndex int // 1-indexed position within the wave (0 = unknown / non-wave)
-	WaveTaskCount int // total tasks in this wave (0 = unknown / non-wave)
+	AgentType      string
+	PlannerProfile string
+	WaveNumber     int
+	TotalWaves     int
+	TaskNumber     int
+	TotalTasks     int
+	WaveTasks      []WaveTaskInfo
+	TaskTitle      string
+	WaveTaskIndex  int // 1-indexed position within the wave (0 = unknown / non-wave)
+	WaveTaskCount  int // total tasks in this wave (0 = unknown / non-wave)
 
 	// Review outcome (populated when plan is done)
 	ReviewCycle        int
@@ -267,13 +268,21 @@ func infoAgentLabel(agent string) string {
 	switch strings.TrimSpace(agent) {
 	case "", "-":
 		return ""
-	case "architect-baseline":
-		return "architect baseline"
 	case "elaborator":
 		return "architect"
 	default:
 		return strings.TrimSpace(agent)
 	}
+}
+
+func infoInstanceAgentLabel(agent, plannerProfile string) string {
+	label := infoAgentLabel(agent)
+	if label == "planner" {
+		if profile := strings.TrimSpace(plannerProfile); profile != "" {
+			return "planner " + profile
+		}
+	}
+	return label
 }
 
 // infoPhaseLabel converts an ExecutionPhase string to a human-readable label.
@@ -531,7 +540,7 @@ func (p *InfoPane) renderInstanceSection() string {
 	if p.data.Title != "" {
 		rows = append(rows, p.renderRow("title", p.data.Title))
 	}
-	if agent := infoAgentLabel(p.data.AgentType); agent != "" {
+	if agent := infoInstanceAgentLabel(p.data.AgentType, p.data.PlannerProfile); agent != "" {
 		rows = append(rows, p.renderRow("role", agent))
 	}
 	if p.data.Program != "" {

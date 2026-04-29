@@ -8,8 +8,9 @@ import (
 
 // ElaborationSignal represents a parsed elaborator-finished signal file.
 type ElaborationSignal struct {
-	TaskFile string
-	filePath string // full path for deletion
+	TaskFile       string
+	GatewayEntryID int64
+	filePath       string // full path for deletion
 }
 
 const elaborationPrefix = "elaborator-finished-"

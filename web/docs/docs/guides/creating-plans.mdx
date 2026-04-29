@@ -30,6 +30,8 @@ the planner agent:
 
 the orchestration loop picks up the signal and transitions the plan to `ready`, making the implementation stages available.
 
+If `[orchestration].planners = ["planner", "planner_x"]` is configured, kasmos instead starts each listed profile in draft mode. The first listed planner also updates the task store as a preview, every planner writes `.kasmos/cache/<plan>-planner-<profile>.md`, and each emits gateway-only `planner_draft_finished` with `{"planner_id":"<profile>"}`. The processor waits for all configured planner profiles and then internally advances planning to the same `ready` state.
+
 ## lifecycle from new to ready
 
 ```
@@ -41,6 +43,7 @@ the orchestration loop picks up the signal and transitions the plan to `ready`, 
                                  (planner writes content)
                                       │
                                planner_finished
+                       (or all planner_draft_finished)
                                       │
                                       ▼
                                     ready  ◄─── ready to implement

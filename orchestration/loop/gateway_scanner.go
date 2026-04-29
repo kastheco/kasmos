@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"reflect"
 
 	"github.com/kastheco/kasmos/config/taskfsm"
 	"github.com/kastheco/kasmos/config/taskstore"
@@ -29,9 +30,14 @@ type wavePayload struct {
 	WaveNumber int `json:"wave_number"`
 }
 
+type plannerDraftPayload struct {
+	PlannerID string `json:"planner_id"`
+}
+
 // ScanGateway claims all pending signals for the given project from gw,
 // converts them into a ScanResult that Processor.Tick can consume, and returns
-// the claimed row IDs so the caller can mark them done after processing.
+// the claimed entries so the caller can mark them done after processing and
+// classify no-op rows via GatewayNoopOutcome.
 //
 // Signals are claimed one at a time using the atomic Claim method to prevent
 // double-processing. The function does NOT call MarkProcessed — ownership of
@@ -39,17 +45,17 @@ type wavePayload struct {
 //
 // Error handling:
 //   - An unknown signal type or a malformed JSON payload returns an error.
-//     Any IDs already claimed before the bad row are included in the return value.
+//     Any entries already claimed before the bad row are included in the return value.
 //   - An empty payload is valid for FSM and elaboration signals and produces
 //     an empty Body field.
-func ScanGateway(gw taskstore.SignalGateway, project, claimedBy string) (ScanResult, []int64, error) {
+func ScanGateway(gw taskstore.SignalGateway, project, claimedBy string) (ScanResult, []*taskstore.SignalEntry, error) {
 	var result ScanResult
-	var ids []int64
+	var entries []*taskstore.SignalEntry
 
 	for {
 		entry, err := gw.Claim(project, claimedBy)
 		if err != nil {
-			return result, ids, fmt.Errorf("claim signal: %w", err)
+			return result, entries, fmt.Errorf("claim signal: %w", err)
 		}
 		if entry == nil {
 			break
@@ -61,13 +67,13 @@ func ScanGateway(gw taskstore.SignalGateway, project, claimedBy string) (ScanRes
 			if markErr := gw.MarkProcessed(entry.ID, taskstore.SignalFailed, convertErr.Error()); markErr != nil {
 				slog.Default().Error("gateway_scanner: mark signal as failed", "id", entry.ID, "err", markErr)
 			}
-			return result, ids, fmt.Errorf("signal %d (%s): %w", entry.ID, entry.SignalType, convertErr)
+			return result, entries, fmt.Errorf("signal %d (%s): %w", entry.ID, entry.SignalType, convertErr)
 		}
 
-		ids = append(ids, entry.ID)
+		entries = append(entries, entry)
 	}
 
-	return result, ids, nil
+	return result, entries, nil
 }
 
 // ConvertSignalEntry decodes a single SignalEntry and appends it to result.
@@ -82,16 +88,30 @@ func ConvertSignalEntry(entry *taskstore.SignalEntry, result *ScanResult) error 
 	}
 
 	switch internalType {
+	case "plan_start":
+		body, preApplied, err := decodeBody(entry.Payload)
+		if err != nil {
+			return err
+		}
+		result.FSMSignals = append(result.FSMSignals, taskfsm.Signal{
+			Event:          taskfsm.PlanStart,
+			TaskFile:       entry.PlanFile,
+			Body:           body,
+			PreApplied:     preApplied,
+			GatewayEntryID: entry.ID,
+		})
+
 	case "planner_finished":
 		body, preApplied, err := decodeBody(entry.Payload)
 		if err != nil {
 			return err
 		}
 		result.FSMSignals = append(result.FSMSignals, taskfsm.Signal{
-			Event:      taskfsm.PlannerFinished,
-			TaskFile:   entry.PlanFile,
-			Body:       body,
-			PreApplied: preApplied,
+			Event:          taskfsm.PlannerFinished,
+			TaskFile:       entry.PlanFile,
+			Body:           body,
+			PreApplied:     preApplied,
+			GatewayEntryID: entry.ID,
 		})
 
 	case "implement_finished":
@@ -100,10 +120,11 @@ func ConvertSignalEntry(entry *taskstore.SignalEntry, result *ScanResult) error 
 			return err
 		}
 		result.FSMSignals = append(result.FSMSignals, taskfsm.Signal{
-			Event:      taskfsm.ImplementFinished,
-			TaskFile:   entry.PlanFile,
-			Body:       body,
-			PreApplied: preApplied,
+			Event:          taskfsm.ImplementFinished,
+			TaskFile:       entry.PlanFile,
+			Body:           body,
+			PreApplied:     preApplied,
+			GatewayEntryID: entry.ID,
 		})
 
 	case "review_approved":
@@ -112,10 +133,11 @@ func ConvertSignalEntry(entry *taskstore.SignalEntry, result *ScanResult) error 
 			return err
 		}
 		result.FSMSignals = append(result.FSMSignals, taskfsm.Signal{
-			Event:      taskfsm.ReviewApproved,
-			TaskFile:   entry.PlanFile,
-			Body:       body,
-			PreApplied: preApplied,
+			Event:          taskfsm.ReviewApproved,
+			TaskFile:       entry.PlanFile,
+			Body:           body,
+			PreApplied:     preApplied,
+			GatewayEntryID: entry.ID,
 		})
 
 	case "review_changes_requested":
@@ -124,10 +146,11 @@ func ConvertSignalEntry(entry *taskstore.SignalEntry, result *ScanResult) error 
 			return err
 		}
 		result.FSMSignals = append(result.FSMSignals, taskfsm.Signal{
-			Event:      taskfsm.ReviewChangesRequested,
-			TaskFile:   entry.PlanFile,
-			Body:       body,
-			PreApplied: preApplied,
+			Event:          taskfsm.ReviewChangesRequested,
+			TaskFile:       entry.PlanFile,
+			Body:           body,
+			PreApplied:     preApplied,
+			GatewayEntryID: entry.ID,
 		})
 
 	case string(taskfsm.VerifyApproved):
@@ -136,10 +159,11 @@ func ConvertSignalEntry(entry *taskstore.SignalEntry, result *ScanResult) error 
 			return err
 		}
 		result.FSMSignals = append(result.FSMSignals, taskfsm.Signal{
-			Event:      taskfsm.VerifyApproved,
-			TaskFile:   entry.PlanFile,
-			Body:       body,
-			PreApplied: preApplied,
+			Event:          taskfsm.VerifyApproved,
+			TaskFile:       entry.PlanFile,
+			Body:           body,
+			PreApplied:     preApplied,
+			GatewayEntryID: entry.ID,
 		})
 
 	case string(taskfsm.VerifyFailed):
@@ -148,10 +172,11 @@ func ConvertSignalEntry(entry *taskstore.SignalEntry, result *ScanResult) error 
 			return err
 		}
 		result.FSMSignals = append(result.FSMSignals, taskfsm.Signal{
-			Event:      taskfsm.VerifyFailed,
-			TaskFile:   entry.PlanFile,
-			Body:       body,
-			PreApplied: preApplied,
+			Event:          taskfsm.VerifyFailed,
+			TaskFile:       entry.PlanFile,
+			Body:           body,
+			PreApplied:     preApplied,
+			GatewayEntryID: entry.ID,
 		})
 
 	case "implement_task_finished":
@@ -160,9 +185,10 @@ func ConvertSignalEntry(entry *taskstore.SignalEntry, result *ScanResult) error 
 			return fmt.Errorf("decode task payload: %w", err)
 		}
 		result.TaskSignals = append(result.TaskSignals, taskfsm.TaskSignal{
-			WaveNumber: p.WaveNumber,
-			TaskNumber: p.TaskNumber,
-			TaskFile:   entry.PlanFile,
+			WaveNumber:     p.WaveNumber,
+			TaskNumber:     p.TaskNumber,
+			TaskFile:       entry.PlanFile,
+			GatewayEntryID: entry.ID,
 		})
 
 	case "implement_wave":
@@ -171,13 +197,29 @@ func ConvertSignalEntry(entry *taskstore.SignalEntry, result *ScanResult) error 
 			return fmt.Errorf("decode wave payload: %w", err)
 		}
 		result.WaveSignals = append(result.WaveSignals, taskfsm.WaveSignal{
-			WaveNumber: p.WaveNumber,
-			TaskFile:   entry.PlanFile,
+			WaveNumber:     p.WaveNumber,
+			TaskFile:       entry.PlanFile,
+			GatewayEntryID: entry.ID,
 		})
 
 	case string(taskfsm.ArchitectFinished):
 		result.ElaborationSignals = append(result.ElaborationSignals, taskfsm.ElaborationSignal{
-			TaskFile: entry.PlanFile,
+			TaskFile:       entry.PlanFile,
+			GatewayEntryID: entry.ID,
+		})
+
+	case "planner_draft_finished":
+		var p plannerDraftPayload
+		if err := json.Unmarshal([]byte(entry.Payload), &p); err != nil {
+			return fmt.Errorf("decode planner draft payload: %w", err)
+		}
+		if p.PlannerID == "" {
+			return fmt.Errorf("planner_draft_finished: planner_id must not be empty")
+		}
+		result.PlannerDraftSignals = append(result.PlannerDraftSignals, taskfsm.PlannerDraftSignal{
+			TaskFile:       entry.PlanFile,
+			PlannerID:      p.PlannerID,
+			GatewayEntryID: entry.ID,
 		})
 
 	default:
@@ -185,6 +227,72 @@ func ConvertSignalEntry(entry *taskstore.SignalEntry, result *ScanResult) error 
 	}
 
 	return nil
+}
+
+// ActionPlanFile extracts the PlanFile value from an Action by reading the
+// `PlanFile` field via reflection. Returns the empty string for actions that
+// have no PlanFile field. This is used by callers (the local TUI ack loop)
+// that need to map produced actions back to their originating plan file
+// without keeping a hand-maintained type switch in lockstep with every new
+// action type.
+func ActionPlanFile(a Action) string {
+	v := reflect.ValueOf(a)
+	if v.Kind() == reflect.Pointer {
+		v = v.Elem()
+	}
+	if v.Kind() != reflect.Struct {
+		return ""
+	}
+	f := v.FieldByName("PlanFile")
+	if !f.IsValid() || f.Kind() != reflect.String {
+		return ""
+	}
+	return f.String()
+}
+
+// GatewaySignalOutcome describes how to acknowledge a gateway row that did not
+// produce actions.
+type GatewaySignalOutcome struct {
+	Status taskstore.SignalStatus
+	Result string
+}
+
+// GatewayNoopOutcome classifies a gateway signal entry that produced no
+// processor actions when no processor-specific context is available. Daemon and
+// TUI paths should prefer Processor.GatewayNoopOutcome after processing a row,
+// because some no-ops such as planner_draft_finished need per-row acceptance
+// state to distinguish "waiting for peers" from invalid input. This stateless
+// fallback keeps clearly rejected lifecycle signals failed instead of silently
+// acknowledging them as done.
+func GatewayNoopOutcome(entry *taskstore.SignalEntry) (taskstore.SignalStatus, string) {
+	if entry == nil {
+		return taskstore.SignalFailed, "signal rejected by processor"
+	}
+	canonicalType, err := taskfsm.CanonicalGatewaySignalType(entry.SignalType)
+	if err != nil {
+		return taskstore.SignalFailed, "signal rejected by processor"
+	}
+	if canonicalType == "planner_draft_finished" {
+		return taskstore.SignalFailed, "planner draft signal rejected by processor"
+	}
+	internalType := canonicalType
+	if canonicalType == "elaborator_finished" {
+		internalType = string(taskfsm.ArchitectFinished)
+	}
+	switch internalType {
+	case "implement_finished":
+		return taskstore.SignalDone, "suppressed implement-finished signal"
+	case "implement_task_finished":
+		return taskstore.SignalFailed, "no active orchestrator / wrong wave / already-finished task"
+	case "implement_wave":
+		return taskstore.SignalFailed, "processor could not start the requested wave"
+	case string(taskfsm.ArchitectFinished):
+		return taskstore.SignalFailed, "no active architect pass to resume"
+	case string(taskfsm.VerifyApproved), string(taskfsm.VerifyFailed):
+		return taskstore.SignalFailed, "signal rejected outside verifying state"
+	default:
+		return taskstore.SignalFailed, "signal rejected by processor"
+	}
 }
 
 // decodeBody extracts the optional "body" and "fsm_applied" fields from a JSON

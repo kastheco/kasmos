@@ -68,6 +68,7 @@ func TestRecord_RoundTripsFullInstanceData(t *testing.T) {
 		ExecutionMode:          session.ExecutionModeSDK,
 		TaskFile:               "plan.md",
 		AgentType:              "coder",
+		PlannerProfile:         "planner-a",
 		TaskNumber:             1,
 		WaveNumber:             2,
 		PeerCount:              3,

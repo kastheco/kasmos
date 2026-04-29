@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -407,7 +408,7 @@ func TestSpawnTaskAgent_PlanUsesDaemonWhenRepoManaged(t *testing.T) {
 	assert.Equal(t, fakeInst.Title, instances[0].Title)
 }
 
-func TestSpawnPlannerWithOptionalBaseline_DisabledSpawnsOnlyPlanner(t *testing.T) {
+func TestSpawnPlannersForTask_LegacyModeSpawnsOnlyPlanner(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	plansDir := filepath.Join(dir, "docs", "plans")
@@ -431,7 +432,7 @@ func TestSpawnPlannerWithOptionalBaseline_DisabledSpawnsOnlyPlanner(t *testing.T
 		instanceFinalizers: make(map[*session.Instance]func()),
 	}
 
-	model, cmd := h.spawnPlannerWithOptionalBaseline(planFile, "plan prompt", "build local plan")
+	model, cmd := h.spawnPlannersForTask(planFile, "plan prompt", "build local plan")
 	require.NotNil(t, cmd)
 	updated := model.(*home)
 	instances := updated.nav.GetInstances()
@@ -440,9 +441,7 @@ func TestSpawnPlannerWithOptionalBaseline_DisabledSpawnsOnlyPlanner(t *testing.T
 	assert.Equal(t, "plan prompt", instances[0].QueuedPrompt)
 }
 
-func TestSpawnPlannerWithOptionalBaseline_DefaultConfigSpawnsPlannerAndArchitectBaseline(t *testing.T) {
-	// DefaultConfig() sets ParallelPlannerArchitect: true — verify the TUI spawns
-	// both the planner and the architect-baseline agent out of the box.
+func TestSpawnPlannersForTask_DefaultConfigUsesLegacyPlanner(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	plansDir := filepath.Join(dir, "docs", "plans")
@@ -466,24 +465,17 @@ func TestSpawnPlannerWithOptionalBaseline_DefaultConfigSpawnsPlannerAndArchitect
 		instanceFinalizers: make(map[*session.Instance]func()),
 	}
 
-	model, cmd := h.spawnPlannerWithOptionalBaseline(planFile, "plan prompt", "build default config plan")
+	model, cmd := h.spawnPlannersForTask(planFile, "plan prompt", "build default config plan")
 	require.NotNil(t, cmd)
 	updated := model.(*home)
 
-	var planner, baseline *session.Instance
-	for _, inst := range updated.nav.GetInstances() {
-		switch inst.AgentType {
-		case session.AgentTypePlanner:
-			planner = inst
-		case session.AgentTypeArchitectBaseline:
-			baseline = inst
-		}
-	}
-	require.NotNil(t, planner, "DefaultConfig must spawn planner")
-	require.NotNil(t, baseline, "DefaultConfig must spawn architect-baseline")
+	instances := updated.nav.GetInstances()
+	require.Len(t, instances, 1)
+	assert.Equal(t, session.AgentTypePlanner, instances[0].AgentType)
+	assert.Empty(t, instances[0].PlannerProfile)
 }
 
-func TestSpawnPlannerWithOptionalBaseline_EnabledSpawnsPlannerAndArchitectBaseline(t *testing.T) {
+func TestSpawnPlannersForTask_DraftModeSpawnsConfiguredProfiles(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	plansDir := filepath.Join(dir, "docs", "plans")
@@ -496,7 +488,13 @@ func TestSpawnPlannerWithOptionalBaseline_EnabledSpawnsPlannerAndArchitectBaseli
 
 	sp := spinner.New(spinner.WithSpinner(spinner.Dot))
 	h := &home{
-		appConfig:          &config.Config{ParallelPlannerArchitect: true},
+		appConfig: &config.Config{
+			Planners: []string{"planner_a", "planner_b"},
+			Profiles: map[string]config.AgentProfile{
+				"planner_a": {Enabled: true, Program: "opencode"},
+				"planner_b": {Enabled: true, Program: "opencode"},
+			},
+		},
 		taskState:          ps,
 		activeRepoPath:     dir,
 		taskStoreProject:   "proj",
@@ -508,29 +506,140 @@ func TestSpawnPlannerWithOptionalBaseline_EnabledSpawnsPlannerAndArchitectBaseli
 		instanceFinalizers: make(map[*session.Instance]func()),
 	}
 
-	model, cmd := h.spawnPlannerWithOptionalBaseline(planFile, "plan prompt", description)
+	const callerPrompt = "plan prompt with clickup import instructions"
+	model, cmd := h.spawnPlannersForTask(planFile, callerPrompt, description)
 	require.NotNil(t, cmd)
 	updated := model.(*home)
 
-	var planner, baseline *session.Instance
-	for _, inst := range updated.nav.GetInstances() {
-		switch inst.AgentType {
-		case session.AgentTypePlanner:
-			planner = inst
-		case session.AgentTypeArchitectBaseline:
-			baseline = inst
-		}
-	}
-	require.NotNil(t, planner)
-	require.NotNil(t, baseline)
-	assert.Equal(t, planFile, baseline.TaskFile)
-	assert.Contains(t, baseline.QueuedPrompt, "architect baseline agent")
-	assert.Contains(t, baseline.QueuedPrompt, orchestration.ArchitectBaselineDescriptionHash(description))
+	instances := updated.nav.GetInstances()
+	require.Len(t, instances, 2)
+	assert.Equal(t, "planner_a", instances[0].PlannerProfile)
+	assert.Equal(t, "planner_b", instances[1].PlannerProfile)
+	assert.Contains(t, instances[0].QueuedPrompt, ".kasmos/cache/"+planFile+"-planner-planner_a.md")
+	assert.Contains(t, instances[0].QueuedPrompt, "Write the same draft to the task store as preview content")
+	assert.Contains(t, instances[0].QueuedPrompt, "## caller-provided prompt")
+	assert.Contains(t, instances[0].QueuedPrompt, callerPrompt)
+	assert.Contains(t, instances[1].QueuedPrompt, ".kasmos/cache/"+planFile+"-planner-planner_b.md")
+	assert.NotContains(t, instances[1].QueuedPrompt, "Write the same draft to the task store as preview content")
+	assert.Contains(t, instances[1].QueuedPrompt, "## caller-provided prompt")
+	assert.Contains(t, instances[1].QueuedPrompt, callerPrompt)
 
 	entry, ok := updated.taskState.Entry(planFile)
 	require.True(t, ok)
 	assert.Equal(t, taskstore.ExecutionState{}, entry.ExecutionState,
-		"baseline spawn must not mutate task execution state")
+		"planner draft fan-out must not mutate task execution state")
+}
+
+func TestSpawnPlannersForTask_SetupFailurePreservesExistingPlanner(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	plansDir := filepath.Join(dir, "docs", "plans")
+	require.NoError(t, os.MkdirAll(plansDir, 0o755))
+	ps, err := newTestPlanState(t, plansDir)
+	require.NoError(t, err)
+	const planFile = "setup-failure-parallel-plan"
+	require.NoError(t, ps.Register(planFile, "setup failure parallel plan", "plan/setup-failure-parallel-plan", time.Now()))
+
+	oldPlanner := &session.Instance{
+		Title:          "setup-failure-parallel-plan-plan-old",
+		TaskFile:       planFile,
+		AgentType:      session.AgentTypePlanner,
+		Status:         session.Running,
+		PlannerProfile: "",
+	}
+	sp := spinner.New(spinner.WithSpinner(spinner.Dot))
+	h := &home{
+		appConfig: &config.Config{
+			Planners: []string{"planner_a", "missing_planner"},
+			Profiles: map[string]config.AgentProfile{
+				"planner_a": {Enabled: true, Program: "opencode"},
+			},
+		},
+		taskState:          ps,
+		activeRepoPath:     dir,
+		taskStoreProject:   "proj",
+		program:            "opencode",
+		nav:                ui.NewNavigationPanel(&sp),
+		menu:               ui.NewMenu(),
+		tabbedWindow:       ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewInfoPane()),
+		toastManager:       overlay.NewToastManager(&sp),
+		overlays:           overlay.NewManager(),
+		allInstances:       []*session.Instance{oldPlanner},
+		instanceFinalizers: make(map[*session.Instance]func()),
+	}
+	h.addInstanceFinalizer(oldPlanner, h.nav.AddInstance(oldPlanner))
+
+	model, cmd := h.spawnPlannersForTask(planFile, "plan prompt", "build setup failure plan")
+	require.NotNil(t, cmd)
+	updated := model.(*home)
+
+	require.Equal(t, []*session.Instance{oldPlanner}, updated.nav.GetInstances(),
+		"setup errors must not remove the previous planner or stage partial profile rows")
+	require.Equal(t, []*session.Instance{oldPlanner}, updated.allInstances,
+		"setup errors must not mutate persisted instance candidates")
+	require.Contains(t, updated.instanceFinalizers, oldPlanner,
+		"the existing planner finalizer must remain registered")
+	assert.Equal(t, 0, updated.plannerFanoutSeq,
+		"fan-out setup must fail before allocating a start group")
+}
+
+func TestPlannerFanoutStartFailureRollsBackSiblingsAndIgnoresLateSuccess(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	plansDir := filepath.Join(dir, "docs", "plans")
+	require.NoError(t, os.MkdirAll(plansDir, 0o755))
+	ps, err := newTestPlanState(t, plansDir)
+	require.NoError(t, err)
+	const planFile = "rollback-parallel-plan"
+	require.NoError(t, ps.Register(planFile, "rollback parallel plan", "plan/rollback-parallel-plan", time.Now()))
+
+	sp := spinner.New(spinner.WithSpinner(spinner.Dot))
+	h := &home{
+		appConfig: &config.Config{
+			Planners: []string{"planner_a", "planner_b"},
+			Profiles: map[string]config.AgentProfile{
+				"planner_a": {Enabled: true, Program: "opencode"},
+				"planner_b": {Enabled: true, Program: "opencode"},
+			},
+		},
+		taskState:          ps,
+		activeRepoPath:     dir,
+		taskStoreProject:   "proj",
+		program:            "opencode",
+		nav:                ui.NewNavigationPanel(&sp),
+		menu:               ui.NewMenu(),
+		tabbedWindow:       ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewInfoPane()),
+		toastManager:       overlay.NewToastManager(&sp),
+		overlays:           overlay.NewManager(),
+		instanceFinalizers: make(map[*session.Instance]func()),
+	}
+
+	model, cmd := h.spawnPlannersForTask(planFile, "plan prompt", "build rollback plan")
+	require.NotNil(t, cmd)
+	updated := model.(*home)
+	instances := append([]*session.Instance(nil), updated.nav.GetInstances()...)
+	require.Len(t, instances, 2)
+	require.Equal(t, 1, updated.plannerFanoutSeq)
+	startGroupID := "planner:" + planFile + ":1"
+
+	// A successful sibling may report before another profile's async start fails.
+	model, _ = updated.Update(instanceStartedMsg{instance: instances[0], startGroupID: startGroupID})
+	updated = model.(*home)
+	require.Len(t, updated.allInstances, 1)
+
+	model, _ = updated.Update(instanceStartedMsg{instance: instances[1], err: errors.New("start failed"), startGroupID: startGroupID})
+	updated = model.(*home)
+	assert.Empty(t, updated.nav.GetInstances(), "start failure must roll back all planner siblings")
+	assert.Empty(t, updated.allInstances, "started siblings must be removed from persistence")
+	assert.Empty(t, updated.instanceFinalizers, "queued sibling finalizers must be dropped")
+
+	// If a sibling command reports success after rollback, it must not resurrect
+	// the fan-out and leave aggregation waiting for the failed profile.
+	model, _ = updated.Update(instanceStartedMsg{instance: instances[0], startGroupID: startGroupID})
+	updated = model.(*home)
+	assert.Empty(t, updated.nav.GetInstances())
+	assert.Empty(t, updated.allInstances)
+	assert.Empty(t, updated.instanceFinalizers)
 }
 
 func TestStartOverCompletedMsgSpawnsReplacementAgentsInUpdate(t *testing.T) {
@@ -552,7 +661,12 @@ func TestStartOverCompletedMsgSpawnsReplacementAgentsInUpdate(t *testing.T) {
 	}
 	sp := spinner.New(spinner.WithSpinner(spinner.Dot))
 	h := &home{
-		appConfig:          &config.Config{ParallelPlannerArchitect: true},
+		appConfig: &config.Config{
+			Planners: []string{"planner"},
+			Profiles: map[string]config.AgentProfile{
+				"planner": {Enabled: true, Program: "opencode"},
+			},
+		},
 		taskState:          ps,
 		activeRepoPath:     dir,
 		taskStoreProject:   "proj",
@@ -574,39 +688,17 @@ func TestStartOverCompletedMsgSpawnsReplacementAgentsInUpdate(t *testing.T) {
 	require.NotNil(t, cmd)
 	updated := model.(*home)
 
-	var planner, baseline *session.Instance
+	var planner *session.Instance
 	for _, inst := range updated.nav.GetInstances() {
 		assert.NotEqual(t, "old-planner", inst.Title)
-		switch inst.AgentType {
-		case session.AgentTypePlanner:
+		if inst.AgentType == session.AgentTypePlanner {
 			planner = inst
-		case session.AgentTypeArchitectBaseline:
-			baseline = inst
 		}
 	}
 	require.NotNil(t, planner)
-	require.NotNil(t, baseline)
 	assert.Equal(t, planFile, planner.TaskFile)
-	assert.Equal(t, planFile, baseline.TaskFile)
-	assert.Contains(t, baseline.QueuedPrompt, orchestration.ArchitectBaselineDescriptionHash(description))
-}
-
-func TestArchitectBaselineInstanceDoesNotOfferArchitectFinishedAction(t *testing.T) {
-	t.Parallel()
-	inst := &session.Instance{
-		TaskFile:  "feature",
-		AgentType: session.AgentTypeArchitectBaseline,
-	}
-	entry := taskstate.TaskEntry{
-		Status: taskstate.StatusImplementing,
-		ExecutionState: taskstore.ExecutionState{
-			Phase:           string(taskfsm.ExecutionPhaseArchitecting),
-			ActiveAgentType: session.AgentTypeElaborator,
-		},
-	}
-
-	items := instanceSignalItems(inst, entry, true)
-	assert.False(t, actionAvailable(items, "mark_architect_finished"))
+	assert.Equal(t, "planner", planner.PlannerProfile)
+	assert.Contains(t, planner.QueuedPrompt, ".kasmos/cache/"+planFile+"-planner-planner.md")
 }
 
 func TestWaitForDaemonPlannerInstance_SkipsExitedPlaceholder(t *testing.T) {

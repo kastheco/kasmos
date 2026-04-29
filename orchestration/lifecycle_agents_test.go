@@ -55,26 +55,20 @@ func TestBuildArchitectAgentSpec(t *testing.T) {
 }
 
 func TestBuildArchitectAgentSpecWithOptions(t *testing.T) {
+	// Deprecated ParallelBaseline/DescriptionHash options are ignored; the spec
+	// always contains the planner-draft guidance in the new code path.
 	spec := BuildArchitectAgentSpecWithOptions("feature", "myproject", ArchitectPromptOptions{
 		ParallelBaseline: true,
 		DescriptionHash:  "abc123",
 	})
 
 	assert.Equal(t, "feature-architect", spec.Title)
-	assert.Contains(t, spec.Prompt, ".kasmos/cache/feature-architect-baseline.json")
-	assert.Contains(t, spec.Prompt, "`description_hash` equals \"abc123\"")
+	// New behavior: planner draft caches, not architect baseline cache
+	assert.Contains(t, spec.Prompt, ".kasmos/cache/feature-planner-*.md")
+	assert.Contains(t, spec.Prompt, "planner_drafts")
+	assert.NotContains(t, spec.Prompt, "architect-baseline.json")
+	assert.NotContains(t, spec.Prompt, "description_hash")
 	assert.Contains(t, spec.Prompt, "signal_create` (signal_type: \"elaborator-finished\", plan_file: \"feature\", project: \"myproject\")")
-}
-
-func TestBuildArchitectBaselineAgentSpec(t *testing.T) {
-	spec := BuildArchitectBaselineAgentSpec("feature", "myproject", "build something great")
-
-	assert.Equal(t, "feature-architect-baseline", spec.Title)
-	assert.Contains(t, spec.Prompt, ".kasmos/cache/feature-architect-baseline.json")
-	assert.Contains(t, spec.Prompt, `"plan_file": "feature"`)
-	assert.Contains(t, spec.Prompt, `"project": "myproject"`)
-	assert.Contains(t, spec.Prompt, `"description_hash": "`+ArchitectBaselineDescriptionHash("build something great")+`"`)
-	assert.NotEqual(t, BuildArchitectAgentSpec("feature", "myproject").Title, spec.Title)
 }
 
 func TestBuildMasterAgentSpec(t *testing.T) {
@@ -283,6 +277,75 @@ func TestBuildRecoveryCandidates_StatusVerifying_RecoversMaster(t *testing.T) {
 	assert.Equal(t, "feature-verify-1", candidates[0].Title)
 	assert.Equal(t, session.AgentTypeMaster, candidates[0].AgentType)
 	assert.Equal(t, "feature", candidates[0].TaskFile)
+}
+
+func TestBuildPlannerAgentSpecWithOptions_LegacyPath(t *testing.T) {
+	spec := BuildPlannerAgentSpecWithOptions("feature", "myproject", "build X", PlannerAgentOptions{})
+	// Non-draft mode title is the legacy <plan>-plan
+	assert.Equal(t, "feature-plan", spec.Title)
+	// Prompt is the same as the legacy single-planner prompt
+	assert.Contains(t, spec.Prompt, "kasmos-planner")
+	assert.Contains(t, spec.Prompt, `signal_type: "planner-finished"`)
+}
+
+func TestBuildPlannerAgentSpecWithOptions_DraftMode_NonPrimary(t *testing.T) {
+	spec := BuildPlannerAgentSpecWithOptions("feature", "myproject", "build X", PlannerAgentOptions{
+		Profile:   "gpt",
+		Primary:   false,
+		DraftMode: true,
+	})
+	// Draft mode title includes profile
+	assert.Equal(t, "feature-plan-gpt", spec.Title)
+	assert.Contains(t, spec.Prompt, "Profile: gpt")
+	assert.Contains(t, spec.Prompt, ".kasmos/cache/feature-planner-gpt.md")
+	assert.Contains(t, spec.Prompt, `{"planner_id":"gpt"}`)
+	// Must NOT instruct signaling planner_finished
+	assert.NotContains(t, spec.Prompt, `signal_type: "planner_finished"`)
+	assert.NotContains(t, spec.Prompt, `signal_type: "planner-finished"`)
+}
+
+func TestBuildPlannerAgentSpecWithOptions_DraftMode_Primary_ProfilePlanner(t *testing.T) {
+	// Even when profile is "planner", draft mode still gets the -profile suffix in the title
+	spec := BuildPlannerAgentSpecWithOptions("feature", "myproject", "build X", PlannerAgentOptions{
+		Profile:   "planner",
+		Primary:   true,
+		DraftMode: true,
+	})
+	assert.Equal(t, "feature-plan-planner", spec.Title)
+	assert.Contains(t, spec.Prompt, "task_update_content")
+	assert.Contains(t, spec.Prompt, `{"planner_id":"planner"}`)
+}
+
+func TestMatchRecoveryCandidateByTitle_PlannerDraftTitles(t *testing.T) {
+	entry := taskstore.TaskEntry{
+		Filename: "feature",
+		Status:   taskstore.StatusPlanning,
+	}
+
+	// Legacy <plan>-plan title still works (via BuildRecoveryCandidates)
+	cand, ok := MatchRecoveryCandidateByTitle(entry, "", "feature-plan")
+	require.True(t, ok)
+	assert.Equal(t, session.AgentTypePlanner, cand.AgentType)
+	assert.Equal(t, "feature-plan", cand.Title)
+	assert.Empty(t, cand.PlannerProfile)
+
+	// Draft-mode <plan>-plan-<profile> titles are accepted via inference
+	for _, profile := range []string{"gpt", "claude", "planner"} {
+		draftTitle := "feature-plan-" + profile
+		cand, ok = MatchRecoveryCandidateByTitle(entry, "", draftTitle)
+		require.True(t, ok, "expected match for draft title %q", draftTitle)
+		assert.Equal(t, session.AgentTypePlanner, cand.AgentType)
+		assert.Equal(t, draftTitle, cand.Title)
+		assert.Equal(t, "feature", cand.TaskFile)
+		assert.Equal(t, profile, cand.PlannerProfile)
+	}
+
+	// Non-planner-draft title for StatusPlanning returns false
+	_, ok = MatchRecoveryCandidateByTitle(entry, "", "feature-architect")
+	assert.False(t, ok)
+
+	_, ok = MatchRecoveryCandidateByTitle(entry, "", "feature-plan-")
+	assert.False(t, ok)
 }
 
 func TestMatchRecoveryCandidateByTitle_StatusVerifying_MatchesMasterTitle(t *testing.T) {

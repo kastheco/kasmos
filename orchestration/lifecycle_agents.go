@@ -24,15 +24,16 @@ type LifecycleAgentSpec struct {
 // RecoveryCandidate describes a single phase-valid session title that may be
 // re-adopted after restart or manual orphan discovery.
 type RecoveryCandidate struct {
-	TaskFile      string
-	Title         string
-	AgentType     string
-	Branch        string
-	ReviewCycle   int
-	WaveNumber    int
-	TaskNumber    int
-	WaveTaskIndex int
-	WaveTaskCount int
+	TaskFile       string
+	Title          string
+	AgentType      string
+	PlannerProfile string
+	Branch         string
+	ReviewCycle    int
+	WaveNumber     int
+	TaskNumber     int
+	WaveTaskIndex  int
+	WaveTaskCount  int
 }
 
 // BuildLifecycleAgentTitle returns the canonical title for a lifecycle agent.
@@ -101,15 +102,6 @@ func BuildArchitectAgentSpecWithOptions(planFile, project string, opts Architect
 	}
 }
 
-// BuildArchitectBaselineAgentSpec returns the prompt/title metadata for the
-// cache-only parallel architect baseline session.
-func BuildArchitectBaselineAgentSpec(planFile, project, description string) LifecycleAgentSpec {
-	return LifecycleAgentSpec{
-		Title:  fmt.Sprintf("%s-architect-baseline", planFile),
-		Prompt: BuildArchitectBaselinePrompt(planFile, project, description),
-	}
-}
-
 // BuildPlannerAgentSpec returns the shared prompt/title metadata for a
 // planner spawn. The canonical title is "<plan>-plan" matching the existing
 // recovery-candidate shape in BuildRecoveryCandidates and the TUI's
@@ -121,6 +113,60 @@ func BuildPlannerAgentSpec(planFile, project, description string) LifecycleAgent
 		Title:  fmt.Sprintf("%s-plan", planName),
 		Prompt: BuildPlannerPrompt(planFile, planName, description, project),
 	}
+}
+
+// PlannerAgentOptions carries per-profile options for draft-mode planner agent specs.
+type PlannerAgentOptions struct {
+	// Profile is the named agent profile for this planner instance.
+	Profile string
+	// Primary indicates this planner should also write a preview to the task store.
+	Primary bool
+	// DraftMode instructs the planner to write a draft cache and signal
+	// planner-draft-finished instead of planner-finished.
+	DraftMode bool
+	// CachePath is the pre-computed path for the draft cache file.
+	// If empty, the path is constructed as .kasmos/cache/<planFile>-planner-<Profile>.md.
+	CachePath string
+}
+
+// BuildPlannerAgentSpecWithOptions returns the shared prompt/title metadata for a
+// planner spawn with optional draft-mode behavior.
+// Title rules:
+//   - legacy mode (DraftMode false): "<display-name>-plan"
+//   - draft mode: "<display-name>-plan-<profile>" even when profile is "planner"
+//
+// Keep BuildPlannerAgentSpec as the legacy wrapper for wave annotation and task
+// modification repair prompts that must remain single-planner and emit planner_finished.
+func BuildPlannerAgentSpecWithOptions(planFile, project, description string, opts PlannerAgentOptions) LifecycleAgentSpec {
+	planName := taskstate.DisplayName(planFile)
+
+	promptOpts := PlannerPromptOptions{
+		Profile:   opts.Profile,
+		Primary:   opts.Primary,
+		DraftMode: opts.DraftMode,
+		CachePath: opts.CachePath,
+	}
+
+	if opts.DraftMode {
+		return LifecycleAgentSpec{
+			Title:  fmt.Sprintf("%s-plan-%s", planName, opts.Profile),
+			Prompt: BuildPlannerPromptWithOptions(planFile, planName, description, project, promptOpts),
+		}
+	}
+
+	return LifecycleAgentSpec{
+		Title:  fmt.Sprintf("%s-plan", planName),
+		Prompt: BuildPlannerPromptWithOptions(planFile, planName, description, project, promptOpts),
+	}
+}
+
+// PlannerDraftPromptWithCallerPrompt preserves caller-specific planning
+// instructions when draft mode replaces the legacy single-planner prompt.
+func PlannerDraftPromptWithCallerPrompt(draftPrompt, callerPrompt string) string {
+	if callerPrompt == "" {
+		return draftPrompt
+	}
+	return fmt.Sprintf("%s\n\n## caller-provided prompt\n\nFollow this caller-provided planning request while preserving the draft-mode cache and planner_draft_finished instructions above:\n\n%s", draftPrompt, callerPrompt)
 }
 
 // BuildMasterAgentSpec returns the shared prompt/title metadata for the master
@@ -226,6 +272,8 @@ func BuildRecoveryCandidates(task taskstore.TaskEntry, planContent string) []Rec
 		}
 	case "":
 		if task.Status == taskstore.StatusPlanning {
+			// Return the legacy single-planner title; draft-mode profiles are matched
+			// by title inference in MatchRecoveryCandidateByTitle.
 			return []RecoveryCandidate{{
 				TaskFile:  task.Filename,
 				Title:     fmt.Sprintf("%s-plan", taskstate.DisplayName(task.Filename)),
@@ -251,6 +299,22 @@ func MatchRecoveryCandidateByTitle(task taskstore.TaskEntry, planContent, title 
 		if candidate.Title == title {
 			return candidate, true
 		}
+	}
+
+	// Accept draft-mode planner titles (<plan>-plan-<profile>) for StatusPlanning.
+	// BuildRecoveryCandidates only returns the legacy <plan>-plan title, so parallel
+	// planner drafts are handled here via title inference.
+	if task.Status == taskstore.StatusPlanning {
+		planName := taskstate.DisplayName(task.Filename)
+		prefix := planName + "-plan-"
+		if planName != "" && strings.HasPrefix(title, prefix) {
+			profile := strings.TrimPrefix(title, prefix)
+			if profile == "" {
+				return RecoveryCandidate{}, false
+			}
+			return RecoveryCandidate{TaskFile: task.Filename, Title: title, AgentType: session.AgentTypePlanner, PlannerProfile: profile}, true
+		}
+		return RecoveryCandidate{}, false
 	}
 
 	phase := taskfsm.NormalizeExecutionPhase(task.ExecutionState.Phase)

@@ -62,7 +62,7 @@ vi.mock("../hooks/useAutoRefresh", () => ({
               {
                 area: "task detail",
                 planner_proposal: "replace the plan view",
-                architect_baseline: "preserve the plan view",
+                baseline_proposal: "preserve the plan view",
                 final_decision: "add a second tab",
                 rationale: "editing should stay scoped to the plan",
                 related_files: ["web/admin/src/pages/TaskDetailPage.tsx"],
@@ -70,7 +70,6 @@ vi.mock("../hooks/useAutoRefresh", () => ({
               },
             ],
           },
-          architect_baseline_markdown: "## baseline\n\nkeep plan editing intact",
         },
         loading: false,
         error: null,

@@ -214,10 +214,14 @@ func TestBuildElaborationPrompt(t *testing.T) {
 	assert.NotContains(t, prompt, "kasmos-elaborator")
 	assert.Contains(t, prompt, "independent solution baseline")
 	assert.Contains(t, prompt, "Before validating the planner draft")
-	assert.Contains(t, prompt, "Compare planner vs architect baseline")
+	// Architect compares each planner draft against its own baseline
+	assert.Contains(t, prompt, "Compare each planner draft against your architect baseline")
 	assert.Contains(t, prompt, "merging the best")
 	assert.Contains(t, prompt, "hidden integration surfaces")
 	assert.Contains(t, prompt, "non-obvious missing work")
+	// Must instruct reading planner draft caches
+	assert.Contains(t, prompt, ".kasmos/cache/my-feature-planner-*.md")
+	assert.Contains(t, prompt, "planner_drafts")
 	// Must reference the plan file for retrieval via MCP
 	assert.Contains(t, prompt, "task_show")
 	assert.Contains(t, prompt, "kas task show my-feature") // CLI fallback
@@ -245,72 +249,45 @@ func TestBuildElaborationPrompt(t *testing.T) {
 	assert.Contains(t, prompt, "planner_summary")
 	assert.Contains(t, prompt, "baseline_summary")
 	assert.Contains(t, prompt, "final_decision")
-	assert.Contains(t, prompt, "`parallel_cache`, `inline`, `absent`, or `stale`")
+	assert.Contains(t, prompt, "`planner_drafts`, `inline`, `absent`, or `stale`")
 	assert.NotContains(t, prompt, "architect-baseline.json")
 	assert.NotContains(t, prompt, "raw planner snapshot")
 	assert.NotContains(t, prompt, "architect-finished")
 }
 
-func TestBuildArchitectBaselinePrompt(t *testing.T) {
-	description := "build the parallel planner architect baseline"
-	descriptionHash := ArchitectBaselineDescriptionHash(description)
+func TestBuildElaborationPromptWithOptions_PlannerDraftGuidance(t *testing.T) {
+	// Deprecated opts are silently ignored; both zero and non-zero opts produce
+	// identical planner-draft guidance in the new code path.
+	for _, opts := range []ArchitectPromptOptions{
+		{},
+		{ParallelBaseline: true, DescriptionHash: "abc123"},
+	} {
+		prompt := BuildElaborationPromptWithOptions("my-feature", "myproject", opts)
 
-	prompt := BuildArchitectBaselinePrompt("my-feature", "myproject", description)
+		// Planner draft caches are always referenced
+		assert.Contains(t, prompt, ".kasmos/cache/my-feature-planner-*.md", "opts=%+v", opts)
+		assert.Contains(t, prompt, "planner_drafts", "opts=%+v", opts)
 
-	assert.Contains(t, prompt, "kasmos-architect")
-	assert.Contains(t, prompt, "cli-tools")
-	assert.Contains(t, prompt, "Inspect the live codebase independently from planner output")
-	assert.Contains(t, prompt, "goal")
-	assert.Contains(t, prompt, "surfaces")
-	assert.Contains(t, prompt, "dependencies")
-	assert.Contains(t, prompt, "patterns")
-	assert.Contains(t, prompt, ".kasmos/cache/my-feature-architect-baseline.json")
-	assert.Contains(t, prompt, `"schema_version": 1`)
-	assert.Contains(t, prompt, `"plan_file": "my-feature"`)
-	assert.Contains(t, prompt, `"project": "myproject"`)
-	assert.Contains(t, prompt, `"description_hash": "`+descriptionHash+`"`)
-	assert.Contains(t, prompt, `"baseline_markdown":`)
-	assert.Contains(t, prompt, "Stop after the cache write")
-	assert.Contains(t, prompt, "Do not edit any file except `.kasmos/cache/my-feature-architect-baseline.json`")
-	assert.Contains(t, prompt, "Forbidden: MCP `task_update_content`")
-	assert.Contains(t, prompt, "task status transitions")
-	assert.Contains(t, prompt, "planner-finished")
-	assert.Contains(t, prompt, "architect-finished")
-	assert.Contains(t, prompt, "elaborator-finished")
-	assert.Contains(t, prompt, "Do not mutate task content, task status, or orchestration state")
-	assert.NotContains(t, prompt, "use MCP `task_update_content`")
-	assert.NotContains(t, prompt, "signal_create")
-}
+		// Step numbering in new prompt
+		assert.Contains(t, prompt, "2. Read all planner draft caches", "opts=%+v", opts)
+		assert.Contains(t, prompt, "3. Read the relevant codebase surfaces", "opts=%+v", opts)
+		assert.Contains(t, prompt, "4. Create your independent solution baseline", "opts=%+v", opts)
+		assert.Contains(t, prompt, "9. Write the architect metadata cache", "opts=%+v", opts)
+		assert.Contains(t, prompt, "10. Signal architect-pass completion", "opts=%+v", opts)
 
-func TestBuildElaborationPromptWithOptions_ParallelBaseline(t *testing.T) {
-	prompt := BuildElaborationPromptWithOptions("my-feature", "myproject", ArchitectPromptOptions{
-		ParallelBaseline: true,
-		DescriptionHash:  "abc123",
-	})
+		// Legacy baseline cache must NOT be referenced
+		assert.NotContains(t, prompt, "architect-baseline.json", "opts=%+v", opts)
+		assert.NotContains(t, prompt, "advisory parallel architect baseline cache", "opts=%+v", opts)
+		assert.NotContains(t, prompt, "description_hash", "opts=%+v", opts)
 
-	assert.Contains(t, prompt, "task_show")
-	assert.Contains(t, prompt, ".kasmos/cache/my-feature-architect-baseline.json")
-	assert.Contains(t, prompt, "`plan_file` equals \"my-feature\"")
-	assert.Contains(t, prompt, "`project` equals \"myproject\"")
-	assert.Contains(t, prompt, "`description_hash` equals \"abc123\"")
-	assert.Contains(t, prompt, "`schema_version` equals 1")
-	assert.Contains(t, prompt, "`baseline_markdown` is non-empty")
-	assert.Contains(t, prompt, "advisory input, not authoritative implementation state")
-	assert.Contains(t, prompt, "merge the planner draft plus cached baseline")
-	assert.Contains(t, prompt, "missing, corrupt, stale, or incomplete")
-	assert.Contains(t, prompt, "current inline independent baseline")
-	assert.Contains(t, prompt, "mention that fallback in the plan summary")
-	assert.Contains(t, prompt, "2. Read the advisory parallel architect baseline cache")
-	assert.Contains(t, prompt, "3. Read the relevant codebase surfaces")
-	assert.Contains(t, prompt, "4. Create your independent solution baseline")
-	assert.Contains(t, prompt, "9. Write the architect metadata cache")
-	assert.Contains(t, prompt, "10. Signal architect-pass completion")
-	assert.Contains(t, prompt, "task_update_content")
-	assert.Contains(t, prompt, "signal_create` (signal_type: \"elaborator-finished\", plan_file: \"my-feature\", project: \"myproject\")")
-	assert.Contains(t, prompt, "decision_audit")
-	assert.Contains(t, prompt, "planner_summary")
-	assert.Contains(t, prompt, "baseline_summary")
-	assert.Contains(t, prompt, "final_decision")
+		// Standard elaboration fields still present
+		assert.Contains(t, prompt, "task_update_content", "opts=%+v", opts)
+		assert.Contains(t, prompt, "signal_create` (signal_type: \"elaborator-finished\", plan_file: \"my-feature\", project: \"myproject\")", "opts=%+v", opts)
+		assert.Contains(t, prompt, "decision_audit", "opts=%+v", opts)
+		assert.Contains(t, prompt, "planner_summary", "opts=%+v", opts)
+		assert.Contains(t, prompt, "baseline_summary", "opts=%+v", opts)
+		assert.Contains(t, prompt, "final_decision", "opts=%+v", opts)
+	}
 }
 
 func TestBuildArchitectPrompt(t *testing.T) {
@@ -334,13 +311,82 @@ func TestBuildArchitectPrompt(t *testing.T) {
 	assert.Contains(t, prompt, "baseline_summary")
 	assert.Contains(t, prompt, "final_decision")
 	assert.Contains(t, prompt, "differences")
-	assert.Contains(t, prompt, ".kasmos/cache/my-feature-architect-baseline.json")
-	assert.Contains(t, prompt, "advisory input only and must not be treated as final implementation state")
+	assert.Contains(t, prompt, "`planner_drafts`, `parallel_cache`, `inline`, `absent`, or `stale`")
+	assert.NotContains(t, prompt, "architect-baseline.json")
 	assert.Contains(t, prompt, "signal_create` (signal_type: \"elaborator-finished\", plan_file: \"my-feature\", project: \"myproject\")")
 	// Signal completion should prefer MCP with filesystem fallback
 	assert.Contains(t, prompt, "signal_create")
 	assert.NotContains(t, prompt, "architect-finished")
 	assert.NotContains(t, prompt, "raw planner snapshot")
+}
+
+func TestBuildPlannerPromptWithOptions_LegacyPath(t *testing.T) {
+	// DraftMode false should delegate to BuildPlannerPrompt
+	prompt := BuildPlannerPromptWithOptions("my-plan", "my-plan", "build X", "myproject", PlannerPromptOptions{})
+	legacyPrompt := BuildPlannerPrompt("my-plan", "my-plan", "build X", "myproject")
+	assert.Equal(t, legacyPrompt, prompt)
+}
+
+func TestBuildPlannerPromptWithOptions_DraftMode_NonPrimary(t *testing.T) {
+	opts := PlannerPromptOptions{
+		Profile:   "gpt",
+		Primary:   false,
+		DraftMode: true,
+	}
+	prompt := BuildPlannerPromptWithOptions("my-plan", "my-plan", "build X", "myproject", opts)
+
+	// Must mention profile and draft mode context
+	assert.Contains(t, prompt, "Profile: gpt")
+	assert.Contains(t, prompt, "Draft Mode")
+	// Must write to profile-specific cache path
+	assert.Contains(t, prompt, ".kasmos/cache/my-plan-planner-gpt.md")
+	// Must signal planner-draft-finished with correct payload
+	assert.Contains(t, prompt, `signal_type: "planner-draft-finished"`)
+	assert.Contains(t, prompt, `planner_draft_finished`)
+	assert.Contains(t, prompt, `{"planner_id":"gpt"}`)
+	// CLI fallback must pass the JSON via --payload so cobra keeps exactly two positional args.
+	assert.Contains(t, prompt, `kas signal emit planner_draft_finished my-plan --payload '{"planner_id":"gpt"}'`)
+	assert.NotContains(t, prompt, `kas signal emit planner_draft_finished my-plan '{"planner_id":"gpt"}'`)
+	// Must NOT instruct signaling planner_finished — only planner_draft_finished
+	assert.NotContains(t, prompt, `signal_type: "planner_finished"`)
+	assert.NotContains(t, prompt, `signal_type: "planner-finished"`)
+	// Non-primary: must NOT instruct to update task store
+	assert.NotContains(t, prompt, "Prefer MCP `task_update_content`")
+	// Must reference plan file and project
+	assert.Contains(t, prompt, `"my-plan"`)
+	assert.Contains(t, prompt, `"myproject"`)
+}
+
+func TestBuildPlannerPromptWithOptions_DraftMode_Primary(t *testing.T) {
+	opts := PlannerPromptOptions{
+		Profile:   "planner",
+		Primary:   true,
+		DraftMode: true,
+	}
+	prompt := BuildPlannerPromptWithOptions("my-plan", "my-plan", "build X", "myproject", opts)
+
+	// Primary must update task store as preview
+	assert.Contains(t, prompt, "task_update_content")
+	assert.Contains(t, prompt, "preview content")
+	assert.Contains(t, prompt, ".kasmos/cache/my-plan-planner-planner.md")
+	assert.Contains(t, prompt, `{"planner_id":"planner"}`)
+	// Must NOT instruct signaling planner_finished
+	assert.NotContains(t, prompt, `signal_type: "planner_finished"`)
+	assert.NotContains(t, prompt, `signal_type: "planner-finished"`)
+}
+
+func TestBuildPlannerPromptWithOptions_DraftMode_CustomCachePath(t *testing.T) {
+	opts := PlannerPromptOptions{
+		Profile:   "claude",
+		Primary:   false,
+		DraftMode: true,
+		CachePath: ".kasmos/cache/custom-path.md",
+	}
+	prompt := BuildPlannerPromptWithOptions("my-plan", "my-plan", "build X", "myproject", opts)
+
+	// Custom CachePath must be embedded verbatim
+	assert.Contains(t, prompt, ".kasmos/cache/custom-path.md")
+	assert.NotContains(t, prompt, ".kasmos/cache/my-plan-planner-claude.md")
 }
 
 func TestBuildElaborationPrompt_RetainsLegacySignalName(t *testing.T) {

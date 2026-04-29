@@ -345,6 +345,9 @@ func (s *TmuxSpawner) DiscoverOrphanSessions() []tmuxpkg.SessionInfo {
 // spawner's tracking maps.
 func (s *TmuxSpawner) RestoreTrackedInstance(repoPath, project, planFile, agentType string, data session.InstanceData) error {
 	key := instanceKeyForTask(repoPath, planFile, agentType, data.WaveNumber, data.TaskNumber)
+	if agentType == session.AgentTypePlanner {
+		key = instanceKeyForPlanner(repoPath, planFile, data.PlannerProfile)
+	}
 	s.mu.Lock()
 	if _, ok := s.instances[key]; ok {
 		s.mu.Unlock()
@@ -486,6 +489,18 @@ func instanceKey(repoPath, planFile, agentType string) string {
 	return instanceKeyForTask(repoPath, planFile, agentType, 0, 0)
 }
 
+func instanceKeyForPlanner(repoPath, planFile, profile string) string {
+	key := instanceKey(repoPath, planFile, session.AgentTypePlanner)
+	if profile == "" {
+		return key
+	}
+	return key + ":" + profile
+}
+
+func plannerInstanceKeys(repoPath, planFile string) []string {
+	return []string{instanceKeyForPlanner(repoPath, planFile, "")}
+}
+
 func instanceKeyForTask(repoPath, planFile, agentType string, waveNumber, taskNumber int) string {
 	if waveNumber > 0 || taskNumber > 0 {
 		return fmt.Sprintf("%s:%s:%s:w%d:t%d", repoPath, planFile, agentType, waveNumber, taskNumber)
@@ -590,17 +605,19 @@ func (s *TmuxSpawner) SpawnReviewer(ctx context.Context, opts loop.SpawnOpts) er
 
 // SpawnPlanner launches a planner agent on the main branch (no worktree).
 func (s *TmuxSpawner) SpawnPlanner(ctx context.Context, opts loop.SpawnOpts) error {
-	s.logger.Info("spawn planner", "plan", opts.PlanFile)
+	s.logger.Info("spawn planner", "plan", opts.PlanFile, "profile", opts.PlannerProfile, "draft_mode", opts.PlannerDraftMode)
+	if opts.PlannerDraftMode {
+		spec := orchestration.BuildPlannerAgentSpecWithOptions(opts.PlanFile, opts.Project, opts.Description, orchestration.PlannerAgentOptions{
+			Profile:   opts.PlannerProfile,
+			Primary:   opts.PlannerPrimary,
+			DraftMode: true,
+		})
+		if opts.Prompt == "" {
+			opts.Prompt = spec.Prompt
+		}
+		return s.spawnOnMainBranchWithKey(ctx, opts, session.AgentTypePlanner, spec.Title, instanceKeyForPlanner(opts.RepoPath, opts.PlanFile, opts.PlannerProfile), opts.PlannerProfile)
+	}
 	return s.spawnOnMainBranch(ctx, opts, session.AgentTypePlanner, "plan")
-}
-
-// SpawnArchitectBaseline launches the cache-only architect baseline agent on
-// the main branch. It tracks a distinct runtime type from the final architect.
-func (s *TmuxSpawner) SpawnArchitectBaseline(ctx context.Context, opts loop.SpawnOpts) error {
-	s.logger.Info("spawn architect baseline", "plan", opts.PlanFile)
-	spec := orchestration.BuildArchitectBaselineAgentSpec(opts.PlanFile, opts.Project, opts.Description)
-	opts.Prompt = spec.Prompt
-	return s.spawnOnMainBranch(ctx, opts, session.AgentTypeArchitectBaseline, "architect-baseline")
 }
 
 // SpawnCoder launches a coder agent in the plan's shared worktree.
@@ -675,21 +692,23 @@ func (s *TmuxSpawner) spawnOnMainBranch(_ context.Context, opts loop.SpawnOpts, 
 		if prompt == "" {
 			prompt = spec.Prompt
 		}
-	} else if agentType == session.AgentTypeArchitectBaseline {
-		spec := orchestration.BuildArchitectBaselineAgentSpec(opts.PlanFile, opts.Project, opts.Description)
-		title = spec.Title
-		if prompt == "" {
-			prompt = spec.Prompt
-		}
 	} else {
 		planName := taskstate.DisplayName(opts.PlanFile)
 		title = fmt.Sprintf("%s-%s", planName, titleSuffix)
 	}
+	opts.Prompt = prompt
+	return s.spawnOnMainBranchWithKey(context.Background(), opts, agentType, title, instanceKey(opts.RepoPath, opts.PlanFile, agentType), opts.PlannerProfile)
+}
+
+func (s *TmuxSpawner) spawnOnMainBranchWithKey(_ context.Context, opts loop.SpawnOpts, agentType, title, key, plannerProfile string) error {
+	if opts.RepoPath == "" {
+		return fmt.Errorf("TmuxSpawner.%s: RepoPath is required", agentType)
+	}
+	prompt := opts.Prompt
 	program := opts.Program
 	if program == "" {
 		program = "opencode"
 	}
-	key := instanceKey(opts.RepoPath, opts.PlanFile, agentType)
 	if !s.reserveInstanceSlot(key, title) {
 		s.logger.Info("suppress duplicate tracked agent", "plan", opts.PlanFile, "type", agentType, "title", title)
 		return nil
@@ -703,6 +722,7 @@ func (s *TmuxSpawner) spawnOnMainBranch(_ context.Context, opts loop.SpawnOpts, 
 		SDKSpeedTier:           opts.SDKSpeedTier,
 		AgentType:              agentType,
 		TaskFile:               opts.PlanFile,
+		PlannerProfile:         plannerProfile,
 		SkipPermissions:        opts.SkipPermissions,
 		SDKTranscriptLimitsSet: opts.SDKTranscriptLimitsSet,
 		SDKTranscriptMaxBytes:  opts.SDKTranscriptMaxBytes,
@@ -731,8 +751,45 @@ func (s *TmuxSpawner) spawnOnMainBranch(_ context.Context, opts loop.SpawnOpts, 
 func (s *TmuxSpawner) KillAgent(repoPath, planFile, agentType string) error {
 	s.logger.Info("kill agent", "repo", repoPath, "plan", planFile, "type", agentType)
 
-	key := instanceKey(repoPath, planFile, agentType)
+	keys := s.instanceKeysForAgent(repoPath, planFile, agentType)
+	if len(keys) == 0 {
+		return nil
+	}
+	var firstErr error
+	for _, key := range keys {
+		if err := s.killAgentByKey(key); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	return firstErr
+}
 
+func (s *TmuxSpawner) instanceKeysForAgent(repoPath, planFile, agentType string) []string {
+	if agentType != session.AgentTypePlanner {
+		return []string{instanceKey(repoPath, planFile, agentType)}
+	}
+	legacy := plannerInstanceKeys(repoPath, planFile)
+	prefix := instanceKeyForPlanner(repoPath, planFile, "") + ":"
+	keys := append([]string{}, legacy...)
+	seen := map[string]bool{legacy[0]: true}
+	s.mu.Lock()
+	for key, inst := range s.instances {
+		if !strings.HasPrefix(key, prefix) {
+			continue
+		}
+		if inst != nil && (inst.Path != repoPath || inst.TaskFile != planFile || inst.AgentType != session.AgentTypePlanner) {
+			continue
+		}
+		if !seen[key] {
+			keys = append(keys, key)
+			seen[key] = true
+		}
+	}
+	s.mu.Unlock()
+	return keys
+}
+
+func (s *TmuxSpawner) killAgentByKey(key string) error {
 	// Look up the instance without removing it from the tracking maps yet.
 	// We only remove it after gracefulKill confirms the session was actually
 	// terminated. If a tmux client is attached gracefulKill returns (false,
@@ -767,8 +824,17 @@ func (s *TmuxSpawner) KillAgent(repoPath, planFile, agentType string) error {
 func (s *TmuxSpawner) ForceKillAgent(repoPath, planFile, agentType string) error {
 	s.logger.Info("force kill agent", "repo", repoPath, "plan", planFile, "type", agentType)
 
-	key := instanceKey(repoPath, planFile, agentType)
+	keys := s.instanceKeysForAgent(repoPath, planFile, agentType)
+	var firstErr error
+	for _, key := range keys {
+		if err := s.forceKillAgentByKey(key); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	return firstErr
+}
 
+func (s *TmuxSpawner) forceKillAgentByKey(key string) error {
 	s.mu.Lock()
 	inst, ok := s.instances[key]
 	s.mu.Unlock()

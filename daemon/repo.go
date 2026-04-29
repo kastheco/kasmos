@@ -36,9 +36,14 @@ type RepoEntry struct {
 	ReadinessSelfFixMaxLines int
 	// ReadinessMaxVerifyCycles is the effective per-repo verify-round cap.
 	ReadinessMaxVerifyCycles int
-	// ParallelPlannerArchitect is the effective per-repo parallel baseline flag.
-	// Defaults to true (opt-out: set parallel_planner_architect = false in .kasmos/config.toml to disable).
-	ParallelPlannerArchitect bool
+	// PlannerProfiles is the ordered list of named planner profiles configured
+	// for multi-planner draft mode. Empty means legacy single-planner mode.
+	PlannerProfiles []string
+	// PlannerDraftMode is true when PlannerProfiles should fan out into
+	// planner draft cache writers instead of a single legacy planner.
+	PlannerDraftMode bool
+	// CacheDir is the per-repo cache directory used for planner draft artifacts.
+	CacheDir string
 	// SDK holds the resolved SDK transcript retention limits for this repo.
 	// These are forwarded into SpawnOpts so every agent spawned for this repo
 	// applies the same in-process transcript limits.
@@ -199,7 +204,7 @@ func (m *RepoManager) Add(path string) error {
 	}
 
 	// Load per-repo TOML overrides once and derive effective config values.
-	autoAdvance, autoReadinessReview, selfFixMaxLines, maxVerifyCycles, parallelPlannerArchitect, sdkCfg, resourceControls, err := m.resolveRepoConfig(path)
+	autoAdvance, autoReadinessReview, selfFixMaxLines, maxVerifyCycles, plannerProfiles, plannerDraftMode, sdkCfg, resourceControls, err := m.resolveRepoConfig(path)
 	if err != nil {
 		return err
 	}
@@ -215,7 +220,9 @@ func (m *RepoManager) Add(path string) error {
 		MaxReviewFixCycles:       m.maxReviewFixCycles,
 		ReadinessSelfFixMaxLines: selfFixMaxLines,
 		ReadinessMaxVerifyCycles: maxVerifyCycles,
-		ParallelPlannerArchitect: parallelPlannerArchitect,
+		PlannerProfiles:          plannerProfiles,
+		PlannerDraftMode:         plannerDraftMode,
+		CacheDir:                 filepath.Join(kasmosDir, "cache"),
 		Hooks:                    hooks,
 	})
 
@@ -228,7 +235,9 @@ func (m *RepoManager) Add(path string) error {
 		Processor:                proc,
 		ReadinessSelfFixMaxLines: selfFixMaxLines,
 		ReadinessMaxVerifyCycles: maxVerifyCycles,
-		ParallelPlannerArchitect: parallelPlannerArchitect,
+		PlannerProfiles:          plannerProfiles,
+		PlannerDraftMode:         plannerDraftMode,
+		CacheDir:                 filepath.Join(kasmosDir, "cache"),
 		SDK:                      sdkCfg,
 		Resources:                resourceControls,
 	})
@@ -326,18 +335,17 @@ func (m *RepoManager) Get(path string) (RepoEntry, error) {
 
 // resolveRepoConfig reads per-repo TOML overrides and returns the effective
 // values for autoAdvance, autoReadinessReview, readinessSelfFixMaxLines,
-// readinessMaxVerifyCycles, parallelPlannerArchitect, the SDK transcript
+// readinessMaxVerifyCycles, planner profile fan-out settings, the SDK transcript
 // retention config, and the resolved resource-control policy for the given repo path.
-// parallelPlannerArchitect defaults to true (opt-out); a project TOML key overrides
-// only when explicitly present. Falls back to daemon-level defaults for the other fields.
+// Nil or empty planner lists keep legacy single-planner mode. Falls back to
+// daemon-level defaults for the other fields.
 // SDK limits default to config.DefaultConfig().SDK values when absent from the TOML file.
 // Resource controls default to the normal/no-op profile when [resources] is absent.
-func (m *RepoManager) resolveRepoConfig(path string) (autoAdvance bool, autoReadinessReview bool, selfFixMaxLines int, maxVerifyCycles int, parallelPlannerArchitect bool, sdkCfg config.SDKConfig, resourceControls config.ResolvedResourceControls, err error) {
+func (m *RepoManager) resolveRepoConfig(path string) (autoAdvance bool, autoReadinessReview bool, selfFixMaxLines int, maxVerifyCycles int, plannerProfiles []string, plannerDraftMode bool, sdkCfg config.SDKConfig, resourceControls config.ResolvedResourceControls, err error) {
 	autoAdvance = m.autoAdvance
 	autoReadinessReview = m.autoReadinessReview
 	selfFixMaxLines = m.readinessSelfFixMaxLines
 	maxVerifyCycles = m.readinessMaxVerifyCycles
-	parallelPlannerArchitect = true // default-on opt-out
 	sdkCfg = config.DefaultConfig().SDK
 	resourceControls = config.ResolvedResourceControls{Profile: "normal"}
 
@@ -357,9 +365,17 @@ func (m *RepoManager) resolveRepoConfig(path string) (autoAdvance bool, autoRead
 	if result.AutoReadinessReview != nil {
 		autoReadinessReview = *result.AutoReadinessReview
 	}
-	if result.ParallelPlannerArchitect != nil {
-		parallelPlannerArchitect = *result.ParallelPlannerArchitect
+	cfg := &config.Config{
+		Profiles: result.Profiles,
+		Planners: result.Planners,
 	}
+	if validateErr := cfg.ValidatePlannerProfiles(); validateErr != nil {
+		err = fmt.Errorf("daemon: invalid project planner config for %s: %w", path, validateErr)
+		return
+	}
+	plannerProfiles = cfg.PlannerProfileNames()
+	plannerDraftMode = len(plannerProfiles) > 0
+
 	if result.ReadinessSelfFixMaxLines != nil {
 		if *result.ReadinessSelfFixMaxLines > 0 {
 			selfFixMaxLines = *result.ReadinessSelfFixMaxLines
