@@ -1149,8 +1149,22 @@ func (m *home) spawnPlannersForTask(planFile, legacyPrompt, description string) 
 	if _, ok := m.taskState.Entry(planFile); !ok {
 		return m, m.handleError(fmt.Errorf("task not found: %s", planFile))
 	}
+	if err := m.appConfig.ValidatePlannerProfiles(); err != nil {
+		return m, m.handleError(err)
+	}
 	if err := scaffold.PatchWorktreeConfig(m.activeRepoPath, m.opencodeAgentConfigs()); err != nil {
 		return m, m.handleError(err)
+	}
+
+	startGroupID := m.nextPlannerFanoutStartGroup(planFile)
+	staged := make([]plannerProfileSpawn, 0, len(profiles))
+	for i, profileName := range profiles {
+		spawn, err := m.preparePlannerProfileForTask(planFile, profileName, i == 0, description, legacyPrompt, startGroupID)
+		if err != nil {
+			m.markInstanceStartGroupAborted(startGroupID)
+			return m, m.handleError(err)
+		}
+		staged = append(staged, spawn)
 	}
 
 	m.killExistingPlanAgent(planFile, session.AgentTypePlanner)
@@ -1171,26 +1185,37 @@ func (m *home) spawnPlannersForTask(planFile, legacyPrompt, description string) 
 	}
 
 	var startCmds []tea.Cmd
-	startGroupID := m.nextPlannerFanoutStartGroup(planFile)
-	for i, profileName := range profiles {
-		startCmd, err := m.spawnPlannerProfileForTask(planFile, profileName, i == 0, description, legacyPrompt, startGroupID)
-		if err != nil {
-			return m, m.handleError(err)
-		}
-		startCmds = append(startCmds, startCmd)
+	for _, spawn := range staged {
+		m.stagePlannerProfileForTask(planFile, spawn)
+		startCmds = append(startCmds, spawn.startCmd)
 	}
 	startCmds = append([]tea.Cmd{tea.RequestWindowSize}, startCmds...)
 	return m, tea.Sequence(clearCmd, tea.Batch(startCmds...))
 }
 
+type plannerProfileSpawn struct {
+	profileName string
+	instance    *session.Instance
+	startCmd    tea.Cmd
+}
+
 func (m *home) spawnPlannerProfileForTask(planFile, profileName string, primary bool, description, legacyPrompt, startGroupID string) (tea.Cmd, error) {
-	profile, err := m.profileForNamedPlanner(profileName)
+	spawn, err := m.preparePlannerProfileForTask(planFile, profileName, primary, description, legacyPrompt, startGroupID)
 	if err != nil {
 		return nil, err
 	}
+	m.stagePlannerProfileForTask(planFile, spawn)
+	return spawn.startCmd, nil
+}
+
+func (m *home) preparePlannerProfileForTask(planFile, profileName string, primary bool, description, legacyPrompt, startGroupID string) (plannerProfileSpawn, error) {
+	profile, err := m.profileForNamedPlanner(profileName)
+	if err != nil {
+		return plannerProfileSpawn{}, err
+	}
 	cacheName, err := orchestration.PlannerDraftCacheFilename(planFile, profileName)
 	if err != nil {
-		return nil, err
+		return plannerProfileSpawn{}, err
 	}
 	spec := orchestration.BuildPlannerAgentSpecWithOptions(planFile, m.taskStoreProject, description, orchestration.PlannerAgentOptions{
 		Profile:   profileName,
@@ -1210,25 +1235,36 @@ func (m *home) spawnPlannerProfileForTask(planFile, profileName string, primary 
 		ClaudeNoFlicker: m.claudeNoFlicker(),
 	}))
 	if err != nil {
-		return nil, err
+		return plannerProfileSpawn{}, err
 	}
 	inst.PlannerProfile = profileName
 	inst.QueuedPrompt = orchestration.PlannerDraftPromptWithCallerPrompt(spec.Prompt, legacyPrompt)
 	inst.SetStatus(session.Loading)
 	inst.LoadingTotal = 5
 	inst.LoadingMessage = "Preparing session..."
+	plannerInst := inst
+	return plannerProfileSpawn{
+		profileName: profileName,
+		instance:    inst,
+		startCmd: func() tea.Msg {
+			return instanceStartedMsg{instance: plannerInst, err: plannerInst.StartOnMainBranch(), startGroupID: startGroupID}
+		},
+	}, nil
+}
+
+func (m *home) stagePlannerProfileForTask(planFile string, spawn plannerProfileSpawn) {
+	inst := spawn.instance
+	if inst == nil {
+		return
+	}
 	m.addInstanceFinalizer(inst, m.nav.AddInstance(inst))
 	m.nav.SelectInstance(inst)
 
-	m.audit(auditlog.EventAgentSpawned, fmt.Sprintf("spawned planner %s for plan %s", profileName, taskstate.DisplayName(planFile)),
+	m.audit(auditlog.EventAgentSpawned, fmt.Sprintf("spawned planner %s for plan %s", spawn.profileName, taskstate.DisplayName(planFile)),
 		auditlog.WithPlan(planFile),
-		auditlog.WithInstance(spec.Title),
+		auditlog.WithInstance(inst.Title),
 		auditlog.WithAgent(session.AgentTypePlanner),
 	)
-	plannerInst := inst
-	return func() tea.Msg {
-		return instanceStartedMsg{instance: plannerInst, err: plannerInst.StartOnMainBranch(), startGroupID: startGroupID}
-	}, nil
 }
 
 // instanceSignalItems returns the promoted root-level items for an instance context

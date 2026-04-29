@@ -530,6 +530,59 @@ func TestSpawnPlannersForTask_DraftModeSpawnsConfiguredProfiles(t *testing.T) {
 		"planner draft fan-out must not mutate task execution state")
 }
 
+func TestSpawnPlannersForTask_SetupFailurePreservesExistingPlanner(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	plansDir := filepath.Join(dir, "docs", "plans")
+	require.NoError(t, os.MkdirAll(plansDir, 0o755))
+	ps, err := newTestPlanState(t, plansDir)
+	require.NoError(t, err)
+	const planFile = "setup-failure-parallel-plan"
+	require.NoError(t, ps.Register(planFile, "setup failure parallel plan", "plan/setup-failure-parallel-plan", time.Now()))
+
+	oldPlanner := &session.Instance{
+		Title:          "setup-failure-parallel-plan-plan-old",
+		TaskFile:       planFile,
+		AgentType:      session.AgentTypePlanner,
+		Status:         session.Running,
+		PlannerProfile: "",
+	}
+	sp := spinner.New(spinner.WithSpinner(spinner.Dot))
+	h := &home{
+		appConfig: &config.Config{
+			Planners: []string{"planner_a", "missing_planner"},
+			Profiles: map[string]config.AgentProfile{
+				"planner_a": {Enabled: true, Program: "opencode"},
+			},
+		},
+		taskState:          ps,
+		activeRepoPath:     dir,
+		taskStoreProject:   "proj",
+		program:            "opencode",
+		nav:                ui.NewNavigationPanel(&sp),
+		menu:               ui.NewMenu(),
+		tabbedWindow:       ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewInfoPane()),
+		toastManager:       overlay.NewToastManager(&sp),
+		overlays:           overlay.NewManager(),
+		allInstances:       []*session.Instance{oldPlanner},
+		instanceFinalizers: make(map[*session.Instance]func()),
+	}
+	h.addInstanceFinalizer(oldPlanner, h.nav.AddInstance(oldPlanner))
+
+	model, cmd := h.spawnPlannersForTask(planFile, "plan prompt", "build setup failure plan")
+	require.NotNil(t, cmd)
+	updated := model.(*home)
+
+	require.Equal(t, []*session.Instance{oldPlanner}, updated.nav.GetInstances(),
+		"setup errors must not remove the previous planner or stage partial profile rows")
+	require.Equal(t, []*session.Instance{oldPlanner}, updated.allInstances,
+		"setup errors must not mutate persisted instance candidates")
+	require.Contains(t, updated.instanceFinalizers, oldPlanner,
+		"the existing planner finalizer must remain registered")
+	assert.Equal(t, 0, updated.plannerFanoutSeq,
+		"fan-out setup must fail before allocating a start group")
+}
+
 func TestPlannerFanoutStartFailureRollsBackSiblingsAndIgnoresLateSuccess(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
