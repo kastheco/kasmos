@@ -1,16 +1,19 @@
 package daemon
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sync"
 
 	"github.com/kastheco/kasmos/config"
 	"github.com/kastheco/kasmos/config/taskfsm"
 	"github.com/kastheco/kasmos/config/taskstore"
+	theme "github.com/kastheco/kasmos/internal/theme"
 	"github.com/kastheco/kasmos/orchestration/loop"
 )
 
@@ -52,6 +55,9 @@ type RepoEntry struct {
 	// A zero value (Enabled=false) represents the normal/no-op profile.
 	// Forwarded into SpawnOpts so every agent spawned for this repo inherits it.
 	Resources config.ResolvedResourceControls
+	// Theme holds the resolved repo palette for daemon-managed preview surfaces.
+	// Fallbacks are non-fatal and keep the built-in palette.
+	Theme theme.Result
 }
 
 // withSDKTranscriptRetention copies the repo's SDK transcript limits and
@@ -208,6 +214,7 @@ func (m *RepoManager) Add(path string) error {
 	if err != nil {
 		return err
 	}
+	themeResult := resolveRepoTheme(context.Background(), path)
 
 	// Create a per-repo processor that persists across poll ticks so that wave
 	// orchestrator state is maintained between cycles.
@@ -240,8 +247,40 @@ func (m *RepoManager) Add(path string) error {
 		CacheDir:                 filepath.Join(kasmosDir, "cache"),
 		SDK:                      sdkCfg,
 		Resources:                resourceControls,
+		Theme:                    themeResult,
 	})
 	return nil
+}
+
+func resolveRepoTheme(ctx context.Context, path string) theme.Result {
+	cfg := config.DefaultConfig()
+	projTomlPath := filepath.Join(path, ".kasmos", config.TOMLConfigFileName)
+	if _, err := os.Stat(projTomlPath); err != nil {
+		return resolveTheme(ctx, cfg)
+	}
+	if result, err := config.LoadTOMLConfigFrom(projTomlPath); err != nil {
+		slog.Warn("daemon: failed to read project theme config, using default theme", "repo", path, "error", err)
+	} else if result != nil {
+		cfg.ThemeSource = result.ThemeSource
+		cfg.SystemThemeProvider = result.SystemThemeProvider
+		cfg.ThemePaletteFile = result.ThemePaletteFile
+	}
+
+	return resolveTheme(ctx, cfg)
+}
+
+func resolveTheme(ctx context.Context, cfg *config.Config) theme.Result {
+	return theme.Resolve(ctx, theme.Options{
+		Source:      cfg.ThemeSource,
+		Provider:    cfg.SystemThemeProvider,
+		PaletteFile: cfg.ThemePaletteFile,
+	}, theme.Dependencies{
+		ReadFile: os.ReadFile,
+		HomeDir:  os.UserHomeDir,
+		RunCommand: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			return exec.CommandContext(ctx, name, args...).Output()
+		},
+	})
 }
 
 // Remove deregisters a repository by absolute path.

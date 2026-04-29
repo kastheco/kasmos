@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os/exec"
 	"reflect"
 	"strings"
 
@@ -24,6 +25,7 @@ import (
 	"github.com/kastheco/kasmos/internal/clickup"
 	"github.com/kastheco/kasmos/internal/mcpclient"
 	sentrypkg "github.com/kastheco/kasmos/internal/sentry"
+	theme "github.com/kastheco/kasmos/internal/theme"
 	"github.com/kastheco/kasmos/keys"
 	"github.com/kastheco/kasmos/log"
 	"github.com/kastheco/kasmos/orchestration"
@@ -68,6 +70,14 @@ var repoManagedByDaemon = func(repoPath string) bool {
 	return false
 }
 
+var setTerminalBackground = ui.SetTerminalBackground
+
+var runTeaProgram = func(model tea.Model) error {
+	p := tea.NewProgram(model)
+	_, err := p.Run()
+	return err
+}
+
 func daemonHTTPClient(socketPath string, timeout time.Duration) *http.Client {
 	transport := &http.Transport{
 		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
@@ -80,14 +90,19 @@ func daemonHTTPClient(socketPath string, timeout time.Duration) *http.Client {
 
 // Run is the main entrypoint into the application.
 func Run(ctx context.Context, program string, autoYes bool, version string) error {
-	// Set the terminal's default background to the theme base color so every
-	// ANSI reset and unstyled cell falls back to #232136 instead of black.
-	restore := ui.SetTerminalBackground("#232136")
-	defer restore()
 	defer sentrypkg.RecoverPanic()
 
+	appConfig := config.LoadConfig()
+	themeResult := resolveStartupTheme(ctx, appConfig)
+	applyStartupTheme(themeResult)
+
+	// Set the terminal's default background to the resolved theme base color so
+	// every ANSI reset and unstyled cell falls back to the active palette.
+	restore := setTerminalBackground(string(themeResult.Palette.Base))
+	defer restore()
+
 	zone.NewGlobal()
-	h := newHome(ctx, program, autoYes, version)
+	h := newHomeWithConfig(ctx, program, autoYes, version, appConfig)
 	if h.sharedDB != nil {
 		defer h.sharedDB.Close()
 	}
@@ -95,9 +110,31 @@ func Run(ctx context.Context, program string, autoYes bool, version string) erro
 	if h.permissionStore != nil {
 		defer h.permissionStore.Close()
 	}
-	p := tea.NewProgram(h)
-	_, err := p.Run()
-	return err
+	return runTeaProgram(h)
+}
+
+func resolveStartupTheme(ctx context.Context, cfg *config.Config) theme.Result {
+	if cfg == nil {
+		cfg = config.DefaultConfig()
+	}
+	return theme.Resolve(ctx, theme.Options{
+		Source:      cfg.ThemeSource,
+		Provider:    cfg.SystemThemeProvider,
+		PaletteFile: cfg.ThemePaletteFile,
+	}, theme.Dependencies{
+		ReadFile: os.ReadFile,
+		HomeDir:  os.UserHomeDir,
+		RunCommand: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			return exec.CommandContext(ctx, name, args...).Output()
+		},
+	})
+}
+
+func applyStartupTheme(result theme.Result) {
+	theme.SetCurrent(result.Palette)
+	ui.ApplyPalette(result.Palette)
+	overlay.ApplyPalette(result.Palette)
+	rebuildHelpStyles()
 }
 
 type state int
@@ -508,9 +545,14 @@ type deferredPermissionPrompt struct {
 }
 
 func newHome(ctx context.Context, program string, autoYes bool, version string) *home {
-	// Load application config
 	appConfig := config.LoadConfig()
+	return newHomeWithConfig(ctx, program, autoYes, version, appConfig)
+}
 
+func newHomeWithConfig(ctx context.Context, program string, autoYes bool, version string, appConfig *config.Config) *home {
+	if appConfig == nil {
+		appConfig = config.DefaultConfig()
+	}
 	// Load application state
 	appState := config.LoadState()
 

@@ -151,6 +151,13 @@ var (
 	descStyle   = lipgloss.NewStyle().Foreground(ui.ColorText)
 )
 
+func rebuildHelpStyles() {
+	titleStyle = lipgloss.NewStyle().Bold(true).Underline(true).Foreground(ui.ColorIris)
+	headerStyle = lipgloss.NewStyle().Bold(true).Foreground(ui.ColorFoam)
+	keyStyle = lipgloss.NewStyle().Bold(true).Foreground(ui.ColorGold)
+	descStyle = lipgloss.NewStyle().Foreground(ui.ColorText)
+}
+
 // showHelpScreen displays the help screen overlay if it hasn't been shown before
 func (m *home) showHelpScreen(helpType helpText, onDismiss func()) (tea.Model, tea.Cmd) {
 	// Get the flag for this help type
