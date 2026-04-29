@@ -74,6 +74,9 @@ effort         = "high"
 | `auto_readiness_review` | bool? | `true` | when `true`, reviewer approval transitions the task to `verifying` status and spawns the master agent for a holistic readiness check before `done`. When `false`, `review_approved` flows directly to `done` and no master agent is spawned. |
 | `readiness_self_fix_max_lines` | int? | `80` | maximum number of net lines the master agent may change in a single self-fix attempt; findings that would require more are escalated via `verify_failed` instead |
 | `readiness_max_verify_cycles` | int? | `2` | maximum number of verify-round attempts before the loop is force-promoted to `verify_approved`. Must be a positive integer — values `≤ 0` are rejected at load time and fall back to the default. To disable the readiness gate entirely, set `auto_readiness_review = false` instead. |
+| `theme_source` | string | `"static"` | color palette source: empty/`"static"` uses the built-in Rose Pine Moon palette; `"system"` resolves a Linux system-derived palette |
+| `system_theme_provider` | string | `"auto"` | provider used when `theme_source = "system"`: empty/`"auto"`, `"file"`, `"caelestia"`, `"freedesktop"`, or `"gnome"` |
+| `theme_palette_file` | string | — | palette JSON file used by the `"file"` and `"caelestia"` providers; `~` is expanded |
 
 ```toml
 [ui]
@@ -86,6 +89,35 @@ auto_readiness_review         = true    # set to false to skip verifying status 
 readiness_self_fix_max_lines  = 80      # master agent self-fix ceiling (net lines changed)
 readiness_max_verify_cycles   = 2       # force-promote after this many verify rounds
 ```
+
+**system theme example:**
+
+```toml
+[ui]
+theme_source = "system"
+system_theme_provider = "file"
+theme_palette_file = "~/.config/caelestia/kasmos-theme.json"
+```
+
+Omitting all three theme keys keeps the built-in Rose Pine Moon palette. Setting `theme_source = ""` or `theme_source = "static"` also disables system theming. When `theme_source = "system"` and `system_theme_provider` is empty or `"auto"`, kasmos uses the Linux desktop color-scheme preference when it can and safely falls back to the built-in palette when it cannot. System theme providers are Linux-only; unsupported platforms, unreadable files, unknown providers, and invalid palette JSON all fall back to Rose Pine Moon.
+
+The `"file"` and `"caelestia"` providers read a JSON palette with kasmos semantic role names. A top-level object is supported, and so is a nested `colors` or `colours` object. Missing roles inherit the default palette.
+
+```json
+{
+  "base": "#232136",
+  "surface": "#2a273f",
+  "overlay": "#393552",
+  "text": "#e0def4",
+  "muted": "#6e6a86",
+  "subtle": "#908caa",
+  "iris": "#c4a7e7",
+  "foam": "#9ccfd8",
+  "gold": "#f6c177"
+}
+```
+
+For Caelestia, configure Caelestia to generate a kasmos-specific palette/template target at the file path you set in `theme_palette_file`; the path above is only an example. Use `system_theme_provider = "file"` for a plain generated JSON file, or `system_theme_provider = "caelestia"` when you want the config to document that Caelestia owns the generated target. kasmos resolves the palette on startup only, so restart kasmos after regenerating the file.
 
 ## `[sdk]` — SDK transcript retention
 
@@ -330,6 +362,9 @@ max_review_fix_cycles         = 3
 auto_readiness_review         = true
 readiness_self_fix_max_lines  = 80
 readiness_max_verify_cycles   = 2
+theme_source                  = "system"
+system_theme_provider         = "file"
+theme_palette_file            = "~/.config/caelestia/kasmos-theme.json"
 
 [telemetry]
 enabled = true
