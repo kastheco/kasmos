@@ -18,10 +18,6 @@ Load the `kasmos-planner` skill.
 
 Tests should protect durable behavior contracts and user-visible workflows, not only historical symptoms. Plans, implementations, and reviews should name the invariant each new test protects and prefer extending existing invariant suites over adding one-off regression files.
 
-## PR review fixes
-
-When addressing GitHub PR review feedback, treat each comment as evidence of a broken invariant, not a line-local patch request. Before replying to or resolving a review thread, trace the affected value/control flow from the reviewed line to the final observable side effect, check adjacent sibling paths for the same failure class, and add or update regression coverage at the final behavior boundary whenever practical. Intermediate helper tests are not enough when a downstream path can overwrite, bypass, or reinterpret the fixed value.
-
 ## Task State (CRITICAL)
 Task state is stored in the **global task store** (`~/.config/kasmos/taskstore.db` by default, or a remote http api), not in files on disk.
 Prefer mcp task tools for task-state work: `task_create`, `task_show`, `task_update_content`, `task_list`, and `task_transition`.
