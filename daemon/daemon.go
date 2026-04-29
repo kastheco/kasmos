@@ -355,12 +355,23 @@ func (a *daemonStateAdapter) EventStream() <-chan api.Event {
 // repoPathByProject returns the file-system path for the registered repo with the
 // given project name. Returns ("", false) when no matching project is registered.
 func (a *daemonStateAdapter) repoPathByProject(project string) (string, bool) {
-	for _, e := range a.d.repos.List() {
-		if e.Project == project {
-			return e.Path, true
-		}
+	if entry, ok := a.repoEntryByProject(project); ok {
+		return entry.Path, true
 	}
 	return "", false
+}
+
+// repoEntryByProject returns the full RepoEntry snapshot for the registered
+// repo with the given project name. Returns (RepoEntry{}, false) when no
+// matching project is registered. The entry includes the resolved per-repo
+// theme palette used by daemon-served SDK previews.
+func (a *daemonStateAdapter) repoEntryByProject(project string) (RepoEntry, bool) {
+	for _, e := range a.d.repos.List() {
+		if e.Project == project {
+			return e, true
+		}
+	}
+	return RepoEntry{}, false
 }
 
 // mapSpawnerInstanceErr translates internal spawner sentinel errors to the
@@ -415,23 +426,24 @@ func (a *daemonStateAdapter) KillInstance(project, title string) error {
 }
 
 // CaptureInstance implements StateProvider by resolving the tracked instance
-// and calling PreviewRange(start,end) or Preview() on it. When start or end is
-// non-empty the range overload is used; otherwise the full visible pane is
-// returned. This supports both SDK sessions (in-memory log) and tmux sessions
-// (tmux capture-pane) without the caller needing to know the execution mode.
+// and calling PreviewRangeWithPalette(start,end) or PreviewWithPalette() on it.
+// When start or end is non-empty the range overload is used; otherwise the full
+// visible pane is returned. SDK previews are rendered with the repo's resolved
+// theme palette so daemon-served output matches each repo's configured colors
+// even when multiple repos with distinct palettes are registered.
 func (a *daemonStateAdapter) CaptureInstance(project, title, start, end string) (string, error) {
-	repoPath, ok := a.repoPathByProject(project)
+	entry, ok := a.repoEntryByProject(project)
 	if !ok {
 		return "", fmt.Errorf("%w: project %s", api.ErrProjectNotFound, project)
 	}
-	_, inst, ok := a.d.spawner.trackedInstanceByTitle(repoPath, title)
+	_, inst, ok := a.d.spawner.trackedInstanceByTitle(entry.Path, title)
 	if !ok {
 		return "", fmt.Errorf("%w: %s/%s", api.ErrInstanceNotFound, project, title)
 	}
 	if start != "" || end != "" {
-		return inst.PreviewRange(start, end)
+		return inst.PreviewRangeWithPalette(start, end, entry.Theme.Palette)
 	}
-	return inst.Preview()
+	return inst.PreviewWithPalette(entry.Theme.Palette)
 }
 
 // SendInstancePrompt implements StateProvider by resolving the tracked instance

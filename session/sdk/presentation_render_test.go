@@ -9,6 +9,20 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+var defaultPresentationPaletteForTest = DefaultPresentationPalette()
+
+var (
+	presentationColorMuted  = defaultPresentationPaletteForTest.Muted
+	presentationColorSubtle = defaultPresentationPaletteForTest.Subtle
+	presentationColorText   = defaultPresentationPaletteForTest.Text
+	presentationColorFoam   = defaultPresentationPaletteForTest.Foam
+	presentationColorLove   = defaultPresentationPaletteForTest.Love
+	presentationColorGold   = defaultPresentationPaletteForTest.Gold
+	presentationColorRose   = defaultPresentationPaletteForTest.Rose
+	presentationColorPine   = defaultPresentationPaletteForTest.Pine
+	presentationColorIris   = defaultPresentationPaletteForTest.Iris
+)
+
 // stripANSI is a naive ANSI escape sequence stripper for testing.
 // It removes sequences of the form ESC[...m.
 func stripANSI(s string) string {
@@ -49,6 +63,46 @@ func presentationMarkdownStylesForTest() MarkdownLineStyles {
 		NumberPrefix: lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorFoam)),
 		QuotePrefix:  lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorMuted)),
 	}
+}
+
+func TestRenderPresentationWithPalette_UsesCustomPalette(t *testing.T) {
+	failCode := 9
+	palette := PresentationPalette{
+		Base:    "#101010",
+		Overlay: "#202020",
+		Muted:   "#111111",
+		Subtle:  "#222222",
+		Text:    "#333333",
+		Love:    "#444444",
+		Gold:    "#555555",
+		Rose:    "#666666",
+		Pine:    "#777777",
+		Foam:    "#888888",
+		Iris:    "#999999",
+	}
+	turn := &PresentationTurn{
+		ID:     "t1",
+		Number: 1,
+		Rows: []PresentationRow{
+			{Kind: RowResponse},
+			{Kind: RowProse, Text: "assistant prose"},
+			{Kind: RowToolPreview, ToolPreview: &ToolPreviewPayload{Lines: []string{"tool output"}}},
+			{Kind: RowWarning, Text: "[warning: slow]"},
+			{Kind: RowResult, IsError: true, Text: "plain error"},
+			{Kind: RowResult, ExitCode: &failCode, Output: "exit error"},
+			{Kind: RowStatus, Text: "working"},
+		},
+	}
+
+	result := RenderPresentationWithPalette([]*PresentationTurn{turn}, 80, palette)
+
+	require.Contains(t, result, lipgloss.NewStyle().Foreground(lipgloss.Color(palette.Muted)).Render(strings.Repeat("─", 80)))
+	require.Contains(t, result, lipgloss.NewStyle().Foreground(lipgloss.Color(palette.Text)).Render("assistant prose"))
+	require.Contains(t, result, lipgloss.NewStyle().Foreground(lipgloss.Color(palette.Subtle)).Render("tool output"))
+	require.Contains(t, result, lipgloss.NewStyle().Foreground(lipgloss.Color(palette.Gold)).Render("[warning: slow]"))
+	require.Contains(t, result, lipgloss.NewStyle().Foreground(lipgloss.Color(palette.Love)).Render("plain error"))
+	require.Contains(t, result, lipgloss.NewStyle().Foreground(lipgloss.Color(palette.Love)).Render("✗ 9"))
+	require.Contains(t, result, lipgloss.NewStyle().Foreground(lipgloss.Color(palette.Gold)).Render("working"))
 }
 
 func TestRenderPresentation_UserPrefix(t *testing.T) {

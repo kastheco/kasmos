@@ -8,6 +8,7 @@ import (
 
 	"github.com/kastheco/kasmos/config"
 	"github.com/kastheco/kasmos/config/taskstore"
+	theme "github.com/kastheco/kasmos/internal/theme"
 	"github.com/kastheco/kasmos/orchestration/loop"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -55,6 +56,65 @@ func TestRepoManager_ProjectName(t *testing.T) {
 	require.NoError(t, rm.Add("/home/user/my-project"))
 	repos := rm.List()
 	assert.Equal(t, "my-project", repos[0].Project)
+}
+
+func TestRepoManager_ThemeDefaultsToBuiltInPalette(t *testing.T) {
+	repoDir := t.TempDir()
+	rm := newTestRepoManager(t)
+
+	require.NoError(t, rm.Add(repoDir))
+
+	repos := rm.List()
+	require.Len(t, repos, 1)
+	assert.Equal(t, theme.DefaultPalette(), repos[0].Theme.Palette)
+	assert.False(t, repos[0].Theme.Fallback)
+}
+
+func TestRepoManager_ThemeUsesExplicitPaletteFile(t *testing.T) {
+	repoDir := t.TempDir()
+	kasmosDir := filepath.Join(repoDir, ".kasmos")
+	require.NoError(t, os.MkdirAll(kasmosDir, 0o755))
+	palettePath := filepath.Join(t.TempDir(), "palette.json")
+	require.NoError(t, os.WriteFile(palettePath, []byte(`{"base":"#102030","foam":"#405060"}`), 0o644))
+	content := `
+[ui]
+theme_source = "system"
+system_theme_provider = "file"
+theme_palette_file = "` + palettePath + `"
+`
+	require.NoError(t, os.WriteFile(filepath.Join(kasmosDir, "config.toml"), []byte(content), 0o644))
+
+	rm := newTestRepoManager(t)
+	require.NoError(t, rm.Add(repoDir))
+
+	repos := rm.List()
+	require.Len(t, repos, 1)
+	assert.Equal(t, theme.Color("#102030"), repos[0].Theme.Palette.Base)
+	assert.Equal(t, theme.Color("#405060"), repos[0].Theme.Palette.Foam)
+	assert.False(t, repos[0].Theme.Fallback)
+}
+
+func TestRepoManager_ThemeResolvesRelativePaletteFileFromConfigDir(t *testing.T) {
+	repoDir := t.TempDir()
+	kasmosDir := filepath.Join(repoDir, ".kasmos")
+	require.NoError(t, os.MkdirAll(filepath.Join(kasmosDir, "themes"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(kasmosDir, "themes", "palette.json"), []byte(`{"base":"#203040","foam":"#607080"}`), 0o644))
+	content := `
+[ui]
+theme_source = "system"
+system_theme_provider = "file"
+theme_palette_file = "themes/palette.json"
+`
+	require.NoError(t, os.WriteFile(filepath.Join(kasmosDir, "config.toml"), []byte(content), 0o644))
+
+	rm := newTestRepoManager(t)
+	require.NoError(t, rm.Add(repoDir))
+
+	repos := rm.List()
+	require.Len(t, repos, 1)
+	assert.Equal(t, theme.Color("#203040"), repos[0].Theme.Palette.Base)
+	assert.Equal(t, theme.Color("#607080"), repos[0].Theme.Palette.Foam)
+	assert.False(t, repos[0].Theme.Fallback)
 }
 
 func TestRepoManager_AddDuplicateBasename(t *testing.T) {

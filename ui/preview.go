@@ -16,10 +16,20 @@ import (
 )
 
 var (
-	previewPaneStyle    = lipgloss.NewStyle().Foreground(ColorText)
+	previewPaneStyle    lipgloss.Style
+	scrollbarTrackStyle lipgloss.Style
+	scrollbarThumbStyle lipgloss.Style
+)
+
+func rebuildPreviewStyles() {
+	previewPaneStyle = lipgloss.NewStyle().Foreground(ColorText)
 	scrollbarTrackStyle = lipgloss.NewStyle().Foreground(ColorOverlay)
 	scrollbarThumbStyle = lipgloss.NewStyle().Foreground(ColorIris)
-)
+}
+
+func init() {
+	rebuildPreviewStyles()
+}
 
 // previewState holds the current display state of the preview pane.
 type previewState struct {
@@ -803,7 +813,7 @@ func renderComposerFooter(width int, composer string, cursor int, images []strin
 	ruleStyle := lipgloss.NewStyle().Foreground(ColorMuted)
 	promptPrefixStyle := lipgloss.NewStyle().Foreground(ColorRose)
 	placeholderStyle := lipgloss.NewStyle().Foreground(ColorSubtle)
-	composerStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#ffffff"))
+	composerStyle := lipgloss.NewStyle().Foreground(ColorText)
 	hintStyle := lipgloss.NewStyle().Foreground(ColorSubtle)
 	metaStyle := lipgloss.NewStyle().Foreground(ColorIris)
 	attachmentStyle := lipgloss.NewStyle().Foreground(ColorGold)

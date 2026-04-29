@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/kastheco/kasmos/config"
+	"github.com/kastheco/kasmos/internal/theme"
 	"github.com/kastheco/kasmos/log"
 	"github.com/kastheco/kasmos/session/git"
 	"github.com/kastheco/kasmos/session/sdk"
@@ -21,7 +22,19 @@ type localImagePromptSession interface {
 
 // Preview returns the current pane content as a string.
 // Returns an empty string if the instance has not been started or is paused.
+//
+// SDK previews use the process-global theme.Current() palette. Daemons that
+// serve multiple repositories with distinct palettes should call
+// PreviewWithPalette and pass the per-repo palette explicitly.
 func (i *Instance) Preview() (string, error) {
+	return i.PreviewWithPalette(theme.Current())
+}
+
+// PreviewWithPalette is identical to Preview but renders SDK presentations
+// using the supplied palette instead of theme.Current(). Daemons resolve a
+// per-repo palette into RepoEntry.Theme and forward it here so each repo's
+// cached SDK output uses its own colors regardless of process-global state.
+func (i *Instance) PreviewWithPalette(palette theme.Palette) (string, error) {
 	if !i.started || i.Status == Paused {
 		return "", nil
 	}
@@ -31,10 +44,31 @@ func (i *Instance) Preview() (string, error) {
 			if width <= 0 {
 				width = 80
 			}
-			return sdk.RenderPresentation(turns, width), nil
+			return sdk.RenderPresentationWithPalette(turns, width, sdk.PresentationPaletteFromTheme(palette)), nil
 		}
 	}
 	return i.executionSession.CapturePaneContent()
+}
+
+// PreviewRangeWithPalette captures a line-range slice of the preview rendered
+// with the supplied palette. SDK-backed instances render the structured
+// presentation first so ranged daemon captures stay visually consistent with
+// full daemon captures; tmux-backed instances keep using native range capture.
+func (i *Instance) PreviewRangeWithPalette(start, end string, palette theme.Palette) (string, error) {
+	if !i.started || i.Status == Paused {
+		return "", nil
+	}
+	if NormalizeExecutionMode(i.ExecutionMode) == ExecutionModeSDK {
+		if turns := i.CapturePresentation(); len(turns) > 0 {
+			width := i.Width
+			if width <= 0 {
+				width = 80
+			}
+			content := sdk.RenderPresentationWithPalette(turns, width, sdk.PresentationPaletteFromTheme(palette))
+			return previewLineRange(content, start, end), nil
+		}
+	}
+	return i.executionSession.CapturePaneContentWithOptions(start, end)
 }
 
 // HasUpdated reports whether the pane content has changed since the last check.
@@ -172,10 +206,46 @@ func (i *Instance) PreviewFullHistory() (string, error) {
 // 0-based line offsets, negative values count from the end).
 // Returns an empty string if the instance is not started or is paused.
 func (i *Instance) PreviewRange(start, end string) (string, error) {
-	if !i.started || i.Status == Paused {
-		return "", nil
+	return i.PreviewRangeWithPalette(start, end, theme.Current())
+}
+
+func previewLineRange(content, start, end string) string {
+	if content == "" {
+		return ""
 	}
-	return i.executionSession.CapturePaneContentWithOptions(start, end)
+	lines := strings.Split(content, "\n")
+	n := len(lines)
+	if n == 0 {
+		return ""
+	}
+
+	s := resolvePreviewLineIndex(start, n, 0)
+	e := resolvePreviewLineIndex(end, n, n-1)
+	if s < 0 {
+		s = 0
+	}
+	if e >= n {
+		e = n - 1
+	}
+	if s > e {
+		return ""
+	}
+	return strings.Join(lines[s:e+1], "\n")
+}
+
+func resolvePreviewLineIndex(value string, n, defaultIndex int) int {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" || trimmed == "-" {
+		return defaultIndex
+	}
+	idx, err := strconv.Atoi(trimmed)
+	if err != nil {
+		return defaultIndex
+	}
+	if idx < 0 {
+		return n + idx
+	}
+	return idx
 }
 
 // Interrupt sends a ctrl-C interrupt to the agent.

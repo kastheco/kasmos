@@ -100,6 +100,7 @@ each registered repo is represented as a `RepoEntry`:
 | `SignalGateway` | `taskstore.SignalGateway` | handle into the **shared global** signal gateway (same DB, same open call) — reused across all registered repos (may be nil) |
 | `SignalsDir` | `string` | `<path>/.kasmos/signals/` — repo-local filesystem directory; still scanned by `BridgeFilesystemSignals` for backward compatibility |
 | `Processor` | `*loop.Processor` | per-repo signal processor that persists wave orchestrator state between ticks |
+| `Theme` | `theme.Result` | resolved repo palette used by daemon-served sdk preview and capture output |
 
 the `Processor` is created once per `Add` call and reused on every tick. this keeps `WaveOrchestrator` state alive across poll cycles without re-reading from disk.
 

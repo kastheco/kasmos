@@ -11,11 +11,16 @@ import (
 )
 
 // Style definitions for the bottom keybind bar.
-var keyStyle = lipgloss.NewStyle().Foreground(ColorSubtle)
-var descStyle = lipgloss.NewStyle().Foreground(ColorMuted)
-var sepStyle = lipgloss.NewStyle().Foreground(ColorOverlay)
-var actionGroupStyle = lipgloss.NewStyle().Foreground(ColorRose)
-var menuStyle = lipgloss.NewStyle().Foreground(ColorFoam)
+var (
+	keyStyle             lipgloss.Style
+	descStyle            lipgloss.Style
+	sepStyle             lipgloss.Style
+	actionGroupStyle     lipgloss.Style
+	menuStyle            lipgloss.Style
+	focusBarStyle        lipgloss.Style
+	focusBarDimStyle     lipgloss.Style
+	focusBarSpinnerStyle lipgloss.Style
+)
 
 // Separator tokens inserted between keybind items.
 var separator = " • "
@@ -75,19 +80,28 @@ const (
 // Focus mode animation frames (braille spinner characters).
 var focusModeFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 
-// Styles specific to focus / interactive mode overlay.
-// The entire bar is inverted: rose/love background with dark text.
-var focusBarStyle = lipgloss.NewStyle().
-	Background(ColorLove).
-	Foreground(ColorBase).
-	Bold(true)
-var focusBarDimStyle = lipgloss.NewStyle().
-	Background(ColorLove).
-	Foreground(lipgloss.Color("#3e3858"))
-var focusBarSpinnerStyle = lipgloss.NewStyle().
-	Background(ColorLove).
-	Foreground(ColorBase).
-	Bold(true)
+func rebuildMenuStyles() {
+	keyStyle = lipgloss.NewStyle().Foreground(ColorSubtle)
+	descStyle = lipgloss.NewStyle().Foreground(ColorMuted)
+	sepStyle = lipgloss.NewStyle().Foreground(ColorOverlay)
+	actionGroupStyle = lipgloss.NewStyle().Foreground(ColorRose)
+	menuStyle = lipgloss.NewStyle().Foreground(ColorFoam)
+	focusBarStyle = lipgloss.NewStyle().
+		Background(ColorLove).
+		Foreground(ColorBase).
+		Bold(true)
+	focusBarDimStyle = lipgloss.NewStyle().
+		Background(ColorLove).
+		Foreground(ColorOverlay)
+	focusBarSpinnerStyle = lipgloss.NewStyle().
+		Background(ColorLove).
+		Foreground(ColorBase).
+		Bold(true)
+}
+
+func init() {
+	rebuildMenuStyles()
+}
 
 // NewMenu constructs a Menu in the StateEmpty state with sensible defaults.
 func NewMenu() *Menu {

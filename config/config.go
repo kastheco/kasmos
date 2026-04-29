@@ -208,6 +208,12 @@ type Config struct {
 	AnimateBanner bool `json:"animate_banner,omitempty"`
 	// AccentColor renders an optional full-width accent strip below the menu bar.
 	AccentColor string `json:"accent_color,omitempty"`
+	// ThemeSource controls where the TUI theme is resolved from.
+	ThemeSource string `json:"theme_source,omitempty"`
+	// SystemThemeProvider selects the provider for system-derived themes.
+	SystemThemeProvider string `json:"system_theme_provider,omitempty"`
+	// ThemePaletteFile points to a palette file consumed by a theme provider.
+	ThemePaletteFile string `json:"theme_palette_file,omitempty"`
 	// AutoAdvanceWaves skips the confirmation dialog after a clean wave.
 	AutoAdvanceWaves bool `json:"auto_advance_waves,omitempty"`
 	// AutoAdvance skips the confirmation dialog for the planner→architect transition.
@@ -451,6 +457,9 @@ func configFromTOML(result *TOMLConfigResult) *Config {
 		cfg.PhaseRoles = result.PhaseRoles
 		cfg.AnimateBanner = result.AnimateBanner
 		cfg.AccentColor = result.AccentColor
+		cfg.ThemeSource = result.ThemeSource
+		cfg.SystemThemeProvider = result.SystemThemeProvider
+		cfg.ThemePaletteFile = result.ThemePaletteFile
 		cfg.TelemetryEnabled = result.TelemetryEnabled
 		cfg.DatabaseURL = result.DatabaseURL
 		cfg.Hooks = result.Hooks
@@ -556,8 +565,11 @@ func configToTOML(cfg *Config) *TOMLConfig {
 		Phases: phases,
 		Agents: agents,
 		UI: TOMLUIConfig{
-			AnimateBanner: cfg.AnimateBanner,
-			AccentColor:   cfg.AccentColor,
+			AnimateBanner:       cfg.AnimateBanner,
+			AccentColor:         cfg.AccentColor,
+			ThemeSource:         cfg.ThemeSource,
+			SystemThemeProvider: cfg.SystemThemeProvider,
+			ThemePaletteFile:    cfg.ThemePaletteFile,
 		},
 		Telemetry: TOMLTelemetryConfig{Enabled: cfg.TelemetryEnabled},
 		Orchestration: TOMLOrchestrationConfig{

@@ -83,6 +83,8 @@ Connects to the daemon control socket and calls `GET /v1/status`. Prints `daemon
 
 The daemon also serves instance metadata to the tui and live-preview bridge on `GET /v1/repos/{project}/instances`. Daemon-spawned rows include `execution_mode`, `sdk_speed_tier`, `skip_permissions`, and `resource_profile` so clients can resume or display sdk/tmux sessions using the same resolved profile defaults and resource-control profile the daemon used when spawning them. `resource_profile` is omitted for the normal/no-op resource profile. Older daemons omit `skip_permissions`; newer clients treat that omission as the legacy daemon default (`true`, bypass permissions).
 
+Live instance text is available on `GET /v1/repos/{project}/instances/{title}/capture`. Optional `start` and `end` query parameters use tmux `-S`/`-E` line-range semantics. For SDK instances, both full and ranged captures are rendered with the repo's resolved theme palette, so daemon-managed repos with custom `.kasmos/config.toml` palettes match the tui and live-preview output.
+
 The control API event stream is available at `GET /v1/events` and is consumed by `kas monitor`. Event JSON uses Go time encoding, so `timestamp` values may include fractional seconds. Event payloads can also include structured `detail` data for wave and agent outcomes; JSON consumers should preserve that field instead of parsing only the human message.
 
 ---

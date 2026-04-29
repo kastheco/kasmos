@@ -167,6 +167,16 @@
       "temperature": 0.3,
       "textVerbosity": "medium"
     },
+    "planner_gpt": {
+      "model": "gpt-5.5",
+      "reasoningEffort": "high",
+      "temperature": 0.3
+    },
+    "planner_opus": {
+      "model": "anthropic/claude-opus-4-7",
+      "reasoningEffort": "xhigh",
+      "temperature": 0.3
+    },
     "reviewer": {
       "model": "gpt-5.5",
       "permission": {

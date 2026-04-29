@@ -3,7 +3,10 @@ package overlay
 import (
 	"testing"
 
+	"charm.land/lipgloss/v2"
+	apptheme "github.com/kastheco/kasmos/internal/theme"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestStyles_ModalBorder(t *testing.T) {
@@ -76,4 +79,50 @@ func TestStyles_WarningTitle(t *testing.T) {
 func TestThemeRosePine_NotNil(t *testing.T) {
 	theme := ThemeRosePine()
 	assert.NotNil(t, theme)
+}
+
+func TestApplyPaletteUpdatesStyles(t *testing.T) {
+	defaultPalette := apptheme.DefaultPalette()
+	t.Cleanup(func() {
+		ApplyPalette(defaultPalette)
+	})
+	custom := apptheme.Palette{
+		Base:          "#101010",
+		Surface:       "#202020",
+		Overlay:       "#303030",
+		Muted:         "#404040",
+		Subtle:        "#505050",
+		Text:          "#606060",
+		Love:          "#701010",
+		Gold:          "#707010",
+		Rose:          "#701070",
+		Pine:          "#107070",
+		Foam:          "#107010",
+		Iris:          "#101070",
+		GradientStart: "#123456",
+		GradientEnd:   "#654321",
+	}
+
+	ApplyPalette(custom)
+	styles := DefaultStyles()
+
+	require.Equal(t, lipgloss.Color(string(custom.Iris)), styles.ModalBorder.GetBorderTopForeground())
+	require.Equal(t, lipgloss.Color(string(custom.Foam)), styles.SelectedItem.GetBackground())
+	require.Equal(t, lipgloss.Color(string(custom.Base)), styles.SelectedItem.GetForeground())
+	require.Equal(t, lipgloss.Color(string(custom.Iris)), styles.FocusedButton.GetBackground())
+	require.Equal(t, lipgloss.Color(string(custom.Base)), styles.FocusedButton.GetForeground())
+
+	huhStyles := ThemeFromPalette(custom).Theme(true)
+	require.Equal(t, lipgloss.Color(string(custom.Iris)), huhStyles.Focused.FocusedButton.GetBackground())
+	require.Equal(t, lipgloss.Color(string(custom.Base)), huhStyles.Focused.FocusedButton.GetForeground())
+	require.Equal(t, lipgloss.Color(string(custom.Foam)), huhStyles.Focused.SelectedOption.GetForeground())
+}
+
+func TestThemeRosePineUsesDefaultPalette(t *testing.T) {
+	defaultPalette := apptheme.DefaultPalette()
+
+	huhStyles := ThemeRosePine().Theme(true)
+
+	require.Equal(t, lipgloss.Color(string(defaultPalette.Iris)), huhStyles.Focused.FocusedButton.GetBackground())
+	require.Equal(t, lipgloss.Color(string(defaultPalette.Base)), huhStyles.Focused.FocusedButton.GetForeground())
 }

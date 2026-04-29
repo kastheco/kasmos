@@ -18,6 +18,7 @@ import (
 	"github.com/kastheco/kasmos/config/taskstore"
 	daemonpkg "github.com/kastheco/kasmos/daemon"
 	"github.com/kastheco/kasmos/daemon/api"
+	theme "github.com/kastheco/kasmos/internal/theme"
 	"github.com/kastheco/kasmos/keys"
 	"github.com/kastheco/kasmos/log"
 	"github.com/kastheco/kasmos/session"
@@ -29,6 +30,7 @@ import (
 
 	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	zone "github.com/lrstanley/bubblezone/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -76,6 +78,143 @@ func newTestHome() *home {
 			return "http://127.0.0.1:7433/admin/?project=" + project, false, nil
 		},
 	}
+}
+
+func resetThemeForTest(t *testing.T) {
+	t.Helper()
+	t.Cleanup(func() {
+		applyStartupTheme(theme.Result{Palette: theme.DefaultPalette()})
+	})
+}
+
+func setupStartupRunTest(t *testing.T, configContent string) {
+	t.Helper()
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
+
+	repoDir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(repoDir, ".git"), 0o755))
+	if configContent != "" {
+		kasmosDir := filepath.Join(repoDir, ".kasmos")
+		require.NoError(t, os.MkdirAll(kasmosDir, 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(kasmosDir, "config.toml"), []byte(configContent), 0o644))
+	}
+	t.Chdir(repoDir)
+}
+
+func runStartupForTest(t *testing.T) (backgrounds []string, restoreCalled *bool, models *[]tea.Model) {
+	t.Helper()
+
+	oldSetTerminalBackground := setTerminalBackground
+	oldRunTeaProgram := runTeaProgram
+	restoreCalled = new(bool)
+	models = &[]tea.Model{}
+	setTerminalBackground = func(hex string) func() {
+		backgrounds = append(backgrounds, hex)
+		return func() {
+			*restoreCalled = true
+		}
+	}
+	runTeaProgram = func(model tea.Model) error {
+		*models = append(*models, model)
+		return nil
+	}
+	t.Cleanup(func() {
+		setTerminalBackground = oldSetTerminalBackground
+		runTeaProgram = oldRunTeaProgram
+	})
+
+	require.NoError(t, Run(context.Background(), "opencode", false, "test"))
+	return backgrounds, restoreCalled, models
+}
+
+func TestRun_DefaultStartupAppliesDefaultTerminalBackgroundAndHome(t *testing.T) {
+	resetThemeForTest(t)
+	setupStartupRunTest(t, "")
+
+	backgrounds, restoreCalled, models := runStartupForTest(t)
+
+	require.Equal(t, []string{"#232136"}, backgrounds)
+	require.True(t, *restoreCalled)
+	require.Len(t, *models, 1)
+	_, ok := (*models)[0].(*home)
+	require.True(t, ok)
+}
+
+func TestRun_PaletteFileAppliesTerminalBackgroundAndCurrentTheme(t *testing.T) {
+	resetThemeForTest(t)
+	palettePath := filepath.Join(t.TempDir(), "palette.json")
+	require.NoError(t, os.WriteFile(palettePath, []byte(`{"base":"#101820","text":"#f2f2f2"}`), 0o644))
+	setupStartupRunTest(t, fmt.Sprintf(`
+[ui]
+theme_source = "system"
+system_theme_provider = "file"
+theme_palette_file = %q
+`, palettePath))
+
+	backgrounds, _, models := runStartupForTest(t)
+
+	require.Equal(t, []string{"#101820"}, backgrounds)
+	require.Len(t, *models, 1)
+	_, ok := (*models)[0].(*home)
+	require.True(t, ok)
+	assert.Equal(t, theme.Color("#101820"), theme.Current().Base)
+}
+
+func TestResolveStartupThemeResolvesRelativePaletteFileFromConfigDir(t *testing.T) {
+	resetThemeForTest(t)
+	t.Setenv("HOME", t.TempDir())
+
+	repoDir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(repoDir, ".git"), 0o755))
+	kasmosDir := filepath.Join(repoDir, ".kasmos")
+	require.NoError(t, os.MkdirAll(filepath.Join(kasmosDir, "themes"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(kasmosDir, "themes", "palette.json"), []byte(`{"base":"#112244"}`), 0o644))
+	t.Chdir(repoDir)
+
+	cfg := config.DefaultConfig()
+	cfg.ThemeSource = "system"
+	cfg.SystemThemeProvider = "file"
+	cfg.ThemePaletteFile = "themes/palette.json"
+
+	result := resolveStartupTheme(context.Background(), cfg)
+
+	require.False(t, result.Fallback)
+	assert.Equal(t, theme.Color("#112244"), result.Palette.Base)
+}
+
+func TestRun_ThemeProviderFailureFallsBackAndInitializesHome(t *testing.T) {
+	resetThemeForTest(t)
+	setupStartupRunTest(t, `
+[ui]
+theme_source = "system"
+system_theme_provider = "file"
+theme_palette_file = "/definitely/missing/kasmos-palette.json"
+`)
+
+	backgrounds, _, models := runStartupForTest(t)
+
+	require.Equal(t, []string{"#232136"}, backgrounds)
+	require.Len(t, *models, 1)
+	_, ok := (*models)[0].(*home)
+	require.True(t, ok)
+	assert.Equal(t, theme.DefaultPalette(), theme.Current())
+}
+
+func TestRebuildHelpStylesUsesAppliedPalette(t *testing.T) {
+	resetThemeForTest(t)
+	custom := theme.DefaultPalette()
+	custom.Iris = "#111111"
+	custom.Foam = "#222222"
+	custom.Gold = "#333333"
+	custom.Text = "#444444"
+
+	applyStartupTheme(theme.Result{Palette: custom})
+
+	assert.Equal(t, lipgloss.Color("#111111"), titleStyle.GetForeground())
+	assert.Equal(t, lipgloss.Color("#222222"), headerStyle.GetForeground())
+	assert.Equal(t, lipgloss.Color("#333333"), keyStyle.GetForeground())
+	assert.Equal(t, lipgloss.Color("#444444"), descStyle.GetForeground())
 }
 
 func startTestDaemonSocketServer(t *testing.T, handler http.Handler) string {
