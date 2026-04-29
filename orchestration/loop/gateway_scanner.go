@@ -88,6 +88,18 @@ func ConvertSignalEntry(entry *taskstore.SignalEntry, result *ScanResult) error 
 	}
 
 	switch internalType {
+	case "plan_start":
+		body, preApplied, err := decodeBody(entry.Payload)
+		if err != nil {
+			return err
+		}
+		result.FSMSignals = append(result.FSMSignals, taskfsm.Signal{
+			Event:      taskfsm.PlanStart,
+			TaskFile:   entry.PlanFile,
+			Body:       body,
+			PreApplied: preApplied,
+		})
+
 	case "planner_finished":
 		body, preApplied, err := decodeBody(entry.Payload)
 		if err != nil {

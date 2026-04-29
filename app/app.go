@@ -1326,14 +1326,6 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 
 				var actions []loop.Action
-				for _, sig := range msg.PlannerDraftSignals {
-					entry := claimGatewayEntry(sig.TaskFile, "planner_draft_finished")
-					sigActions := proc.ProcessPlannerDraftSignals([]taskfsm.PlannerDraftSignal{sig})
-					if len(sigActions) > 0 {
-						markGatewayProcessedEntry(entry)
-					}
-					actions = append(actions, sigActions...)
-				}
 				for _, sig := range msg.Signals {
 					entry := claimGatewayEventEntry(sig.TaskFile, sig.Event)
 					sigActions := proc.ProcessFSMSignals([]taskfsm.Signal{sig})
@@ -1342,6 +1334,14 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 					actions = append(actions, sigActions...)
 					taskfsm.ConsumeSignal(sig)
+				}
+				for _, sig := range msg.PlannerDraftSignals {
+					entry := claimGatewayEntry(sig.TaskFile, "planner_draft_finished")
+					sigActions := proc.ProcessPlannerDraftSignals([]taskfsm.PlannerDraftSignal{sig})
+					if len(sigActions) > 0 {
+						markGatewayProcessedEntry(entry)
+					}
+					actions = append(actions, sigActions...)
 				}
 
 				draftSpawnCmds := make(map[string][]tea.Cmd)

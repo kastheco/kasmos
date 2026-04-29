@@ -103,6 +103,22 @@ func TestConvertSignalEntry_VerifySignals(t *testing.T) {
 	})
 }
 
+func TestConvertSignalEntry_PlanStart(t *testing.T) {
+	t.Parallel()
+
+	var result ScanResult
+	entry := &taskstore.SignalEntry{
+		PlanFile:   "feature-plan",
+		SignalType: "plan_start",
+		Payload:    "",
+	}
+	require.NoError(t, ConvertSignalEntry(entry, &result))
+	require.Len(t, result.FSMSignals, 1)
+	sig := result.FSMSignals[0]
+	assert.Equal(t, taskfsm.PlanStart, sig.Event)
+	assert.Equal(t, "feature-plan", sig.TaskFile)
+}
+
 func TestScanGateway_VerifySignals(t *testing.T) {
 	gw := newTestGateway(t)
 	require.NoError(t, gw.Create("proj", taskstore.SignalEntry{

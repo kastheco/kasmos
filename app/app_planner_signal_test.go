@@ -171,6 +171,74 @@ func TestPlanStartDraftModeGatewaySpawnFailureCleansPartialFanout(t *testing.T) 
 	}
 }
 
+func TestMetadataTickProcessesPlanStartBeforePlannerDraftRows(t *testing.T) {
+	t.Parallel()
+	const planFile = "feature"
+	h, ps, _, _ := plannerSignalHome(t, planFile)
+	h.taskStateDir = ""
+	h.appConfig = &config.Config{
+		Planners: []string{"planner_a", "planner_b"},
+		Profiles: map[string]config.AgentProfile{
+			"planner_a": {Enabled: true, Program: "opencode"},
+			"planner_b": {Enabled: true, Program: "opencode"},
+		},
+	}
+
+	proc := h.ensureProcessor()
+	require.NotNil(t, proc)
+	require.Empty(t, proc.ProcessPlannerDraftSignals([]taskfsm.PlannerDraftSignal{
+		{TaskFile: planFile, PlannerID: "planner_a"},
+	}))
+	require.NotEmpty(t, proc.ProcessPlannerDraftSignals([]taskfsm.PlannerDraftSignal{
+		{TaskFile: planFile, PlannerID: "planner_b"},
+	}))
+	seedPlanStatus(t, ps, planFile, taskstate.StatusReady)
+
+	gw, err := taskstore.NewSQLiteSignalGateway(":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = gw.Close() })
+	h.signalGateway = gw
+	require.NoError(t, gw.Create("test", taskstore.SignalEntry{
+		PlanFile:   planFile,
+		SignalType: "plan_start",
+	}))
+	require.NoError(t, gw.Create("test", taskstore.SignalEntry{
+		PlanFile:   planFile,
+		SignalType: "planner_draft_finished",
+		Payload:    `{"planner_id":"planner_a"}`,
+	}))
+
+	var scan loop.ScanResult
+	claimed := make([]*taskstore.SignalEntry, 0, 2)
+	for range 2 {
+		entry, err := gw.Claim("test", "app-test")
+		require.NoError(t, err)
+		require.NotNil(t, entry)
+		require.NoError(t, loop.ConvertSignalEntry(entry, &scan))
+		claimed = append(claimed, entry)
+	}
+	require.Len(t, scan.FSMSignals, 1)
+	require.Len(t, scan.PlannerDraftSignals, 1)
+
+	model, _ := h.Update(metadataResultMsg{
+		PlanState:            ps,
+		Signals:              scan.FSMSignals,
+		PlannerDraftSignals:  scan.PlannerDraftSignals,
+		GatewaySignalEntries: claimed,
+	})
+	updated := model.(*home)
+
+	done, err := gw.List("test", taskstore.SignalDone)
+	require.NoError(t, err)
+	require.Len(t, done, 2)
+
+	actions := updated.processor.ProcessPlannerDraftSignals([]taskfsm.PlannerDraftSignal{
+		{TaskFile: planFile, PlannerID: "planner_b"},
+	})
+	require.NotEmpty(t, actions, "same-tick planner_a draft must be recorded after plan_start resets stale aggregation")
+	assert.Equal(t, "planner_complete", actions[0].Kind())
+}
+
 func TestGatewayAckClassifiesRowsIndividuallyForSamePlan(t *testing.T) {
 	t.Parallel()
 	const planFile = "feature"

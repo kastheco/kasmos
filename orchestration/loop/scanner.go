@@ -98,12 +98,12 @@ func ScanAllSignals(repoRoot string, worktreePaths []string) ScanResult {
 // pre-scanned ScanResult and returns the concatenated list of actions for the
 // caller to execute. It is the primary entry point for the daemon's event loop.
 //
-// PlannerDraftSignals are processed first so that a batch containing draft rows
-// can synthesize the single planner_finished action during the same tick.
+// FSM signals are processed before planner draft rows so a same-tick plan_start
+// resets stale draft aggregation before planner_draft_finished rows are recorded.
 func (p *Processor) Tick(scan ScanResult) []Action {
 	var actions []Action
-	actions = append(actions, p.ProcessPlannerDraftSignals(scan.PlannerDraftSignals)...)
 	actions = append(actions, p.ProcessFSMSignals(scan.FSMSignals)...)
+	actions = append(actions, p.ProcessPlannerDraftSignals(scan.PlannerDraftSignals)...)
 	actions = append(actions, p.ProcessTaskSignals(scan.TaskSignals)...)
 	actions = append(actions, p.ProcessWaveSignals(scan.WaveSignals)...)
 	actions = append(actions, p.ProcessElaborationSignals(scan.ElaborationSignals)...)

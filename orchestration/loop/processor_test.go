@@ -1466,6 +1466,47 @@ func TestProcessor_ProcessFSMSignals_PlanStart_DraftModeResetsCompletedAggregati
 	require.NotEmpty(t, second, "draft signal after replanning must synthesize planner_finished again")
 }
 
+func TestProcessor_TickProcessesPlanStartBeforePlannerDraftSignals(t *testing.T) {
+	store := taskstore.NewTestStore(t)
+	require.NoError(t, store.Create("test", taskstore.TaskEntry{
+		Filename: "my-plan.md",
+		Status:   taskstore.StatusPlanning,
+	}))
+
+	p := NewProcessor(ProcessorConfig{
+		Store:            store,
+		Project:          "test",
+		PlannerDraftMode: true,
+		PlannerProfiles:  []string{"planner", "planner-alt"},
+	})
+
+	require.Empty(t, p.ProcessPlannerDraftSignals([]taskfsm.PlannerDraftSignal{
+		{TaskFile: "my-plan.md", PlannerID: "planner"},
+	}))
+	require.NotEmpty(t, p.ProcessPlannerDraftSignals([]taskfsm.PlannerDraftSignal{
+		{TaskFile: "my-plan.md", PlannerID: "planner-alt"},
+	}))
+
+	actions := p.Tick(ScanResult{
+		FSMSignals: []taskfsm.Signal{
+			{TaskFile: "my-plan.md", Event: taskfsm.PlanStart},
+		},
+		PlannerDraftSignals: []taskfsm.PlannerDraftSignal{
+			{TaskFile: "my-plan.md", PlannerID: "planner"},
+		},
+	})
+	require.Len(t, actions, 3)
+	assert.Equal(t, "clear_planner_drafts", actions[0].Kind())
+	assert.Equal(t, "spawn_planner", actions[1].Kind())
+	assert.Equal(t, "spawn_planner", actions[2].Kind())
+
+	second := p.ProcessPlannerDraftSignals([]taskfsm.PlannerDraftSignal{
+		{TaskFile: "my-plan.md", PlannerID: "planner-alt"},
+	})
+	require.NotEmpty(t, second, "same-tick draft row must be recorded after plan_start resets stale aggregation")
+	assert.Equal(t, "planner_complete", second[0].Kind())
+}
+
 // TestProcessor_ProcessFSMSignals_PlanStart_DraftModeWithSingleProfile verifies
 // that draft mode with a single profile emits clear + one planner spawn.
 func TestProcessor_ProcessFSMSignals_PlanStart_DraftModeWithSingleProfile(t *testing.T) {
