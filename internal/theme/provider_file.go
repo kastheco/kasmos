@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 )
 
@@ -115,11 +116,38 @@ func parsePaletteJSON(data []byte) (Palette, []string, error) {
 
 	palette := DefaultPalette()
 	applied := 0
+	assignments := make([]paletteAssignment, 0, len(values))
 	for key, value := range values {
-		role, ok := paletteRole(key)
+		role, priority, ok := paletteRole(key)
 		if !ok {
 			continue
 		}
+		assignments = append(assignments, paletteAssignment{
+			Key:      key,
+			Value:    value,
+			Role:     role,
+			Priority: priority,
+		})
+	}
+	sort.SliceStable(assignments, func(i, j int) bool {
+		left := assignments[i]
+		right := assignments[j]
+		if left.Role != right.Role {
+			return left.Role < right.Role
+		}
+		if left.Priority != right.Priority {
+			return left.Priority < right.Priority
+		}
+		leftKey := normalizePaletteKey(left.Key)
+		rightKey := normalizePaletteKey(right.Key)
+		if leftKey != rightKey {
+			return leftKey < rightKey
+		}
+		return left.Key < right.Key
+	})
+	for _, assignment := range assignments {
+		key := assignment.Key
+		value := assignment.Value
 		color, ok := value.(string)
 		if !ok {
 			return DefaultPalette(), nil, fmt.Errorf("palette role %q must be a string", key)
@@ -128,7 +156,7 @@ func parsePaletteJSON(data []byte) (Palette, []string, error) {
 		if err != nil {
 			return DefaultPalette(), nil, fmt.Errorf("palette role %q: %w", key, err)
 		}
-		setPaletteRole(&palette, role, normalized)
+		setPaletteRole(&palette, assignment.Role, normalized)
 		applied++
 	}
 	if applied == 0 {
@@ -146,45 +174,60 @@ func normalizeHexColor(value string) (Color, error) {
 	return Color(color), nil
 }
 
-func paletteRole(key string) (string, bool) {
-	normalized := strings.NewReplacer("-", "", "_", "", " ", "").Replace(strings.ToLower(strings.TrimSpace(key)))
-	aliases := map[string]string{
-		"base":            "base",
-		"bg":              "base",
-		"background":      "base",
-		"surface":         "surface",
-		"mantle":          "surface",
-		"overlay":         "overlay",
-		"overlay0":        "overlay",
-		"muted":           "muted",
-		"subtle":          "subtle",
-		"text":            "text",
-		"foreground":      "text",
-		"fg":              "text",
-		"love":            "love",
-		"red":             "love",
-		"gold":            "gold",
-		"yellow":          "gold",
-		"rose":            "rose",
-		"accent":          "rose",
-		"pink":            "rose",
-		"pine":            "pine",
-		"blue":            "pine",
-		"foam":            "foam",
-		"cyan":            "foam",
-		"iris":            "iris",
-		"mauve":           "iris",
-		"purple":          "iris",
-		"gradientstart":   "gradientStart",
-		"gradientfrom":    "gradientStart",
-		"gradientbegin":   "gradientStart",
-		"gradientend":     "gradientEnd",
-		"gradientto":      "gradientEnd",
-		"gradientfinish":  "gradientEnd",
-		"primarygradient": "gradientStart",
+type paletteAssignment struct {
+	Key      string
+	Value    any
+	Role     string
+	Priority int
+}
+
+type paletteAlias struct {
+	Role     string
+	Priority int
+}
+
+func normalizePaletteKey(key string) string {
+	return strings.NewReplacer("-", "", "_", "", " ", "").Replace(strings.ToLower(strings.TrimSpace(key)))
+}
+
+func paletteRole(key string) (string, int, bool) {
+	aliases := map[string]paletteAlias{
+		"base":            {Role: "base", Priority: 3},
+		"background":      {Role: "base", Priority: 2},
+		"bg":              {Role: "base", Priority: 1},
+		"surface":         {Role: "surface", Priority: 3},
+		"mantle":          {Role: "surface", Priority: 2},
+		"overlay":         {Role: "overlay", Priority: 3},
+		"overlay0":        {Role: "overlay", Priority: 2},
+		"muted":           {Role: "muted", Priority: 3},
+		"subtle":          {Role: "subtle", Priority: 3},
+		"text":            {Role: "text", Priority: 3},
+		"foreground":      {Role: "text", Priority: 2},
+		"fg":              {Role: "text", Priority: 1},
+		"love":            {Role: "love", Priority: 3},
+		"red":             {Role: "love", Priority: 2},
+		"gold":            {Role: "gold", Priority: 3},
+		"yellow":          {Role: "gold", Priority: 2},
+		"rose":            {Role: "rose", Priority: 3},
+		"accent":          {Role: "rose", Priority: 2},
+		"pink":            {Role: "rose", Priority: 2},
+		"pine":            {Role: "pine", Priority: 3},
+		"blue":            {Role: "pine", Priority: 2},
+		"foam":            {Role: "foam", Priority: 3},
+		"cyan":            {Role: "foam", Priority: 2},
+		"iris":            {Role: "iris", Priority: 3},
+		"mauve":           {Role: "iris", Priority: 2},
+		"purple":          {Role: "iris", Priority: 2},
+		"gradientstart":   {Role: "gradientStart", Priority: 3},
+		"gradientfrom":    {Role: "gradientStart", Priority: 2},
+		"gradientbegin":   {Role: "gradientStart", Priority: 2},
+		"primarygradient": {Role: "gradientStart", Priority: 1},
+		"gradientend":     {Role: "gradientEnd", Priority: 3},
+		"gradientto":      {Role: "gradientEnd", Priority: 2},
+		"gradientfinish":  {Role: "gradientEnd", Priority: 2},
 	}
-	role, ok := aliases[normalized]
-	return role, ok
+	alias, ok := aliases[normalizePaletteKey(key)]
+	return alias.Role, alias.Priority, ok
 }
 
 func setPaletteRole(palette *Palette, role string, color Color) {

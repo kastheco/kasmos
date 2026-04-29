@@ -45,6 +45,36 @@ func TestResolveFileProviderAppliesExplicitRolesAndFillsDefaults(t *testing.T) {
 	require.Equal(t, want, result.Palette)
 }
 
+func TestResolveFileProviderAppliesDeterministicAliasPrecedence(t *testing.T) {
+	result := Resolve(context.Background(), Options{
+		Source:      "system",
+		Provider:    "file",
+		PaletteFile: "palette.json",
+	}, Dependencies{
+		ReadFile: func(string) ([]byte, error) {
+			return []byte(`{
+				"background":"#010101",
+				"base":"#020202",
+				"fg":"#030303",
+				"foreground":"#040404",
+				"text":"#050505",
+				"purple":"#060606",
+				"iris":"#070707",
+				"primaryGradient":"#080808",
+				"gradientStart":"#090909"
+			}`), nil
+		},
+	})
+
+	want := DefaultPalette()
+	want.Base = "#020202"
+	want.Text = "#050505"
+	want.Iris = "#070707"
+	want.GradientStart = "#090909"
+	require.False(t, result.Fallback)
+	require.Equal(t, want, result.Palette)
+}
+
 func TestResolveFileProviderResolvesRelativePathFromBaseDir(t *testing.T) {
 	baseDir := filepath.Join(t.TempDir(), ".kasmos")
 	palettePath := filepath.Join("themes", "kasmos.json")
