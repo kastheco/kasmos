@@ -1,8 +1,14 @@
 package overlay
 
 import (
+	"fmt"
+	"image/color"
+	"strconv"
+	"strings"
+
 	"charm.land/huh/v2"
 	"charm.land/lipgloss/v2"
+	apptheme "github.com/kastheco/kasmos/internal/theme"
 )
 
 // Styles holds the shared lipgloss styles used by all overlay types.
@@ -33,108 +39,120 @@ type Styles struct {
 	FocusedButton lipgloss.Style // focused/active button
 }
 
-// DefaultStyles returns the standard overlay style set using the Rosé Pine Moon palette.
+// DefaultStyles returns the active overlay style set.
 func DefaultStyles() Styles {
+	return stylesFromPalette(activePalette)
+}
+
+func stylesFromPalette(p apptheme.Palette) Styles {
 	return Styles{
 		ModalBorder: lipgloss.NewStyle().
 			Border(lipgloss.DoubleBorder()).
-			BorderForeground(colorIris).
+			BorderForeground(lipgloss.Color(string(p.Iris))).
 			Padding(1, 2),
 		FloatingBorder: lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
-			BorderForeground(colorIris).
+			BorderForeground(lipgloss.Color(string(p.Iris))).
 			Padding(1, 2),
 		WarningBorder: lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
-			BorderForeground(colorGold).
+			BorderForeground(lipgloss.Color(string(p.Gold))).
 			Padding(1, 2),
 		DangerBorder: lipgloss.NewStyle().
 			Border(lipgloss.DoubleBorder()).
-			BorderForeground(colorLove).
+			BorderForeground(lipgloss.Color(string(p.Love))).
 			Padding(1, 2),
 		Title: lipgloss.NewStyle().
-			Foreground(colorIris).
+			Foreground(lipgloss.Color(string(p.Iris))).
 			Bold(true).
 			MarginBottom(1),
 		WarningTitle: lipgloss.NewStyle().
-			Foreground(colorGold).
+			Foreground(lipgloss.Color(string(p.Gold))).
 			Bold(true),
 		Hint: lipgloss.NewStyle().
-			Foreground(colorMuted).
+			Foreground(lipgloss.Color(string(p.Muted))).
 			MarginTop(1),
 		Muted: lipgloss.NewStyle().
-			Foreground(colorMuted),
+			Foreground(lipgloss.Color(string(p.Muted))),
 		Item: lipgloss.NewStyle().
 			Padding(0, 1).
-			Foreground(colorText),
+			Foreground(lipgloss.Color(string(p.Text))),
 		SelectedItem: lipgloss.NewStyle().
 			Padding(0, 1).
-			Background(colorFoam).
-			Foreground(colorBase),
+			Background(lipgloss.Color(string(p.Foam))).
+			Foreground(lipgloss.Color(string(p.Base))),
 		DisabledItem: lipgloss.NewStyle().
 			Padding(0, 1).
-			Foreground(colorOverlay),
+			Foreground(lipgloss.Color(string(p.Overlay))),
 		NumberPrefix: lipgloss.NewStyle().
-			Foreground(colorIris),
+			Foreground(lipgloss.Color(string(p.Iris))),
 		SearchBar: lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
-			BorderForeground(colorFoam).
+			BorderForeground(lipgloss.Color(string(p.Foam))).
 			Padding(0, 1).
 			MarginBottom(1),
 		Button: lipgloss.NewStyle().
-			Foreground(colorSubtle),
+			Foreground(lipgloss.Color(string(p.Subtle))),
 		FocusedButton: lipgloss.NewStyle().
-			Background(colorIris).
-			Foreground(colorBase),
+			Background(lipgloss.Color(string(p.Iris))).
+			Foreground(lipgloss.Color(string(p.Base))),
 	}
 }
 
-// Rosé Pine Moon palette — mirrors ui/theme.go.
-// https://rosepinetheme.com/palette/
 var (
-	// Base tones
-	colorBase    = lipgloss.Color("#232136")
-	colorOverlay = lipgloss.Color("#393552")
-	colorMuted   = lipgloss.Color("#6e6a86")
-	colorSubtle  = lipgloss.Color("#908caa")
-	colorText    = lipgloss.Color("#e0def4")
+	activePalette = apptheme.DefaultPalette()
 
-	// Semantic colors
-	colorLove = lipgloss.Color("#eb6f92") // error, danger
-	colorGold = lipgloss.Color("#f6c177") // warning
-	colorFoam = lipgloss.Color("#9ccfd8") // info, running
-	colorIris = lipgloss.Color("#c4a7e7") // highlight, primary
+	colorFoam = lipgloss.Color(string(activePalette.Foam))
+	colorLove = lipgloss.Color(string(activePalette.Love))
+	colorGold = lipgloss.Color(string(activePalette.Gold))
 )
 
-// ThemeRosePine returns a huh theme matching the app's Rose Pine Moon palette.
-func ThemeRosePine() huh.Theme {
+// ApplyPalette updates the active overlay palette.
+func ApplyPalette(p apptheme.Palette) {
+	activePalette = p
+	colorFoam = lipgloss.Color(string(p.Foam))
+	colorLove = lipgloss.Color(string(p.Love))
+	colorGold = lipgloss.Color(string(p.Gold))
+}
+
+// ThemeFromPalette returns a huh theme matching p.
+func ThemeFromPalette(p apptheme.Palette) huh.Theme {
 	return huh.ThemeFunc(func(_ bool) *huh.Styles {
 		t := huh.ThemeBase(true)
 
-		t.Focused.Base = t.Focused.Base.BorderForeground(colorIris)
-		t.Focused.Card = t.Focused.Base
-		t.Focused.Title = t.Focused.Title.Foreground(colorIris).Bold(true)
-		t.Focused.NoteTitle = t.Focused.NoteTitle.Foreground(colorIris).Bold(true).MarginBottom(1)
-		t.Focused.Description = t.Focused.Description.Foreground(colorMuted)
-		t.Focused.ErrorIndicator = t.Focused.ErrorIndicator.Foreground(colorLove)
-		t.Focused.ErrorMessage = t.Focused.ErrorMessage.Foreground(colorLove)
-		t.Focused.SelectSelector = t.Focused.SelectSelector.Foreground(colorIris)
-		t.Focused.NextIndicator = t.Focused.NextIndicator.Foreground(colorIris)
-		t.Focused.PrevIndicator = t.Focused.PrevIndicator.Foreground(colorIris)
-		t.Focused.Option = t.Focused.Option.Foreground(colorText)
-		t.Focused.MultiSelectSelector = t.Focused.MultiSelectSelector.Foreground(colorIris)
-		t.Focused.SelectedOption = t.Focused.SelectedOption.Foreground(colorFoam)
-		t.Focused.SelectedPrefix = t.Focused.SelectedPrefix.Foreground(colorFoam).SetString("✓ ")
-		t.Focused.UnselectedPrefix = t.Focused.UnselectedPrefix.Foreground(colorMuted).SetString("• ")
-		t.Focused.UnselectedOption = t.Focused.UnselectedOption.Foreground(colorText)
-		t.Focused.FocusedButton = t.Focused.FocusedButton.Foreground(colorBase).Background(colorIris)
-		t.Focused.Next = t.Focused.FocusedButton
-		t.Focused.BlurredButton = t.Focused.BlurredButton.Foreground(colorSubtle).Background(colorOverlay)
+		base := lipgloss.Color(string(p.Base))
+		overlay := lipgloss.Color(string(p.Overlay))
+		muted := lipgloss.Color(string(p.Muted))
+		subtle := lipgloss.Color(string(p.Subtle))
+		text := lipgloss.Color(string(p.Text))
+		love := lipgloss.Color(string(p.Love))
+		foam := lipgloss.Color(string(p.Foam))
+		iris := lipgloss.Color(string(p.Iris))
 
-		t.Focused.TextInput.Cursor = t.Focused.TextInput.Cursor.Foreground(colorFoam)
-		t.Focused.TextInput.Placeholder = t.Focused.TextInput.Placeholder.Foreground(colorMuted)
-		t.Focused.TextInput.Prompt = t.Focused.TextInput.Prompt.Foreground(colorIris)
-		t.Focused.TextInput.Text = t.Focused.TextInput.Text.Foreground(colorText)
+		t.Focused.Base = t.Focused.Base.BorderForeground(iris)
+		t.Focused.Card = t.Focused.Base
+		t.Focused.Title = t.Focused.Title.Foreground(iris).Bold(true)
+		t.Focused.NoteTitle = t.Focused.NoteTitle.Foreground(iris).Bold(true).MarginBottom(1)
+		t.Focused.Description = t.Focused.Description.Foreground(muted)
+		t.Focused.ErrorIndicator = t.Focused.ErrorIndicator.Foreground(love)
+		t.Focused.ErrorMessage = t.Focused.ErrorMessage.Foreground(love)
+		t.Focused.SelectSelector = t.Focused.SelectSelector.Foreground(iris)
+		t.Focused.NextIndicator = t.Focused.NextIndicator.Foreground(iris)
+		t.Focused.PrevIndicator = t.Focused.PrevIndicator.Foreground(iris)
+		t.Focused.Option = t.Focused.Option.Foreground(text)
+		t.Focused.MultiSelectSelector = t.Focused.MultiSelectSelector.Foreground(iris)
+		t.Focused.SelectedOption = t.Focused.SelectedOption.Foreground(foam)
+		t.Focused.SelectedPrefix = t.Focused.SelectedPrefix.Foreground(foam).SetString("✓ ")
+		t.Focused.UnselectedPrefix = t.Focused.UnselectedPrefix.Foreground(muted).SetString("• ")
+		t.Focused.UnselectedOption = t.Focused.UnselectedOption.Foreground(text)
+		t.Focused.FocusedButton = t.Focused.FocusedButton.Foreground(base).Background(iris)
+		t.Focused.Next = t.Focused.FocusedButton
+		t.Focused.BlurredButton = t.Focused.BlurredButton.Foreground(subtle).Background(overlay)
+
+		t.Focused.TextInput.Cursor = t.Focused.TextInput.Cursor.Foreground(foam)
+		t.Focused.TextInput.Placeholder = t.Focused.TextInput.Placeholder.Foreground(muted)
+		t.Focused.TextInput.Prompt = t.Focused.TextInput.Prompt.Foreground(iris)
+		t.Focused.TextInput.Text = t.Focused.TextInput.Text.Foreground(text)
 
 		t.Blurred = t.Focused
 		t.Blurred.Base = t.Blurred.Base.BorderStyle(lipgloss.HiddenBorder())
@@ -147,4 +165,48 @@ func ThemeRosePine() huh.Theme {
 
 		return t
 	})
+}
+
+// ThemeRosePine returns a huh theme matching the built-in Rose Pine Moon palette.
+func ThemeRosePine() huh.Theme {
+	return ThemeFromPalette(apptheme.DefaultPalette())
+}
+
+func activeTheme() huh.Theme {
+	return ThemeFromPalette(activePalette)
+}
+
+func activeBackgroundANSI() string {
+	return ansiColor(activePalette.Base, true)
+}
+
+func activeMutedANSI() string {
+	return ansiColor(activePalette.Muted, false)
+}
+
+func activeShadowColor() color.Color {
+	return lipgloss.Color(string(activePalette.Base))
+}
+
+func ansiColor(c apptheme.Color, background bool) string {
+	hex := strings.TrimPrefix(string(c), "#")
+	if len(hex) != 6 {
+		if background {
+			return "\x1b[48;5;236m"
+		}
+		return "\x1b[38;5;240m"
+	}
+	r, errR := strconv.ParseInt(hex[0:2], 16, 64)
+	g, errG := strconv.ParseInt(hex[2:4], 16, 64)
+	b, errB := strconv.ParseInt(hex[4:6], 16, 64)
+	if errR != nil || errG != nil || errB != nil {
+		if background {
+			return "\x1b[48;5;236m"
+		}
+		return "\x1b[38;5;240m"
+	}
+	if background {
+		return fmt.Sprintf("\x1b[48;2;%d;%d;%dm", r, g, b)
+	}
+	return fmt.Sprintf("\x1b[38;2;%d;%d;%dm", r, g, b)
 }

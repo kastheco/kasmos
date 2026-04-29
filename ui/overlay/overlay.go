@@ -67,12 +67,14 @@ func PlaceOverlay(
 	// Non-modal overlays like toasts should not dim the entire app.
 	if shadow || center {
 		fadedBgLines := make([]string, len(bgLines))
+		bgANSI := activeBackgroundANSI()
+		fgANSI := activeMutedANSI()
 		for i, line := range bgLines {
 			// Replace background color codes with a faded version
-			content := bgColorRegex.ReplaceAllString(line, "\x1b[48;5;236m") // Dark gray background
+			content := bgColorRegex.ReplaceAllString(line, bgANSI)
 
 			// Replace foreground color codes with a faded version
-			content = fgColorRegex.ReplaceAllString(content, "\x1b[38;5;240m") // Medium gray foreground
+			content = fgColorRegex.ReplaceAllString(content, fgANSI)
 
 			// Replace simple color codes with a faded version
 			content = simpleColorRegex.ReplaceAllStringFunc(content, func(match string) string {
@@ -81,7 +83,7 @@ func PlaceOverlay(
 					return match
 				}
 				// Replace with dimmed color
-				return "\x1b[38;5;240m" // Medium gray
+				return fgANSI
 			})
 
 			fadedBgLines[i] = content
@@ -100,7 +102,7 @@ func PlaceOverlay(
 	// Handle shadow if enabled
 	if shadow {
 		// Define shadow style and character
-		shadowStyle := lipgloss.NewStyle().Foreground(colorBase)
+		shadowStyle := lipgloss.NewStyle().Foreground(activeShadowColor())
 		shadowChar := shadowStyle.Render("░")
 
 		// Create shadow string with same dimensions as foreground

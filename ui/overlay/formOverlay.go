@@ -47,7 +47,7 @@ func NewFormOverlay(title string, width int) *FormOverlay {
 				Value(&f.descVal),
 		),
 	).
-		WithTheme(ThemeRosePine()).
+		WithTheme(activeTheme()).
 		WithWidth(formWidth).
 		WithShowHelp(false).
 		WithShowErrors(false)
@@ -86,7 +86,7 @@ func NewSpawnFormOverlay(title string, width int) *FormOverlay {
 				Value(&f.pathVal),
 		),
 	).
-		WithTheme(ThemeRosePine()).
+		WithTheme(activeTheme()).
 		WithWidth(formWidth).
 		WithShowHelp(false).
 		WithShowErrors(false)

@@ -90,27 +90,54 @@ func navInstanceRowID(inst *session.Instance) string {
 // ---------- styles ----------
 
 var (
-	navItemStyle          = lipgloss.NewStyle().Foreground(ColorText).Padding(0, 1)
-	navSelectedRowStyle   = lipgloss.NewStyle().Background(ColorIris).Foreground(ColorBase).Padding(0, 1)
-	navActiveRowStyle     = lipgloss.NewStyle().Background(ColorOverlay).Foreground(ColorText).Padding(0, 1)
-	navSectionDivStyle    = lipgloss.NewStyle().Foreground(ColorMuted).Padding(0, 1)
-	navPlanLabelStyle     = lipgloss.NewStyle().Foreground(ColorText).Bold(true)
-	navInstanceLabelStyle = lipgloss.NewStyle().Foreground(ColorSubtle)
-	navRetiredLabelStyle  = lipgloss.NewStyle().Foreground(ColorSubtle).Faint(true)
-	navRunningIconStyle   = lipgloss.NewStyle().Foreground(ColorFoam)
-	navReadyIconStyle     = lipgloss.NewStyle().Foreground(ColorFoam)
-	navNotifyIconStyle    = lipgloss.NewStyle().Foreground(ColorRose)
-	navWaitingIconStyle   = lipgloss.NewStyle().Foreground(ColorGold)
-	navPausedIconStyle    = lipgloss.NewStyle().Foreground(ColorMuted)
-	navCompletedIconStyle = lipgloss.NewStyle().Foreground(ColorFoam).Faint(true)
-	navIdleIconStyle      = lipgloss.NewStyle().Foreground(ColorMuted)
-	navCancelledLblStyle  = lipgloss.NewStyle().Foreground(ColorMuted).Strikethrough(true)
-	navImportStyle        = lipgloss.NewStyle().Foreground(ColorFoam).Padding(0, 1)
-	navHistoryDivStyle    = lipgloss.NewStyle().Foreground(ColorMuted)
-	navLegendLabelStyle   = lipgloss.NewStyle().Foreground(ColorMuted)
-	navSearchBoxStyle     = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(ColorOverlay).Padding(0, 1)
-	navSearchActiveStyle  = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(ColorFoam).Padding(0, 1)
+	navItemStyle          lipgloss.Style
+	navSelectedRowStyle   lipgloss.Style
+	navActiveRowStyle     lipgloss.Style
+	navSectionDivStyle    lipgloss.Style
+	navPlanLabelStyle     lipgloss.Style
+	navInstanceLabelStyle lipgloss.Style
+	navRetiredLabelStyle  lipgloss.Style
+	navRunningIconStyle   lipgloss.Style
+	navReadyIconStyle     lipgloss.Style
+	navNotifyIconStyle    lipgloss.Style
+	navWaitingIconStyle   lipgloss.Style
+	navPausedIconStyle    lipgloss.Style
+	navCompletedIconStyle lipgloss.Style
+	navIdleIconStyle      lipgloss.Style
+	navCancelledLblStyle  lipgloss.Style
+	navImportStyle        lipgloss.Style
+	navHistoryDivStyle    lipgloss.Style
+	navLegendLabelStyle   lipgloss.Style
+	navSearchBoxStyle     lipgloss.Style
+	navSearchActiveStyle  lipgloss.Style
 )
+
+func rebuildNavigationPanelStyles() {
+	navItemStyle = lipgloss.NewStyle().Foreground(ColorText).Padding(0, 1)
+	navSelectedRowStyle = lipgloss.NewStyle().Background(ColorIris).Foreground(ColorBase).Padding(0, 1)
+	navActiveRowStyle = lipgloss.NewStyle().Background(ColorOverlay).Foreground(ColorText).Padding(0, 1)
+	navSectionDivStyle = lipgloss.NewStyle().Foreground(ColorMuted).Padding(0, 1)
+	navPlanLabelStyle = lipgloss.NewStyle().Foreground(ColorText).Bold(true)
+	navInstanceLabelStyle = lipgloss.NewStyle().Foreground(ColorSubtle)
+	navRetiredLabelStyle = lipgloss.NewStyle().Foreground(ColorSubtle).Faint(true)
+	navRunningIconStyle = lipgloss.NewStyle().Foreground(ColorFoam)
+	navReadyIconStyle = lipgloss.NewStyle().Foreground(ColorFoam)
+	navNotifyIconStyle = lipgloss.NewStyle().Foreground(ColorRose)
+	navWaitingIconStyle = lipgloss.NewStyle().Foreground(ColorGold)
+	navPausedIconStyle = lipgloss.NewStyle().Foreground(ColorMuted)
+	navCompletedIconStyle = lipgloss.NewStyle().Foreground(ColorFoam).Faint(true)
+	navIdleIconStyle = lipgloss.NewStyle().Foreground(ColorMuted)
+	navCancelledLblStyle = lipgloss.NewStyle().Foreground(ColorMuted).Strikethrough(true)
+	navImportStyle = lipgloss.NewStyle().Foreground(ColorFoam).Padding(0, 1)
+	navHistoryDivStyle = lipgloss.NewStyle().Foreground(ColorMuted)
+	navLegendLabelStyle = lipgloss.NewStyle().Foreground(ColorMuted)
+	navSearchBoxStyle = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(ColorOverlay).Padding(0, 1)
+	navSearchActiveStyle = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(ColorFoam).Padding(0, 1)
+}
+
+func init() {
+	rebuildNavigationPanelStyles()
+}
 
 // ---------- NavigationPanel ----------
 

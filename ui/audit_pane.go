@@ -320,18 +320,34 @@ func (p *AuditPane) ContentLines() int { return p.bodyLines }
 // ToggleVisible flips the visibility flag.
 func (p *AuditPane) ToggleVisible() { p.visible = !p.visible }
 
-// Audit-pane styles — Rosé Pine Moon palette.
+// Audit-pane styles.
 var (
-	auditDividerStyle  = lipgloss.NewStyle().Foreground(ColorSubtle)
-	auditMinuteStyle   = lipgloss.NewStyle().Foreground(ColorOverlay)
-	auditMsgStyle      = lipgloss.NewStyle().Foreground(ColorSubtle)
-	auditWarnMsgStyle  = lipgloss.NewStyle().Foreground(ColorGold)
-	auditErrMsgStyle   = lipgloss.NewStyle().Foreground(ColorLove)
-	auditEmptyStyle    = lipgloss.NewStyle().Foreground(ColorMuted)
-	auditRowPad        = lipgloss.NewStyle().PaddingLeft(1)
-	auditSelectedStyle = lipgloss.NewStyle().Foreground(ColorText).Background(ColorOverlay)
-	auditActionable    = lipgloss.NewStyle().Foreground(ColorIris) // indicator for actionable events
+	auditDividerStyle  lipgloss.Style
+	auditMinuteStyle   lipgloss.Style
+	auditMsgStyle      lipgloss.Style
+	auditWarnMsgStyle  lipgloss.Style
+	auditErrMsgStyle   lipgloss.Style
+	auditEmptyStyle    lipgloss.Style
+	auditRowPad        lipgloss.Style
+	auditSelectedStyle lipgloss.Style
+	auditActionable    lipgloss.Style
 )
+
+func rebuildAuditPaneStyles() {
+	auditDividerStyle = lipgloss.NewStyle().Foreground(ColorSubtle)
+	auditMinuteStyle = lipgloss.NewStyle().Foreground(ColorOverlay)
+	auditMsgStyle = lipgloss.NewStyle().Foreground(ColorSubtle)
+	auditWarnMsgStyle = lipgloss.NewStyle().Foreground(ColorGold)
+	auditErrMsgStyle = lipgloss.NewStyle().Foreground(ColorLove)
+	auditEmptyStyle = lipgloss.NewStyle().Foreground(ColorMuted)
+	auditRowPad = lipgloss.NewStyle().PaddingLeft(1)
+	auditSelectedStyle = lipgloss.NewStyle().Foreground(ColorText).Background(ColorOverlay)
+	auditActionable = lipgloss.NewStyle().Foreground(ColorIris)
+}
+
+func init() {
+	rebuildAuditPaneStyles()
+}
 
 // String returns the full rendered output: header divider + viewport body.
 func (p *AuditPane) String() string {

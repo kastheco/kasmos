@@ -1,27 +1,30 @@
 package ui
 
-import "charm.land/lipgloss/v2"
+import (
+	"charm.land/lipgloss/v2"
+	apptheme "github.com/kastheco/kasmos/internal/theme"
+)
 
-// Rosé Pine Moon palette
-// https://rosepinetheme.com/palette/
 var (
+	activePalette = apptheme.DefaultPalette()
+
 	// Base tones
-	ColorBase    = lipgloss.Color("#232136")
-	ColorSurface = lipgloss.Color("#2a273f")
-	ColorOverlay = lipgloss.Color("#393552")
-	ColorMuted   = lipgloss.Color("#6e6a86")
-	ColorSubtle  = lipgloss.Color("#908caa")
-	ColorText    = lipgloss.Color("#e0def4")
+	ColorBase    = lipgloss.Color(string(activePalette.Base))
+	ColorSurface = lipgloss.Color(string(activePalette.Surface))
+	ColorOverlay = lipgloss.Color(string(activePalette.Overlay))
+	ColorMuted   = lipgloss.Color(string(activePalette.Muted))
+	ColorSubtle  = lipgloss.Color(string(activePalette.Subtle))
+	ColorText    = lipgloss.Color(string(activePalette.Text))
 
 	// Semantic colors
-	ColorLove = lipgloss.Color("#eb6f92") // error, danger
-	ColorGold = lipgloss.Color("#f6c177") // warning
-	ColorRose = lipgloss.Color("#ea9a97") // accent, secondary
-	ColorPine = lipgloss.Color("#3e8fb0") // link
-	ColorFoam = lipgloss.Color("#9ccfd8") // info, running
-	ColorIris = lipgloss.Color("#c4a7e7") // highlight, primary
+	ColorLove = lipgloss.Color(string(activePalette.Love)) // error, danger
+	ColorGold = lipgloss.Color(string(activePalette.Gold)) // warning
+	ColorRose = lipgloss.Color(string(activePalette.Rose)) // accent, secondary
+	ColorPine = lipgloss.Color(string(activePalette.Pine)) // link
+	ColorFoam = lipgloss.Color(string(activePalette.Foam)) // info, running
+	ColorIris = lipgloss.Color(string(activePalette.Iris)) // highlight, primary
 
 	// Gradient endpoints for the banner and focused tab label
-	GradientStart = "#9ccfd8" // foam
-	GradientEnd   = "#c4a7e7" // iris
+	GradientStart = string(activePalette.GradientStart)
+	GradientEnd   = string(activePalette.GradientEnd)
 )

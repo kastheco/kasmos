@@ -16,10 +16,20 @@ import (
 )
 
 var (
-	previewPaneStyle    = lipgloss.NewStyle().Foreground(ColorText)
+	previewPaneStyle    lipgloss.Style
+	scrollbarTrackStyle lipgloss.Style
+	scrollbarThumbStyle lipgloss.Style
+)
+
+func rebuildPreviewStyles() {
+	previewPaneStyle = lipgloss.NewStyle().Foreground(ColorText)
 	scrollbarTrackStyle = lipgloss.NewStyle().Foreground(ColorOverlay)
 	scrollbarThumbStyle = lipgloss.NewStyle().Foreground(ColorIris)
-)
+}
+
+func init() {
+	rebuildPreviewStyles()
+}
 
 // previewState holds the current display state of the preview pane.
 type previewState struct {

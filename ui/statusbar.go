@@ -54,30 +54,40 @@ func (s *StatusBar) SetData(data StatusBarData) {
 }
 
 // Package-level styles — defined once to avoid repeated allocations.
-var statusBarStyle = lipgloss.NewStyle().
-	Foreground(ColorText).
-	Padding(0, 1)
+var (
+	statusBarStyle            lipgloss.Style
+	statusBarAppNameStyle     lipgloss.Style
+	statusBarVersionStyle     lipgloss.Style
+	statusBarSepStyle         lipgloss.Style
+	statusBarBranchStyle      lipgloss.Style
+	statusBarWaveLabelStyle   lipgloss.Style
+	statusBarTmuxCountStyle   lipgloss.Style
+	statusBarRightBranchStyle lipgloss.Style
+)
 
-var statusBarAppNameStyle = lipgloss.NewStyle().
-	Bold(true)
+func rebuildStatusBarStyles() {
+	statusBarStyle = lipgloss.NewStyle().
+		Foreground(ColorText).
+		Padding(0, 1)
+	statusBarAppNameStyle = lipgloss.NewStyle().
+		Bold(true)
+	statusBarVersionStyle = lipgloss.NewStyle().
+		Foreground(ColorMuted)
+	statusBarSepStyle = lipgloss.NewStyle().
+		Foreground(ColorOverlay)
+	statusBarBranchStyle = lipgloss.NewStyle().
+		Foreground(ColorFoam)
+	statusBarWaveLabelStyle = lipgloss.NewStyle().
+		Foreground(ColorSubtle)
+	statusBarTmuxCountStyle = lipgloss.NewStyle().
+		Foreground(ColorMuted)
+	statusBarRightBranchStyle = lipgloss.NewStyle().
+		Foreground(ColorMuted)
+}
 
-var statusBarVersionStyle = lipgloss.NewStyle().
-	Foreground(ColorMuted)
-
-var statusBarSepStyle = lipgloss.NewStyle().
-	Foreground(ColorOverlay)
-
-var statusBarBranchStyle = lipgloss.NewStyle().
-	Foreground(ColorFoam)
-
-var statusBarWaveLabelStyle = lipgloss.NewStyle().
-	Foreground(ColorSubtle)
-
-var statusBarTmuxCountStyle = lipgloss.NewStyle().
-	Foreground(ColorMuted)
-
-var statusBarRightBranchStyle = lipgloss.NewStyle().
-	Foreground(ColorMuted)
+func init() {
+	rebuildStatusBarStyles()
+}
 
 // planStatusStyle returns a styled version of status using semantic colors.
 func planStatusStyle(status string) string {

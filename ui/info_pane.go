@@ -14,15 +14,27 @@ import (
 )
 
 var (
-	infoSectionStyle    = lipgloss.NewStyle().Foreground(ColorFoam).Bold(true)
-	infoDividerStyle    = lipgloss.NewStyle().Foreground(ColorOverlay)
-	infoLabelStyle      = lipgloss.NewStyle().Foreground(ColorMuted).Width(20)
-	infoValueStyle      = lipgloss.NewStyle().Foreground(ColorText)
-	infoPlanButtonStyle = lipgloss.NewStyle().Foreground(ColorFoam).
-				Border(lipgloss.RoundedBorder()).
-				BorderForeground(ColorOverlay).
-				Padding(0, 1)
+	infoSectionStyle    lipgloss.Style
+	infoDividerStyle    lipgloss.Style
+	infoLabelStyle      lipgloss.Style
+	infoValueStyle      lipgloss.Style
+	infoPlanButtonStyle lipgloss.Style
 )
+
+func rebuildInfoPaneStyles() {
+	infoSectionStyle = lipgloss.NewStyle().Foreground(ColorFoam).Bold(true)
+	infoDividerStyle = lipgloss.NewStyle().Foreground(ColorOverlay)
+	infoLabelStyle = lipgloss.NewStyle().Foreground(ColorMuted).Width(20)
+	infoValueStyle = lipgloss.NewStyle().Foreground(ColorText)
+	infoPlanButtonStyle = lipgloss.NewStyle().Foreground(ColorFoam).
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(ColorOverlay).
+		Padding(0, 1)
+}
+
+func init() {
+	rebuildInfoPaneStyles()
+}
 
 func renderViewPlanButton(label string) string {
 	return zone.Mark(ZoneViewPlan, infoPlanButtonStyle.Render(label))

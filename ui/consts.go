@@ -23,7 +23,9 @@ var blockPeriod = [6]string{
 
 // bannerFrames holds the precomputed gradient-rendered banner strings for each animation frame.
 // Frames progress: base → one period → two periods → three periods (then cycle).
-var bannerFrames = func() []string {
+var bannerFrames = buildBannerFrames()
+
+func buildBannerFrames() []string {
 	base := strings.Split(fallbackBannerRaw, "\n")
 
 	type glyph = [6]string
@@ -46,7 +48,11 @@ var bannerFrames = func() []string {
 		frames[i] = GradientText(strings.Join(lines, "\n"), GradientStart, GradientEnd)
 	}
 	return frames
-}()
+}
+
+func rebuildBannerFrames() {
+	bannerFrames = buildBannerFrames()
+}
 
 // FallBackText returns the precomputed gradient banner string for the given animation tick.
 // The frame index wraps around automatically.

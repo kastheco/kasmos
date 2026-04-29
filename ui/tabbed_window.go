@@ -14,10 +14,18 @@ var (
 	windowBorder = lipgloss.RoundedBorder()
 
 	// windowStyle draws all four sides of the content area border.
-	windowStyle = lipgloss.NewStyle().
-			BorderForeground(ColorIris).
-			Border(windowBorder, true, true, true, true)
+	windowStyle lipgloss.Style
 )
+
+func rebuildTabbedWindowStyles() {
+	windowStyle = lipgloss.NewStyle().
+		BorderForeground(ColorIris).
+		Border(windowBorder, true, true, true, true)
+}
+
+func init() {
+	rebuildTabbedWindowStyles()
+}
 
 // TabbedWindow composes two content panes (info, preview) behind a window border.
 // It manages focus state and delegates rendering and scroll operations to the
