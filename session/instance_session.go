@@ -31,6 +31,7 @@ func (i *Instance) Preview() (string, error) {
 			if width <= 0 {
 				width = 80
 			}
+			// RenderPresentation reads theme.Current so cached SDK previews match the active UI palette.
 			return sdk.RenderPresentation(turns, width), nil
 		}
 	}

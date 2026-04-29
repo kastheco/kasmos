@@ -4,7 +4,9 @@ import (
 	"context"
 	"testing"
 
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/kastheco/kasmos/internal/theme"
 	"github.com/kastheco/kasmos/session/sdk"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -110,6 +112,32 @@ func TestInstance_Preview_WithSDKPresentation(t *testing.T) {
 	assert.NotContains(t, preview, "response")
 	assert.Contains(t, preview, "assistant text")
 	assert.Contains(t, ansi.Strip(preview), "> send a message to the agent")
+}
+
+func TestInstance_Preview_WithSDKPresentationUsesCurrentTheme(t *testing.T) {
+	t.Cleanup(func() {
+		theme.SetCurrent(theme.DefaultPalette())
+	})
+	custom := theme.DefaultPalette()
+	custom.Text = "#123456"
+	theme.SetCurrent(custom)
+
+	inst := &Instance{started: true, ExecutionMode: ExecutionModeSDK}
+	turns := []*sdk.PresentationTurn{
+		{
+			ID:     "t1",
+			Number: 1,
+			Rows: []sdk.PresentationRow{
+				{Kind: sdk.RowResponse},
+				{Kind: sdk.RowProse, Text: "themed assistant text"},
+			},
+		},
+	}
+	inst.SetExecutionSessionForTest(&mockPresentationSession{turns: turns})
+
+	preview, err := inst.Preview()
+	require.NoError(t, err)
+	assert.Contains(t, preview, lipgloss.NewStyle().Foreground(lipgloss.Color(string(custom.Text))).Render("themed assistant text"))
 }
 
 func TestInstance_SendPromptWithLocalImages_DelegatesToExecutionSession(t *testing.T) {

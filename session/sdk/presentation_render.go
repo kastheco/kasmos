@@ -7,20 +7,10 @@ import (
 	"time"
 
 	"charm.land/lipgloss/v2"
+	"github.com/kastheco/kasmos/internal/theme"
 )
 
 const (
-	// Match ui/theme.go so daemon-served SDK previews look the same as local ones.
-	presentationColorMuted  = "#6e6a86"
-	presentationColorSubtle = "#908caa"
-	presentationColorText   = "#e0def4"
-	presentationColorFoam   = "#9ccfd8"
-	presentationColorLove   = "#eb6f92"
-	presentationColorGold   = "#f6c177"
-	presentationColorRose   = "#ea9a97"
-	presentationColorPine   = "#3e8fb0"
-	presentationColorIris   = "#c4a7e7"
-
 	presentationNarrowPaneThreshold = 40
 	presentationDefaultWidth        = 80
 )
@@ -29,6 +19,12 @@ const (
 // terminal transcript that follows the variant-c hierarchy from
 // docs/agent-sdk-pane-mockups.md.
 func RenderPresentation(turns []*PresentationTurn, width int) string {
+	return RenderPresentationWithPalette(turns, width, PresentationPaletteFromTheme(theme.Current()))
+}
+
+// RenderPresentationWithPalette converts presentation turns into an ANSI-styled
+// transcript using the supplied palette.
+func RenderPresentationWithPalette(turns []*PresentationTurn, width int, palette PresentationPalette) string {
 	if width <= 0 {
 		width = presentationDefaultWidth
 	}
@@ -40,7 +36,7 @@ func RenderPresentation(turns []*PresentationTurn, width int) string {
 
 	var parts []string
 	for _, turn := range turns {
-		rows := renderPresentationTurn(turn, width)
+		rows := renderPresentationTurn(turn, width, palette)
 		if len(rows) > 0 {
 			parts = append(parts, strings.Join(rows, "\n"))
 		}
@@ -54,7 +50,7 @@ func RenderPresentation(turns []*PresentationTurn, width int) string {
 		sb.WriteString(part)
 	}
 
-	footerRows := renderPresentationComposerFooter(width)
+	footerRows := renderPresentationComposerFooter(width, palette)
 
 	// Append a single activity row immediately above the composer footer when
 	// the most recent non-nil turn is still running and has derived activity
@@ -66,7 +62,7 @@ func RenderPresentation(turns []*PresentationTurn, width int) string {
 			continue
 		}
 		if turn.Running() && turn.Activity != nil {
-			activityStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorMuted))
+			activityStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(palette.Muted))
 			activityLine = activityStyle.Render(FormatActivityLabel(turn.Activity, time.Now(), narrow))
 			break
 		}
@@ -83,50 +79,50 @@ func RenderPresentation(turns []*PresentationTurn, width int) string {
 	return sb.String()
 }
 
-func renderPresentationTurn(turn *PresentationTurn, width int) []string {
+func renderPresentationTurn(turn *PresentationTurn, width int, palette PresentationPalette) []string {
 	if turn == nil {
 		return nil
 	}
 	narrow := width < presentationNarrowPaneThreshold
 	var rows []string
 
-	headerStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorSubtle))
+	headerStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(palette.Subtle))
 	if narrow {
 		rows = append(rows, headerStyle.Render(fmt.Sprintf("turn %d", turn.Number)))
 	} else {
 		rows = append(rows, headerStyle.Render(turn.HeaderText(time.Now())))
 	}
 
-	toolStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorPine))
-	toolArgStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorGold))
-	userPrefixStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorRose))
-	userTextStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorIris))
-	resultOKStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorFoam))
-	resultErrStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorLove))
-	systemStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorGold))
-	warningStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorGold))
-	permStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorRose))
-	proseStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorText))
-	timestampStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorSubtle))
-	statusStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorGold))
-	thinkingStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorMuted))
-	narrowRuleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorMuted))
-	gutterStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorSubtle))
-	addedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorFoam))
-	removedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorLove))
-	diffContextStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorSubtle))
-	previewStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorSubtle))
-	codeGutterStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorMuted))
-	codeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorFoam))
+	toolStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(palette.Pine))
+	toolArgStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(palette.Gold))
+	userPrefixStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(palette.Rose))
+	userTextStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(palette.Iris))
+	resultOKStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(palette.Foam))
+	resultErrStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(palette.Love))
+	systemStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(palette.Gold))
+	warningStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(palette.Gold))
+	permStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(palette.Rose))
+	proseStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(palette.Text))
+	timestampStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(palette.Subtle))
+	statusStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(palette.Gold))
+	thinkingStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(palette.Muted))
+	narrowRuleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(palette.Muted))
+	gutterStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(palette.Subtle))
+	addedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(palette.Foam))
+	removedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(palette.Love))
+	diffContextStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(palette.Subtle))
+	previewStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(palette.Subtle))
+	codeGutterStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(palette.Muted))
+	codeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(palette.Foam))
 	mdStyles := MarkdownLineStyles{
 		Base:         proseStyle,
 		Bold:         proseStyle.Bold(true),
 		Italic:       proseStyle.Italic(true),
-		Code:         lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorFoam)),
-		Heading:      lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorGold)).Bold(true),
-		BulletPrefix: lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorRose)),
-		NumberPrefix: lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorFoam)),
-		QuotePrefix:  lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorMuted)),
+		Code:         lipgloss.NewStyle().Foreground(lipgloss.Color(palette.Foam)),
+		Heading:      lipgloss.NewStyle().Foreground(lipgloss.Color(palette.Gold)).Bold(true),
+		BulletPrefix: lipgloss.NewStyle().Foreground(lipgloss.Color(palette.Rose)),
+		NumberPrefix: lipgloss.NewStyle().Foreground(lipgloss.Color(palette.Foam)),
+		QuotePrefix:  lipgloss.NewStyle().Foreground(lipgloss.Color(palette.Muted)),
 	}
 
 	prevKind := PresentationRowKind("")
@@ -185,10 +181,10 @@ func renderPresentationTurn(turn *PresentationTurn, width int) []string {
 				var glyph, codeSegment string
 				output := normalizeCommandResultOutput(row.Output)
 				if *row.ExitCode == 0 {
-					outputStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorFoam))
+					outputStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(palette.Foam))
 				} else {
-					markerStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorLove))
-					outputStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorLove))
+					markerStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(palette.Love))
+					outputStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(palette.Love))
 					glyph = "✗"
 					codeSegment = " " + strconv.Itoa(*row.ExitCode)
 				}
@@ -222,7 +218,7 @@ func renderPresentationTurn(turn *PresentationTurn, width int) []string {
 			if narrow {
 				rows = append(rows, narrowRuleStyle.Render(strings.Repeat("─", width)))
 			} else {
-				rows = append(rows, renderPresentationResponseDivider(width))
+				rows = append(rows, renderPresentationResponseDivider(width, palette))
 			}
 		case RowProse:
 			base := RenderMarkdownProseLine(row.Text, mdStyles)
@@ -252,22 +248,22 @@ func presentationResponseTextKind(kind PresentationRowKind) bool {
 	return kind == RowProse || kind == RowCodeBlock
 }
 
-func renderPresentationResponseDivider(width int) string {
-	ruleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorMuted))
+func renderPresentationResponseDivider(width int, palette PresentationPalette) string {
+	ruleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(palette.Muted))
 	if width <= 0 {
 		return ""
 	}
 	return ruleStyle.Render(strings.Repeat("─", width))
 }
 
-func renderPresentationComposerFooter(width int) []string {
-	ruleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorMuted))
-	promptPrefixStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorRose))
-	textStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorSubtle))
-	hintStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorSubtle))
-	enterStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorFoam))
-	newlineStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorGold))
-	escapeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(presentationColorRose))
+func renderPresentationComposerFooter(width int, palette PresentationPalette) []string {
+	ruleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(palette.Muted))
+	promptPrefixStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(palette.Rose))
+	textStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(palette.Subtle))
+	hintStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(palette.Subtle))
+	enterStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(palette.Foam))
+	newlineStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(palette.Gold))
+	escapeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(palette.Rose))
 
 	rule := ""
 	if width > 0 {
