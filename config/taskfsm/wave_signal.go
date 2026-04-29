@@ -10,9 +10,10 @@ import (
 
 // WaveSignal represents a parsed implement-wave signal file.
 type WaveSignal struct {
-	WaveNumber int
-	TaskFile   string
-	filePath   string // full path for deletion
+	WaveNumber     int
+	TaskFile       string
+	GatewayEntryID int64
+	filePath       string // full path for deletion
 }
 
 var waveSignalRe = regexp.MustCompile(`^implement-wave-(\d+)-(.+)$`)

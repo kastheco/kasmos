@@ -94,10 +94,11 @@ func ConvertSignalEntry(entry *taskstore.SignalEntry, result *ScanResult) error 
 			return err
 		}
 		result.FSMSignals = append(result.FSMSignals, taskfsm.Signal{
-			Event:      taskfsm.PlanStart,
-			TaskFile:   entry.PlanFile,
-			Body:       body,
-			PreApplied: preApplied,
+			Event:          taskfsm.PlanStart,
+			TaskFile:       entry.PlanFile,
+			Body:           body,
+			PreApplied:     preApplied,
+			GatewayEntryID: entry.ID,
 		})
 
 	case "planner_finished":
@@ -106,10 +107,11 @@ func ConvertSignalEntry(entry *taskstore.SignalEntry, result *ScanResult) error 
 			return err
 		}
 		result.FSMSignals = append(result.FSMSignals, taskfsm.Signal{
-			Event:      taskfsm.PlannerFinished,
-			TaskFile:   entry.PlanFile,
-			Body:       body,
-			PreApplied: preApplied,
+			Event:          taskfsm.PlannerFinished,
+			TaskFile:       entry.PlanFile,
+			Body:           body,
+			PreApplied:     preApplied,
+			GatewayEntryID: entry.ID,
 		})
 
 	case "implement_finished":
@@ -118,10 +120,11 @@ func ConvertSignalEntry(entry *taskstore.SignalEntry, result *ScanResult) error 
 			return err
 		}
 		result.FSMSignals = append(result.FSMSignals, taskfsm.Signal{
-			Event:      taskfsm.ImplementFinished,
-			TaskFile:   entry.PlanFile,
-			Body:       body,
-			PreApplied: preApplied,
+			Event:          taskfsm.ImplementFinished,
+			TaskFile:       entry.PlanFile,
+			Body:           body,
+			PreApplied:     preApplied,
+			GatewayEntryID: entry.ID,
 		})
 
 	case "review_approved":
@@ -130,10 +133,11 @@ func ConvertSignalEntry(entry *taskstore.SignalEntry, result *ScanResult) error 
 			return err
 		}
 		result.FSMSignals = append(result.FSMSignals, taskfsm.Signal{
-			Event:      taskfsm.ReviewApproved,
-			TaskFile:   entry.PlanFile,
-			Body:       body,
-			PreApplied: preApplied,
+			Event:          taskfsm.ReviewApproved,
+			TaskFile:       entry.PlanFile,
+			Body:           body,
+			PreApplied:     preApplied,
+			GatewayEntryID: entry.ID,
 		})
 
 	case "review_changes_requested":
@@ -142,10 +146,11 @@ func ConvertSignalEntry(entry *taskstore.SignalEntry, result *ScanResult) error 
 			return err
 		}
 		result.FSMSignals = append(result.FSMSignals, taskfsm.Signal{
-			Event:      taskfsm.ReviewChangesRequested,
-			TaskFile:   entry.PlanFile,
-			Body:       body,
-			PreApplied: preApplied,
+			Event:          taskfsm.ReviewChangesRequested,
+			TaskFile:       entry.PlanFile,
+			Body:           body,
+			PreApplied:     preApplied,
+			GatewayEntryID: entry.ID,
 		})
 
 	case string(taskfsm.VerifyApproved):
@@ -154,10 +159,11 @@ func ConvertSignalEntry(entry *taskstore.SignalEntry, result *ScanResult) error 
 			return err
 		}
 		result.FSMSignals = append(result.FSMSignals, taskfsm.Signal{
-			Event:      taskfsm.VerifyApproved,
-			TaskFile:   entry.PlanFile,
-			Body:       body,
-			PreApplied: preApplied,
+			Event:          taskfsm.VerifyApproved,
+			TaskFile:       entry.PlanFile,
+			Body:           body,
+			PreApplied:     preApplied,
+			GatewayEntryID: entry.ID,
 		})
 
 	case string(taskfsm.VerifyFailed):
@@ -166,10 +172,11 @@ func ConvertSignalEntry(entry *taskstore.SignalEntry, result *ScanResult) error 
 			return err
 		}
 		result.FSMSignals = append(result.FSMSignals, taskfsm.Signal{
-			Event:      taskfsm.VerifyFailed,
-			TaskFile:   entry.PlanFile,
-			Body:       body,
-			PreApplied: preApplied,
+			Event:          taskfsm.VerifyFailed,
+			TaskFile:       entry.PlanFile,
+			Body:           body,
+			PreApplied:     preApplied,
+			GatewayEntryID: entry.ID,
 		})
 
 	case "implement_task_finished":
@@ -178,9 +185,10 @@ func ConvertSignalEntry(entry *taskstore.SignalEntry, result *ScanResult) error 
 			return fmt.Errorf("decode task payload: %w", err)
 		}
 		result.TaskSignals = append(result.TaskSignals, taskfsm.TaskSignal{
-			WaveNumber: p.WaveNumber,
-			TaskNumber: p.TaskNumber,
-			TaskFile:   entry.PlanFile,
+			WaveNumber:     p.WaveNumber,
+			TaskNumber:     p.TaskNumber,
+			TaskFile:       entry.PlanFile,
+			GatewayEntryID: entry.ID,
 		})
 
 	case "implement_wave":
@@ -189,13 +197,15 @@ func ConvertSignalEntry(entry *taskstore.SignalEntry, result *ScanResult) error 
 			return fmt.Errorf("decode wave payload: %w", err)
 		}
 		result.WaveSignals = append(result.WaveSignals, taskfsm.WaveSignal{
-			WaveNumber: p.WaveNumber,
-			TaskFile:   entry.PlanFile,
+			WaveNumber:     p.WaveNumber,
+			TaskFile:       entry.PlanFile,
+			GatewayEntryID: entry.ID,
 		})
 
 	case string(taskfsm.ArchitectFinished):
 		result.ElaborationSignals = append(result.ElaborationSignals, taskfsm.ElaborationSignal{
-			TaskFile: entry.PlanFile,
+			TaskFile:       entry.PlanFile,
+			GatewayEntryID: entry.ID,
 		})
 
 	case "planner_draft_finished":
@@ -207,8 +217,9 @@ func ConvertSignalEntry(entry *taskstore.SignalEntry, result *ScanResult) error 
 			return fmt.Errorf("planner_draft_finished: planner_id must not be empty")
 		}
 		result.PlannerDraftSignals = append(result.PlannerDraftSignals, taskfsm.PlannerDraftSignal{
-			TaskFile:  entry.PlanFile,
-			PlannerID: p.PlannerID,
+			TaskFile:       entry.PlanFile,
+			PlannerID:      p.PlannerID,
+			GatewayEntryID: entry.ID,
 		})
 
 	default:

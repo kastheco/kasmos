@@ -10,10 +10,11 @@ import (
 
 // TaskSignal represents a parsed completion signal for a specific wave task.
 type TaskSignal struct {
-	WaveNumber int
-	TaskNumber int
-	TaskFile   string
-	filePath   string // full path for deletion
+	WaveNumber     int
+	TaskNumber     int
+	TaskFile       string
+	GatewayEntryID int64
+	filePath       string // full path for deletion
 }
 
 var taskSignalRe = regexp.MustCompile(`^implement-task-finished-w(\d+)-t(\d+)-(.+)$`)

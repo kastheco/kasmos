@@ -220,21 +220,25 @@ func TestWaitForDaemonPlannerInstanceAcceptsProfileSuffixedTitle(t *testing.T) {
 	// serial: mutates daemon instance seam and planner timing globals
 	withFastAppTimings(t)
 	repoPath := t.TempDir()
+	requestedAt := time.Now().Add(-time.Second)
+	createdAt := time.Now()
 	withListDaemonInstances(t, func(project string) ([]api.InstanceStatus, error) {
 		require.Equal(t, "test", project)
 		return []api.InstanceStatus{{
-			Title:   "feature-plan-planner-a",
-			Plan:    "feature",
-			Role:    session.AgentTypePlanner,
-			Active:  true,
-			Loading: true,
-			Program: "opencode",
+			Title:     "feature-plan-planner-a",
+			Plan:      "feature",
+			Role:      session.AgentTypePlanner,
+			Active:    true,
+			Loading:   true,
+			Program:   "opencode",
+			CreatedAt: &createdAt,
 		}}, nil
 	})
 
 	inst, err := waitForDaemonPlannerInstance("test", session.InstanceData{
 		Title:     "feature-plan",
 		Path:      repoPath,
+		CreatedAt: requestedAt,
 		Program:   "opencode",
 		TaskFile:  "feature",
 		AgentType: session.AgentTypePlanner,
@@ -242,6 +246,43 @@ func TestWaitForDaemonPlannerInstanceAcceptsProfileSuffixedTitle(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.Equal(t, "feature-plan-planner-a", inst.Title)
+}
+
+func TestDaemonPlannerStatusMatchesProfileRequiresFreshCreatedAt(t *testing.T) {
+	t.Parallel()
+	requestedAt := time.Date(2026, 4, 29, 1, 0, 0, 0, time.UTC)
+	staleCreatedAt := requestedAt.Add(-time.Second)
+	freshCreatedAt := requestedAt.Add(time.Second)
+	data := session.InstanceData{
+		Title:     "feature-plan",
+		TaskFile:  "feature",
+		AgentType: session.AgentTypePlanner,
+		CreatedAt: requestedAt,
+	}
+
+	baseStatus := api.InstanceStatus{
+		Title:  "feature-plan-planner-a",
+		Plan:   "feature",
+		Role:   session.AgentTypePlanner,
+		Active: true,
+	}
+
+	stale := baseStatus
+	stale.CreatedAt = &staleCreatedAt
+	assert.False(t, daemonPlannerStatusMatches(data, stale), "stale profile row must not satisfy a new daemon start wait")
+
+	missingTimestamp := baseStatus
+	assert.False(t, daemonPlannerStatusMatches(data, missingTimestamp), "profile row without created_at cannot prove it belongs to this request")
+
+	fresh := baseStatus
+	fresh.CreatedAt = &freshCreatedAt
+	assert.True(t, daemonPlannerStatusMatches(data, fresh), "fresh profile row should satisfy the wait")
+
+	exactStale := api.InstanceStatus{Title: "feature-plan", Active: true, CreatedAt: &staleCreatedAt}
+	assert.False(t, daemonPlannerStatusMatches(data, exactStale), "exact stale rows must not satisfy a spawned daemon wait")
+
+	exactLegacy := api.InstanceStatus{Title: "feature-plan", Active: true}
+	assert.True(t, daemonPlannerStatusMatches(session.InstanceData{Title: "feature-plan"}, exactLegacy), "legacy zero-timestamp callers remain accepted")
 }
 
 func TestDaemonSync_DoneTaskDoesNotDeleteInstanceRecord(t *testing.T) {

@@ -289,6 +289,51 @@ func TestGatewayAckClassifiesRowsIndividuallyForSamePlan(t *testing.T) {
 	assert.Contains(t, failed[0].Result, "outside verifying")
 }
 
+func TestGatewayAckDoesNotAttributeFilesystemSignalToGatewayRow(t *testing.T) {
+	t.Parallel()
+	const planFile = "feature"
+	h, ps, _, _ := plannerSignalHome(t, planFile)
+	h.appConfig.AutoAdvance = false
+
+	gw, err := taskstore.NewSQLiteSignalGateway(":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = gw.Close() })
+	h.signalGateway = gw
+
+	require.NoError(t, gw.Create("test", taskstore.SignalEntry{
+		PlanFile:   planFile,
+		SignalType: "planner_finished",
+	}))
+
+	entry, err := gw.Claim("test", "app-test")
+	require.NoError(t, err)
+	require.NotNil(t, entry)
+	var scan loop.ScanResult
+	require.NoError(t, loop.ConvertSignalEntry(entry, &scan))
+	require.Len(t, scan.FSMSignals, 1)
+
+	model, _ := h.Update(metadataResultMsg{
+		PlanState: ps,
+		Signals: append([]taskfsm.Signal{{
+			Event:    taskfsm.PlannerFinished,
+			TaskFile: planFile,
+		}}, scan.FSMSignals...),
+		GatewaySignalEntries: []*taskstore.SignalEntry{entry},
+	})
+	_ = model.(*home)
+
+	done, err := gw.List("test", taskstore.SignalDone)
+	require.NoError(t, err)
+	assert.Empty(t, done)
+
+	failed, err := gw.List("test", taskstore.SignalFailed)
+	require.NoError(t, err)
+	require.Len(t, failed, 1)
+	assert.Equal(t, entry.ID, failed[0].ID)
+	assert.Equal(t, "planner_finished", failed[0].SignalType)
+	assert.Contains(t, failed[0].Result, "signal rejected by processor")
+}
+
 // TestPlannerFinishedSignal_ConfirmKeepsPlannerAndTriggersImplement verifies that
 // after the user confirms (plannerCompleteMsg), the planner instance is kept,
 // plannerPrompted is set, and triggerTaskStage("implement") is called.

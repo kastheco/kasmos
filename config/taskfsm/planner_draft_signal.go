@@ -6,6 +6,7 @@ package taskfsm
 // orchestration loop to synthesize a single planner_finished transition once all
 // configured planners have emitted their drafts.
 type PlannerDraftSignal struct {
-	TaskFile  string
-	PlannerID string
+	TaskFile       string
+	PlannerID      string
+	GatewayEntryID int64
 }

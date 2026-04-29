@@ -223,6 +223,11 @@ func (a *daemonStateAdapter) ListInstances(project string) []api.InstanceStatus 
 			active := !inst.Paused() && !inst.Exited && (inst.Started() || inst.Status == session.Loading)
 			ready := active && inst.Status == session.Ready
 			skipPermissions := inst.SkipPermissions
+			var createdAt *time.Time
+			if !inst.CreatedAt.IsZero() {
+				t := inst.CreatedAt
+				createdAt = &t
+			}
 			lastActivity := instanceLastActivity(inst)
 			// Only surface the profile when it is non-normal so the common case
 			// stays clean on the wire.
@@ -241,6 +246,7 @@ func (a *daemonStateAdapter) ListInstances(project string) []api.InstanceStatus 
 				Title:           inst.Title,
 				Branch:          inst.Branch,
 				Program:         inst.Program,
+				CreatedAt:       createdAt,
 				TaskNumber:      inst.TaskNumber,
 				WaveNumber:      inst.WaveNumber,
 				ReviewCycle:     inst.ReviewCycle,

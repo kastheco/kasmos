@@ -18,7 +18,10 @@ type Signal struct {
 	// "fsm_applied" flag; filesystem-bridged and MCP-created signals leave it
 	// unset because in those paths the daemon is the sole FSM driver.
 	PreApplied bool
-	filePath   string // full path for deletion
+	// GatewayEntryID identifies the claimed DB-backed signal row that produced
+	// this signal. Filesystem sentinels leave it zero.
+	GatewayEntryID int64
+	filePath       string // full path for deletion
 }
 
 // Key returns a dedup key for this signal (event + plan file).

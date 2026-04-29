@@ -1278,38 +1278,42 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// a plan succeeds while another same-plan signal is rejected.
 			gatewayProcessedEntryIDs := make(map[int64]bool)
 			gatewayClaimedEntryIDs := make(map[int64]bool)
-			claimGatewayEntry := func(planFile, signalType string) *taskstore.SignalEntry {
-				if planFile == "" || len(msg.GatewaySignalEntries) == 0 {
+			gatewayEntriesByID := make(map[int64]*taskstore.SignalEntry, len(msg.GatewaySignalEntries))
+			for _, entry := range msg.GatewaySignalEntries {
+				if entry != nil {
+					gatewayEntriesByID[entry.ID] = entry
+				}
+			}
+			claimGatewayEntry := func(entryID int64, planFile, signalType string) *taskstore.SignalEntry {
+				if entryID == 0 || planFile == "" {
 					return nil
 				}
 				canonicalType, err := taskfsm.CanonicalGatewaySignalType(signalType)
 				if err != nil {
 					return nil
 				}
-				for _, entry := range msg.GatewaySignalEntries {
-					if entry == nil || gatewayClaimedEntryIDs[entry.ID] || entry.PlanFile != planFile {
-						continue
-					}
-					entryType, err := taskfsm.CanonicalGatewaySignalType(entry.SignalType)
-					if err != nil || entryType != canonicalType {
-						continue
-					}
-					gatewayClaimedEntryIDs[entry.ID] = true
-					return entry
+				entry := gatewayEntriesByID[entryID]
+				if entry == nil || gatewayClaimedEntryIDs[entry.ID] || entry.PlanFile != planFile {
+					return nil
 				}
-				return nil
+				entryType, err := taskfsm.CanonicalGatewaySignalType(entry.SignalType)
+				if err != nil || entryType != canonicalType {
+					return nil
+				}
+				gatewayClaimedEntryIDs[entry.ID] = true
+				return entry
 			}
 			markGatewayProcessedEntry := func(entry *taskstore.SignalEntry) {
 				if entry != nil {
 					gatewayProcessedEntryIDs[entry.ID] = true
 				}
 			}
-			claimGatewayEventEntry := func(planFile string, event taskfsm.Event) *taskstore.SignalEntry {
+			claimGatewayEventEntry := func(entryID int64, planFile string, event taskfsm.Event) *taskstore.SignalEntry {
 				signalType, err := taskfsm.GatewaySignalTypeForEvent(event)
 				if err != nil {
 					return nil
 				}
-				return claimGatewayEntry(planFile, signalType)
+				return claimGatewayEntry(entryID, planFile, signalType)
 			}
 
 			// Process FSM signals using the Processor when available, falling back to
@@ -1327,7 +1331,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 				var actions []loop.Action
 				for _, sig := range msg.Signals {
-					entry := claimGatewayEventEntry(sig.TaskFile, sig.Event)
+					entry := claimGatewayEventEntry(sig.GatewayEntryID, sig.TaskFile, sig.Event)
 					sigActions := proc.ProcessFSMSignals([]taskfsm.Signal{sig})
 					if len(sigActions) > 0 {
 						markGatewayProcessedEntry(entry)
@@ -1336,7 +1340,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					taskfsm.ConsumeSignal(sig)
 				}
 				for _, sig := range msg.PlannerDraftSignals {
-					entry := claimGatewayEntry(sig.TaskFile, "planner_draft_finished")
+					entry := claimGatewayEntry(sig.GatewayEntryID, sig.TaskFile, "planner_draft_finished")
 					sigActions := proc.ProcessPlannerDraftSignals([]taskfsm.PlannerDraftSignal{sig})
 					if len(sigActions) > 0 {
 						markGatewayProcessedEntry(entry)
@@ -1707,7 +1711,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 			for _, ts := range msg.TaskSignals {
-				entry := claimGatewayEntry(ts.TaskFile, "implement_task_finished")
+				entry := claimGatewayEntry(ts.GatewayEntryID, ts.TaskFile, "implement_task_finished")
 				orch, exists := m.waveOrchestrators[ts.TaskFile]
 				if !exists {
 					log.WarningLog.Printf("ignoring task-finished signal for %q — no active wave orchestrator", ts.TaskFile)
@@ -1750,7 +1754,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			// Process wave signals — trigger implementation for specific waves.
 			for _, ws := range msg.WaveSignals {
-				gatewayEntry := claimGatewayEntry(ws.TaskFile, "implement_wave")
+				gatewayEntry := claimGatewayEntry(ws.GatewayEntryID, ws.TaskFile, "implement_wave")
 				taskfsm.ConsumeWaveSignal(ws)
 
 				// Check if orchestrator already exists
@@ -1808,7 +1812,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// enriched plan and advancing to wave 1.
 			if proc != nil {
 				for _, es := range msg.ElaborationSignals {
-					entry := claimGatewayEntry(es.TaskFile, "elaborator_finished")
+					entry := claimGatewayEntry(es.GatewayEntryID, es.TaskFile, "elaborator_finished")
 					actions := proc.ProcessElaborationSignals([]taskfsm.ElaborationSignal{es})
 					if len(actions) > 0 {
 						markGatewayProcessedEntry(entry)

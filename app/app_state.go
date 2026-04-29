@@ -97,12 +97,21 @@ func daemonPlannerStatusMatches(data session.InstanceData, status api.InstanceSt
 		return false
 	}
 	if status.Title == data.Title {
-		return true
+		if data.CreatedAt.IsZero() {
+			return true
+		}
+		return status.CreatedAt != nil && !status.CreatedAt.Before(data.CreatedAt)
 	}
 	if data.TaskFile == "" || status.Plan != data.TaskFile || status.Role != session.AgentTypePlanner {
 		return false
 	}
-	return strings.HasPrefix(status.Title, data.Title+"-")
+	if !strings.HasPrefix(status.Title, data.Title+"-") {
+		return false
+	}
+	if data.CreatedAt.IsZero() || status.CreatedAt == nil {
+		return false
+	}
+	return !status.CreatedAt.Before(data.CreatedAt)
 }
 
 // spawnSoloWithDaemon is a seam for tests. It POSTs to the daemon's
@@ -138,6 +147,7 @@ func waitForDaemonTitle(project, title string) error {
 
 var spawnPlannerWithDaemon = func(repoPath, project, planFile, title, prompt, program string) (*session.Instance, error) {
 	client := daemonpkg.NewSocketClient(taskstore.ResolvedDaemonSocketPath())
+	requestedAt := time.Now()
 	if err := client.StartPlan(project, planFile, prompt, program); err != nil {
 		return nil, err
 	}
@@ -145,8 +155,8 @@ var spawnPlannerWithDaemon = func(repoPath, project, planFile, title, prompt, pr
 	data := session.InstanceData{
 		Title:         title,
 		Path:          repoPath,
-		CreatedAt:     time.Now(),
-		UpdatedAt:     time.Now(),
+		CreatedAt:     requestedAt,
+		UpdatedAt:     requestedAt,
 		Program:       program,
 		ExecutionMode: session.ExecutionModeTmux,
 		TaskFile:      planFile,
