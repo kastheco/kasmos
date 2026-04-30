@@ -11,6 +11,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/kastheco/kasmos/log"
 	"github.com/kastheco/kasmos/session"
 	"github.com/kastheco/kasmos/session/sdk"
 )
@@ -121,6 +122,7 @@ func (p *PreviewPane) TickSpring() {
 // SetRawContent sets preview content from a pre-rendered string (VT emulator path).
 // Clears scroll, document, and fallback flags and marks the pane as raw-terminal.
 func (p *PreviewPane) SetRawContent(content string) {
+	log.InfoLog.Printf("preview_state: SetRawContent len=%d scrolling=%v key=%q", len(content), p.isScrolling, p.lastInstanceKey)
 	// Keep live terminal frames buffered while the user is inspecting scrollback.
 	// Active sessions can repaint frequently; clearing scroll mode here would snap
 	// the viewport back to the bottom on the next render tick.
@@ -248,6 +250,7 @@ func (p *PreviewPane) UpdateContent(instance *session.Instance) error {
 	}
 	composerOwnerKey := sdkComposerOwnerKey(instance)
 	if instanceKey != p.lastInstanceKey {
+		log.InfoLog.Printf("preview_state: UpdateContent CLEARING previewState (key %q -> %q, prev_text_len=%d)", p.lastInstanceKey, instanceKey, len(p.previewState.text))
 		p.isScrolling = false
 		p.viewport.SetContent("")
 		p.viewport.SetHeight(p.height)
