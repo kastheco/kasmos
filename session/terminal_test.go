@@ -45,7 +45,7 @@ func TestEmbeddedTerminal_IgnoresInitialBlankRender(t *testing.T) {
 	require.Contains(t, content, "agent output")
 }
 
-func TestEmbeddedTerminal_AllowsBlankRenderAfterOutput(t *testing.T) {
+func TestEmbeddedTerminal_IgnoresBlankRenderAfterOutput(t *testing.T) {
 	term := NewDummyTerminal()
 	defer term.Close()
 	term.Resize(80, 24)
@@ -65,6 +65,15 @@ func TestEmbeddedTerminal_AllowsBlankRenderAfterOutput(t *testing.T) {
 	term.WaitForRender(20 * time.Millisecond)
 
 	content, changed = term.Render()
+	require.False(t, changed)
+	require.Empty(t, content)
+
+	_, err = term.emu.Write([]byte("new output"))
+	require.NoError(t, err)
+	term.dataReady <- struct{}{}
+	term.WaitForRender(20 * time.Millisecond)
+
+	content, changed = term.Render()
 	require.True(t, changed)
-	require.NotContains(t, content, "agent output")
+	require.Contains(t, content, "new output")
 }

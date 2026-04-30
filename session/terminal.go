@@ -47,10 +47,9 @@ type EmbeddedTerminal struct {
 	// Render cache — written by renderLoop, read by Render().
 	// cacheMu is only held for the time it takes to swap a string and
 	// flip a bool, so it never blocks the Bubble Tea event loop.
-	cacheMu           sync.Mutex
-	cached            string
-	hasNew            bool
-	hasRenderedOutput bool
+	cacheMu sync.Mutex
+	cached  string
+	hasNew  bool
 
 	clipboardRequests chan byte
 }
@@ -193,7 +192,7 @@ func (t *EmbeddedTerminal) renderLoop() {
 		// That's fine — it doesn't block the Bubble Tea event loop.
 		content := t.emu.Render()
 		hasPrintable := strings.TrimSpace(ansi.Strip(content)) != ""
-		if !t.hasRenderedOutput && !hasPrintable {
+		if !hasPrintable {
 			lastRender = content
 			continue
 		}
@@ -202,9 +201,6 @@ func (t *EmbeddedTerminal) renderLoop() {
 			t.cacheMu.Lock()
 			t.cached = content
 			t.hasNew = true
-			if hasPrintable {
-				t.hasRenderedOutput = true
-			}
 			t.cacheMu.Unlock()
 			lastRender = content
 
