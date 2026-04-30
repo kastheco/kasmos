@@ -251,6 +251,36 @@ When `planners` contains profile names, the runtime sequence is:
 
 Blueprint skip still applies after the planner draft is available. A small planner draft can skip the final architect pass, so planner draft caches may be produced but unused.
 
+## `[linear.receipts]` — Linear receipt comments
+
+Posts compact one-way comments from kasmos to explicitly linked Linear issues. See the [linear receipts guide](../guides/linear-receipts.mdx) for setup and examples.
+
+```toml
+[linear.receipts]
+enabled = true
+events = ["implement_start", "implement_finished", "review_approved"]
+pr = true
+merge = true
+cancel = true
+
+[linear.receipts.state_map]
+implementing = "lin_state_in_progress"
+reviewing = "lin_state_in_review"
+done = "lin_state_done"
+cancelled = "lin_state_cancelled"
+```
+
+| field | type | default | description |
+|-------|------|---------|-------------|
+| `enabled` | bool | `false` | enable Linear receipt comments for tasks with explicit Linear links |
+| `events` | []string | `["plan_start", "implement_start", "implement_finished", "review_approved", "review_changes_requested", "verify_approved", "verify_failed", "mark_done", "cancel", "reopen"]` | lifecycle FSM events that post status receipts; omit or set empty to use the default allowlist |
+| `pr` | bool? | `true` | post a PR receipt after a PR URL is persisted |
+| `merge` | bool? | `true` | post a merge receipt when kasmos merges a task branch |
+| `cancel` | bool? | `true` | post a cancellation receipt when kasmos cancels a task |
+| `[linear.receipts.state_map]` | table | — | optional map from kasmos status (`ready`, `planning`, `implementing`, `reviewing`, `verifying`, `done`, `cancelled`) to Linear workflow state id |
+
+receipt failures never block kasmos lifecycle transitions. missing Linear API credentials are silent; other Linear errors are recorded as `EventTaskLinearReceiptFailed` audit rows.
+
 ## `[[hooks]]` — FSM transition hooks
 
 Hooks fire when a task transitions between lifecycle states. They are defined as an array of tables.

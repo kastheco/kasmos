@@ -1,0 +1,106 @@
+---
+title: "linear receipts"
+---
+
+# linear receipts
+
+linear receipts post compact, deterministic comments from kasmos to explicitly linked Linear issues. kasmos remains the execution source of truth: Linear can display progress, but it cannot transition kasmos tasks.
+
+## prerequisites
+
+receipts require both:
+
+- an explicit Linear link on the task, created through the phase-1 linking flow. see [linear linking](./linear-linking.mdx).
+- a Linear API key in `KASMOS_LINEAR_API_KEY` or `LINEAR_API_KEY`.
+
+`KASMOS_LINEAR_API_URL` is optional and defaults to Linear's GraphQL API.
+
+## minimal config
+
+```toml
+[linear.receipts]
+enabled = true
+```
+
+when enabled with no event allowlist, kasmos posts receipts for the default lifecycle events and enables the side-effect receipts for pull requests, merges, and cancellations.
+
+## lifecycle event allowlist
+
+set `events` to restrict lifecycle receipt comments to specific FSM events:
+
+```toml
+[linear.receipts]
+enabled = true
+events = ["implement_start", "implement_finished", "review_approved"]
+```
+
+the default allowlist is:
+
+| event | fires when |
+|-------|------------|
+| `plan_start` | a ready task starts planning. |
+| `implement_start` | a planned task starts implementation. |
+| `implement_finished` | implementation finishes and the task moves toward review. |
+| `review_approved` | reviewer approval advances the task out of review. |
+| `review_changes_requested` | reviewer feedback sends the task back for fixes. |
+| `verify_approved` | readiness review approves the task. |
+| `verify_failed` | readiness review blocks completion and sends the task back. |
+| `mark_done` | an operator marks the task done directly. |
+| `cancel` | an operator cancels the task through the lifecycle FSM. |
+| `reopen` | an operator reopens a done or cancelled task. |
+
+each lifecycle receipt uses the `kasmos status receipt` body and includes the task, project, branch, Linear identifier, event, status transition, optional PR URL, optional review notes, and UTC timestamp.
+
+## side-effect receipts
+
+some useful Linear receipts are not pure FSM transitions, so they fire from the surface that performs the side effect:
+
+| receipt | fires when | surface |
+|---------|------------|---------|
+| pr opened | a PR URL is persisted for the first time. the comment starts with `kasmos pr receipt`. | daemon PR monitor |
+| plan merged | a task branch is merged and the task is marked done. the comment starts with `kasmos merge receipt`. | TUI merge action |
+| plan cancelled | a task is cancelled by the operator. the comment starts with `kasmos cancellation receipt`. | TUI cancel action |
+
+these side-effect receipts are enabled by default when `[linear.receipts].enabled = true`. disable them independently when needed:
+
+```toml
+[linear.receipts]
+enabled = true
+pr = false
+merge = false
+cancel = false
+```
+
+## workflow state mapping
+
+receipt comments are independent from Linear workflow state. to let kasmos also move a linked Linear issue to a configured workflow state, opt in with `[linear.receipts.state_map]`.
+
+```toml
+[linear.receipts]
+enabled = true
+
+[linear.receipts.state_map]
+planning = "lin_state_planning"
+implementing = "lin_state_in_progress"
+reviewing = "lin_state_in_review"
+verifying = "lin_state_verifying"
+done = "lin_state_done"
+cancelled = "lin_state_cancelled"
+```
+
+valid kasmos status keys are `ready`, `planning`, `implementing`, `reviewing`, `verifying`, `done`, and `cancelled`. values are Linear workflow state ids for the target team. unmapped statuses only receive comments.
+
+## failure semantics
+
+receipt delivery is non-blocking. lifecycle transitions, PR persistence, merge handling, and cancellation handling continue even when Linear is unavailable.
+
+`linear.ErrNotConfigured` is silent so operators can keep the config enabled while omitting an API key locally. other posting or workflow-state errors emit `EventTaskLinearReceiptFailed` audit rows and are logged as warnings. kasmos does not retry or block lifecycle state on receipt failures.
+
+## non-goals
+
+linear receipts still do not provide:
+
+- Linear to kasmos sync.
+- retroactive backfill for old task transitions.
+- comment ingestion from Linear.
+- automatic link discovery from task markdown.

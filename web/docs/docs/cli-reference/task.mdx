@@ -177,6 +177,8 @@ kas task transition my-feature implement_start
 | `cancel` | cancel the task from any active status |
 | `reopen` | `cancelled` → `planning` |
 
+When `[linear.receipts]` is enabled and the task has an explicit Linear link, transitions that match the configured event allowlist post a receipt comment to the linked Linear issue. The CLI waits for in-flight receipt deliveries to settle before returning. See [linear receipts](../guides/linear-receipts.mdx).
+
 ---
 
 ### implement

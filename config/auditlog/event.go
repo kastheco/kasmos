@@ -41,6 +41,12 @@ const (
 	EventTaskLinearUnlinked EventKind = "task_linear_unlinked"
 )
 
+// Linear receipt events.
+const (
+	EventTaskLinearReceiptPosted EventKind = "task_linear_receipt_posted"
+	EventTaskLinearReceiptFailed EventKind = "task_linear_receipt_failed"
+)
+
 // Operational events.
 const (
 	EventPromptSent         EventKind = "prompt_sent"

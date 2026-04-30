@@ -1264,7 +1264,7 @@ func (d *Daemon) autoImplementPlan(ctx context.Context, e RepoEntry, planFile st
 		return fmt.Errorf("parse plan content for %s: %w", planFile, err)
 	}
 
-	if err := taskfsm.New(e.Store, e.Project, "").Transition(planFile, taskfsm.ImplementStart); err != nil {
+	if err := e.newFSMWithHooks().Transition(planFile, taskfsm.ImplementStart); err != nil {
 		return fmt.Errorf("transition %s to implementing: %w", planFile, err)
 	}
 
@@ -1320,7 +1320,7 @@ func (d *Daemon) autoAdvanceCompletedImplementer(e RepoEntry, inst *session.Inst
 		return false, fmt.Errorf("push branch for %s: %w", inst.Title, err)
 	}
 
-	fsm := taskfsm.New(e.Store, e.Project, "")
+	fsm := e.newFSMWithHooks()
 	if err := fsm.Transition(inst.TaskFile, taskfsm.ImplementFinished); err != nil {
 		return false, fmt.Errorf("transition %s to reviewing: %w", inst.TaskFile, err)
 	}
@@ -1913,6 +1913,9 @@ func (d *Daemon) createPRForApprovedTask(e RepoEntry, planFile, reviewBody strin
 	if err := e.Store.SetPRURL(e.Project, planFile, state.URL); err != nil {
 		return fmt.Errorf("persist pr url for %s: %w", planFile, err)
 	}
+	if entry.PRURL == "" {
+		d.notifyPRCreated(e, planFile, state.URL)
+	}
 
 	if state.Number > 0 {
 		if err := shared.PostGitHubReview(state.Number, body, true); err != nil {
@@ -1921,6 +1924,12 @@ func (d *Daemon) createPRForApprovedTask(e RepoEntry, planFile, reviewBody strin
 	}
 
 	return nil
+}
+
+func (d *Daemon) notifyPRCreated(e RepoEntry, planFile, prURL string) {
+	if e.LinearReceiptHook != nil {
+		go e.LinearReceiptHook.NotifyPRCreated(context.Background(), planFile, prURL)
+	}
 }
 
 // spawnTaskBatch concurrently spawns a set of wave tasks using the daemon's spawn function.
@@ -2195,7 +2204,7 @@ func (d *Daemon) handleWaveTaskComplete(ctx context.Context, e RepoEntry, action
 		}
 		e.Processor.ClearWaveOrchestrator(action.PlanFile)
 
-		fsm := taskfsm.New(e.Store, e.Project, "")
+		fsm := e.newFSMWithHooks()
 		if err := fsm.Transition(action.PlanFile, taskfsm.ImplementFinished); err != nil {
 			return err
 		}

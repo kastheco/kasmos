@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -11,8 +12,11 @@ import (
 	"sync"
 
 	"github.com/kastheco/kasmos/config"
+	"github.com/kastheco/kasmos/config/auditlog"
+	"github.com/kastheco/kasmos/config/linearreceipt"
 	"github.com/kastheco/kasmos/config/taskfsm"
 	"github.com/kastheco/kasmos/config/taskstore"
+	"github.com/kastheco/kasmos/internal/linear"
 	theme "github.com/kastheco/kasmos/internal/theme"
 	"github.com/kastheco/kasmos/orchestration/loop"
 )
@@ -35,6 +39,10 @@ type RepoEntry struct {
 	// Processor is the signal processor for this repo. It persists across ticks
 	// so that wave orchestrator state is maintained between poll cycles.
 	Processor *loop.Processor
+	// Hooks is the repo-specific registry attached to daemon-owned FSM transitions.
+	Hooks *taskfsm.HookRegistry
+	// LinearReceiptHook posts non-FSM Linear receipts such as pull request creation.
+	LinearReceiptHook *linearreceipt.Hook
 	// ReadinessSelfFixMaxLines is the effective per-repo self-fix line ceiling.
 	ReadinessSelfFixMaxLines int
 	// ReadinessMaxVerifyCycles is the effective per-repo verify-round cap.
@@ -58,6 +66,12 @@ type RepoEntry struct {
 	// Theme holds the resolved repo palette for daemon-managed preview surfaces.
 	// Fallbacks are non-fatal and keep the built-in palette.
 	Theme theme.Result
+}
+
+func (e RepoEntry) newFSMWithHooks() *taskfsm.TaskStateMachine {
+	fsm := taskfsm.New(e.Store, e.Project, "")
+	fsm.SetHooks(e.Hooks)
+	return fsm
 }
 
 // withSDKTranscriptRetention copies the repo's SDK transcript limits and
@@ -209,6 +223,14 @@ func (m *RepoManager) Add(path string) error {
 		hooks = taskfsm.BuildHookRegistry(cfgs)
 	}
 
+	linearReceiptHook, linearReceiptConfig := m.loadLinearReceiptHook(path, project)
+	if linearReceiptHook != nil {
+		if hooks == nil {
+			hooks = taskfsm.NewHookRegistry()
+		}
+		hooks.Add(linearReceiptHook, eventsFromConfig(linearReceiptConfig))
+	}
+
 	// Load per-repo TOML overrides once and derive effective config values.
 	autoAdvance, autoReadinessReview, selfFixMaxLines, maxVerifyCycles, plannerProfiles, plannerDraftMode, sdkCfg, resourceControls, err := m.resolveRepoConfig(path)
 	if err != nil {
@@ -240,6 +262,8 @@ func (m *RepoManager) Add(path string) error {
 		SignalGateway:            m.globalGateway,
 		SignalsDir:               signalsDir,
 		Processor:                proc,
+		Hooks:                    hooks,
+		LinearReceiptHook:        linearReceiptHook,
 		ReadinessSelfFixMaxLines: selfFixMaxLines,
 		ReadinessMaxVerifyCycles: maxVerifyCycles,
 		PlannerProfiles:          plannerProfiles,
@@ -250,6 +274,41 @@ func (m *RepoManager) Add(path string) error {
 		Theme:                    themeResult,
 	})
 	return nil
+}
+
+func (m *RepoManager) loadLinearReceiptHook(path, project string) (*linearreceipt.Hook, linearreceipt.Config) {
+	projTomlPath := filepath.Join(path, ".kasmos", config.TOMLConfigFileName)
+	if _, err := os.Stat(projTomlPath); err != nil {
+		return nil, linearreceipt.Config{}
+	}
+	result, err := config.LoadTOMLConfigFrom(projTomlPath)
+	if err != nil {
+		slog.Warn("daemon: failed to load linear receipt config for repo, receipts disabled", "repo", path, "error", err)
+		return nil, linearreceipt.Config{}
+	}
+	if result == nil || !result.LinearReceipts.Enabled {
+		return nil, linearreceipt.Config{}
+	}
+	client, err := linearreceipt.NewClientFromEnv()
+	if err != nil && !errors.Is(err, linear.ErrNotConfigured) {
+		slog.Warn("daemon: failed to create linear receipt client for repo, receipts disabled", "repo", path, "error", err)
+		return nil, result.LinearReceipts
+	}
+	var auditLogger auditlog.Logger
+	if m.globalDB != nil {
+		if l, err := auditlog.NewSQLiteLoggerFromDB(m.globalDB); err == nil {
+			auditLogger = l
+		}
+	}
+	return linearreceipt.NewHook(result.LinearReceipts, m.globalStore, client, auditLogger, project), result.LinearReceipts
+}
+
+func eventsFromConfig(cfg linearreceipt.Config) []taskfsm.Event {
+	events := make([]taskfsm.Event, 0, len(cfg.Events))
+	for event := range cfg.Events {
+		events = append(events, event)
+	}
+	return events
 }
 
 func resolveRepoTheme(ctx context.Context, path string) theme.Result {

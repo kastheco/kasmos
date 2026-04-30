@@ -65,6 +65,41 @@ func TestSQLiteLogger_QueryFilterByKind(t *testing.T) {
 	assert.Equal(t, auditlog.EventPlanTransition, events[0].Kind)
 }
 
+func TestSQLite_LinearReceiptEventKinds(t *testing.T) {
+	logger, err := auditlog.NewSQLiteLogger(":memory:")
+	require.NoError(t, err)
+	defer logger.Close()
+
+	for _, kind := range []auditlog.EventKind{
+		auditlog.EventTaskLinearReceiptPosted,
+		auditlog.EventTaskLinearReceiptFailed,
+	} {
+		logger.Emit(auditlog.Event{
+			Kind:    kind,
+			Project: "p",
+			Message: kind.String(),
+		})
+	}
+
+	events, err := logger.Query(auditlog.QueryFilter{
+		Project: "p",
+		Kinds: []auditlog.EventKind{
+			auditlog.EventTaskLinearReceiptPosted,
+			auditlog.EventTaskLinearReceiptFailed,
+		},
+		Limit: 10,
+	})
+	require.NoError(t, err)
+	require.Len(t, events, 2)
+
+	byKind := make(map[auditlog.EventKind]auditlog.Event, len(events))
+	for _, event := range events {
+		byKind[event.Kind] = event
+	}
+	assert.Equal(t, auditlog.EventTaskLinearReceiptPosted.String(), byKind[auditlog.EventTaskLinearReceiptPosted].Message)
+	assert.Equal(t, auditlog.EventTaskLinearReceiptFailed.String(), byKind[auditlog.EventTaskLinearReceiptFailed].Message)
+}
+
 func TestSQLite_LinearLinkEventKinds(t *testing.T) {
 	logger, err := auditlog.NewSQLiteLogger(":memory:")
 	require.NoError(t, err)

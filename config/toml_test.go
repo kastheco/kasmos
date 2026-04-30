@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/kastheco/kasmos/config/taskfsm"
+	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -469,6 +471,51 @@ events = ["review_approved"]
 	assert.Equal(t, "command", command.Type)
 	assert.Equal(t, "echo done", command.Command)
 	assert.Equal(t, []string{"review_approved"}, command.Events)
+}
+
+func TestLoadTOMLConfig_LinearReceipts(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	content := `
+[linear.receipts]
+enabled = true
+events = ["plan_start", "verify_approved"]
+pr = false
+
+[linear.receipts.state_map]
+ready = "state-ready"
+done = "state-done"
+`
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o644))
+
+	result, err := LoadTOMLConfigFrom(path)
+	require.NoError(t, err)
+
+	assert.True(t, result.LinearReceipts.Enabled)
+	assert.Equal(t, map[taskfsm.Event]bool{
+		taskfsm.PlanStart:      true,
+		taskfsm.VerifyApproved: true,
+	}, result.LinearReceipts.Events)
+	assert.False(t, result.LinearReceipts.PRReceipts)
+	assert.True(t, result.LinearReceipts.MergeReceipts)
+	assert.True(t, result.LinearReceipts.CancelReceipt)
+	assert.Equal(t, "state-ready", result.LinearReceipts.StateMap[taskstore.StatusReady])
+	assert.Equal(t, "state-done", result.LinearReceipts.StateMap[taskstore.StatusDone])
+}
+
+func TestLoadTOMLConfig_LinearReceiptsValidationError(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	content := `
+[linear.receipts]
+enabled = true
+events = ["not-real"]
+`
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o644))
+
+	_, err := LoadTOMLConfigFrom(path)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not-real")
 }
 
 func TestKeybindsDoubleTapThreshold(t *testing.T) {

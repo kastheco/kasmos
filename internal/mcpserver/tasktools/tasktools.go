@@ -460,7 +460,7 @@ func setPhaseTimestampForStatus(store taskstore.Store, project, filename string,
 	}
 }
 
-func makeTaskTransitionHandler(rc routing.RegisterConfig, store taskstore.Store, gateway taskstore.SignalGateway) server.ToolHandlerFunc {
+func makeTaskTransitionHandler(rc routing.RegisterConfig, store taskstore.Store, gateway taskstore.SignalGateway, hooks *taskfsm.HookRegistry) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		project, err := routing.ResolveProjectArg(req, rc.FixedProject, rc.Projects)
 		if err != nil {
@@ -505,6 +505,9 @@ func makeTaskTransitionHandler(rc routing.RegisterConfig, store taskstore.Store,
 			}
 		} else {
 			fsm := taskfsm.New(resolvedStore, project, "")
+			if hooks != nil {
+				fsm.SetHooks(hooks)
+			}
 			if err := fsm.Transition(filename, event); err != nil {
 				return mcp.NewToolResultError(fmt.Sprintf("task_transition: %v", err)), nil
 			}
@@ -543,7 +546,7 @@ func makeTaskTransitionHandler(rc routing.RegisterConfig, store taskstore.Store,
 // When projects is non-empty, multi-project routing is enabled and each tool
 // accepts an optional "project" argument. When projects has zero or one entry,
 // project is used as the fixed binding and the "project" argument is optional.
-func RegisterTools(srv *server.MCPServer, project string, projects []string, store taskstore.Store, gateway taskstore.SignalGateway) {
+func RegisterTools(srv *server.MCPServer, project string, projects []string, store taskstore.Store, gateway taskstore.SignalGateway, hooks *taskfsm.HookRegistry) {
 	if srv == nil {
 		return
 	}
@@ -609,5 +612,5 @@ func RegisterTools(srv *server.MCPServer, project string, projects []string, sto
 		mcp.WithString("event", mcp.Required(), mcp.Description("task FSM event name")),
 		mcp.WithBoolean("force", mcp.Description("when true, force-set the target status for the event")),
 		mcp.WithString("project", mcp.Description("target project name (required in multi-repo mode)")),
-	), makeTaskTransitionHandler(rc, store, gateway))
+	), makeTaskTransitionHandler(rc, store, gateway, hooks))
 }

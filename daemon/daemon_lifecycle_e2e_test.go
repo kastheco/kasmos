@@ -4,9 +4,12 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 
+	"github.com/kastheco/kasmos/config/linearreceipt"
 	"github.com/kastheco/kasmos/config/taskfsm"
 	"github.com/kastheco/kasmos/config/taskparser"
 	"github.com/kastheco/kasmos/config/taskstore"
@@ -21,7 +24,7 @@ import (
 func TestDaemon_LifecycleE2E_DaemonPath(t *testing.T) {
 	t.Parallel()
 
-	store, err := taskstore.NewSQLiteStore(":memory:")
+	store, err := taskstore.NewSQLiteStore(filepath.Join(t.TempDir(), "taskstore.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = store.Close() })
 
@@ -33,11 +36,13 @@ func TestDaemon_LifecycleE2E_DaemonPath(t *testing.T) {
 	)
 
 	require.NoError(t, store.Create(project, taskstore.TaskEntry{
-		Filename:    planFile,
-		Status:      taskstore.StatusReady,
-		Branch:      branch,
-		Description: "verify every fsm transition",
-		Topic:       "lifecycle",
+		Filename:         planFile,
+		Status:           taskstore.StatusReady,
+		Branch:           branch,
+		Description:      "verify every fsm transition",
+		Topic:            "lifecycle",
+		LinearIssueID:    "issue-1",
+		LinearIdentifier: "KAS-123",
 	}))
 	require.NoError(t, store.SetContent(project, planFile, `# Plan
 
@@ -68,10 +73,17 @@ Launch the first parallel coder tasks.
 Complete the last implementation task and transition into review.
 `))
 
+	linearClient := &daemonLinearClient{}
+	receiptCfg := daemonLinearReceiptConfig(taskfsm.ImplementFinished)
+	receiptHook := linearreceipt.NewHook(receiptCfg, store, linearClient, nil, project)
+	hooks := taskfsm.NewHookRegistry()
+	hooks.Add(receiptHook, []taskfsm.Event{taskfsm.ImplementFinished})
+
 	proc := loop.NewProcessor(loop.ProcessorConfig{
 		Store:       store,
 		Project:     project,
 		AutoAdvance: true,
+		Hooks:       hooks,
 	})
 
 	repo := RepoEntry{
@@ -79,6 +91,7 @@ Complete the last implementation task and transition into review.
 		Project:   project,
 		Store:     store,
 		Processor: proc,
+		Hooks:     hooks,
 	}
 	var d *Daemon
 
@@ -313,6 +326,11 @@ Complete the last implementation task and transition into review.
 	assert.Equal(t, []string{"kill:planner:pre-spawn", "spawn:planner", "spawn:architect"}, events[:3])
 	assert.ElementsMatch(t, []string{"spawn:wave-1:task-1", "spawn:wave-1:task-2"}, events[3:5])
 	assert.Equal(t, []string{"kill:wave-1", "spawn:wave-2:task-3", "kill:wave-2", "spawn:reviewer", "create:pr"}, events[5:])
+	require.Eventually(t, func() bool {
+		return linearClient.createCount() == 1
+	}, time.Second, 10*time.Millisecond)
+	assert.Contains(t, linearClient.firstComment().body, "kasmos status receipt")
+	assert.Contains(t, linearClient.firstComment().body, "event: implement_finished")
 }
 
 func TestDaemon_LifecycleE2E_LegacyPlanStartSpawnsOnlyPlanner(t *testing.T) {

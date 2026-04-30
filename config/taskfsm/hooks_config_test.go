@@ -154,11 +154,14 @@ func TestParseHookEvents_AllKnownEvents(t *testing.T) {
 		"implement_finished",
 		"review_approved",
 		"review_changes_requested",
+		"verify_approved",
+		"verify_failed",
 		"request_review",
 		"start_over",
 		"reimplement",
 		"cancel",
 		"reopen",
+		"mark_done",
 	}
 	events := parseHookEvents(all)
 	assert.Len(t, events, len(all), "all known event strings should parse successfully")

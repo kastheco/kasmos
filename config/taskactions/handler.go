@@ -83,13 +83,18 @@ var transitionCatalog = []catalogEntry{
 type handler struct {
 	store   taskstore.Store
 	gateway taskstore.SignalGateway
+	hooks   *taskfsm.HookRegistry
 }
 
 // NewHandler returns an http.Handler that exposes lifecycle and task-edit
 // endpoints over the standard /v1/projects/{project}/tasks/{filename}/...
 // URL space, using Go 1.22+ method+path routing.
-func NewHandler(store taskstore.Store, gateway taskstore.SignalGateway) http.Handler {
-	h := &handler{store: store, gateway: gateway}
+func NewHandler(store taskstore.Store, gateway taskstore.SignalGateway, hooks ...*taskfsm.HookRegistry) http.Handler {
+	var hookRegistry *taskfsm.HookRegistry
+	if len(hooks) > 0 {
+		hookRegistry = hooks[0]
+	}
+	h := &handler{store: store, gateway: gateway, hooks: hookRegistry}
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /v1/projects/{project}/tasks/{filename}/available-actions", h.handleAvailableActions)
@@ -278,7 +283,11 @@ func (h *handler) handleTransition(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := taskfsm.New(h.store, project, "").Transition(filename, event); err != nil {
+	fsm := taskfsm.New(h.store, project, "")
+	if h.hooks != nil {
+		fsm.SetHooks(h.hooks)
+	}
+	if err := fsm.Transition(filename, event); err != nil {
 		if isNotFound(err) {
 			writeError(w, http.StatusNotFound, err.Error())
 			return
