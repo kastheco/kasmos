@@ -4,7 +4,9 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
+	"github.com/kastheco/kasmos/config/lineartrigger"
 	"github.com/kastheco/kasmos/config/taskfsm"
 	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/stretchr/testify/assert"
@@ -516,6 +518,88 @@ events = ["not-real"]
 	_, err := LoadTOMLConfigFrom(path)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not-real")
+}
+
+func TestLoadTOMLConfig_LinearTriggers(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	content := `
+[linear.triggers]
+enabled = true
+poll_interval = "30s"
+lookback = "20m"
+max_issues_per_poll = 50
+verbs = ["status", "plan"]
+ack_comment_body = "ack"
+
+[[linear.triggers.routes]]
+team_id = "team-1"
+project_id = "project-1"
+require_labels = ["ready"]
+topic = "eng"
+branch_prefix = "linear/"
+
+[linear.triggers.labels]
+plan = "label-plan"
+start = "label-start"
+ack = "label-ack"
+
+[linear.triggers.actor]
+allowed_user_emails = ["ops@example.com"]
+allow_public_status = true
+
+[linear.triggers.start_guard]
+require_start_label = true
+`
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o644))
+
+	result, err := LoadTOMLConfigFrom(path)
+	require.NoError(t, err)
+
+	assert.True(t, result.LinearTriggers.Enabled)
+	assert.Equal(t, 30*time.Second, result.LinearTriggers.PollInterval)
+	assert.Equal(t, 20*time.Minute, result.LinearTriggers.Lookback)
+	assert.Equal(t, 50, result.LinearTriggers.MaxIssuesPerPoll)
+	assert.Equal(t, "ack", result.LinearTriggers.AckCommentBody)
+	assert.Equal(t, map[lineartrigger.Verb]bool{
+		lineartrigger.VerbStatus: true,
+		lineartrigger.VerbPlan:   true,
+	}, result.LinearTriggers.Verbs)
+	assert.Equal(t, []lineartrigger.Route{{
+		TeamID:        "team-1",
+		ProjectID:     "project-1",
+		RequireLabels: []string{"ready"},
+		Topic:         "eng",
+		BranchPrefix:  "linear/",
+	}}, result.LinearTriggers.Routes)
+	assert.Equal(t, "label-plan", result.LinearTriggers.Labels.Plan)
+	assert.Equal(t, "label-start", result.LinearTriggers.Labels.Start)
+	assert.Equal(t, "label-ack", result.LinearTriggers.Labels.Ack)
+	assert.Equal(t, []string{"ops@example.com"}, result.LinearTriggers.Actor.AllowedUserEmails)
+	assert.True(t, result.LinearTriggers.Actor.AllowPublicStatus)
+	assert.True(t, result.LinearTriggers.StartGuard.RequireStartLabel)
+}
+
+func TestLoadTOMLConfig_LinearTriggersValidationError(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	content := `
+[linear.triggers]
+enabled = true
+verbs = ["eat"]
+
+[[linear.triggers.routes]]
+team_id = "team-1"
+topic = "eng"
+
+[linear.triggers.actor]
+allow_public_status = true
+`
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o644))
+
+	_, err := LoadTOMLConfigFrom(path)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "eat")
 }
 
 func TestKeybindsDoubleTapThreshold(t *testing.T) {

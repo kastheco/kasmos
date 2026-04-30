@@ -7,6 +7,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 	"github.com/kastheco/kasmos/config/linearreceipt"
+	"github.com/kastheco/kasmos/config/lineartrigger"
 	"github.com/kastheco/kasmos/log"
 )
 
@@ -112,6 +113,7 @@ type TOMLResourcesConfig = ResourcesConfig
 // TOMLLinearConfig holds Linear-related settings from the [linear] TOML table.
 type TOMLLinearConfig struct {
 	Receipts linearreceipt.TOMLBlock `toml:"receipts"`
+	Triggers lineartrigger.TOMLBlock `toml:"triggers"`
 }
 
 // TOMLConfig is the top-level TOML file structure.
@@ -175,6 +177,8 @@ type TOMLConfigResult struct {
 	Resources ResourcesConfig
 	// LinearReceipts is the resolved [linear.receipts] TOML block.
 	LinearReceipts linearreceipt.Config
+	// LinearTriggers is the resolved [linear.triggers] TOML block.
+	LinearTriggers lineartrigger.Config
 }
 
 // IsEnforcementEnabled reports whether hook enforcement is active for the given harness.
@@ -208,6 +212,10 @@ func LoadTOMLConfigFrom(path string) (*TOMLConfigResult, error) {
 	linearReceipts, err := linearreceipt.FromTOML(tc.Linear.Receipts)
 	if err != nil {
 		return nil, fmt.Errorf("parse linear receipts config: %w", err)
+	}
+	linearTriggers, err := lineartrigger.FromTOML(tc.Linear.Triggers)
+	if err != nil {
+		return nil, fmt.Errorf("parse linear triggers config: %w", err)
 	}
 
 	// Warn when the removed legacy key is present; it is ignored and never written back.
@@ -248,6 +256,7 @@ func LoadTOMLConfigFrom(path string) (*TOMLConfigResult, error) {
 		SDK:                      tc.SDK,       // nil pointers mean key absent; configFromTOML applies defaults
 		Resources:                tc.Resources, // empty Profile means block absent; treated as "normal"
 		LinearReceipts:           linearReceipts,
+		LinearTriggers:           linearTriggers,
 	}
 
 	for name, agent := range tc.Agents {
