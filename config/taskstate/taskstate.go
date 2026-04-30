@@ -206,13 +206,14 @@ func (ps *TaskState) requireStore() error {
 }
 
 type TaskInfo struct {
-	Filename    string
-	Status      Status
-	Description string
-	Branch      string
-	Topic       string
-	CreatedAt   time.Time
-	DoneAt      time.Time
+	Filename         string
+	Status           Status
+	Description      string
+	Branch           string
+	Topic            string
+	CreatedAt        time.Time
+	DoneAt           time.Time
+	LinearIdentifier string
 }
 
 type TopicInfo struct {
@@ -481,12 +482,13 @@ func (ps *TaskState) List() []TaskInfo {
 	result := make([]TaskInfo, 0, len(ps.Plans))
 	for filename, entry := range ps.Plans {
 		result = append(result, TaskInfo{
-			Filename:    filename,
-			Status:      entry.Status,
-			Description: entry.Description,
-			Branch:      entry.Branch,
-			Topic:       entry.Topic,
-			CreatedAt:   entry.CreatedAt,
+			Filename:         filename,
+			Status:           entry.Status,
+			Description:      entry.Description,
+			Branch:           entry.Branch,
+			Topic:            entry.Topic,
+			CreatedAt:        entry.CreatedAt,
+			LinearIdentifier: entry.LinearIdentifier,
 		})
 	}
 	sort.Slice(result, func(i, j int) bool {

@@ -80,16 +80,48 @@ func executeTaskList(project, statusFilter string, store taskstore.Store) string
 	if err != nil {
 		return fmt.Sprintf("error: %v", err)
 	}
-	var sb strings.Builder
-	for _, info := range ps.List() {
+	return formatTaskList(ps.List(), statusFilter)
+}
+
+func filteredTaskList(entries []taskstate.TaskInfo, statusFilter string) []taskstate.TaskInfo {
+	result := make([]taskstate.TaskInfo, 0, len(entries))
+	for _, info := range entries {
 		if statusFilter != "" && string(info.Status) != statusFilter {
 			continue
 		}
 		if statusFilter == "" && string(info.Status) == string(taskstore.StatusCancelled) {
 			continue
 		}
-		line := fmt.Sprintf("%-14s %-50s %s", info.Status, info.Filename, info.Branch)
-		sb.WriteString(strings.TrimRight(line, " ") + "\n")
+		result = append(result, info)
+	}
+	return result
+}
+
+func taskListIncludesLinear(entries []taskstate.TaskInfo) bool {
+	for _, info := range entries {
+		if info.LinearIdentifier != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func formatTaskListRow(info taskstate.TaskInfo, includeLinear bool) string {
+	if includeLinear {
+		line := fmt.Sprintf("%-14s %-50s %-40s %s", info.Status, info.Filename, info.Branch, info.LinearIdentifier)
+		return strings.TrimRight(line, " ")
+	}
+	line := fmt.Sprintf("%-14s %-50s %s", info.Status, info.Filename, info.Branch)
+	return strings.TrimRight(line, " ")
+}
+
+func formatTaskList(entries []taskstate.TaskInfo, statusFilter string) string {
+	entries = filteredTaskList(entries, statusFilter)
+	includeLinear := taskListIncludesLinear(entries)
+
+	var sb strings.Builder
+	for _, info := range entries {
+		sb.WriteString(formatTaskListRow(info, includeLinear) + "\n")
 	}
 	return sb.String()
 }
@@ -104,18 +136,7 @@ func executeTaskListWithStore(storeURL, project, statusFilter string) string {
 	if err != nil {
 		return fmt.Sprintf("error: %v", err)
 	}
-	var sb strings.Builder
-	for _, info := range ps.List() {
-		if statusFilter != "" && string(info.Status) != statusFilter {
-			continue
-		}
-		if statusFilter == "" && string(info.Status) == string(taskstore.StatusCancelled) {
-			continue
-		}
-		line := fmt.Sprintf("%-14s %-50s %s", info.Status, info.Filename, info.Branch)
-		sb.WriteString(strings.TrimRight(line, " ") + "\n")
-	}
-	return sb.String()
+	return formatTaskList(ps.List(), statusFilter)
 }
 
 // executeTaskSetStatus force-overrides a plan's status, bypassing the FSM.
