@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -235,6 +236,126 @@ func TestLinker_Link(t *testing.T) {
 	}
 }
 
+func TestLinker_CreateFromIssue(t *testing.T) {
+	t.Run("successful create persists task content link and audit", func(t *testing.T) {
+		store := taskstore.NewTestSQLiteStore(t)
+		fetcher := newFakeIssueFetcher()
+		fetcher.issue.Title = "Create guarded Linear trigger"
+		fetcher.issue.Description = strings.Repeat("details ", 1400)
+		logger := &recordingLogger{}
+
+		result, err := New(store, fetcher, logger, testProject).CreateFromIssue(context.Background(), CreateFromIssueInput{
+			IssueArg:     "KAS-123",
+			Filename:     "linear-create",
+			BranchPrefix: "linear/",
+			Topic:        "linear",
+		})
+		require.NoError(t, err)
+
+		assert.Equal(t, "KAS-123", fetcher.issueArg)
+		assert.Equal(t, "linear-create", result.Filename)
+		assert.Equal(t, "linear/linear-create", result.Branch)
+		assert.Equal(t, "issue-123", result.Link.LinearIssueID)
+
+		entry := mustGet(t, store, "linear-create")
+		assert.Equal(t, taskstore.StatusReady, entry.Status)
+		assert.Equal(t, "linear", entry.Topic)
+		assert.Equal(t, "linear/linear-create", entry.Branch)
+		assert.Equal(t, "issue-123", entry.LinearIssueID)
+		assert.Equal(t, "KAS-123", entry.LinearIdentifier)
+		assert.Equal(t, "https://linear.app/kasmos/issue/KAS-123/linker-service", entry.LinearURL)
+		assert.Equal(t, "KAS", entry.LinearTeamKey)
+		assert.Equal(t, "project-1", entry.LinearProjectID)
+
+		content, err := store.GetContent(testProject, "linear-create")
+		require.NoError(t, err)
+		assert.Contains(t, content, "# Create guarded Linear trigger")
+		assert.Contains(t, content, "**Linear Identifier:** KAS-123")
+		assert.Contains(t, content, "**Linear URL:** https://linear.app/kasmos/issue/KAS-123/linker-service")
+		assert.Contains(t, content, "**Linear Team:** KAS")
+		assert.Contains(t, content, "**Linear Project:** kasmos")
+		assert.Contains(t, content, "## Wave 1\n\n### Task 1: refine plan")
+		assert.LessOrEqual(t, len(content), 8600)
+
+		require.Len(t, logger.events, 1)
+		assert.Equal(t, auditlog.EventTaskLinearLinked, logger.events[0].Kind)
+		assert.Equal(t, "linear-create", logger.events[0].TaskFile)
+		assertLinearDetail(t, logger.events[0].Detail, "", "KAS-123", "linear-trigger-create")
+	})
+
+	t.Run("preflight duplicate returns sentinel without creating task", func(t *testing.T) {
+		store := taskstore.NewTestSQLiteStore(t)
+		require.NoError(t, store.Create(testProject, taskstore.TaskEntry{
+			Filename: "existing",
+			Status:   taskstore.StatusPlanning,
+		}))
+		require.NoError(t, store.SetLinearLink(testProject, "existing", taskstore.LinearLink{
+			LinearIssueID:    "issue-123",
+			LinearIdentifier: "KAS-123",
+			LinearURL:        "https://linear.app/kasmos/issue/KAS-123/linker-service",
+		}))
+		logger := &recordingLogger{}
+
+		_, err := New(store, newFakeIssueFetcher(), logger, testProject).CreateFromIssue(context.Background(), CreateFromIssueInput{
+			IssueArg: "KAS-123",
+			Filename: "new-task",
+			Topic:    "linear",
+		})
+		require.ErrorIs(t, err, ErrDuplicateLink)
+		var dup *DuplicateLinkError
+		require.ErrorAs(t, err, &dup)
+		assert.Equal(t, "existing", dup.Filename)
+
+		_, getErr := store.Get(testProject, "new-task")
+		assert.ErrorIs(t, getErr, taskstore.ErrNotFound)
+		assert.Empty(t, logger.events)
+	})
+
+	t.Run("late race duplicate deletes created task", func(t *testing.T) {
+		base := taskstore.NewTestSQLiteStore(t)
+		store := &lateConflictStore{
+			Store:    base,
+			conflict: "raced",
+		}
+		logger := &recordingLogger{}
+
+		_, err := New(store, newFakeIssueFetcher(), logger, testProject).CreateFromIssue(context.Background(), CreateFromIssueInput{
+			IssueArg: "KAS-123",
+			Filename: "new-task",
+			Topic:    "linear",
+		})
+		require.ErrorIs(t, err, ErrDuplicateLink)
+		var dup *DuplicateLinkError
+		require.ErrorAs(t, err, &dup)
+		assert.Equal(t, "raced", dup.Filename)
+		assert.Equal(t, "new-task", store.deleted)
+
+		_, getErr := base.Get(testProject, "new-task")
+		assert.ErrorIs(t, getErr, taskstore.ErrNotFound)
+		assert.Empty(t, logger.events)
+	})
+
+	t.Run("identifier fallback filename is sanitised", func(t *testing.T) {
+		store := taskstore.NewTestSQLiteStore(t)
+		fetcher := newFakeIssueFetcher()
+		fetcher.issue.Identifier = "KAS/Ünicode 123"
+		logger := &recordingLogger{}
+
+		result, err := New(store, fetcher, logger, testProject).CreateFromIssue(context.Background(), CreateFromIssueInput{
+			IssueArg:     "KAS/Ünicode 123",
+			BranchPrefix: "linear/",
+			Topic:        "linear",
+		})
+		require.NoError(t, err)
+
+		assert.Equal(t, "kas-nicode-123", result.Filename)
+		entry := mustGet(t, store, "kas-nicode-123")
+		assert.Equal(t, taskstore.StatusReady, entry.Status)
+		assert.Equal(t, "linear/kas-nicode-123", entry.Branch)
+		assert.Equal(t, "KAS/Ünicode 123", entry.LinearIdentifier)
+	})
+}
+
 func TestLinker_Unlink(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -351,6 +472,21 @@ func (f *fakeIssueFetcher) CreateComment(_ context.Context, issueID, body string
 
 type recordingLogger struct {
 	events []auditlog.Event
+}
+
+type lateConflictStore struct {
+	taskstore.Store
+	conflict string
+	deleted  string
+}
+
+func (s *lateConflictStore) SetLinearLinkIfNoActiveDuplicate(project, filename string, link taskstore.LinearLink, statuses ...taskstore.Status) (string, error) {
+	return s.conflict, nil
+}
+
+func (s *lateConflictStore) Delete(project, filename string) error {
+	s.deleted = filename
+	return s.Store.Delete(project, filename)
 }
 
 func (l *recordingLogger) Emit(event auditlog.Event) {

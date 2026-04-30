@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
+	"time"
+	"unicode/utf8"
 
 	"github.com/kastheco/kasmos/config/auditlog"
 	"github.com/kastheco/kasmos/config/taskstore"
@@ -18,6 +21,14 @@ var ErrAlreadyLinked = errors.New("linearlink: already linked")
 // ErrDuplicateLink is returned when another active task already points at the
 // same canonical Linear issue ID.
 var ErrDuplicateLink = errors.New("linearlink: duplicate active link")
+
+// ErrInvalidCreateFilename is returned when CreateFromIssue cannot derive a
+// task-store-safe filename from the issue.
+var ErrInvalidCreateFilename = errors.New("linearlink: invalid create filename")
+
+// ErrMissingCreateTopic is returned when CreateFromIssue is called without the
+// route-supplied topic.
+var ErrMissingCreateTopic = errors.New("linearlink: create topic is required")
 
 // AlreadyLinkedError carries the current Linear identifier for ErrAlreadyLinked.
 type AlreadyLinkedError struct {
@@ -49,6 +60,23 @@ func (e *DuplicateLinkError) Error() string {
 
 func (e *DuplicateLinkError) Unwrap() error {
 	return ErrDuplicateLink
+}
+
+// InvalidCreateFilenameError carries the raw Linear identifier that failed
+// CreateFromIssue filename sanitisation.
+type InvalidCreateFilenameError struct {
+	Identifier string
+}
+
+func (e *InvalidCreateFilenameError) Error() string {
+	if e.Identifier == "" {
+		return ErrInvalidCreateFilename.Error()
+	}
+	return fmt.Sprintf("%s: %s", ErrInvalidCreateFilename, e.Identifier)
+}
+
+func (e *InvalidCreateFilenameError) Unwrap() error {
+	return ErrInvalidCreateFilename
 }
 
 // IssueFetcher is the Linear read/write seam used by the linker service.
@@ -95,6 +123,23 @@ type LinkResult struct {
 	Replaced       bool
 	CommentURL     string
 	CommentWarning string
+}
+
+// CreateFromIssueInput is the typed input for CreateFromIssue.
+type CreateFromIssueInput struct {
+	IssueArg     string // identifier or UUID
+	Filename     string // pre-sanitised; falls back to slug(issue.Identifier) when empty
+	Branch       string // falls back to BranchPrefix + Filename when both BranchPrefix and Filename are non-empty
+	BranchPrefix string // route-supplied prefix, e.g. "linear/"
+	Topic        string // required (route-supplied)
+	Reason       string // audit reason; defaults to "linear-trigger-create"
+}
+
+type CreateFromIssueResult struct {
+	Filename string
+	Branch   string
+	Link     taskstore.LinearLink
+	Issue    linear.Issue
 }
 
 // Link fetches a Linear issue, rejects duplicate active links, writes the task
@@ -158,6 +203,104 @@ func (l *Linker) Link(ctx context.Context, in LinkInput) (LinkResult, error) {
 	return result, nil
 }
 
+// CreateFromIssue fetches the issue, validates duplicate linking, creates a
+// ready-status task with the issue body as initial content, and applies the
+// Linear link atomically. Returns *DuplicateLinkError before any task is
+// created when another active task already references the same issue.
+func (l *Linker) CreateFromIssue(ctx context.Context, in CreateFromIssueInput) (CreateFromIssueResult, error) {
+	if in.Topic == "" {
+		return CreateFromIssueResult{}, ErrMissingCreateTopic
+	}
+
+	issue, err := l.client.Issue(ctx, in.IssueArg)
+	if err != nil {
+		return CreateFromIssueResult{}, fmt.Errorf("linearlink: fetch issue %q: %w", in.IssueArg, err)
+	}
+
+	linkedIssue := linkvalue.FromIssue(issue)
+	if err := linkedIssue.Validate(); err != nil {
+		return CreateFromIssueResult{}, fmt.Errorf("linearlink: invalid issue link: %w", err)
+	}
+	link := linkedIssue.ToTaskstore()
+
+	filename := in.Filename
+	if filename == "" {
+		filename = slugIdentifier(issue.Identifier)
+	}
+	if filename == "" {
+		return CreateFromIssueResult{}, &InvalidCreateFilenameError{Identifier: issue.Identifier}
+	}
+
+	branch := in.Branch
+	if branch == "" {
+		prefix := in.BranchPrefix
+		if prefix == "" {
+			prefix = "linear/"
+		}
+		branch = prefix + filename
+	}
+
+	conflict, err := l.findActiveLinkedTask(link.LinearIssueID, taskstore.StatusReady)
+	if err != nil {
+		return CreateFromIssueResult{}, err
+	}
+	if conflict != "" {
+		return CreateFromIssueResult{}, &DuplicateLinkError{Filename: conflict}
+	}
+
+	description := issue.Title
+	if description == "" {
+		description = link.LinearIdentifier
+	}
+	seedBody := createSeedBody(*issue)
+	if err := l.store.Create(l.project, taskstore.TaskEntry{
+		Filename:    filename,
+		Status:      taskstore.StatusReady,
+		Topic:       in.Topic,
+		Branch:      branch,
+		Description: description,
+		Goal:        description,
+		CreatedAt:   time.Now(),
+	}); err != nil {
+		return CreateFromIssueResult{}, err
+	}
+	if err := l.store.SetContent(l.project, filename, seedBody); err != nil {
+		return CreateFromIssueResult{}, err
+	}
+
+	conflict, err = l.store.SetLinearLinkIfNoActiveDuplicate(
+		l.project,
+		filename,
+		link,
+		taskstore.StatusPlanning,
+		taskstore.StatusImplementing,
+		taskstore.StatusReviewing,
+		taskstore.StatusVerifying,
+	)
+	if err != nil {
+		return CreateFromIssueResult{}, err
+	}
+	if conflict != "" {
+		if err := l.store.Delete(l.project, filename); err != nil {
+			return CreateFromIssueResult{}, fmt.Errorf("linearlink: delete duplicate-created task %q: %w", filename, err)
+		}
+		return CreateFromIssueResult{}, &DuplicateLinkError{Filename: conflict}
+	}
+
+	reason := in.Reason
+	if reason == "" {
+		reason = "linear-trigger-create"
+	}
+	l.emit(auditlog.EventTaskLinearLinked, filename, "", link.LinearIdentifier, reason)
+
+	return CreateFromIssueResult{
+		Filename: filename,
+		Branch:   branch,
+		Link:     link,
+		Issue:    *issue,
+	}, nil
+}
+
 // Unlink clears a task's Linear link and emits an audit event. It never calls
 // Linear because the task store is the source of truth.
 func (l *Linker) Unlink(_ context.Context, filename, reason string) (LinkResult, error) {
@@ -198,4 +341,78 @@ func currentLink(entry taskstore.TaskEntry) taskstore.LinearLink {
 		LinearTeamKey:    entry.LinearTeamKey,
 		LinearProjectID:  entry.LinearProjectID,
 	}
+}
+
+func (l *Linker) findActiveLinkedTask(issueID string, extraStatuses ...taskstore.Status) (string, error) {
+	statuses := append([]taskstore.Status{}, extraStatuses...)
+	statuses = append(statuses,
+		taskstore.StatusPlanning,
+		taskstore.StatusImplementing,
+		taskstore.StatusReviewing,
+		taskstore.StatusVerifying,
+	)
+	filename, err := l.store.FindLinkedTask(l.project, issueID, statuses...)
+	if errors.Is(err, taskstore.ErrNotFound) {
+		return "", nil
+	}
+	return filename, err
+}
+
+func slugIdentifier(identifier string) string {
+	var b strings.Builder
+	lastDash := false
+	for _, r := range strings.ToLower(identifier) {
+		if r >= 'a' && r <= 'z' || r >= '0' && r <= '9' {
+			b.WriteRune(r)
+			lastDash = false
+			continue
+		}
+		if !lastDash {
+			b.WriteByte('-')
+			lastDash = true
+		}
+	}
+	return strings.Trim(b.String(), "-")
+}
+
+func createSeedBody(issue linear.Issue) string {
+	var b strings.Builder
+	title := issue.Title
+	if title == "" {
+		title = issue.Identifier
+	}
+	if title == "" {
+		title = issue.ID
+	}
+
+	fmt.Fprintf(&b, "# %s\n\n", title)
+	fmt.Fprintf(&b, "**Linear Identifier:** %s\n", issue.Identifier)
+	fmt.Fprintf(&b, "**Linear URL:** %s\n", issue.URL)
+	if issue.Team != nil {
+		fmt.Fprintf(&b, "**Linear Team:** %s\n", issue.Team.Key)
+	} else {
+		fmt.Fprintf(&b, "**Linear Team:** \n")
+	}
+	if issue.Project != nil {
+		fmt.Fprintf(&b, "**Linear Project:** %s\n", issue.Project.Name)
+	} else {
+		fmt.Fprintf(&b, "**Linear Project:** \n")
+	}
+	b.WriteString("\n")
+	if issue.Description != "" {
+		b.WriteString(truncateUTF8Bytes(issue.Description, 8*1024))
+		b.WriteString("\n\n")
+	}
+	b.WriteString("## Wave 1\n\n### Task 1: refine plan\n")
+	return b.String()
+}
+
+func truncateUTF8Bytes(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	for max > 0 && !utf8.RuneStart(s[max]) {
+		max--
+	}
+	return s[:max]
 }
