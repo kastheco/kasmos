@@ -16,6 +16,7 @@ import (
 	cmd2 "github.com/kastheco/kasmos/cmd"
 	"github.com/kastheco/kasmos/config"
 	"github.com/kastheco/kasmos/config/auditlog"
+	"github.com/kastheco/kasmos/config/linearreceipt"
 	"github.com/kastheco/kasmos/config/taskfsm"
 	"github.com/kastheco/kasmos/config/taskparser"
 	"github.com/kastheco/kasmos/config/taskstate"
@@ -235,6 +236,8 @@ type home struct {
 	appConfig *config.Config
 	// appState stores persistent application state like seen help screens
 	appState config.AppState
+	// linearReceiptHook posts non-blocking Linear lifecycle receipts when enabled.
+	linearReceiptHook *linearreceipt.Hook
 
 	// -- State --
 
@@ -642,7 +645,23 @@ func newHomeWithConfig(ctx context.Context, program string, autoYes bool, versio
 			}
 		}
 	}
+	client, _ := linearreceipt.NewClientFromEnv()
+	var receiptHook *linearreceipt.Hook
+	if h.appConfig != nil && h.appConfig.LinearReceipts.Enabled {
+		receiptHook = linearreceipt.NewHook(h.appConfig.LinearReceipts, h.taskStore, client, h.auditLogger, project)
+	}
+	h.linearReceiptHook = receiptHook
+
+	var hookConfigs []config.TOMLHook
+	if h.appConfig != nil {
+		hookConfigs = h.appConfig.Hooks
+	}
+	registry := taskfsm.BuildHookRegistry(toTaskFSMHooks(hookConfigs))
+	if receiptHook != nil {
+		registry.Add(receiptHook, eventsFromConfig(h.appConfig.LinearReceipts))
+	}
 	h.fsm = taskfsm.New(h.taskStore, project, h.taskStateDir)
+	h.fsm.SetHooks(registry)
 
 	h.nav = ui.NewNavigationPanel(&h.spinner)
 	h.toastManager = overlay.NewToastManager(&h.spinner)
@@ -959,6 +978,8 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.url != "" && m.taskStore != nil {
 			if err := m.taskStore.SetPRURL(m.taskStoreProject, msg.planFile, msg.url); err != nil {
 				log.WarningLog.Printf("prCreatedForPlanMsg: could not persist PR URL for %q: %v", msg.planFile, err)
+			} else if m.linearReceiptHook != nil {
+				go m.linearReceiptHook.NotifyPRCreated(context.Background(), msg.planFile, msg.url)
 			}
 		}
 		m.loadTaskState()

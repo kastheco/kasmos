@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os/exec"
@@ -540,6 +541,8 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 			}
 			m.audit(auditlog.EventPlanCancelled, "task cancelled by user: "+planName,
 				auditlog.WithPlan(planFile))
+			// Cancellation receipts use the FSM Cancel hook as the single source,
+			// so this TUI path does not call NotifyPlanCancelled as well.
 			return taskRefreshMsg{}
 		}
 		return m, m.confirmAction(fmt.Sprintf("cancel task '%s'?", planName), cancelAction)
@@ -867,6 +870,9 @@ func (m *home) mergeTaskToMain(planFile string) (tea.Model, tea.Cmd) {
 		}
 		m.audit(auditlog.EventPlanMerged, "task merged to main: "+planName,
 			auditlog.WithPlan(planFile))
+		if m.linearReceiptHook != nil {
+			go m.linearReceiptHook.NotifyPlanMerged(context.Background(), planFile)
+		}
 		_ = m.saveAllInstances()
 		m.loadTaskState()
 		m.updateSidebarTasks()

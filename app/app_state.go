@@ -17,6 +17,7 @@ import (
 	cmd2 "github.com/kastheco/kasmos/cmd"
 	"github.com/kastheco/kasmos/config"
 	"github.com/kastheco/kasmos/config/auditlog"
+	"github.com/kastheco/kasmos/config/linearreceipt"
 	"github.com/kastheco/kasmos/config/taskfsm"
 	"github.com/kastheco/kasmos/config/taskparser"
 	"github.com/kastheco/kasmos/config/taskstate"
@@ -207,6 +208,22 @@ func toTaskFSMHooks(entries []config.TOMLHook) []taskfsm.HookConfig {
 	return out
 }
 
+func eventsFromConfig(cfg linearreceipt.Config) []taskfsm.Event {
+	if len(cfg.Events) == 0 {
+		return nil
+	}
+	out := make([]taskfsm.Event, 0, len(cfg.Events))
+	for event, enabled := range cfg.Events {
+		if enabled {
+			out = append(out, event)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i] < out[j]
+	})
+	return out
+}
+
 // ensureProcessor lazily initializes and returns the signal Processor.
 // Returns nil when taskStore is not set (for example in narrow tests that do
 // not exercise signal processing), in which case the caller uses the inline
@@ -233,11 +250,14 @@ func (m *home) ensureProcessor() *loop.Processor {
 	if m.taskStore == nil {
 		return nil
 	}
-	var hooks *taskfsm.HookRegistry
+	hooks := taskfsm.NewHookRegistry()
 	if m.appConfig != nil {
 		if len(m.appConfig.Hooks) > 0 {
 			hooks = taskfsm.BuildHookRegistry(toTaskFSMHooks(m.appConfig.Hooks))
 		}
+	}
+	if m.linearReceiptHook != nil && m.appConfig != nil {
+		hooks.Add(m.linearReceiptHook, eventsFromConfig(m.appConfig.LinearReceipts))
 	}
 	m.processor = loop.NewProcessor(loop.ProcessorConfig{
 		AutoReviewFix:       autoReviewFix,
