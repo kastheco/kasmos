@@ -102,6 +102,7 @@ func taskStoreConfigDir() (string, error) {
 		if repoRoot, err := taskStoreRepoRoot(cwd); err == nil {
 			return filepath.Join(repoRoot, ".kasmos"), nil
 		}
+		return filepath.Join(cwd, ".kasmos"), nil
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
