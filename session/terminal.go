@@ -68,6 +68,18 @@ type EmbeddedTerminal struct {
 func NewEmbeddedTerminal(sessionName string, cols, rows int) (*EmbeddedTerminal, error) {
 	emu := vt.NewSafeEmulator(cols, rows)
 
+	// Pre-seed the emulator with a tmux capture-pane snapshot. Relying on
+	// `tmux attach-session` to paint the screen on its own is unreliable for
+	// idle sessions: once the agent has stopped emitting bytes, tmux may
+	// only send minimal control sequences on a re-attach, leaving the cache
+	// empty and the preview stuck blank until something forces a real
+	// repaint (a user-driven resize). The capture-pane output is the
+	// authoritative current rendering and writing it directly into the
+	// emulator guarantees the cache reflects current state immediately.
+	if snapshot, err := captureTmuxPane(sessionName); err == nil && len(snapshot) > 0 {
+		_, _ = emu.Write(snapshot)
+	}
+
 	// Create a dedicated tmux attach for this terminal view
 	cmd := exec.Command("tmux", "attach-session", "-t", sessionName)
 	ptmx, err := pty.StartWithSize(cmd, &pty.Winsize{
@@ -89,12 +101,37 @@ func NewEmbeddedTerminal(sessionName string, cols, rows int) (*EmbeddedTerminal,
 		lastRows:          rows,
 		clipboardRequests: make(chan byte, 8),
 	}
+	// Seed the cache from the snapshot we just wrote into the emulator so
+	// the very first Render() call returns content even before readLoop has
+	// processed any bytes from the live attach.
+	if initial := emu.Render(); initial != "" {
+		t.cached = initial
+		t.hasNew = true
+	}
 	t.registerClipboardHandlers()
 
 	go t.readLoop()
 	go t.responseLoop()
 	go t.renderLoop()
 	return t, nil
+}
+
+// captureTmuxPane returns the current rendered contents of the active pane
+// in the named tmux session as a stream of bytes (escape sequences plus
+// content). The bytes are suitable for writing directly into a VT emulator
+// to reproduce the screen exactly as tmux currently has it. Returns an empty
+// slice when the session is missing or capture fails — callers must treat
+// this as best-effort and fall back to whatever the live attach produces.
+func captureTmuxPane(sessionName string) ([]byte, error) {
+	// -p prints to stdout; -e includes escape sequences for colours/styling;
+	// -J preserves trailing whitespace so wide fixed-width content (status
+	// bars, box drawings) lands at the right column. -t targets the active
+	// window/pane of the session.
+	out, err := exec.Command("tmux", "capture-pane", "-p", "-e", "-J", "-t", sessionName).Output()
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (t *EmbeddedTerminal) registerClipboardHandlers() {
