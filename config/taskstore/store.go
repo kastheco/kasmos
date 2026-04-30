@@ -68,6 +68,14 @@ type LinearTriggerEntry struct {
 	AckState         string    `json:"ack_state"`
 }
 
+// LinearTriggerStats summarizes processed Linear trigger outcomes for status.
+type LinearTriggerStats struct {
+	LastSeenAt time.Time
+	Dispatched int
+	Rejected   int
+	Failed     int
+}
+
 // Status represents the lifecycle state of a plan.
 // These constants mirror taskstate.Status to keep taskstore self-contained
 // and avoid circular imports.

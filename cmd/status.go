@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/kastheco/kasmos/config"
+	"github.com/kastheco/kasmos/config/lineartrigger"
 	"github.com/kastheco/kasmos/config/taskfsm"
 	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/spf13/cobra"
@@ -46,12 +47,21 @@ type statusOrphan struct {
 	Age  string `json:"age"`
 }
 
+type statusLinearTriggers struct {
+	Enabled    bool   `json:"enabled"`
+	LastPoll   string `json:"last_poll,omitempty"`
+	Dispatched int    `json:"dispatched,omitempty"`
+	Rejected   int    `json:"rejected,omitempty"`
+	Errors     int    `json:"errors,omitempty"`
+}
+
 // statusData is the top-level JSON structure returned by executeStatus when
 // format == "json".
 type statusData struct {
-	Tasks          []statusTask     `json:"tasks"`
-	Instances      []statusInstance `json:"instances"`
-	OrphanSessions []statusOrphan   `json:"orphan_sessions"`
+	Tasks          []statusTask         `json:"tasks"`
+	Instances      []statusInstance     `json:"instances"`
+	OrphanSessions []statusOrphan       `json:"orphan_sessions"`
+	LinearTriggers statusLinearTriggers `json:"linear_triggers"`
 }
 
 func statusAgentLabel(agent string) string {
@@ -173,6 +183,65 @@ func annotateStatusTasksWithInstances(tasks []statusTask, records []instanceReco
 	}
 }
 
+type linearTriggerStatsReader interface {
+	LinearTriggerStats(project string, since time.Time) (taskstore.LinearTriggerStats, error)
+}
+
+func statusLinearTriggerSummary(store taskstore.Store, project string, cfg lineartrigger.Config, now time.Time) statusLinearTriggers {
+	if !cfg.Enabled {
+		return statusLinearTriggers{}
+	}
+	summary := statusLinearTriggers{Enabled: true}
+	reader, ok := store.(linearTriggerStatsReader)
+	if !ok || reader == nil {
+		return summary
+	}
+	stats, err := reader.LinearTriggerStats(project, now.Add(-24*time.Hour))
+	if err != nil {
+		return summary
+	}
+	if !stats.LastSeenAt.IsZero() {
+		summary.LastPoll = relativeAge(now, stats.LastSeenAt)
+	}
+	summary.Dispatched = stats.Dispatched
+	summary.Rejected = stats.Rejected
+	summary.Errors = stats.Failed
+	return summary
+}
+
+func renderStatusLinearTriggers(summary statusLinearTriggers) string {
+	if !summary.Enabled {
+		return "linear triggers: disabled\n"
+	}
+	lastPoll := "never"
+	if summary.LastPoll != "" {
+		lastPoll = summary.LastPoll + " ago"
+	}
+	return fmt.Sprintf("linear triggers: enabled (last poll %s, %d dispatched, %d rejected, %d errors)\n",
+		lastPoll, summary.Dispatched, summary.Rejected, summary.Errors)
+}
+
+func currentRepoLinearTriggerStatusLine(now time.Time) (string, error) {
+	_, project, err := resolveRepoInfo()
+	if err != nil {
+		return "", err
+	}
+	tomlResult, err := config.LoadTOMLConfig()
+	if err != nil {
+		return "", err
+	}
+	var triggerCfg lineartrigger.Config
+	if tomlResult != nil {
+		triggerCfg = tomlResult.LinearTriggers
+	}
+	store, err := taskstore.OpenAuthoritativeStore(project)
+	if err != nil {
+		return "", err
+	}
+	defer store.Close()
+	return renderStatusLinearTriggers(statusLinearTriggerSummary(store, project, triggerCfg, now)), nil
+}
+
 // executeStatus assembles a unified overview of active tasks, agent instances,
 // and orphan tmux sessions. It is the testable core of NewStatusCmd.
 //
@@ -183,6 +252,15 @@ func annotateStatusTasksWithInstances(tasks []statusTask, records []instanceReco
 //   - ex: executor for tmux discovery
 //   - format: "text" or "json"
 func executeStatus(state config.StateManager, store taskstore.Store, project string, ex Executor, format string) string {
+	tomlResult, _ := config.LoadTOMLConfig()
+	var triggerCfg lineartrigger.Config
+	if tomlResult != nil {
+		triggerCfg = tomlResult.LinearTriggers
+	}
+	return executeStatusWithLinearTriggers(state, store, project, ex, format, triggerCfg, time.Now())
+}
+
+func executeStatusWithLinearTriggers(state config.StateManager, store taskstore.Store, project string, ex Executor, format string, triggerCfg lineartrigger.Config, now time.Time) string {
 	// 1. Tasks section — filter to non-done, non-cancelled entries.
 	tasks := make([]statusTask, 0)
 	if store != nil {
@@ -213,7 +291,7 @@ func executeStatus(state config.StateManager, store taskstore.Store, project str
 	instances := make([]statusInstance, 0)
 	records, recordsErr := loadInstanceRecords(state)
 	if recordsErr == nil {
-		annotateStatusTasksWithInstances(tasks, records, time.Now())
+		annotateStatusTasksWithInstances(tasks, records, now)
 		for _, r := range records {
 			agentType := r.AgentType
 			if agentType == "" && (r.SoloAgent || r.TaskFile == "") {
@@ -240,7 +318,6 @@ func executeStatus(state config.StateManager, store taskstore.Store, project str
 		}
 		rows, discErr := discoverKasSessions(ex, known)
 		if discErr == nil {
-			now := time.Now()
 			for _, row := range rows {
 				if !row.Managed {
 					orphans = append(orphans, statusOrphan{
@@ -256,6 +333,7 @@ func executeStatus(state config.StateManager, store taskstore.Store, project str
 		Tasks:          tasks,
 		Instances:      instances,
 		OrphanSessions: orphans,
+		LinearTriggers: statusLinearTriggerSummary(store, project, triggerCfg, now),
 	}
 
 	// 4. JSON format.
@@ -320,6 +398,9 @@ func executeStatus(state config.StateManager, store taskstore.Store, project str
 		}
 		w.Flush()
 	}
+
+	sb.WriteString("\n")
+	sb.WriteString(renderStatusLinearTriggers(data.LinearTriggers))
 
 	// Hints section — only shown when at least one condition applies.
 	hints := statusRecoveryHints(tasks)

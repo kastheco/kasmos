@@ -1366,6 +1366,45 @@ func (s *SQLiteStore) ListUnprocessedLinearTriggers(project string, limit int) (
 	return entries, nil
 }
 
+// LinearTriggerStats returns recent Linear trigger outcome counts for a project.
+func (s *SQLiteStore) LinearTriggerStats(project string, since time.Time) (LinearTriggerStats, error) {
+	const q = `
+		SELECT detected_at, processed_at, outcome
+		FROM linear_triggers
+		WHERE project = ? AND detected_at >= ?
+	`
+	rows, err := s.db.Query(q, project, formatTime(since))
+	if err != nil {
+		return LinearTriggerStats{}, fmt.Errorf("linear trigger stats: %w", err)
+	}
+	defer rows.Close()
+
+	var stats LinearTriggerStats
+	for rows.Next() {
+		var detectedAt, processedAt, outcome string
+		if err := rows.Scan(&detectedAt, &processedAt, &outcome); err != nil {
+			return LinearTriggerStats{}, fmt.Errorf("linear trigger stats: %w", err)
+		}
+		for _, at := range []time.Time{parseTime(detectedAt), parseTime(processedAt)} {
+			if at.After(stats.LastSeenAt) {
+				stats.LastSeenAt = at
+			}
+		}
+		switch outcome {
+		case "dispatched":
+			stats.Dispatched++
+		case "rejected":
+			stats.Rejected++
+		case "failed":
+			stats.Failed++
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return LinearTriggerStats{}, fmt.Errorf("linear trigger stats: %w", err)
+	}
+	return stats, nil
+}
+
 // LastSeenCommentAt returns the last Linear comment cursor for an issue.
 func (s *SQLiteStore) LastSeenCommentAt(project, linearIssueID string) (time.Time, error) {
 	const q = `SELECT last_seen_at FROM linear_comment_cursor WHERE project = ? AND linear_issue_id = ?`

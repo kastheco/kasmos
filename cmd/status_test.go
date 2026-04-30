@@ -4,11 +4,13 @@ import (
 	"encoding/json"
 	"errors"
 	"os/exec"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/kastheco/kasmos/cmd/cmd_test"
+	"github.com/kastheco/kasmos/config/lineartrigger"
 	"github.com/kastheco/kasmos/config/taskfsm"
 	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/stretchr/testify/assert"
@@ -82,6 +84,46 @@ func TestExecuteStatus_Empty(t *testing.T) {
 	assert.Contains(t, output, "no active tasks")
 	assert.Contains(t, output, "no instances")
 	assert.Contains(t, output, "no orphan tmux sessions")
+	assert.Contains(t, output, "linear triggers: disabled")
+}
+
+func TestExecuteStatus_LinearTriggersEnabledCounts(t *testing.T) {
+	store := taskstore.NewTestSQLiteStore(t)
+	project := "linear-status-project"
+	now := time.Date(2026, 4, 30, 12, 0, 0, 0, time.UTC)
+	for i, outcome := range []string{"dispatched", "dispatched", "dispatched", "rejected", "failed"} {
+		queued, err := store.EnqueueLinearTrigger(project, taskstore.LinearTriggerEntry{
+			LinearIssueID:    "issue",
+			LinearIdentifier: "ENG-1",
+			CommandKind:      outcome,
+			SourceKind:       "comment",
+			SourceID:         outcome + "-" + strconv.Itoa(i),
+			DetectedAt:       now.Add(-time.Duration(i+1) * time.Second),
+		})
+		require.NoError(t, err)
+		require.True(t, queued)
+		triggers, err := store.ListUnprocessedLinearTriggers(project, 10)
+		require.NoError(t, err)
+		require.NotEmpty(t, triggers)
+		switch outcome {
+		case "dispatched":
+			require.NoError(t, store.MarkLinearTriggerDispatched(project, triggers[0].ID, "task"))
+		case "rejected":
+			require.NoError(t, store.MarkLinearTriggerRejected(project, triggers[0].ID, "not allowed"))
+		case "failed":
+			require.NoError(t, store.MarkLinearTriggerFailed(project, triggers[0].ID, "boom"))
+		}
+	}
+
+	state := newTestStateFromRaw(t, nil)
+	ex := cmd_test.NewMockExecutor()
+	ex.OutputFunc = func(_ *exec.Cmd) ([]byte, error) {
+		return nil, errors.New("no tmux")
+	}
+	output := executeStatusWithLinearTriggers(state, store, project, ex, "text", lineartrigger.Config{Enabled: true}, now)
+
+	assert.Contains(t, output, "linear triggers: enabled")
+	assert.Contains(t, output, "3 dispatched, 1 rejected, 1 errors")
 }
 
 func TestExecuteStatus_JSON(t *testing.T) {
