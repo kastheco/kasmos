@@ -169,6 +169,16 @@ func TestExecuteTaskUnlinkLinear_NoLink(t *testing.T) {
 	assert.Empty(t, logger.events)
 }
 
+func TestLinearLinkDisplayIDFallsBackToIssueID(t *testing.T) {
+	assert.Equal(t, "KAS-123", linearLinkDisplayID(taskstore.LinearLink{
+		LinearIssueID:    "issue-123",
+		LinearIdentifier: "KAS-123",
+	}))
+	assert.Equal(t, "issue-123", linearLinkDisplayID(taskstore.LinearLink{
+		LinearIssueID: "issue-123",
+	}))
+}
+
 func TestLinkLinear_AuditEventOnSuccess(t *testing.T) {
 	store := newTaskLinearStore(t)
 	logger := &taskLinearRecordingLogger{}

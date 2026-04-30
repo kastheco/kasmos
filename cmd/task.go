@@ -126,6 +126,13 @@ func formatTaskList(entries []taskstate.TaskInfo, statusFilter string) string {
 	return sb.String()
 }
 
+func linearLinkDisplayID(link taskstore.LinearLink) string {
+	if link.LinearIdentifier != "" {
+		return link.LinearIdentifier
+	}
+	return link.LinearIssueID
+}
+
 // executeTaskListWithStore returns a formatted string listing all plans from a
 // remote store backend. storeURL is the base URL of the task store server
 // (e.g. "http://athena:7433") and project is the project name to query.
@@ -1262,11 +1269,11 @@ Deprecated aliases: readiness-approved (→ verify-approved), readiness-changes 
 				if err != nil {
 					return err
 				}
-				if result.Link.LinearIdentifier == "" {
+				if result.Link.LinearIssueID == "" {
 					fmt.Printf("no link to clear for %s\n", filename)
 					return nil
 				}
-				fmt.Printf("unlinked %s from %s\n", filename, result.Link.LinearIdentifier)
+				fmt.Printf("unlinked %s from %s\n", filename, linearLinkDisplayID(result.Link))
 				return nil
 			})
 		},
