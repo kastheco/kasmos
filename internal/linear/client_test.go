@@ -105,10 +105,29 @@ func TestClient_HTTP500ReturnsHTTPError(t *testing.T) {
 	assert.Equal(t, http.StatusInternalServerError, httpErr.StatusCode)
 }
 
+func TestClient_HTTPErrorBodyTruncated(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = w.Write([]byte(strings.Repeat("x", 1500)))
+	}))
+	defer srv.Close()
+
+	client := linear.NewClient(srv.URL, "test-key", srv.Client())
+	err := client.Do(context.Background(), "query { viewer { id } }", nil, nil)
+	require.Error(t, err)
+
+	var httpErr *linear.HTTPError
+	require.True(t, errors.As(err, &httpErr))
+	assert.Len(t, httpErr.Body, 1027)
+}
+
 func TestClient_HTTP429ReturnsRateLimitError(t *testing.T) {
+	resetAtMillis := int64(1_714_560_000_000)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Retry-After", "30")
+		w.Header().Set("X-RateLimit-Requests-Limit", "2500")
 		w.Header().Set("X-RateLimit-Requests-Remaining", "0")
+		w.Header().Set("X-RateLimit-Requests-Reset", "1714560000000")
 		w.WriteHeader(http.StatusTooManyRequests)
 		_, _ = w.Write([]byte(`rate limited`))
 	}))
@@ -122,7 +141,9 @@ func TestClient_HTTP429ReturnsRateLimitError(t *testing.T) {
 	require.True(t, errors.As(err, &rl))
 	assert.Equal(t, http.StatusTooManyRequests, rl.StatusCode)
 	assert.Equal(t, 30*time.Second, rl.RetryAfter)
+	assert.Equal(t, 2500, rl.RequestsLimit)
 	assert.Equal(t, 0, rl.Remaining)
+	assert.True(t, rl.ResetAt.Equal(time.UnixMilli(resetAtMillis)))
 }
 
 func TestClient_GraphQLRateLimitedExtensionOn200(t *testing.T) {
@@ -139,6 +160,23 @@ func TestClient_GraphQLRateLimitedExtensionOn200(t *testing.T) {
 	require.True(t, errors.As(err, &rl))
 	assert.Equal(t, "RATE_LIMITED", rl.GraphQLCode)
 	assert.Equal(t, http.StatusOK, rl.StatusCode)
+}
+
+func TestClient_GraphQLRateLimitedExtensionOn400(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"errors":[{"message":"too many requests","extensions":{"code":"RATELIMITED"}}]}`))
+	}))
+	defer srv.Close()
+
+	client := linear.NewClient(srv.URL, "test-key", srv.Client())
+	err := client.Do(context.Background(), "query { viewer { id } }", nil, nil)
+	require.Error(t, err)
+
+	var rl *linear.RateLimitError
+	require.True(t, errors.As(err, &rl))
+	assert.Equal(t, "RATELIMITED", rl.GraphQLCode)
+	assert.Equal(t, http.StatusBadRequest, rl.StatusCode)
 }
 
 func TestClient_GraphQLErrors200(t *testing.T) {

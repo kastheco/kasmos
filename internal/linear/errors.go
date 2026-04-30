@@ -41,7 +41,7 @@ func (e *GraphQLErrors) Error() string {
 	return "linear: graphql: " + strings.Join(parts, "; ")
 }
 
-// RateLimitError is returned for HTTP 429 OR GraphQL extensions.code == "RATE_LIMITED".
+// RateLimitError is returned for HTTP 429 OR GraphQL rate-limit extension codes.
 type RateLimitError struct {
 	StatusCode    int
 	GraphQLCode   string
@@ -49,7 +49,7 @@ type RateLimitError struct {
 	RetryAfter    time.Duration // 0 if absent
 	RequestsLimit int           // X-RateLimit-Requests-Limit
 	Remaining     int           // X-RateLimit-Requests-Remaining
-	ResetAt       time.Time     // X-RateLimit-Requests-Reset (unix seconds)
+	ResetAt       time.Time     // X-RateLimit-Requests-Reset
 }
 
 func (e *RateLimitError) Error() string {
@@ -95,7 +95,11 @@ func rateLimitFromHeaders(rl *RateLimitError, h http.Header) {
 	}
 	if v := h.Get("X-RateLimit-Requests-Reset"); v != "" {
 		if n, err := strconv.ParseInt(v, 10, 64); err == nil {
-			rl.ResetAt = time.Unix(n, 0)
+			if n > 1_000_000_000_000 {
+				rl.ResetAt = time.UnixMilli(n)
+			} else {
+				rl.ResetAt = time.Unix(n, 0)
+			}
 		}
 	}
 }

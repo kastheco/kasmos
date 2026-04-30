@@ -54,7 +54,7 @@ type rawGraphQLError struct {
 // Do executes a GraphQL operation and decodes the data field into out (which
 // may be nil to discard data). It returns:
 //   - ErrNotConfigured if apiKey is empty,
-//   - *RateLimitError on HTTP 429 or extensions.code == "RATE_LIMITED",
+//   - *RateLimitError on HTTP 429 or a Linear rate-limit GraphQL extension code,
 //   - *HTTPError on other non-2xx responses,
 //   - *GraphQLErrors when the response carries errors[],
 //   - context.Canceled / context.DeadlineExceeded wrapped with operation context,
@@ -91,13 +91,27 @@ func (c *Client) Do(ctx context.Context, query string, variables map[string]inte
 	if resp.StatusCode == http.StatusTooManyRequests {
 		rl := &RateLimitError{StatusCode: resp.StatusCode, Message: string(raw)}
 		rateLimitFromHeaders(rl, resp.Header)
-		if env, ok := tryDecodeEnvelope(raw); ok && len(env.Errors) > 0 {
-			rl.GraphQLCode = stringExtension(env.Errors[0].Extensions, "code")
+		if env, ok := tryDecodeEnvelope(raw); ok {
+			if gqlErr := firstRateLimitError(env.Errors); gqlErr != nil {
+				rl.GraphQLCode = stringExtension(gqlErr.Extensions, "code")
+				rl.Message = gqlErr.Message
+			}
 		}
 		return rl
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return &HTTPError{StatusCode: resp.StatusCode, Body: string(raw)}
+		if env, ok := tryDecodeEnvelope(raw); ok {
+			if gqlErr := firstRateLimitError(env.Errors); gqlErr != nil {
+				rl := &RateLimitError{
+					StatusCode:  resp.StatusCode,
+					GraphQLCode: stringExtension(gqlErr.Extensions, "code"),
+					Message:     gqlErr.Message,
+				}
+				rateLimitFromHeaders(rl, resp.Header)
+				return rl
+			}
+		}
+		return &HTTPError{StatusCode: resp.StatusCode, Body: truncate(string(raw), 1024)}
 	}
 
 	var env graphqlResponse
@@ -106,8 +120,12 @@ func (c *Client) Do(ctx context.Context, query string, variables map[string]inte
 	}
 	if len(env.Errors) > 0 {
 		// 200-with-errors may still be rate-limit per Linear's docs.
-		if code := firstExtensionCode(env.Errors); code == "RATE_LIMITED" {
-			rl := &RateLimitError{StatusCode: resp.StatusCode, GraphQLCode: code, Message: env.Errors[0].Message}
+		if gqlErr := firstRateLimitError(env.Errors); gqlErr != nil {
+			rl := &RateLimitError{
+				StatusCode:  resp.StatusCode,
+				GraphQLCode: stringExtension(gqlErr.Extensions, "code"),
+				Message:     gqlErr.Message,
+			}
 			rateLimitFromHeaders(rl, resp.Header)
 			return rl
 		}
@@ -133,13 +151,17 @@ func tryDecodeEnvelope(raw []byte) (graphqlResponse, bool) {
 	return env, true
 }
 
-func firstExtensionCode(errs []rawGraphQLError) string {
+func firstRateLimitError(errs []rawGraphQLError) *rawGraphQLError {
 	for _, e := range errs {
-		if c := stringExtension(e.Extensions, "code"); c != "" {
-			return c
+		if isRateLimitCode(stringExtension(e.Extensions, "code")) {
+			return &e
 		}
 	}
-	return ""
+	return nil
+}
+
+func isRateLimitCode(code string) bool {
+	return code == "RATELIMITED" || code == "RATE_LIMITED"
 }
 
 func stringExtension(ext map[string]interface{}, key string) string {
