@@ -4,7 +4,7 @@ title: "linear receipts"
 
 # linear receipts
 
-linear receipts post compact, deterministic comments from kasmos to explicitly linked Linear issues. kasmos remains the execution source of truth: Linear can display progress, but it cannot transition kasmos tasks.
+linear receipts post compact, deterministic comments from kasmos to explicitly linked Linear issues. kasmos remains the execution source of truth: Linear can display progress, while guarded [linear triggers](./linear-triggers.mdx) are the explicit inbound counterpart for `/kasmos <verb>` comments and configured labels.
 
 ## prerequisites
 
@@ -100,7 +100,11 @@ receipt delivery is non-blocking. lifecycle transitions, PR persistence, merge h
 
 linear receipts still do not provide:
 
-- Linear to kasmos sync.
+- broad Linear to kasmos sync outside guarded [linear triggers](./linear-triggers.mdx).
 - retroactive backfill for old task transitions.
 - comment ingestion from Linear.
 - automatic link discovery from task markdown.
+
+## see also
+
+for the inbound side of the integration, see [linear triggers](./linear-triggers.mdx). triggers consume strict slash commands and configured labels from Linear, then route accepted work through the same kasmos FSM events that produce these receipts.

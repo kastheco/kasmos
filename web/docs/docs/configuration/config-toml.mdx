@@ -281,6 +281,69 @@ cancelled = "lin_state_cancelled"
 
 receipt failures never block kasmos lifecycle transitions. missing Linear API credentials are silent; other Linear errors are recorded as `EventTaskLinearReceiptFailed` audit rows.
 
+## `[linear.triggers]` — guarded Linear-side triggers
+
+Polls Linear for strict `/kasmos <verb>` comments and configured trigger labels, then routes accepted work through kasmos link/create/FSM paths. See the [linear triggers guide](../guides/linear-triggers.mdx) for operator setup and troubleshooting.
+
+```toml
+[linear.triggers]
+enabled = true
+poll_interval = "1m"
+lookback = "15m"
+max_issues_per_poll = 100
+verbs = ["help", "status", "link", "create", "plan", "start"]
+ack_comment_body = "kasmos trigger ack"
+
+[[linear.triggers.routes]]
+team_id = "6f24259a-1f9f-4c5b-9f14-9dff1f6b2b21"
+project_id = "a82f4c97-3e15-47ef-9a7a-2b04f4e2a3dd"
+require_labels = ["4d1a5ec7-3e1d-4f2a-9a66-8a5e64f0d721"]
+topic = "linear"
+branch_prefix = "linear/"
+
+[linear.triggers.labels]
+create = "0a5bf2d7-b581-4183-9e28-3fef63d47a18"
+plan = "c9170d93-68cf-4370-a7ea-6503a1dd30be"
+start = "89c8c2bf-d118-42e0-8f3d-85eeb7d775db"
+ack = "a8a63a51-5042-4697-a5dd-6a3e342fffd7"
+
+[linear.triggers.actor]
+allowed_user_ids = ["a7c74ca9-8a18-4f62-a784-76ec43a5cb87"]
+allowed_user_emails = ["ops@example.com"]
+allow_public_status = true
+
+[linear.triggers.start_guard]
+require_start_label = true
+allow_label_start = false
+```
+
+| field | type | default | validation |
+|-------|------|---------|------------|
+| `enabled` | bool | `false` | when `false`, the zero-value trigger config is used and no trigger routes are required |
+| `poll_interval` | duration | `"1m"` | values below `"15s"` are clamped to `"15s"`; zero or omitted uses the default |
+| `lookback` | duration | `"15m"` | zero or negative values use the default first-poll comment lookback |
+| `max_issues_per_poll` | int | `100` | values `<= 0` use the default |
+| `verbs` | []string | `["help", "status", "link", "create", "plan", "start"]` | each value must be one of `help`, `status`, `link`, `create`, `plan`, or `start`; mutating verbs require an actor allowlist |
+| `ack_comment_body` | string | `"kasmos trigger ack"` | empty uses the default acknowledgement comment body |
+| `[[linear.triggers.routes]]` | table array | — | at least one route is required when enabled; duplicate routes by `team_id`, `project_id`, and sorted `require_labels` are rejected |
+| `team_id` | string | — | required Linear team UUID for each route |
+| `project_id` | string | `""` | optional Linear project UUID route qualifier |
+| `require_labels` | []string | `[]` | optional Linear label UUIDs; all listed labels must be present on the issue |
+| `topic` | string | — | required kasmos topic for tasks created by the route |
+| `branch_prefix` | string | `""` | optional branch prefix appended before the generated task filename |
+| `[linear.triggers.labels]` | table | all empty | optional UUID map for label-source triggers and acknowledgements |
+| `create` | string | `""` | Linear label UUID that enqueues create intents |
+| `plan` | string | `""` | Linear label UUID that enqueues create-and-plan intents |
+| `start` | string | `""` | Linear label UUID used by start guards and optional label-only start |
+| `ack` | string | `""` | optional Linear label UUID applied after successful create or plan label triggers |
+| `[linear.triggers.actor]` | table | empty allowlist | required for any enabled mutating verb |
+| `allowed_user_ids` | []string | `[]` | canonical Linear `User.id` allowlist for mutating comment commands |
+| `allowed_user_emails` | []string | `[]` | friendly aliases resolved to Linear users on first hit and cached |
+| `allow_public_status` | bool | `false` | when true, `/kasmos status` and `/kasmos help` can bypass the actor allowlist |
+| `[linear.triggers.start_guard]` | table | both false | optional guard settings for start triggers |
+| `require_start_label` | bool | `false` | when true, `/kasmos start` requires the issue to carry `labels.start` |
+| `allow_label_start` | bool | `false` | when true, label-only start is allowed; validation requires `labels.start` |
+
 ## `[[hooks]]` — FSM transition hooks
 
 Hooks fire when a task transitions between lifecycle states. They are defined as an array of tables.
