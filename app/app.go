@@ -1021,9 +1021,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, tea.Batch(asyncClosePreviewTerminal(oldTerm), nextPreviewTickCmd(nil))
 			}
 			if content, changed := m.previewTerminal.Render(); changed {
-				if m.previewTickCount < 5 {
-					log.InfoLog.Printf("preview_tick: %s render changed=true len=%d (tick %d)", m.previewTerminalInstance, len(content), m.previewTickCount)
-				}
+				log.InfoLog.Printf("preview_tick: %s render changed=true len=%d", m.previewTerminalInstance, len(content))
 				m.tabbedWindow.SetPreviewContent(content)
 			}
 			if !m.previewClipboardPending {

@@ -61,6 +61,10 @@ type EmbeddedTerminal struct {
 	lastCols int
 	lastRows int
 
+	// sessionDebugID is the session name used for diagnostic log lines so a
+	// human grepping the log can correlate cache updates with attach events.
+	sessionDebugID string
+
 	clipboardRequests chan byte
 }
 
@@ -114,6 +118,7 @@ func NewEmbeddedTerminal(sessionName string, cols, rows int) (*EmbeddedTerminal,
 		renderReady:       make(chan struct{}, 1),
 		lastCols:          cols,
 		lastRows:          rows,
+		sessionDebugID:    sessionName,
 		clipboardRequests: make(chan byte, 8),
 	}
 	// Seed the cache from the snapshot we just wrote into the emulator so
@@ -240,6 +245,8 @@ func (t *EmbeddedTerminal) responseLoop() {
 // so the cache is updated within microseconds of new PTY data arriving.
 func (t *EmbeddedTerminal) renderLoop() {
 	var lastRender string
+	loopID := t.sessionDebugID
+	updates := 0
 	for {
 		// Wait for readLoop to signal new data, or cancel.
 		select {
@@ -274,6 +281,10 @@ func (t *EmbeddedTerminal) renderLoop() {
 			t.hasNew = true
 			t.cacheMu.Unlock()
 			lastRender = content
+			updates++
+			if updates <= 5 {
+				log.InfoLog.Printf("renderloop: %s update #%d len=%d", loopID, updates, len(content))
+			}
 
 			// Signal the display tick that new content is available.
 			select {
