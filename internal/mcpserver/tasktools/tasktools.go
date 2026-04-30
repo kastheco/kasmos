@@ -68,7 +68,7 @@ var openTaskToolLinearFetcher = func() (linearlink.IssueFetcher, error) {
 var openTaskToolAuditLogger = func() (auditlog.Logger, func(), error) {
 	logger, err := auditlog.NewSQLiteLogger(taskstore.ResolvedDBPath())
 	if err != nil {
-		return nil, nil, err
+		return auditlog.NopLogger(), func() {}, nil
 	}
 	return logger, func() { _ = logger.Close() }, nil
 }

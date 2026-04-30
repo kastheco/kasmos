@@ -3,6 +3,7 @@ package link
 import (
 	"testing"
 
+	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/kastheco/kasmos/internal/linear"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -128,6 +129,24 @@ func TestLinkedIssueDisplay(t *testing.T) {
 			assert.Equal(t, tt.want, tt.link.Display())
 		})
 	}
+}
+
+func TestLinkedIssueToTaskstore(t *testing.T) {
+	linked := LinkedIssue{
+		IssueID:    "issue-id",
+		Identifier: "ENG-123",
+		URL:        "https://linear.app/acme/issue/ENG-123/example",
+		TeamKey:    "ENG",
+		ProjectID:  "project-id",
+	}
+
+	assert.Equal(t, taskstore.LinearLink{
+		LinearIssueID:    "issue-id",
+		LinearIdentifier: "ENG-123",
+		LinearURL:        "https://linear.app/acme/issue/ENG-123/example",
+		LinearTeamKey:    "ENG",
+		LinearProjectID:  "project-id",
+	}, linked.ToTaskstore())
 }
 
 func TestFromIssue_PhaseOneContract(t *testing.T) {

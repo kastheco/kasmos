@@ -63,10 +63,10 @@ func (l LinkedIssue) Display() string {
 // ToTaskstore converts the link value to the task-store representation.
 func (l LinkedIssue) ToTaskstore() taskstore.LinearLink {
 	return taskstore.LinearLink{
-		IssueID:    l.IssueID,
-		Identifier: l.Identifier,
-		URL:        l.URL,
-		TeamKey:    l.TeamKey,
-		ProjectID:  l.ProjectID,
+		LinearIssueID:    l.IssueID,
+		LinearIdentifier: l.Identifier,
+		LinearURL:        l.URL,
+		LinearTeamKey:    l.TeamKey,
+		LinearProjectID:  l.ProjectID,
 	}
 }

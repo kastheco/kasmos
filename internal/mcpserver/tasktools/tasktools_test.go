@@ -122,6 +122,20 @@ func withTaskLinearTestDeps(t *testing.T, fetcher *taskToolFakeIssueFetcher, log
 	})
 }
 
+func TestOpenTaskToolAuditLoggerFallsBackToNop(t *testing.T) {
+	homeFile := filepath.Join(t.TempDir(), "home")
+	require.NoError(t, os.WriteFile(homeFile, []byte("not a directory"), 0o644))
+	t.Setenv("HOME", homeFile)
+
+	logger, closeLogger, err := openTaskToolAuditLogger()
+
+	require.NoError(t, err)
+	require.NotNil(t, logger)
+	require.NotNil(t, closeLogger)
+	logger.Emit(auditlog.Event{Kind: auditlog.EventTaskLinearLinked})
+	closeLogger()
+}
+
 func newTaskToolLinearStore(t *testing.T, project string) taskstore.Store {
 	t.Helper()
 	store := taskstore.NewTestSQLiteStore(t)

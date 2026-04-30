@@ -119,7 +119,7 @@ func (l *Linker) Link(ctx context.Context, in LinkInput) (LinkResult, error) {
 	if err := linkedIssue.Validate(); err != nil {
 		return LinkResult{}, fmt.Errorf("linearlink: invalid issue link: %w", err)
 	}
-	link := taskstoreLink(linkedIssue)
+	link := linkedIssue.ToTaskstore()
 
 	conflict, err := l.store.FindLinkedTask(
 		l.project,
@@ -196,15 +196,5 @@ func currentLink(entry taskstore.TaskEntry) taskstore.LinearLink {
 		LinearURL:        entry.LinearURL,
 		LinearTeamKey:    entry.LinearTeamKey,
 		LinearProjectID:  entry.LinearProjectID,
-	}
-}
-
-func taskstoreLink(link linkvalue.LinkedIssue) taskstore.LinearLink {
-	return taskstore.LinearLink{
-		LinearIssueID:    link.IssueID,
-		LinearIdentifier: link.Identifier,
-		LinearURL:        link.URL,
-		LinearTeamKey:    link.TeamKey,
-		LinearProjectID:  link.ProjectID,
 	}
 }
