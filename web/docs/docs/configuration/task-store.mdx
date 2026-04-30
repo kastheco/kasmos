@@ -84,8 +84,25 @@ the http store exposes the following endpoints (implemented in `config/taskstore
 | `PUT` | `/v1/projects/{project}/tasks/{filename}/phase-timestamp` | record a phase transition timestamp |
 | `PUT` | `/v1/projects/{project}/tasks/{filename}/goal` | set the plan goal text |
 | `PUT` | `/v1/projects/{project}/tasks/{filename}/clickup-task-id` | associate a ClickUp task ID |
+| `PUT` | `/v1/projects/{project}/tasks/{filename}/linear-link` | store canonical Linear issue metadata |
+| `DELETE` | `/v1/projects/{project}/tasks/{filename}/linear-link` | clear canonical Linear issue metadata |
+| `GET` | `/v1/projects/{project}/tasks/{filename}/linear-link/lookup` | find a task by Linear issue id and optional repeated `status=` filters |
 | `POST` | `/v1/projects/{project}/tasks/{filename}/rename` | rename (reslug) a task |
 | `POST` | `/v1/projects/{project}/tasks/{filename}/increment-review-cycle` | increment the review cycle counter |
+
+### linear linkage columns
+
+linear linkage is stored as five additive task columns:
+
+| column | purpose |
+|--------|---------|
+| `linear_issue_id` | canonical Linear issue id used for duplicate detection |
+| `linear_identifier` | human-readable issue identifier such as `KAS-123` |
+| `linear_url` | Linear issue URL |
+| `linear_team_key` | Linear team key, when present |
+| `linear_project_id` | Linear project id, when present |
+
+these fields are never derived from task markdown content. they are written only by explicit link operations or raw task-store metadata updates, and cleared only by unlink operations. the task-store http server persists the fields but does not call Linear; Linear fetch, duplicate-safe replacement, audit events, and optional backlink comments live in the cli/mcp linker flow.
 
 ### pr state
 
