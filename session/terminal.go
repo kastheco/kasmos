@@ -50,6 +50,15 @@ type EmbeddedTerminal struct {
 	cached  string
 	hasNew  bool
 
+	// Tracks the dimensions last passed to Resize so we can skip no-op
+	// resizes. Calling emu.Resize with unchanged dimensions can re-align /
+	// truncate the screen buffer mid-attach (clobbering bytes that were
+	// being processed from the initial paint), and tmux ignores SIGWINCH
+	// when dimensions don't change anyway — so a no-op resize ends up
+	// clearing the cache without anything to refill it.
+	lastCols int
+	lastRows int
+
 	clipboardRequests chan byte
 }
 
@@ -76,6 +85,8 @@ func NewEmbeddedTerminal(sessionName string, cols, rows int) (*EmbeddedTerminal,
 		cancel:            make(chan struct{}),
 		dataReady:         make(chan struct{}, 1),
 		renderReady:       make(chan struct{}, 1),
+		lastCols:          cols,
+		lastRows:          rows,
 		clipboardRequests: make(chan byte, 8),
 	}
 	t.registerClipboardHandlers()
@@ -298,7 +309,20 @@ func (t *EmbeddedTerminal) PollClipboardRequest() (byte, bool) {
 }
 
 // Resize updates the terminal dimensions.
+//
+// Skips entirely when dimensions haven't changed since the last call (or the
+// dimensions used at construction). emu.Resize on charmbracelet/x/vt rebuilds
+// the screen buffer even on a no-op size, which can wipe state currently
+// being filled by the readLoop from tmux's initial paint. Combined with
+// tmux's own "ignore SIGWINCH when dimensions match" optimisation, that
+// leaves the cache empty with no signal to refill it — exactly the
+// "stuck-blank preview after re-attach" symptom.
 func (t *EmbeddedTerminal) Resize(cols, rows int) {
+	if cols == t.lastCols && rows == t.lastRows {
+		return
+	}
+	t.lastCols = cols
+	t.lastRows = rows
 	t.emu.Resize(cols, rows)
 	if t.ptmx != nil {
 		_ = pty.Setsize(t.ptmx, &pty.Winsize{
