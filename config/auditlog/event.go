@@ -47,6 +47,15 @@ const (
 	EventTaskLinearReceiptFailed EventKind = "task_linear_receipt_failed"
 )
 
+// Linear trigger events (Phase 4 inbound).
+const (
+	EventTaskLinearTriggerReceived      EventKind = "task_linear_trigger_received"
+	EventTaskLinearTriggerDispatched    EventKind = "task_linear_trigger_dispatched"
+	EventTaskLinearTriggerRejected      EventKind = "task_linear_trigger_rejected"
+	EventTaskLinearTriggerIgnored       EventKind = "task_linear_trigger_ignored"
+	EventTaskLinearTriggerCommentFailed EventKind = "task_linear_trigger_comment_failed"
+)
+
 // Operational events.
 const (
 	EventPromptSent         EventKind = "prompt_sent"

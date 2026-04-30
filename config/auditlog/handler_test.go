@@ -127,17 +127,27 @@ func TestHandler_MultipleKindFilters(t *testing.T) {
 	logger.Emit(auditlog.Event{Kind: auditlog.EventPlanCreated, Project: "p"})
 	logger.Emit(auditlog.Event{Kind: auditlog.EventTaskLinearLinked, Project: "p"})
 	logger.Emit(auditlog.Event{Kind: auditlog.EventTaskLinearUnlinked, Project: "p"})
+	linearTriggerKinds := []auditlog.EventKind{
+		auditlog.EventTaskLinearTriggerReceived,
+		auditlog.EventTaskLinearTriggerDispatched,
+		auditlog.EventTaskLinearTriggerRejected,
+		auditlog.EventTaskLinearTriggerIgnored,
+		auditlog.EventTaskLinearTriggerCommentFailed,
+	}
+	for _, kind := range linearTriggerKinds {
+		logger.Emit(auditlog.Event{Kind: kind, Project: "p", Detail: linearTriggerDetail(t, kind)})
+	}
 
 	srv := httptest.NewServer(auditlog.NewHandler(logger))
 	defer srv.Close()
 
-	resp, err := http.Get(srv.URL + "/v1/projects/p/audit-events?kind=agent_spawned&kind=wave_started&kind=task_linear_linked&kind=task_linear_unlinked")
+	resp, err := http.Get(srv.URL + "/v1/projects/p/audit-events?kind=agent_spawned&kind=wave_started&kind=task_linear_linked&kind=task_linear_unlinked&kind=task_linear_trigger_received&kind=task_linear_trigger_dispatched&kind=task_linear_trigger_rejected&kind=task_linear_trigger_ignored&kind=task_linear_trigger_comment_failed")
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
 	var events []auditlog.Event
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&events))
-	assert.Len(t, events, 4)
+	assert.Len(t, events, 9)
 	kinds := make([]auditlog.EventKind, len(events))
 	for i, e := range events {
 		kinds[i] = e.Kind
@@ -146,6 +156,9 @@ func TestHandler_MultipleKindFilters(t *testing.T) {
 	assert.Contains(t, kinds, auditlog.EventWaveStarted)
 	assert.Contains(t, kinds, auditlog.EventTaskLinearLinked)
 	assert.Contains(t, kinds, auditlog.EventTaskLinearUnlinked)
+	for _, kind := range linearTriggerKinds {
+		assert.Contains(t, kinds, kind)
+	}
 }
 
 func TestHandler_ExtendedFiltersAndJSONID(t *testing.T) {
