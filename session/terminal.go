@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 	"time"
 
@@ -238,13 +239,19 @@ func (t *EmbeddedTerminal) renderLoop() {
 		// May briefly block while readLoop holds the emulator write lock.
 		// That's fine — it doesn't block the Bubble Tea event loop.
 		content := t.emu.Render()
-		// Always propagate the emulator state to the cache. Earlier we tried
-		// to suppress "blank" frames during tmux attach warmup, but that
-		// filter also dropped legitimate idle states (cleared screen, agent
-		// at a prompt). On re-attach to an idle agent, no printable bytes
-		// arrive, so the cache stayed empty until a forced repaint (resize).
-		// The brief sub-50ms blank flash on first attach is acceptable;
-		// stuck-blank previews on re-attach are not.
+		// Suppress truly-blank renders. tmux's initial-attach handshake
+		// briefly clears the alternate screen before repainting it; for an
+		// idle session that gap can last seconds, during which the emulator
+		// renders to whitespace-only output. The capture-pane snapshot we
+		// pre-seeded into the emulator already gave the cache the correct
+		// state, and we don't want a transient blank to wipe it. Real "the
+		// agent has cleared its prompt" states are exceedingly rare for our
+		// use case (every agent session has at least a tmux status line);
+		// when they do happen, keeping the slightly-stale prior frame is
+		// preferable to a blank pane.
+		if strings.TrimSpace(ansi.Strip(content)) == "" {
+			continue
+		}
 
 		if content != lastRender {
 			t.cacheMu.Lock()

@@ -20,13 +20,13 @@ func TestEmbeddedTerminal_CapturesOsc52ClipboardReadRequests(t *testing.T) {
 	require.Equal(t, byte(ansi.PrimaryClipboard), selection)
 }
 
-func TestEmbeddedTerminal_PropagatesInitialBlankRender(t *testing.T) {
-	// Even the very first render after attach must reach the cache. On
-	// re-attach to an idle tmux session, the emulator may receive only
-	// non-printable control bytes (the agent already cleared the screen
-	// and is sitting at a prompt). Suppressing this frame leaves the cache
-	// empty and the preview goes stuck-blank until the user forces a
-	// repaint via resize.
+func TestEmbeddedTerminal_SuppressesBlankRenders(t *testing.T) {
+	// Truly-blank renders (whitespace-only after stripping ANSI) must not
+	// reach the cache. They show up during tmux's initial-attach handshake
+	// — alternate-screen + clear + repaint — and would briefly wipe the
+	// capture-pane snapshot we pre-seeded into the emulator. The snapshot
+	// is the authoritative current rendering; transient blanks during the
+	// repaint gap should not override it.
 	term := NewDummyTerminal()
 	defer term.Close()
 	term.Resize(80, 24)
@@ -38,7 +38,7 @@ func TestEmbeddedTerminal_PropagatesInitialBlankRender(t *testing.T) {
 	term.WaitForRender(20 * time.Millisecond)
 
 	_, changed := term.Render()
-	require.True(t, changed, "blank initial render must reach the cache so re-attach to idle agents shows current state")
+	require.False(t, changed, "blank render must not reach the cache")
 
 	_, err = term.emu.Write([]byte("agent output"))
 	require.NoError(t, err)
@@ -50,13 +50,14 @@ func TestEmbeddedTerminal_PropagatesInitialBlankRender(t *testing.T) {
 	require.Contains(t, content, "agent output")
 }
 
-func TestEmbeddedTerminal_PropagatesBlankRenderAfterOutput(t *testing.T) {
-	// After the terminal has emitted any printable output, a subsequent blank
-	// render (e.g. the agent clears the screen / idles to an empty prompt) is
-	// real state and must propagate to the cache. Suppressing it here was the
-	// proximate cause of idle TUI/SDK previews going blank: the live emulator
-	// state diverges from the cache, then the staleness detector tears the
-	// terminal down and the now-empty cache is what the user sees.
+func TestEmbeddedTerminal_BlankAfterOutputDoesNotWipeCache(t *testing.T) {
+	// Once the cache holds real content, a subsequent blank render (e.g.
+	// tmux's clear-screen during a re-attach handshake) must not propagate
+	// — keeping the slightly-stale prior frame is preferable to flashing
+	// blank. Real "the agent has gone genuinely empty" states are
+	// vanishingly rare for our use case (every agent session has at least
+	// a tmux status line); when they do happen, the slight staleness is
+	// acceptable.
 	term := NewDummyTerminal()
 	defer term.Close()
 	term.Resize(80, 24)
@@ -75,9 +76,8 @@ func TestEmbeddedTerminal_PropagatesBlankRenderAfterOutput(t *testing.T) {
 	term.dataReady <- struct{}{}
 	term.WaitForRender(20 * time.Millisecond)
 
-	content, changed = term.Render()
-	require.True(t, changed, "blank render after output must reach the cache")
-	require.NotContains(t, content, "agent output")
+	_, changed = term.Render()
+	require.False(t, changed, "blank render after output must not wipe the cache")
 
 	_, err = term.emu.Write([]byte("new output"))
 	require.NoError(t, err)
