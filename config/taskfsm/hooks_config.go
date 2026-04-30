@@ -20,8 +20,8 @@ func parseHookEvents(raw []string) []Event {
 	for _, s := range raw {
 		switch Event(s) {
 		case PlanStart, PlannerFinished, ImplementStart, ImplementFinished,
-			ReviewApproved, ReviewChangesRequested, RequestReview,
-			StartOver, Reimplement, Cancel, Reopen:
+			ReviewApproved, ReviewChangesRequested, VerifyApproved, VerifyFailed,
+			RequestReview, StartOver, Reimplement, Cancel, Reopen, MarkDone:
 			out = append(out, Event(s))
 		default:
 			slog.Warn("hook config: unknown event name, skipping", "event", s)

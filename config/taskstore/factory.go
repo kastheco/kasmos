@@ -4,10 +4,11 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
-	"github.com/kastheco/kasmos/config"
+	"github.com/BurntSushi/toml"
 	_ "modernc.org/sqlite" // register sqlite driver
 )
 
@@ -28,8 +29,8 @@ func NewStoreFromConfig(storeURL, project string) (Store, error) {
 // callers do not silently fall back to a second local writer. When no remote
 // authority is configured, repo-local SQLite is the only valid authority.
 func OpenAuthoritativeStore(project string) (Store, error) {
-	cfg := config.LoadConfig()
-	if strings.TrimSpace(cfg.DatabaseURL) == "" {
+	databaseURL := loadConfiguredDatabaseURL()
+	if strings.TrimSpace(databaseURL) == "" {
 		store, err := OpenBackingSQLiteStore()
 		if err != nil {
 			return nil, fmt.Errorf("open authoritative task store for project %s: %w", project, err)
@@ -37,7 +38,7 @@ func OpenAuthoritativeStore(project string) (Store, error) {
 		return store, nil
 	}
 
-	store, err := NewStoreFromConfig(cfg.DatabaseURL, project)
+	store, err := NewStoreFromConfig(databaseURL, project)
 	if err != nil {
 		return nil, fmt.Errorf("open authoritative task store for project %s: %w", project, err)
 	}
@@ -54,8 +55,8 @@ func OpenAuthoritativeStore(project string) (Store, error) {
 // instead of silently writing to repo-local SQLite. When no remote authority is
 // configured, repo-local SQLite is the only valid authority.
 func OpenAuthoritativeSignalGateway(project string) (SignalGateway, error) {
-	cfg := config.LoadConfig()
-	if strings.TrimSpace(cfg.DatabaseURL) == "" {
+	databaseURL := loadConfiguredDatabaseURL()
+	if strings.TrimSpace(databaseURL) == "" {
 		gateway, err := OpenBackingSQLiteSignalGateway()
 		if err != nil {
 			return nil, fmt.Errorf("open authoritative signal gateway for project %s: %w", project, err)
@@ -63,7 +64,7 @@ func OpenAuthoritativeSignalGateway(project string) (SignalGateway, error) {
 		return gateway, nil
 	}
 
-	store, err := NewStoreFromConfig(cfg.DatabaseURL, project)
+	store, err := NewStoreFromConfig(databaseURL, project)
 	if err != nil {
 		return nil, fmt.Errorf("open authoritative signal gateway for project %s: %w", project, err)
 	}
@@ -73,7 +74,58 @@ func OpenAuthoritativeSignalGateway(project string) (SignalGateway, error) {
 	}
 	_ = store.Close()
 
-	return nil, fmt.Errorf("open authoritative signal gateway for project %s: remote task store %q does not expose signal gateway access", project, strings.TrimSpace(cfg.DatabaseURL))
+	return nil, fmt.Errorf("open authoritative signal gateway for project %s: remote task store %q does not expose signal gateway access", project, strings.TrimSpace(databaseURL))
+}
+
+type taskStoreTOMLConfig struct {
+	DatabaseURL string `toml:"database_url"`
+}
+
+func loadConfiguredDatabaseURL() string {
+	configDir, err := taskStoreConfigDir()
+	if err != nil {
+		return ""
+	}
+	data, err := os.ReadFile(filepath.Join(configDir, "config.toml"))
+	if err != nil {
+		return ""
+	}
+	var cfg taskStoreTOMLConfig
+	if _, err := toml.Decode(string(data), &cfg); err != nil {
+		return ""
+	}
+	return cfg.DatabaseURL
+}
+
+func taskStoreConfigDir() (string, error) {
+	if cwd, err := os.Getwd(); err == nil {
+		if repoRoot, err := taskStoreRepoRoot(cwd); err == nil {
+			return filepath.Join(repoRoot, ".kasmos"), nil
+		}
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".config", "kasmos"), nil
+}
+
+func taskStoreRepoRoot(dir string) (string, error) {
+	out, err := exec.Command("git", "-C", dir, "rev-parse", "--path-format=absolute", "--git-common-dir").Output()
+	if err != nil {
+		out, err = exec.Command("git", "-C", dir, "rev-parse", "--git-common-dir").Output()
+		if err != nil {
+			return "", fmt.Errorf("resolve repo root for %s: %w", dir, err)
+		}
+	}
+	gitDir := strings.TrimSpace(string(out))
+	if gitDir == "" {
+		return "", fmt.Errorf("resolve repo root for %s: empty git-common-dir output", dir)
+	}
+	if !filepath.IsAbs(gitDir) {
+		gitDir = filepath.Join(dir, gitDir)
+	}
+	return filepath.Dir(filepath.Clean(gitDir)), nil
 }
 
 // OpenBackingSQLiteStore opens the repo-root-backed SQLite store used by the

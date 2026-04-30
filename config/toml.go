@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/BurntSushi/toml"
+	"github.com/kastheco/kasmos/config/linearreceipt"
 	"github.com/kastheco/kasmos/log"
 )
 
@@ -108,6 +109,11 @@ type TOMLSDKConfig struct {
 // omitted keys (nil) from explicit values, so no separate conversion is required.
 type TOMLResourcesConfig = ResourcesConfig
 
+// TOMLLinearConfig holds Linear-related settings from the [linear] TOML table.
+type TOMLLinearConfig struct {
+	Receipts linearreceipt.TOMLBlock `toml:"receipts"`
+}
+
 // TOMLConfig is the top-level TOML file structure.
 type TOMLConfig struct {
 	Phases               map[string]string       `toml:"phases"`
@@ -118,6 +124,7 @@ type TOMLConfig struct {
 	Keybinds             TOMLKeybindsConfig      `toml:"keybinds"`
 	SDK                  TOMLSDKConfig           `toml:"sdk"`
 	Resources            TOMLResourcesConfig     `toml:"resources"`
+	Linear               TOMLLinearConfig        `toml:"linear"`
 	Enforcement          map[string]bool         `toml:"enforcement,omitempty"`
 	DatabaseURL          string                  `toml:"database_url,omitempty"`
 	DefaultProgram       string                  `toml:"default_program,omitempty"`
@@ -166,6 +173,8 @@ type TOMLConfigResult struct {
 	// Resources holds the raw [resources] TOML table.
 	// An empty Profile field means the block was absent; configFromTOML treats it as "normal".
 	Resources ResourcesConfig
+	// LinearReceipts is the resolved [linear.receipts] TOML block.
+	LinearReceipts linearreceipt.Config
 }
 
 // IsEnforcementEnabled reports whether hook enforcement is active for the given harness.
@@ -195,6 +204,10 @@ func LoadTOMLConfigFrom(path string) (*TOMLConfigResult, error) {
 	md, err := toml.DecodeFile(path, &tc)
 	if err != nil {
 		return nil, fmt.Errorf("decode TOML config: %w", err)
+	}
+	linearReceipts, err := linearreceipt.FromTOML(tc.Linear.Receipts)
+	if err != nil {
+		return nil, fmt.Errorf("parse linear receipts config: %w", err)
 	}
 
 	// Warn when the removed legacy key is present; it is ignored and never written back.
@@ -234,6 +247,7 @@ func LoadTOMLConfigFrom(path string) (*TOMLConfigResult, error) {
 		Enforcement:              tc.Enforcement,
 		SDK:                      tc.SDK,       // nil pointers mean key absent; configFromTOML applies defaults
 		Resources:                tc.Resources, // empty Profile means block absent; treated as "normal"
+		LinearReceipts:           linearReceipts,
 	}
 
 	for name, agent := range tc.Agents {

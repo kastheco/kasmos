@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kastheco/kasmos/config/linearreceipt"
 	"github.com/kastheco/kasmos/log"
 )
 
@@ -263,6 +264,8 @@ type Config struct {
 	// Use Resources.Resolve() to obtain the fully validated ResolvedResourceControls.
 	// An empty Profile (the default) resolves to the "normal" (no-op) profile.
 	Resources ResourcesConfig `json:"resources,omitempty"`
+	// LinearReceipts controls posting compact lifecycle receipts to linked Linear issues.
+	LinearReceipts linearreceipt.Config `json:"linear_receipts,omitempty"`
 }
 
 // BlueprintSkipThreshold returns the configured threshold for single-agent mode.
@@ -505,6 +508,7 @@ func configFromTOML(result *TOMLConfigResult) *Config {
 			cfg.ClaudeNoFlicker = *result.ClaudeNoFlicker
 		}
 		cfg.Enforcement = result.Enforcement
+		cfg.LinearReceipts = result.LinearReceipts
 		// SDK transcript retention — start from defaults, then apply TOML overrides.
 		// Nil pointer means key absent (keep default). Non-nil preserves explicit zero.
 		if result.SDK.TranscriptMaxBytes != nil {

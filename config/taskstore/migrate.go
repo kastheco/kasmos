@@ -11,8 +11,6 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
-
-	"github.com/kastheco/kasmos/config"
 )
 
 // MigrateRepoLocalToGlobal copies tasks, content, subtasks, topics, PR reviews,
@@ -296,8 +294,8 @@ type daemonTOMLRepos struct {
 }
 
 // MigrateAllKnownRepos migrates repo-local taskstore data into the global
-// store for every repo listed in daemon.toml, plus the current repo (via
-// config.GetConfigDir). Errors from individual repos are returned immediately.
+// store for every repo listed in daemon.toml, plus the current repo. Errors
+// from individual repos are returned immediately.
 func MigrateAllKnownRepos(globalStore Store) error {
 	seen := make(map[string]struct{})
 
@@ -325,7 +323,7 @@ func MigrateAllKnownRepos(globalStore Store) error {
 	}
 
 	// Also try the current repo.
-	if kasmosDir, err := config.GetConfigDir(); err == nil {
+	if kasmosDir, err := taskStoreConfigDir(); err == nil {
 		repoRoot := filepath.Clean(filepath.Dir(kasmosDir))
 		if _, dup := seen[repoRoot]; !dup {
 			project := filepath.Base(repoRoot)

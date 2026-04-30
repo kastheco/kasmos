@@ -1,6 +1,8 @@
 package config
 
 import (
+	"github.com/kastheco/kasmos/config/linearreceipt"
+	"github.com/kastheco/kasmos/config/taskfsm"
 	"github.com/kastheco/kasmos/log"
 	"os"
 	"os/exec"
@@ -722,6 +724,25 @@ func TestEnforcementRoundTrip(t *testing.T) {
 		assert.False(t, tc.Enforcement["codex"])
 		assert.True(t, tc.Enforcement["claude"])
 	})
+}
+
+func TestConfigFromTOML_LinearReceipts(t *testing.T) {
+	result := &TOMLConfigResult{
+		Profiles:   map[string]AgentProfile{},
+		PhaseRoles: map[string]string{},
+		LinearReceipts: linearreceipt.Config{
+			Enabled: true,
+			Events: map[taskfsm.Event]bool{
+				taskfsm.PlanStart: true,
+			},
+			PRReceipts:    true,
+			MergeReceipts: false,
+			CancelReceipt: true,
+		},
+	}
+
+	cfg := configFromTOML(result)
+	assert.Equal(t, result.LinearReceipts, cfg.LinearReceipts)
 }
 
 func intPtr(i int) *int { return &i }
