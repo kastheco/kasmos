@@ -9,11 +9,14 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/kastheco/kasmos/config/auditlog"
 	"github.com/kastheco/kasmos/config/linearlink"
+	"github.com/kastheco/kasmos/config/linearreceipt"
+	"github.com/kastheco/kasmos/config/taskfsm"
 	"github.com/kastheco/kasmos/config/taskstate"
 	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/kastheco/kasmos/internal/linear"
@@ -386,7 +389,7 @@ func TestTaskTransitionHandler_SupportsReviewChangesAlias(t *testing.T) {
 	project := "test-project"
 	require.NoError(t, store.Create(project, taskstore.TaskEntry{Filename: "my-plan", Status: taskstore.StatusReviewing, CreatedAt: time.Now()}))
 
-	handler := makeTaskTransitionHandler(routing.NewRegisterConfig(project, nil), store, nil)
+	handler := makeTaskTransitionHandler(routing.NewRegisterConfig(project, nil), store, nil, nil)
 	result, err := handler(context.Background(), mockReq(map[string]any{"filename": "my-plan", "event": "review_changes"}))
 	require.NoError(t, err)
 	assert.False(t, result.IsError)
@@ -396,12 +399,38 @@ func TestTaskTransitionHandler_SupportsReviewChangesAlias(t *testing.T) {
 	assert.Equal(t, taskstore.StatusImplementing, entry.Status)
 }
 
+func TestTaskTransitionHandler_WithLinearReceipts_PostsOneComment(t *testing.T) {
+	store := taskstore.NewTestSQLiteStore(t)
+	project := "test-project"
+	require.NoError(t, store.Create(project, taskstore.TaskEntry{
+		Filename:         "my-plan",
+		Status:           taskstore.StatusReady,
+		LinearIssueID:    "issue-1",
+		LinearIdentifier: "KAS-1",
+		CreatedAt:        time.Now(),
+	}))
+	client := &taskToolReceiptClient{}
+	hooks := linearreceipt.BuildRegistryWithReceipts(taskfsm.NewHookRegistry(), linearreceipt.Config{
+		Enabled: true,
+		Events:  map[taskfsm.Event]bool{taskfsm.PlanStart: true},
+	}, store, client, nil, project)
+
+	handler := makeTaskTransitionHandler(routing.NewRegisterConfig(project, nil), store, nil, hooks)
+	result, err := handler(context.Background(), mockReq(map[string]any{"filename": "my-plan", "event": "plan_start"}))
+	require.NoError(t, err)
+	assert.False(t, result.IsError)
+	hooks.Wait()
+
+	require.Equal(t, 1, client.createCount())
+	assert.Equal(t, "issue-1", client.firstIssueID())
+}
+
 func TestTaskTransitionHandler_ForceReviewApprovedLandsInVerifying(t *testing.T) {
 	store := taskstore.NewTestSQLiteStore(t)
 	project := "test-project"
 	require.NoError(t, store.Create(project, taskstore.TaskEntry{Filename: "my-plan", Status: taskstore.StatusReady, CreatedAt: time.Now()}))
 
-	handler := makeTaskTransitionHandler(routing.NewRegisterConfig(project, nil), store, nil)
+	handler := makeTaskTransitionHandler(routing.NewRegisterConfig(project, nil), store, nil, nil)
 	result, err := handler(context.Background(), mockReq(map[string]any{"filename": "my-plan", "event": "review_approved", "force": true}))
 	require.NoError(t, err)
 	assert.False(t, result.IsError)
@@ -416,12 +445,40 @@ func TestTaskTransitionHandler_ForceReviewApprovedLandsInVerifying(t *testing.T)
 	assert.Equal(t, "verifying", payload.Status)
 }
 
+type taskToolReceiptClient struct {
+	mu       sync.Mutex
+	issueIDs []string
+}
+
+func (m *taskToolReceiptClient) CreateComment(_ context.Context, issueID, body string) (*linear.Comment, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.issueIDs = append(m.issueIDs, issueID)
+	return &linear.Comment{ID: "comment-1", URL: "https://linear.app/comment/comment-1", Body: body}, nil
+}
+
+func (m *taskToolReceiptClient) UpdateIssue(_ context.Context, issueID string, in linear.UpdateIssueInput) (*linear.Issue, error) {
+	return &linear.Issue{ID: issueID}, nil
+}
+
+func (m *taskToolReceiptClient) createCount() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return len(m.issueIDs)
+}
+
+func (m *taskToolReceiptClient) firstIssueID() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.issueIDs[0]
+}
+
 func TestTaskTransitionHandler_ForceVerifyApprovedTransitionsToDone(t *testing.T) {
 	store := taskstore.NewTestSQLiteStore(t)
 	project := "test-project"
 	require.NoError(t, store.Create(project, taskstore.TaskEntry{Filename: "my-plan", Status: taskstore.StatusVerifying, CreatedAt: time.Now()}))
 
-	handler := makeTaskTransitionHandler(routing.NewRegisterConfig(project, nil), store, nil)
+	handler := makeTaskTransitionHandler(routing.NewRegisterConfig(project, nil), store, nil, nil)
 	result, err := handler(context.Background(), mockReq(map[string]any{"filename": "my-plan", "event": "verify_approved", "force": true}))
 	require.NoError(t, err)
 	assert.False(t, result.IsError)
@@ -441,7 +498,7 @@ func TestTaskTransitionHandler_ForceVerifyFailedTransitionsToImplementing(t *tes
 	project := "test-project"
 	require.NoError(t, store.Create(project, taskstore.TaskEntry{Filename: "my-plan", Status: taskstore.StatusVerifying, CreatedAt: time.Now()}))
 
-	handler := makeTaskTransitionHandler(routing.NewRegisterConfig(project, nil), store, nil)
+	handler := makeTaskTransitionHandler(routing.NewRegisterConfig(project, nil), store, nil, nil)
 	result, err := handler(context.Background(), mockReq(map[string]any{"filename": "my-plan", "event": "verify_failed", "force": true}))
 	require.NoError(t, err)
 	assert.False(t, result.IsError)
@@ -461,7 +518,7 @@ func TestTaskTransitionHandler_ForcePlannerFinishedKeepsReadyCompatibility(t *te
 	project := "test-project"
 	require.NoError(t, store.Create(project, taskstore.TaskEntry{Filename: "my-plan", Status: taskstore.StatusPlanning, CreatedAt: time.Now()}))
 
-	handler := makeTaskTransitionHandler(routing.NewRegisterConfig(project, nil), store, nil)
+	handler := makeTaskTransitionHandler(routing.NewRegisterConfig(project, nil), store, nil, nil)
 	result, err := handler(context.Background(), mockReq(map[string]any{"filename": "my-plan", "event": "planner_finished", "force": true}))
 	require.NoError(t, err)
 	assert.False(t, result.IsError)

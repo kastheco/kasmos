@@ -420,7 +420,8 @@ func NewServeCmd() *cobra.Command {
 
 			taskAPI := taskstore.NewHandler(store)
 			auditAPI := auditlog.NewHandler(logger)
-			actionsAPI := taskactions.NewHandler(store, gw)
+			hooks := buildTaskTransitionHooks("", store)
+			actionsAPI := taskactions.NewHandler(store, gw, hooks)
 
 			// Build the live-preview handler.
 			//

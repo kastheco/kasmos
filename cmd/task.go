@@ -13,6 +13,7 @@ import (
 
 	"github.com/kastheco/kasmos/config"
 	"github.com/kastheco/kasmos/config/linearlink"
+	"github.com/kastheco/kasmos/config/linearreceipt"
 	"github.com/kastheco/kasmos/config/taskfsm"
 	"github.com/kastheco/kasmos/config/taskparser"
 	"github.com/kastheco/kasmos/config/taskstate"
@@ -172,7 +173,7 @@ func executeTaskSetStatus(project, planFile, status string, force bool, store ta
 }
 
 // executeTaskTransition applies a named FSM event to a plan and returns the new status.
-func executeTaskTransition(project, planFile, event string, store taskstore.Store) (string, error) {
+func executeTaskTransition(project, planFile, event string, store taskstore.Store, hooks ...*taskfsm.HookRegistry) (string, error) {
 	fsmEvent, ok := taskfsm.EventByName(event)
 	if !ok {
 		return "", fmt.Errorf("unknown event %q; valid events: %s", event, strings.Join(taskfsm.EventNames(), ", "))
@@ -182,9 +183,16 @@ func executeTaskTransition(project, planFile, event string, store taskstore.Stor
 		return "", err
 	}
 	planFile = resolveExistingTaskFilename(ps, planFile)
-	fsm := newFSMByProject(project, store)
+	var hookRegistry *taskfsm.HookRegistry
+	if len(hooks) > 0 {
+		hookRegistry = hooks[0]
+	}
+	fsm := newFSMByProjectWithHooks(project, store, hookRegistry)
 	if err := fsm.Transition(planFile, fsmEvent); err != nil {
 		return "", err
+	}
+	if hookRegistry != nil {
+		hookRegistry.Wait()
 	}
 	ps, err = loadTaskStateByProject(project, store)
 	if err != nil {
@@ -856,7 +864,8 @@ func NewTaskCmd() *cobra.Command {
 				return err
 			}
 			return withAuthoritativeStore(project, func(store taskstore.Store) error {
-				newStatus, err := executeTaskTransition(project, args[0], args[1], store)
+				hooks := buildTaskTransitionHooks(project, store)
+				newStatus, err := executeTaskTransition(project, args[0], args[1], store, hooks)
 				if err != nil {
 					return err
 				}
@@ -1308,6 +1317,10 @@ func loadTaskStateByProject(project string, store taskstore.Store) (*taskstate.T
 // newFSMByProject creates a TaskStateMachine backed by the authoritative store
 // for the given project when the caller does not provide one explicitly.
 func newFSMByProject(project string, store taskstore.Store) *taskfsm.TaskStateMachine {
+	return newFSMByProjectWithHooks(project, store, nil)
+}
+
+func newFSMByProjectWithHooks(project string, store taskstore.Store, hooks *taskfsm.HookRegistry) *taskfsm.TaskStateMachine {
 	if store == nil {
 		var err error
 		store, err = taskstore.OpenAuthoritativeStore(project)
@@ -1315,7 +1328,23 @@ func newFSMByProject(project string, store taskstore.Store) *taskfsm.TaskStateMa
 			panic("newFSMByProject: open authoritative task store: " + err.Error())
 		}
 	}
-	return taskfsm.New(store, project, "")
+	fsm := taskfsm.New(store, project, "")
+	if hooks != nil {
+		fsm.SetHooks(hooks)
+	}
+	return fsm
+}
+
+func buildTaskTransitionHooks(project string, store taskstore.Store) *taskfsm.HookRegistry {
+	result, err := config.LoadTOMLConfig()
+	if err != nil || result == nil || !result.LinearReceipts.Enabled {
+		return nil
+	}
+	client, err := linearreceipt.NewClientFromEnv()
+	if err != nil {
+		return nil
+	}
+	return linearreceipt.BuildRegistryWithReceipts(nil, result.LinearReceipts, store, client, nil, project)
 }
 
 // resolveRepoInfo resolves the main repository root and derives the project

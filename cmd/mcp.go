@@ -159,7 +159,7 @@ func newConfiguredMCPServerSingleRoot(mcpSrv *mcpserver.Server, sharedDB *sql.DB
 		func(_ context.Context) { indexer.Start(indexerCtx) },
 		indexer.PrimeFile,
 	)
-	tasktools.RegisterTools(mcpSrv.MCPServer(), fixedProject, dbProjects, mcpSrv.Store(), mcpSrv.Gateway())
+	tasktools.RegisterTools(mcpSrv.MCPServer(), fixedProject, dbProjects, mcpSrv.Store(), mcpSrv.Gateway(), buildTaskTransitionHooks(fixedProject, mcpSrv.Store()))
 	signaltools.RegisterTools(mcpSrv.MCPServer(), fixedProject, dbProjects, mcpSrv.Gateway())
 	instancetools.RegisterTools(
 		mcpSrv.MCPServer(),
@@ -257,7 +257,7 @@ func newConfiguredMCPServerMultiRoot(mcpSrv *mcpserver.Server, repoRoots []strin
 	gittools.RegisterTools(mcpSrv.MCPServer(), allowedDirs, runner)
 	docstools.RegisterTools(mcpSrv.MCPServer(), allowedDirs, docstools.RegisterOptions{Runner: runner})
 	symbols.RegisterToolMulti(mcpSrv.MCPServer(), validator, routes, nil, nil, symbolStore, ctagsAvailable)
-	tasktools.RegisterTools(mcpSrv.MCPServer(), "", projects, mcpSrv.Store(), mcpSrv.Gateway())
+	tasktools.RegisterTools(mcpSrv.MCPServer(), "", projects, mcpSrv.Store(), mcpSrv.Gateway(), buildTaskTransitionHooks("", mcpSrv.Store()))
 	signaltools.RegisterTools(mcpSrv.MCPServer(), "", projects, mcpSrv.Gateway())
 	instancetools.RegisterTools(
 		mcpSrv.MCPServer(),

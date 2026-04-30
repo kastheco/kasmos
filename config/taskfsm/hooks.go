@@ -3,6 +3,7 @@ package taskfsm
 import (
 	"context"
 	"log/slog"
+	"sync"
 	"time"
 )
 
@@ -35,6 +36,7 @@ type hookEntry struct {
 // at startup before transitions begin; no mutex is required.
 type HookRegistry struct {
 	entries []hookEntry
+	wg      sync.WaitGroup
 }
 
 // NewHookRegistry returns an empty HookRegistry.
@@ -76,7 +78,9 @@ func (r *HookRegistry) FireAll(ev TransitionEvent) {
 			continue
 		}
 		e := entry // capture for goroutine
+		r.wg.Add(1)
 		go func() {
+			defer r.wg.Done()
 			ctx, cancel := context.WithTimeout(context.Background(), hookTimeout)
 			defer cancel()
 			if err := e.runner.Run(ctx, ev); err != nil {
@@ -84,4 +88,14 @@ func (r *HookRegistry) FireAll(ev TransitionEvent) {
 			}
 		}()
 	}
+}
+
+// Wait blocks until all hook goroutines currently registered with the registry
+// have completed. It is intended for short-lived CLI processes that need to
+// wait for asynchronous hooks before exiting.
+func (r *HookRegistry) Wait() {
+	if r == nil {
+		return
+	}
+	r.wg.Wait()
 }

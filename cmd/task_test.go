@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"net/http/httptest"
 	"os"
@@ -10,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kastheco/kasmos/config/taskfsm"
 	"github.com/kastheco/kasmos/config/taskstate"
 	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/kastheco/kasmos/daemon/api"
@@ -233,6 +235,34 @@ func TestPlanTransition(t *testing.T) {
 	// Invalid transition (plan is now in "planning" state)
 	_, err = executeTaskTransition(project, "test-plan", "review_approved", store)
 	assert.Error(t, err)
+}
+
+func TestPlanTransition_WaitsForHooks(t *testing.T) {
+	store, _, project := setupTestPlanState(t)
+	done := make(chan struct{})
+	hooks := taskfsm.NewHookRegistry()
+	hooks.Add(waitingTaskHook{done: done}, nil)
+
+	newStatus, err := executeTaskTransition(project, "test-plan", "plan_start", store, hooks)
+	require.NoError(t, err)
+	assert.Equal(t, "planning", newStatus)
+
+	select {
+	case <-done:
+	default:
+		t.Fatal("executeTaskTransition returned before hook completion")
+	}
+}
+
+type waitingTaskHook struct {
+	done chan struct{}
+}
+
+func (h waitingTaskHook) Name() string { return "waiting-task-hook" }
+func (h waitingTaskHook) Run(_ context.Context, _ taskfsm.TransitionEvent) error {
+	time.Sleep(25 * time.Millisecond)
+	close(h.done)
+	return nil
 }
 
 func TestPlanTransition_PlannerFinishedPreservesReadyCompatibility(t *testing.T) {

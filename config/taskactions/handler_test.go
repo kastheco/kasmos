@@ -2,17 +2,22 @@ package taskactions_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/kastheco/kasmos/config/linearreceipt"
 	"github.com/kastheco/kasmos/config/taskactions"
+	"github.com/kastheco/kasmos/config/taskfsm"
 	"github.com/kastheco/kasmos/config/taskstore"
+	"github.com/kastheco/kasmos/internal/linear"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -797,9 +802,71 @@ func TestTransition_EmitFailure_Returns500_StatusAdvanced(t *testing.T) {
 	assert.Equal(t, taskstore.StatusReady, updated.Status, "task status should have advanced despite emit failure")
 }
 
+func TestTransition_WithLinearReceipts_PostsOneComment(t *testing.T) {
+	store := taskstore.NewTestSQLiteStore(t)
+	gw, err := taskstore.NewSQLiteSignalGateway(":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { gw.Close() })
+
+	client := &mockReceiptClient{}
+	hooks := taskfsm.NewHookRegistry()
+	hooks = linearreceipt.BuildRegistryWithReceipts(hooks, linearreceipt.Config{
+		Enabled: true,
+		Events:  map[taskfsm.Event]bool{taskfsm.PlanStart: true},
+	}, store, client, nil, "proj")
+	srv := httptest.NewServer(taskactions.NewHandler(store, gw, hooks))
+	t.Cleanup(srv.Close)
+
+	require.NoError(t, store.Create("proj", taskstore.TaskEntry{
+		Filename:         "linked-task",
+		Status:           taskstore.StatusReady,
+		LinearIssueID:    "issue-1",
+		LinearIdentifier: "KAS-1",
+		CreatedAt:        time.Now().UTC(),
+	}))
+
+	resp := doJSON(t, srv, http.MethodPost,
+		"/v1/projects/proj/tasks/linked-task/transition",
+		map[string]string{"event": "plan_start"})
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	resp.Body.Close()
+	hooks.Wait()
+
+	require.Equal(t, 1, client.createCount())
+	assert.Equal(t, "issue-1", client.firstIssueID())
+}
+
 // failingGateway wraps a real SignalGateway but always returns an error from Create.
 type failingGateway struct {
 	real taskstore.SignalGateway
+}
+
+type mockReceiptClient struct {
+	mu       sync.Mutex
+	issueIDs []string
+}
+
+func (m *mockReceiptClient) CreateComment(_ context.Context, issueID, body string) (*linear.Comment, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.issueIDs = append(m.issueIDs, issueID)
+	return &linear.Comment{ID: "comment-1", URL: "https://linear.app/comment/comment-1", Body: body}, nil
+}
+
+func (m *mockReceiptClient) UpdateIssue(_ context.Context, issueID string, in linear.UpdateIssueInput) (*linear.Issue, error) {
+	return &linear.Issue{ID: issueID}, nil
+}
+
+func (m *mockReceiptClient) createCount() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return len(m.issueIDs)
+}
+
+func (m *mockReceiptClient) firstIssueID() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.issueIDs[0]
 }
 
 func (f *failingGateway) Create(_ string, _ taskstore.SignalEntry) error {

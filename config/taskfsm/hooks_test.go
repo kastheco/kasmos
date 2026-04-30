@@ -41,6 +41,17 @@ func (f *failingHook) Run(_ context.Context, _ TransitionEvent) error {
 	return fmt.Errorf("intentional failure")
 }
 
+type delayedHook struct {
+	done chan struct{}
+}
+
+func (d *delayedHook) Name() string { return "delayed" }
+func (d *delayedHook) Run(_ context.Context, _ TransitionEvent) error {
+	time.Sleep(50 * time.Millisecond)
+	close(d.done)
+	return nil
+}
+
 func newTestFSMWithStore(t *testing.T) (*TaskStateMachine, taskstore.Store, string) {
 	t.Helper()
 	store := taskstore.NewTestSQLiteStore(t)
@@ -116,4 +127,21 @@ func TestHookRegistry_ErrorDoesNotBlock(t *testing.T) {
 	}, 2*time.Second, 10*time.Millisecond)
 
 	assert.Len(t, rec.Events(), 1, "recording hook should receive event despite failing hook")
+}
+
+func TestHookRegistry_WaitBlocksUntilHooksComplete(t *testing.T) {
+	fsm, _, _ := newTestFSMWithStore(t)
+	done := make(chan struct{})
+	registry := NewHookRegistry()
+	registry.Add(&delayedHook{done: done}, nil)
+	fsm.SetHooks(registry)
+
+	require.NoError(t, fsm.Transition("test", PlanStart))
+	registry.Wait()
+
+	select {
+	case <-done:
+	default:
+		t.Fatal("Wait returned before delayed hook completed")
+	}
 }
