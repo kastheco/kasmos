@@ -233,6 +233,11 @@ func TestServer_FindLinkedTask(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
 	resp.Body.Close()
+
+	resp, err = http.Get(srv.URL + "/v1/projects/kasmos/tasks/_/linear-link/lookup?status=ready")
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
+	resp.Body.Close()
 }
 
 func TestHTTPStore_SetLinearLinkIfNoActiveDuplicate(t *testing.T) {

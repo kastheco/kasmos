@@ -600,6 +600,10 @@ func TestLinearLink_FindLinkedTask(t *testing.T) {
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, taskstore.ErrNotFound))
 
+	_, err = store.FindLinkedTask("proj", "", taskstore.StatusReady)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, taskstore.ErrNotFound))
+
 	filename, err = store.FindLinkedTask("other", "issue-123", taskstore.StatusReady)
 	require.NoError(t, err)
 	assert.Equal(t, "active", filename)

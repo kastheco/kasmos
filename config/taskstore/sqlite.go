@@ -880,6 +880,9 @@ type linkedTaskQuerier interface {
 }
 
 func findLinkedTaskQuery(qr linkedTaskQuerier, project, issueID, excludeFilename string, statuses ...Status) (string, error) {
+	if strings.TrimSpace(issueID) == "" {
+		return "", sql.ErrNoRows
+	}
 	args := []any{project, issueID}
 	excludeClause := ""
 	if excludeFilename != "" {
