@@ -129,6 +129,20 @@ func TestList_LinearColumn_Visible_WhenAnyLink(t *testing.T) {
 	assert.NotContains(t, output, "(none)")
 }
 
+func TestList_LinearColumn_UsesIssueIDFallback(t *testing.T) {
+	store, _, project := setupTestPlanState(t)
+	require.NoError(t, store.SetLinearLink(project, "implementing-plan", taskstore.LinearLink{
+		LinearIssueID: "issue-123",
+	}))
+
+	output := executeTaskList(project, "", store)
+
+	lines := strings.Split(strings.TrimSuffix(output, "\n"), "\n")
+	require.Len(t, lines, 2)
+	assert.Equal(t, strings.TrimRight(fmt.Sprintf("%-14s %-50s %-40s %s", "implementing", "implementing-plan", "plan/implementing-plan", "issue-123"), " "), lines[0])
+	assert.Equal(t, strings.TrimRight(fmt.Sprintf("%-14s %-50s %-40s %s", "ready", "test-plan", "plan/test-plan", ""), " "), lines[1])
+}
+
 func TestList_StatusFilter_PreservesLinearColumn(t *testing.T) {
 	store, _, project := setupTestPlanState(t)
 	require.NoError(t, store.SetLinearLink(project, "cancelled-plan", taskstore.LinearLink{

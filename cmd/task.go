@@ -99,16 +99,23 @@ func filteredTaskList(entries []taskstate.TaskInfo, statusFilter string) []tasks
 
 func taskListIncludesLinear(entries []taskstate.TaskInfo) bool {
 	for _, info := range entries {
-		if info.LinearIdentifier != "" {
+		if taskListLinearDisplayID(info) != "" {
 			return true
 		}
 	}
 	return false
 }
 
+func taskListLinearDisplayID(info taskstate.TaskInfo) string {
+	if info.LinearIdentifier != "" {
+		return info.LinearIdentifier
+	}
+	return info.LinearIssueID
+}
+
 func formatTaskListRow(info taskstate.TaskInfo, includeLinear bool) string {
 	if includeLinear {
-		line := fmt.Sprintf("%-14s %-50s %-40s %s", info.Status, info.Filename, info.Branch, info.LinearIdentifier)
+		line := fmt.Sprintf("%-14s %-50s %-40s %s", info.Status, info.Filename, info.Branch, taskListLinearDisplayID(info))
 		return strings.TrimRight(line, " ")
 	}
 	line := fmt.Sprintf("%-14s %-50s %s", info.Status, info.Filename, info.Branch)

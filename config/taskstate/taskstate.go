@@ -213,6 +213,7 @@ type TaskInfo struct {
 	Topic            string
 	CreatedAt        time.Time
 	DoneAt           time.Time
+	LinearIssueID    string
 	LinearIdentifier string
 }
 
@@ -488,6 +489,7 @@ func (ps *TaskState) List() []TaskInfo {
 			Branch:           entry.Branch,
 			Topic:            entry.Topic,
 			CreatedAt:        entry.CreatedAt,
+			LinearIssueID:    entry.LinearIssueID,
 			LinearIdentifier: entry.LinearIdentifier,
 		})
 	}
