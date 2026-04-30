@@ -978,6 +978,29 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case previewTickMsg:
 		// If previewTerminal is active, render from it (zero-latency VT emulator).
 		if m.previewTerminal != nil && !m.tabbedWindow.IsDocumentMode() {
+			selected := m.nav.GetSelectedInstance()
+			staleTerminal := false
+			if m.previewTerminalInstance != "" {
+				staleTerminal = selected == nil ||
+					m.previewTerminalInstance != previewIdentityKey(selected) ||
+					!selected.Started() ||
+					selected.Status == session.Paused ||
+					selected.Status == session.Loading ||
+					selected.Exited ||
+					session.NormalizeExecutionMode(selected.ExecutionMode) != session.ExecutionModeTmux ||
+					!selected.TmuxAlive()
+			}
+			if staleTerminal {
+				oldTerm := m.previewTerminal
+				m.previewTerminal = nil
+				m.previewTerminalInstance = ""
+				m.previewClipboardPending = false
+				m.previewClipboardTarget = 0
+				if err := m.tabbedWindow.UpdatePreview(selected); err != nil {
+					log.ErrorLog.Printf("preview update error: %v", err)
+				}
+				return m, tea.Batch(asyncClosePreviewTerminal(oldTerm), nextPreviewTickCmd(nil))
+			}
 			if content, changed := m.previewTerminal.Render(); changed {
 				m.tabbedWindow.SetPreviewContent(content)
 			}

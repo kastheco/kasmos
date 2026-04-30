@@ -3347,6 +3347,42 @@ func TestMetadataTick_SDKInstanceIgnoresTmuxDeathDetection(t *testing.T) {
 	assert.Contains(t, updated.tabbedWindow.String(), "cached sdk preview")
 }
 
+func TestPreviewTick_DetachesStoppedTmuxTerminalAndShowsCachedPreview(t *testing.T) {
+	t.Parallel()
+	h := newTestHome()
+	h.tabbedWindow.SetSize(80, 20)
+
+	inst := &session.Instance{
+		Title:            "tmux-codex",
+		Path:             t.TempDir(),
+		Program:          "codex",
+		Status:           session.Ready,
+		ExecutionMode:    session.ExecutionModeTmux,
+		CachedContent:    "cached tmux codex output",
+		CachedContentSet: true,
+	}
+	inst.MarkStartedDeadForTest()
+	_ = h.nav.AddInstance(inst)
+	require.True(t, h.nav.SelectInstance(inst))
+
+	term := session.NewDummyTerminal()
+	t.Cleanup(term.Close)
+	h.previewRequested = true
+	h.previewTerminal = term
+	h.previewTerminalInstance = inst.IdentityKey()
+	h.tabbedWindow.SetPreviewContent("stale live terminal")
+
+	model, cmd := h.Update(previewTickMsg{})
+	updated := model.(*home)
+
+	require.NotNil(t, cmd, "stale terminal close should be returned as an async command")
+	require.Nil(t, updated.previewTerminal, "stopped tmux selection must detach the stale embedded terminal")
+	require.Empty(t, updated.previewTerminalInstance)
+	rendered := updated.tabbedWindow.String()
+	assert.Contains(t, rendered, "cached tmux codex output")
+	assert.NotContains(t, rendered, "stale live terminal")
+}
+
 func TestShouldCreatePROnApproval(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
