@@ -424,6 +424,9 @@ func (f *failingSubtaskStore) SetClickUpTaskID(project, filename, taskID string)
 func (f *failingSubtaskStore) SetLinearLink(project, filename string, link taskstore.LinearLink) error {
 	return f.inner.SetLinearLink(project, filename, link)
 }
+func (f *failingSubtaskStore) SetLinearLinkIfNoActiveDuplicate(project, filename string, link taskstore.LinearLink, statuses ...taskstore.Status) (string, error) {
+	return f.inner.SetLinearLinkIfNoActiveDuplicate(project, filename, link, statuses...)
+}
 func (f *failingSubtaskStore) ClearLinearLink(project, filename string) error {
 	return f.inner.ClearLinearLink(project, filename)
 }

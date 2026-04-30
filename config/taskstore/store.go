@@ -187,6 +187,7 @@ type Store interface {
 
 	// Linear integration
 	SetLinearLink(project, filename string, link LinearLink) error
+	SetLinearLinkIfNoActiveDuplicate(project, filename string, link LinearLink, statuses ...Status) (string, error)
 	ClearLinearLink(project, filename string) error
 	FindLinkedTask(project, issueID string, statuses ...Status) (string, error)
 

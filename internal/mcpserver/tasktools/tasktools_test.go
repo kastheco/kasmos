@@ -142,6 +142,7 @@ func newTaskToolLinearStore(t *testing.T, project string) taskstore.Store {
 	require.NoError(t, store.Create(project, taskstore.TaskEntry{
 		Filename:  "plan",
 		Status:    taskstore.StatusPlanning,
+		Branch:    "plan-branch",
 		CreatedAt: time.Now(),
 	}))
 	return store
@@ -768,6 +769,29 @@ func TestTaskLinkLinear_ForceReplaces(t *testing.T) {
 	assert.Equal(t, "issue-123", entry.LinearIssueID)
 	require.Len(t, logger.events, 1)
 	assert.JSONEq(t, `{"previous_identifier":"KAS-1","new_identifier":"KAS-123","reason":"replacement"}`, logger.events[0].Detail)
+}
+
+func TestTaskLinkLinear_DefaultsCommentBody(t *testing.T) {
+	project := "test-project"
+	store := newTaskToolLinearStore(t, project)
+	fetcher := newTaskToolFakeIssueFetcher()
+	fetcher.comment = &linear.Comment{ID: "comment-1", URL: "https://linear.app/comment/1"}
+	logger := &taskToolRecordingLogger{}
+	withTaskLinearTestDeps(t, fetcher, logger)
+
+	handler := makeTaskLinkLinearHandler(routing.NewRegisterConfig(project, nil), store)
+	result, err := handler(context.Background(), mockReq(map[string]any{
+		"filename": "plan",
+		"issue":    "KAS-123",
+		"comment":  true,
+	}))
+	require.NoError(t, err)
+	assert.False(t, result.IsError)
+
+	payload := decodeTaskLinearResult(t, result)
+	assert.Equal(t, "https://linear.app/comment/1", payload.CommentURL)
+	assert.Equal(t, "issue-123", fetcher.commentIssueID)
+	assert.Equal(t, "kasmos task linked: plan @ plan-branch", fetcher.commentBody)
 }
 
 func TestTaskUnlinkLinear_Happy(t *testing.T) {

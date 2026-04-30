@@ -407,6 +407,34 @@ func NewHandler(store Store) http.Handler {
 		w.WriteHeader(http.StatusOK)
 	})
 
+	mux.HandleFunc("PUT /v1/projects/{project}/tasks/{filename}/linear-link/claim", func(w http.ResponseWriter, r *http.Request) {
+		project := r.PathValue("project")
+		filename := normalizeFilename(r.PathValue("filename"))
+		var req struct {
+			Link     LinearLink `json:"link"`
+			Statuses []Status   `json:"statuses,omitempty"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+			return
+		}
+		req.Link = normalizedLinearLink(req.Link)
+		conflict, err := store.SetLinearLinkIfNoActiveDuplicate(project, filename, req.Link, req.Statuses...)
+		if err != nil {
+			if isNotFound(err) {
+				writeError(w, http.StatusNotFound, "task not found: "+filename)
+				return
+			}
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		if conflict != "" {
+			writeJSON(w, http.StatusConflict, map[string]string{"conflict_filename": conflict})
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+
 	mux.HandleFunc("DELETE /v1/projects/{project}/tasks/{filename}/linear-link", func(w http.ResponseWriter, r *http.Request) {
 		project := r.PathValue("project")
 		filename := normalizeFilename(r.PathValue("filename"))

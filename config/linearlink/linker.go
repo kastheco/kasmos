@@ -121,23 +121,20 @@ func (l *Linker) Link(ctx context.Context, in LinkInput) (LinkResult, error) {
 	}
 	link := linkedIssue.ToTaskstore()
 
-	conflict, err := l.store.FindLinkedTask(
+	conflict, err := l.store.SetLinearLinkIfNoActiveDuplicate(
 		l.project,
-		link.LinearIssueID,
+		in.Filename,
+		link,
 		taskstore.StatusPlanning,
 		taskstore.StatusImplementing,
 		taskstore.StatusReviewing,
 		taskstore.StatusVerifying,
 	)
-	if err != nil && !errors.Is(err, taskstore.ErrNotFound) {
+	if err != nil {
 		return LinkResult{}, err
 	}
-	if err == nil && conflict != "" && conflict != in.Filename {
+	if conflict != "" {
 		return LinkResult{}, &DuplicateLinkError{Filename: conflict}
-	}
-
-	if err := l.store.SetLinearLink(l.project, in.Filename, link); err != nil {
-		return LinkResult{}, err
 	}
 
 	l.emit(auditlog.EventTaskLinearLinked, in.Filename, prev.LinearIdentifier, link.LinearIdentifier, in.Reason)
@@ -146,8 +143,12 @@ func (l *Linker) Link(ctx context.Context, in LinkInput) (LinkResult, error) {
 		Link:     link,
 		Replaced: prev.LinearIssueID != "",
 	}
-	if in.PostComment && in.CommentBody != "" {
-		comment, err := l.client.CreateComment(ctx, link.LinearIssueID, in.CommentBody)
+	if in.PostComment {
+		commentBody := in.CommentBody
+		if commentBody == "" {
+			commentBody = fmt.Sprintf("kasmos task linked: %s @ %s", in.Filename, entry.Branch)
+		}
+		comment, err := l.client.CreateComment(ctx, link.LinearIssueID, commentBody)
 		if err != nil {
 			result.CommentWarning = err.Error()
 		} else if comment != nil {

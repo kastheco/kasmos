@@ -1209,19 +1209,11 @@ Deprecated aliases: readiness-approved (→ verify-approved), readiness-changes 
 					project = linkLinearProject
 				}
 				filename := normalizeTaskFilename(args[0])
-				entry, err := store.Get(project, filename)
-				if err != nil {
-					return err
-				}
-				commentBody := linkLinearMessage
-				if commentBody == "" {
-					commentBody = fmt.Sprintf("kasmos task linked: %s @ %s", filename, entry.Branch)
-				}
 				result, err := executeTaskLinkLinear(cmd.Context(), project, linearlink.LinkInput{
 					Filename:    filename,
 					IssueArg:    args[1],
 					Reason:      linkLinearReason,
-					CommentBody: commentBody,
+					CommentBody: linkLinearMessage,
 					Force:       linkLinearForce,
 					PostComment: linkLinearComment,
 				}, store)

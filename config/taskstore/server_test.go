@@ -235,6 +235,29 @@ func TestServer_FindLinkedTask(t *testing.T) {
 	resp.Body.Close()
 }
 
+func TestHTTPStore_SetLinearLinkIfNoActiveDuplicate(t *testing.T) {
+	store := newTestStore(t)
+	srv := httptest.NewServer(taskstore.NewHandler(store))
+	defer srv.Close()
+	client := taskstore.NewHTTPStore(srv.URL, "kasmos")
+
+	require.NoError(t, store.Create("kasmos", taskstore.TaskEntry{Filename: "plan", Status: taskstore.StatusPlanning}))
+	require.NoError(t, store.Create("kasmos", taskstore.TaskEntry{Filename: "other", Status: taskstore.StatusReviewing}))
+
+	link := taskstore.LinearLink{LinearIssueID: "issue-123", LinearIdentifier: "KAS-123"}
+	conflict, err := client.SetLinearLinkIfNoActiveDuplicate("kasmos", "plan", link, taskstore.StatusPlanning, taskstore.StatusReviewing)
+	require.NoError(t, err)
+	assert.Empty(t, conflict)
+
+	conflict, err = client.SetLinearLinkIfNoActiveDuplicate("kasmos", "other", link, taskstore.StatusPlanning, taskstore.StatusReviewing)
+	require.NoError(t, err)
+	assert.Equal(t, "plan", conflict)
+
+	other, err := store.Get("kasmos", "other")
+	require.NoError(t, err)
+	assert.Empty(t, other.LinearIssueID)
+}
+
 func TestServer_ContentEndpoints(t *testing.T) {
 	store := newTestStore(t)
 	srv := httptest.NewServer(taskstore.NewHandler(store))

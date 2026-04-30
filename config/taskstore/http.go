@@ -687,6 +687,51 @@ func (s *HTTPStore) SetLinearLink(project, filename string, link LinearLink) err
 	return nil
 }
 
+// SetLinearLinkIfNoActiveDuplicate stores Linear issue coordinates unless the
+// server reports another active task with the same issue id.
+func (s *HTTPStore) SetLinearLinkIfNoActiveDuplicate(project, filename string, link LinearLink, statuses ...Status) (string, error) {
+	link = normalizedLinearLink(link)
+	body, err := json.Marshal(struct {
+		Link     LinearLink `json:"link"`
+		Statuses []Status   `json:"statuses,omitempty"`
+	}{
+		Link:     link,
+		Statuses: statuses,
+	})
+	if err != nil {
+		return "", fmt.Errorf("task store: marshal linear link: %w", err)
+	}
+	u := fmt.Sprintf("%s/linear-link/claim", s.taskItemURL(project, filename))
+	req, err := http.NewRequest(http.MethodPut, u, bytes.NewReader(body))
+	if err != nil {
+		return "", fmt.Errorf("task store: build request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := s.do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusConflict {
+		var payload struct {
+			ConflictFilename string `json:"conflict_filename"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+			return "", fmt.Errorf("task store: decode linear link conflict: %w", err)
+		}
+		return payload.ConflictFilename, nil
+	}
+	if resp.StatusCode == http.StatusNotFound {
+		return "", newNotFoundError("task store: plan not found: %s", filename)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return "", decodeError(resp)
+	}
+	return "", nil
+}
+
 // ClearLinearLink clears Linear issue coordinates for an existing task entry.
 func (s *HTTPStore) ClearLinearLink(project, filename string) error {
 	u := fmt.Sprintf("%s/linear-link", s.taskItemURL(project, filename))

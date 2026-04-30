@@ -771,6 +771,65 @@ func (s *SQLiteStore) SetLinearLink(project, filename string, link LinearLink) e
 	return nil
 }
 
+// SetLinearLinkIfNoActiveDuplicate stores Linear issue coordinates unless
+// another task in one of the supplied statuses already links the same issue.
+// The duplicate check and write run in a single transaction; the returned
+// string is the conflicting filename when the write is skipped.
+func (s *SQLiteStore) SetLinearLinkIfNoActiveDuplicate(project, filename string, link LinearLink, statuses ...Status) (string, error) {
+	link = normalizedLinearLink(link)
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return "", fmt.Errorf("begin set linear link transaction: %w", err)
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback()
+		}
+	}()
+
+	var existing string
+	if err := tx.QueryRow(`SELECT filename FROM tasks WHERE project = ? AND filename = ?`, project, filename).Scan(&existing); err != nil {
+		if err == sql.ErrNoRows {
+			return "", newNotFoundError("plan not found: %s/%s", project, filename)
+		}
+		return "", fmt.Errorf("check linear link target: %w", err)
+	}
+
+	if link.LinearIssueID != "" {
+		conflict, err := findLinkedTaskTx(tx, project, link.LinearIssueID, filename, statuses...)
+		if err != nil {
+			return "", err
+		}
+		if conflict != "" {
+			return conflict, nil
+		}
+	}
+
+	const q = `
+		UPDATE tasks
+		SET linear_issue_id = ?, linear_identifier = ?, linear_url = ?, linear_team_key = ?, linear_project_id = ?
+		WHERE project = ? AND filename = ?
+	`
+	result, err := tx.Exec(q, link.LinearIssueID, link.LinearIdentifier, link.LinearURL, link.LinearTeamKey, link.LinearProjectID, project, filename)
+	if err != nil {
+		return "", fmt.Errorf("set linear link: %w", err)
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return "", fmt.Errorf("set linear link rows affected: %w", err)
+	}
+	if n == 0 {
+		return "", newNotFoundError("plan not found: %s/%s", project, filename)
+	}
+	if err := tx.Commit(); err != nil {
+		return "", fmt.Errorf("commit set linear link: %w", err)
+	}
+	committed = true
+	return "", nil
+}
+
 // ClearLinearLink clears Linear issue coordinates for an existing task entry.
 // Returns an error if the task is not found.
 func (s *SQLiteStore) ClearLinearLink(project, filename string) error {
@@ -795,7 +854,38 @@ func (s *SQLiteStore) ClearLinearLink(project, filename string) error {
 
 // FindLinkedTask returns the filename linked to a Linear issue in a project.
 func (s *SQLiteStore) FindLinkedTask(project, issueID string, statuses ...Status) (string, error) {
+	filename, err := findLinkedTaskQuery(s.db, project, issueID, "", statuses...)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return "", newNotFoundError("linear link not found: %s/%s", project, issueID)
+		}
+		return "", fmt.Errorf("find linked task: %w", err)
+	}
+	return filename, nil
+}
+
+func findLinkedTaskTx(tx *sql.Tx, project, issueID, excludeFilename string, statuses ...Status) (string, error) {
+	filename, err := findLinkedTaskQuery(tx, project, issueID, excludeFilename, statuses...)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return "", nil
+		}
+		return "", fmt.Errorf("find linked task: %w", err)
+	}
+	return filename, nil
+}
+
+type linkedTaskQuerier interface {
+	QueryRow(query string, args ...any) *sql.Row
+}
+
+func findLinkedTaskQuery(qr linkedTaskQuerier, project, issueID, excludeFilename string, statuses ...Status) (string, error) {
 	args := []any{project, issueID}
+	excludeClause := ""
+	if excludeFilename != "" {
+		excludeClause = " AND filename <> ?"
+		args = append(args, excludeFilename)
+	}
 	statusClause := ""
 	if len(statuses) > 0 {
 		placeholders := make([]string, len(statuses))
@@ -808,16 +898,13 @@ func (s *SQLiteStore) FindLinkedTask(project, issueID string, statuses ...Status
 	q := fmt.Sprintf(`
 		SELECT filename
 		FROM tasks INDEXED BY idx_tasks_linear_issue_id
-		WHERE project = ? AND linear_issue_id = ?%s
+		WHERE project = ? AND linear_issue_id = ?%s%s
 		ORDER BY filename ASC
 		LIMIT 1
-	`, statusClause)
+	`, excludeClause, statusClause)
 	var filename string
-	if err := s.db.QueryRow(q, args...).Scan(&filename); err != nil {
-		if err == sql.ErrNoRows {
-			return "", newNotFoundError("linear link not found: %s/%s", project, issueID)
-		}
-		return "", fmt.Errorf("find linked task: %w", err)
+	if err := qr.QueryRow(q, args...).Scan(&filename); err != nil {
+		return "", err
 	}
 	return filename, nil
 }

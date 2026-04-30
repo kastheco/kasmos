@@ -190,6 +190,23 @@ func TestLinker_Link(t *testing.T) {
 				assert.Empty(t, result.CommentWarning)
 			},
 		},
+		{
+			name: "comment true without body posts default backlink",
+			setup: func(t *testing.T, store taskstore.Store, fetcher *fakeIssueFetcher) {
+				fetcher.comment = &linear.Comment{ID: "comment-1", URL: "https://linear.app/comment/1", Body: "linked"}
+			},
+			input: LinkInput{
+				Filename:    "plan",
+				IssueArg:    "KAS-123",
+				PostComment: true,
+			},
+			assertDone: func(t *testing.T, store taskstore.Store, fetcher *fakeIssueFetcher, logger *recordingLogger, result LinkResult) {
+				assert.Equal(t, "issue-123", fetcher.commentIssueID)
+				assert.Equal(t, "kasmos task linked: plan @ plan-branch", fetcher.commentBody)
+				assert.Equal(t, "https://linear.app/comment/1", result.CommentURL)
+				assert.Empty(t, result.CommentWarning)
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -280,6 +297,7 @@ func newStoreWithTask(t *testing.T) taskstore.Store {
 	require.NoError(t, store.Create(testProject, taskstore.TaskEntry{
 		Filename:  "plan",
 		Status:    taskstore.StatusPlanning,
+		Branch:    "plan-branch",
 		CreatedAt: time.Now(),
 	}))
 	return store
