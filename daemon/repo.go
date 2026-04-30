@@ -10,10 +10,13 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/kastheco/kasmos/config"
 	"github.com/kastheco/kasmos/config/auditlog"
+	"github.com/kastheco/kasmos/config/linearlink"
 	"github.com/kastheco/kasmos/config/linearreceipt"
+	"github.com/kastheco/kasmos/config/lineartrigger"
 	"github.com/kastheco/kasmos/config/taskfsm"
 	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/kastheco/kasmos/internal/linear"
@@ -43,6 +46,10 @@ type RepoEntry struct {
 	Hooks *taskfsm.HookRegistry
 	// LinearReceiptHook posts non-FSM Linear receipts such as pull request creation.
 	LinearReceiptHook *linearreceipt.Hook
+	// LinearTriggerPoller polls guarded Linear trigger labels and slash commands.
+	LinearTriggerPoller *lineartrigger.Poller
+	// LinearTriggerConfig is the resolved per-repo trigger config.
+	LinearTriggerConfig lineartrigger.Config
 	// ReadinessSelfFixMaxLines is the effective per-repo self-fix line ceiling.
 	ReadinessSelfFixMaxLines int
 	// ReadinessMaxVerifyCycles is the effective per-repo verify-round cap.
@@ -230,6 +237,7 @@ func (m *RepoManager) Add(path string) error {
 		}
 		hooks.Add(linearReceiptHook, eventsFromConfig(linearReceiptConfig))
 	}
+	linearTriggerPoller, linearTriggerConfig := m.loadLinearTriggerPoller(path, project, m.globalStore, m.globalGateway)
 
 	// Load per-repo TOML overrides once and derive effective config values.
 	autoAdvance, autoReadinessReview, selfFixMaxLines, maxVerifyCycles, plannerProfiles, plannerDraftMode, sdkCfg, resourceControls, err := m.resolveRepoConfig(path)
@@ -264,6 +272,8 @@ func (m *RepoManager) Add(path string) error {
 		Processor:                proc,
 		Hooks:                    hooks,
 		LinearReceiptHook:        linearReceiptHook,
+		LinearTriggerPoller:      linearTriggerPoller,
+		LinearTriggerConfig:      linearTriggerConfig,
 		ReadinessSelfFixMaxLines: selfFixMaxLines,
 		ReadinessMaxVerifyCycles: maxVerifyCycles,
 		PlannerProfiles:          plannerProfiles,
@@ -301,6 +311,56 @@ func (m *RepoManager) loadLinearReceiptHook(path, project string) (*linearreceip
 		}
 	}
 	return linearreceipt.NewHook(result.LinearReceipts, m.globalStore, client, auditLogger, project), result.LinearReceipts
+}
+
+func (m *RepoManager) loadLinearTriggerPoller(path, project string, store taskstore.Store, gateway taskstore.SignalGateway) (*lineartrigger.Poller, lineartrigger.Config) {
+	projTomlPath := filepath.Join(path, ".kasmos", config.TOMLConfigFileName)
+	if _, err := os.Stat(projTomlPath); err != nil {
+		return nil, lineartrigger.Config{}
+	}
+	result, err := config.LoadTOMLConfigFrom(projTomlPath)
+	if err != nil {
+		slog.Warn("daemon: failed to load linear trigger config for repo", "repo", path, "err", err)
+		return nil, lineartrigger.Config{}
+	}
+	if result == nil || !result.LinearTriggers.Enabled {
+		return nil, lineartrigger.Config{}
+	}
+
+	cfg, err := linear.ConfigFromEnv()
+	if err != nil {
+		if !errors.Is(err, linear.ErrNotConfigured) {
+			slog.Warn("daemon: failed to create linear trigger client for repo", "repo", path, "err", err)
+		}
+		return nil, result.LinearTriggers
+	}
+	client := linear.NewClientFromConfig(cfg)
+
+	var auditLogger auditlog.Logger
+	if m.globalDB != nil {
+		if l, err := auditlog.NewSQLiteLoggerFromDB(m.globalDB); err == nil {
+			auditLogger = l
+		}
+	}
+
+	linker := linearlink.New(store, client, auditLogger, project)
+	router := lineartrigger.NewRouter(result.LinearTriggers)
+	auth := lineartrigger.NewAuthoriser(result.LinearTriggers)
+	validator := lineartrigger.NewValidator(result.LinearTriggers, store, project)
+	service := lineartrigger.NewService(project, result.LinearTriggers, store, router, auth, validator)
+	deps := lineartrigger.PollerDeps{
+		Project: project,
+		Config:  result.LinearTriggers,
+		Store:   store,
+		Linker:  linker,
+		Linear:  client,
+		Gateway: gateway,
+		Audit:   auditLogger,
+		Service: service,
+		Now:     time.Now,
+		Logger:  slog.Default().With("monitor", "linear_trigger", "project", project),
+	}
+	return lineartrigger.NewPoller(deps), result.LinearTriggers
 }
 
 func eventsFromConfig(cfg linearreceipt.Config) []taskfsm.Event {

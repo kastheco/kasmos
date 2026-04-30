@@ -19,6 +19,7 @@ func TestDefaultDaemonConfig_PRMonitor(t *testing.T) {
 	assert.True(t, cfg.AutoReviewFix, "review-fix loop should be enabled by default")
 	assert.Equal(t, 60*time.Second, cfg.PRMonitor.PollInterval, "default PollInterval should be 60s")
 	assert.Equal(t, []string{"eyes"}, cfg.PRMonitor.Reactions, "default Reactions should be [eyes]")
+	assert.Equal(t, 60*time.Second, cfg.LinearTriggerMonitor.PollInterval)
 }
 
 func TestLoadDaemonConfig_MissingFile(t *testing.T) {
@@ -33,6 +34,7 @@ func TestLoadDaemonConfig_MissingFile(t *testing.T) {
 	assert.True(t, cfg.AutoReviewFix)
 	assert.Equal(t, 60*time.Second, cfg.PRMonitor.PollInterval)
 	assert.Equal(t, []string{"eyes"}, cfg.PRMonitor.Reactions)
+	assert.Equal(t, 60*time.Second, cfg.LinearTriggerMonitor.PollInterval)
 }
 
 func TestLoadDaemonConfig_PRMonitorSection(t *testing.T) {
@@ -47,6 +49,26 @@ reactions = ["eyes", "+1"]
 	assert.True(t, cfg.PRMonitor.Enabled)
 	assert.Equal(t, 120*time.Second, cfg.PRMonitor.PollInterval)
 	assert.Equal(t, []string{"eyes", "+1"}, cfg.PRMonitor.Reactions)
+}
+
+func TestLoadDaemonConfig_LinearTriggerMonitorSection(t *testing.T) {
+	toml := `
+	[linear_trigger_monitor]
+	poll_interval_sec = 45
+	`
+	cfg := loadFromString(t, toml)
+
+	assert.Equal(t, 45*time.Second, cfg.LinearTriggerMonitor.PollInterval)
+}
+
+func TestLoadDaemonConfig_LinearTriggerMonitorZeroInterval(t *testing.T) {
+	toml := `
+	[linear_trigger_monitor]
+	poll_interval_sec = 0
+	`
+	cfg := loadFromString(t, toml)
+
+	assert.Equal(t, 60*time.Second, cfg.LinearTriggerMonitor.PollInterval)
 }
 
 func TestLoadDaemonConfig_PRMonitorZeroInterval(t *testing.T) {
