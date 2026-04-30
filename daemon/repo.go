@@ -12,6 +12,7 @@ import (
 	"sync"
 
 	"github.com/kastheco/kasmos/config"
+	"github.com/kastheco/kasmos/config/auditlog"
 	"github.com/kastheco/kasmos/config/linearreceipt"
 	"github.com/kastheco/kasmos/config/taskfsm"
 	"github.com/kastheco/kasmos/config/taskstore"
@@ -293,7 +294,13 @@ func (m *RepoManager) loadLinearReceiptHook(path, project string) (*linearreceip
 		slog.Warn("daemon: failed to create linear receipt client for repo, receipts disabled", "repo", path, "error", err)
 		return nil, result.LinearReceipts
 	}
-	return linearreceipt.NewHook(result.LinearReceipts, m.globalStore, client, nil, project), result.LinearReceipts
+	var auditLogger auditlog.Logger
+	if m.globalDB != nil {
+		if l, err := auditlog.NewSQLiteLoggerFromDB(m.globalDB); err == nil {
+			auditLogger = l
+		}
+	}
+	return linearreceipt.NewHook(result.LinearReceipts, m.globalStore, client, auditLogger, project), result.LinearReceipts
 }
 
 func eventsFromConfig(cfg linearreceipt.Config) []taskfsm.Event {
