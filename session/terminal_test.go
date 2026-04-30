@@ -20,7 +20,13 @@ func TestEmbeddedTerminal_CapturesOsc52ClipboardReadRequests(t *testing.T) {
 	require.Equal(t, byte(ansi.PrimaryClipboard), selection)
 }
 
-func TestEmbeddedTerminal_IgnoresInitialBlankRender(t *testing.T) {
+func TestEmbeddedTerminal_PropagatesInitialBlankRender(t *testing.T) {
+	// Even the very first render after attach must reach the cache. On
+	// re-attach to an idle tmux session, the emulator may receive only
+	// non-printable control bytes (the agent already cleared the screen
+	// and is sitting at a prompt). Suppressing this frame leaves the cache
+	// empty and the preview goes stuck-blank until the user forces a
+	// repaint via resize.
 	term := NewDummyTerminal()
 	defer term.Close()
 	term.Resize(80, 24)
@@ -31,16 +37,15 @@ func TestEmbeddedTerminal_IgnoresInitialBlankRender(t *testing.T) {
 	term.dataReady <- struct{}{}
 	term.WaitForRender(20 * time.Millisecond)
 
-	content, changed := term.Render()
-	require.False(t, changed)
-	require.Empty(t, content)
+	_, changed := term.Render()
+	require.True(t, changed, "blank initial render must reach the cache so re-attach to idle agents shows current state")
 
 	_, err = term.emu.Write([]byte("agent output"))
 	require.NoError(t, err)
 	term.dataReady <- struct{}{}
 	term.WaitForRender(20 * time.Millisecond)
 
-	content, changed = term.Render()
+	content, changed := term.Render()
 	require.True(t, changed)
 	require.Contains(t, content, "agent output")
 }

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"os"
 	"os/exec"
-	"strings"
 	"sync"
 	"time"
 
@@ -47,10 +46,9 @@ type EmbeddedTerminal struct {
 	// Render cache — written by renderLoop, read by Render().
 	// cacheMu is only held for the time it takes to swap a string and
 	// flip a bool, so it never blocks the Bubble Tea event loop.
-	cacheMu           sync.Mutex
-	cached            string
-	hasNew            bool
-	hasRenderedOutput bool
+	cacheMu sync.Mutex
+	cached  string
+	hasNew  bool
 
 	clipboardRequests chan byte
 }
@@ -192,24 +190,18 @@ func (t *EmbeddedTerminal) renderLoop() {
 		// May briefly block while readLoop holds the emulator write lock.
 		// That's fine — it doesn't block the Bubble Tea event loop.
 		content := t.emu.Render()
-		hasPrintable := strings.TrimSpace(ansi.Strip(content)) != ""
-		// Only suppress *initial* blank frames (e.g. while tmux attach is
-		// warming up). Once the agent has emitted any printable output, an
-		// idle screen (cleared / sitting at a prompt) is real state and must
-		// flow through to the cache — otherwise the preview goes stale and
-		// the staleness detector tears the live terminal down.
-		if !t.hasRenderedOutput && !hasPrintable {
-			lastRender = content
-			continue
-		}
+		// Always propagate the emulator state to the cache. Earlier we tried
+		// to suppress "blank" frames during tmux attach warmup, but that
+		// filter also dropped legitimate idle states (cleared screen, agent
+		// at a prompt). On re-attach to an idle agent, no printable bytes
+		// arrive, so the cache stayed empty until a forced repaint (resize).
+		// The brief sub-50ms blank flash on first attach is acceptable;
+		// stuck-blank previews on re-attach are not.
 
 		if content != lastRender {
 			t.cacheMu.Lock()
 			t.cached = content
 			t.hasNew = true
-			if hasPrintable {
-				t.hasRenderedOutput = true
-			}
 			t.cacheMu.Unlock()
 			lastRender = content
 
