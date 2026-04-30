@@ -62,11 +62,14 @@ assertEqual(deslugify(undefined), "", "deslugify undefined");
     want: "active" | "retired" | "idle";
   }> = [
     { name: "running implementing", inst: base, taskStatus: "implementing", want: "active" },
-    { name: "done task", inst: base, taskStatus: "done", want: "retired" },
-    { name: "cancelled task", inst: base, taskStatus: "cancelled", want: "retired" },
+    { name: "running done task", inst: base, taskStatus: "done", want: "active" },
+    { name: "ready done task", inst: { ...base, status: "ready" }, taskStatus: "done", want: "active" },
+    { name: "running cancelled task", inst: base, taskStatus: "cancelled", want: "active" },
     { name: "paused ready", inst: { ...base, status: "paused" }, taskStatus: "ready", want: "idle" },
+    { name: "paused done task", inst: { ...base, status: "paused" }, taskStatus: "done", want: "idle" },
     { name: "paused reviewing", inst: { ...base, status: "paused" }, taskStatus: "reviewing", want: "active" },
     { name: "exited instance", inst: { ...base, status: "exited" as InstanceEntry["status"] }, taskStatus: "implementing", want: "retired" },
+    { name: "exited done task", inst: { ...base, status: "exited" as InstanceEntry["status"] }, taskStatus: "done", want: "retired" },
   ];
   for (const tc of cases) {
     assertEqual(deriveAgentPresentation(tc.inst, tc.taskStatus), tc.want, tc.name);

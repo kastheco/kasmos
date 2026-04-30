@@ -167,7 +167,7 @@ export function deriveAgentPresentation(
   inst: InstanceEntry,
   taskStatus?: Status,
 ): "active" | "retired" | "idle" {
-  if ((inst.status as string) === "exited" || taskStatus === "done" || taskStatus === "cancelled") {
+  if ((inst.status as string) === "exited") {
     return "retired";
   }
   if (inst.status === "paused" && taskStatus !== "reviewing" && taskStatus !== "implementing" && taskStatus !== "verifying") {
