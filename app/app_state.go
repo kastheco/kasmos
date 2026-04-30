@@ -200,13 +200,16 @@ type instancePresentation int
 
 const (
 	presentationActive  instancePresentation = iota // running, loading, ready, blocked
-	presentationRetired                             // task Done or Cancelled, or instance Exited
+	presentationRetired                             // inactive finished/cancelled task row, or instance Exited
 	presentationIdle                                // paused with nothing pending
 )
 
 func deriveInstancePresentation(inst *session.Instance, entry taskstore.TaskEntry, hasEntry bool) instancePresentation {
 	if inst != nil && inst.Exited {
 		return presentationRetired
+	}
+	if inst != nil && inst.Started() && inst.Status != session.Paused && !inst.ImplementationComplete {
+		return presentationActive
 	}
 	if hasEntry {
 		switch entry.Status {

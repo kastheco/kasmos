@@ -262,14 +262,14 @@ func (n *NavigationPanel) SetItems(_ []string, _ map[string]int, _ int, _ map[st
 // ---------- dead/history partitioning ----------
 
 // splitDeadFromHistory partitions a finished plan list into three buckets:
-//   - promoted (added to n.plans): plan has at least one running/loading instance
-//   - dead:     plan has only non-running instances, or was manually inspected
+//   - promoted (added to n.plans): plan has at least one live active instance
+//   - dead:     plan has only inactive instances, or was manually inspected
 //   - history:  plan has no instances at all
 //
 // Previously promoted plans are removed from n.plans before re-partitioning.
 func (n *NavigationPanel) splitDeadFromHistory(finished []PlanDisplay) {
 	// Build per-plan instance info from current instance list.
-	type info struct{ hasAny, hasRunning bool }
+	type info struct{ hasAny, hasActive bool }
 	byPlan := make(map[string]info, len(n.instances))
 	for _, inst := range n.instances {
 		if inst.TaskFile == "" {
@@ -277,8 +277,8 @@ func (n *NavigationPanel) splitDeadFromHistory(finished []PlanDisplay) {
 		}
 		entry := byPlan[inst.TaskFile]
 		entry.hasAny = true
-		if inst.Status == session.Running || inst.Status == session.Loading {
-			entry.hasRunning = true
+		if navInstanceActive(inst) {
+			entry.hasActive = true
 		}
 		byPlan[inst.TaskFile] = entry
 	}
@@ -315,15 +315,15 @@ func (n *NavigationPanel) splitDeadFromHistory(finished []PlanDisplay) {
 	for _, p := range finished {
 		inf := byPlan[p.Filename]
 		switch {
-		case inf.hasRunning:
-			// Running instances → promote into active plans.
+		case inf.hasActive:
+			// Live active instances -> promote into active plans.
 			n.promotedPlans = append(n.promotedPlans, p)
 			n.plans = append(n.plans, p)
 		case inf.hasAny || n.inspectedPlans[p.Filename]:
-			// Non-running instances or manually inspected → dead section.
+			// Inactive instances or manually inspected -> dead section.
 			n.deadPlans = append(n.deadPlans, p)
 		default:
-			// No instances → history.
+			// No instances -> history.
 			n.historyPlans = append(n.historyPlans, p)
 		}
 	}
@@ -678,6 +678,9 @@ func navInstanceRetired(inst *session.Instance, taskStatus string) bool {
 	}
 	if inst.Exited {
 		return true
+	}
+	if navInstanceActive(inst) {
+		return false
 	}
 	return taskStatus == string(taskstate.StatusDone) || taskStatus == string(taskstate.StatusCancelled)
 }

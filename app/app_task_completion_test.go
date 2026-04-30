@@ -1658,6 +1658,16 @@ func TestPausedReviewer_RetainedOnNavigateAway(t *testing.T) {
 	assert.Equal(t, presentationRetired, deriveInstancePresentation(reviewer, taskstore.TaskEntry{Status: taskstore.Status(entry.Status)}, true))
 }
 
+func TestDeriveInstancePresentation_StartedReadyDoneSoloAgentStaysActive(t *testing.T) {
+	t.Parallel()
+
+	inst := &session.Instance{Title: "solo", Status: session.Ready, SoloAgent: true}
+	inst.MarkStartedForTest()
+
+	assert.Equal(t, presentationActive, deriveInstancePresentation(inst, taskstore.TaskEntry{Status: taskstore.StatusDone}, true))
+	assert.Equal(t, presentationActive, deriveInstancePresentation(inst, taskstore.TaskEntry{Status: taskstore.StatusCancelled}, true))
+}
+
 func TestReviewCycleLimitAction_Kind(t *testing.T) {
 	t.Parallel()
 	action := loop.ReviewCycleLimitAction{
