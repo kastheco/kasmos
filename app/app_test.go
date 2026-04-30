@@ -2224,6 +2224,7 @@ func TestPreviewTerminal_SelectionChange(t *testing.T) {
 		})
 		require.NoError(t, err)
 		instA.MarkStartedForTest()
+		instA.SetExecutionSessionForTest(&recordingExecutionSession{})
 		instA.Status = session.Running
 		instA.CachedContentSet = true // avoid tmux subprocess calls in tests
 
@@ -2232,6 +2233,7 @@ func TestPreviewTerminal_SelectionChange(t *testing.T) {
 		})
 		require.NoError(t, err)
 		instB.MarkStartedForTest()
+		instB.SetExecutionSessionForTest(&recordingExecutionSession{})
 		instB.Status = session.Running
 		instB.CachedContentSet = true
 
@@ -2323,6 +2325,7 @@ func TestPreviewTerminal_SelectionChange(t *testing.T) {
 		})
 		require.NoError(t, err)
 		instA.MarkStartedForTest()
+		instA.SetExecutionSessionForTest(&recordingExecutionSession{})
 		instA.Status = session.Running
 		instA.CachedContentSet = true
 
@@ -2333,6 +2336,7 @@ func TestPreviewTerminal_SelectionChange(t *testing.T) {
 		})
 		require.NoError(t, err)
 		instB.MarkStartedForTest()
+		instB.SetExecutionSessionForTest(&recordingExecutionSession{})
 		instB.Status = session.Running
 		instB.CachedContentSet = true
 
@@ -2467,6 +2471,7 @@ func TestPreviewTerminal_RenderTickIntegration(t *testing.T) {
 		})
 		require.NoError(t, err)
 		instA.MarkStartedForTest()
+		instA.SetExecutionSessionForTest(&recordingExecutionSession{})
 		instA.Status = session.Running
 		instA.CachedContentSet = true
 
@@ -2475,6 +2480,7 @@ func TestPreviewTerminal_RenderTickIntegration(t *testing.T) {
 		})
 		require.NoError(t, err)
 		instB.MarkStartedForTest()
+		instB.SetExecutionSessionForTest(&recordingExecutionSession{})
 		instB.Status = session.Running
 		instB.CachedContentSet = true
 
@@ -2667,6 +2673,7 @@ func TestInstanceChanged_AutoRequestsPreview(t *testing.T) {
 	})
 	require.NoError(t, err)
 	instB.MarkStartedForTest()
+	instB.SetExecutionSessionForTest(&recordingExecutionSession{})
 	instB.Status = session.Running
 
 	h.nav.AddInstance(instA)()

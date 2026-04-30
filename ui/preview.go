@@ -336,6 +336,18 @@ func (p *PreviewPane) UpdateContent(instance *session.Instance) error {
 		return nil
 	}
 
+	if session.NormalizeExecutionMode(instance.ExecutionMode) == session.ExecutionModeTmux && instance.Started() && !instance.TmuxAlive() {
+		if p.setCachedTerminalContent(instance) {
+			return nil
+		}
+		p.setFallbackContent(lipgloss.JoinVertical(lipgloss.Center,
+			lipgloss.NewStyle().Foreground(ColorMuted).Render("session stopped"),
+			"",
+			lipgloss.NewStyle().Foreground(ColorMuted).Render("press r to resume"),
+		))
+		return nil
+	}
+
 	// If in scroll mode but haven't loaded content yet, capture full history now.
 	if p.isScrolling && p.viewport.Height() > 0 && len(p.viewport.View()) == 0 {
 		content, err := p.scrollbackContent(instance)

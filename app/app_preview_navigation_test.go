@@ -42,6 +42,30 @@ func TestInstanceChanged_AttachedTmuxSelectionClearsSDKPreview(t *testing.T) {
 	h.previewTerminalInstance = tmuxInst.IdentityKey()
 	t.Cleanup(h.previewTerminal.Close)
 
-	require.Nil(t, h.instanceChanged())
+	require.NotNil(t, h.instanceChanged())
 	require.NotContains(t, h.tabbedWindow.String(), "sdk-only-marker")
+}
+
+func TestInstanceChanged_StoppedTmuxSelectionShowsCachedPreview(t *testing.T) {
+	h := newTestHome()
+	h.tabbedWindow.SetSize(100, 30)
+
+	inst := &session.Instance{
+		Title:            "stopped-agent",
+		Path:             t.TempDir(),
+		Status:           session.Ready,
+		ExecutionMode:    session.ExecutionModeTmux,
+		CachedContent:    "last visible output",
+		CachedContentSet: true,
+	}
+	inst.MarkStartedDeadForTest()
+
+	h.nav.AddInstance(inst)()
+	require.True(t, h.nav.SelectInstance(inst))
+	h.previewRequested = true
+
+	require.Nil(t, h.instanceChanged())
+	rendered := h.tabbedWindow.String()
+	require.Contains(t, rendered, "last visible output")
+	require.NotContains(t, rendered, "connecting")
 }
