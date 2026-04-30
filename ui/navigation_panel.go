@@ -676,13 +676,7 @@ func navInstanceRetired(inst *session.Instance, taskStatus string) bool {
 	if inst == nil {
 		return false
 	}
-	if inst.Exited {
-		return true
-	}
-	if navInstanceActive(inst) {
-		return false
-	}
-	return taskStatus == string(taskstate.StatusDone) || taskStatus == string(taskstate.StatusCancelled)
+	return DeriveInstancePresentation(inst, taskStatus, taskStatus != "") == PresentationRetired
 }
 
 // navPlanSortKey returns the sort priority for a plan based on lifecycle phase only.
@@ -790,16 +784,7 @@ func aggregateNavPlanStatus(insts []*session.Instance, st TopicStatus) (hasActiv
 }
 
 func navInstanceActive(inst *session.Instance) bool {
-	if inst == nil || inst.Paused() || inst.Exited || inst.ImplementationComplete {
-		return false
-	}
-	if inst.Status == session.Running || inst.Status == session.Loading {
-		return true
-	}
-	if inst.Started() {
-		return true
-	}
-	return session.NormalizeExecutionMode(inst.ExecutionMode) == session.ExecutionModeSDK
+	return DeriveInstancePresentation(inst, "", false) == PresentationActive
 }
 
 // isPlanCollapsed returns whether a plan should be shown collapsed.

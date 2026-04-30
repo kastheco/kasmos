@@ -192,39 +192,6 @@ func shouldCreatePR(entry taskstore.TaskEntry) bool {
 	return entry.Status == taskstore.StatusDone && entry.Branch != "" && entry.PRURL == ""
 }
 
-// instancePresentation categorises an instance for default-view rendering.
-// It is a pure derivation over session.Instance and taskstore.TaskEntry;
-// callers pass whatever subset they already have in-context. Returning a
-// compact enum keeps renderers decoupled from the FSM.
-type instancePresentation int
-
-const (
-	presentationActive  instancePresentation = iota // running, loading, ready, blocked
-	presentationRetired                             // inactive finished/cancelled task row, or instance Exited
-	presentationIdle                                // paused with nothing pending
-)
-
-func deriveInstancePresentation(inst *session.Instance, entry taskstore.TaskEntry, hasEntry bool) instancePresentation {
-	if inst != nil && inst.Exited {
-		return presentationRetired
-	}
-	if inst != nil && inst.Started() && inst.Status != session.Paused && !inst.ImplementationComplete {
-		return presentationActive
-	}
-	if hasEntry {
-		switch entry.Status {
-		case taskstore.StatusDone, taskstore.StatusCancelled:
-			return presentationRetired
-		}
-	}
-	if inst != nil && inst.Status == session.Paused {
-		if !hasEntry || (entry.Status != taskstore.StatusReviewing && entry.Status != taskstore.StatusImplementing && entry.Status != taskstore.StatusVerifying) {
-			return presentationIdle
-		}
-	}
-	return presentationActive
-}
-
 // toTaskFSMHooks converts a slice of config.TOMLHook to taskfsm.HookConfig entries.
 func toTaskFSMHooks(entries []config.TOMLHook) []taskfsm.HookConfig {
 	out := make([]taskfsm.HookConfig, len(entries))
@@ -715,13 +682,19 @@ func previewIdentityKey(inst *session.Instance) string {
 	return inst.IdentityKey()
 }
 
+// shouldAttachPreviewTerminal is the single source of truth for whether a live
+// embedded tmux terminal should be attached to the preview pane. Both the
+// attach path (syncPreviewTerminal) and the detach path (previewTickMsg's
+// staleness check) consult this predicate, so they cannot disagree and
+// oscillate. Status flickers (Paused/Loading) and the cached Exited flag are
+// intentionally NOT consulted: TmuxAlive is the authoritative live signal,
+// and inst.Exited is a derived value that the metadata-tick loop sets one
+// tick after TmuxAlive flips. Reading the cache here was the proximate cause
+// of preview teardown flicker on idle agents.
 func (m *home) shouldAttachPreviewTerminal(selected *session.Instance) bool {
 	return m.previewRequested &&
 		selected != nil &&
 		selected.Started() &&
-		selected.Status != session.Paused &&
-		selected.Status != session.Loading &&
-		!selected.Exited &&
 		session.NormalizeExecutionMode(selected.ExecutionMode) == session.ExecutionModeTmux &&
 		selected.TmuxAlive()
 }

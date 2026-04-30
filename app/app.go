@@ -979,16 +979,14 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// If previewTerminal is active, render from it (zero-latency VT emulator).
 		if m.previewTerminal != nil && !m.tabbedWindow.IsDocumentMode() {
 			selected := m.nav.GetSelectedInstance()
+			// Symmetric with shouldAttachPreviewTerminal: if attach would no
+			// longer return true, or the selected instance changed, the live
+			// terminal is stale and must be torn down. Sharing the predicate
+			// is what guarantees attach/detach cannot disagree and oscillate.
 			staleTerminal := false
 			if m.previewTerminalInstance != "" {
-				staleTerminal = selected == nil ||
-					m.previewTerminalInstance != previewIdentityKey(selected) ||
-					!selected.Started() ||
-					selected.Status == session.Paused ||
-					selected.Status == session.Loading ||
-					selected.Exited ||
-					session.NormalizeExecutionMode(selected.ExecutionMode) != session.ExecutionModeTmux ||
-					!selected.TmuxAlive()
+				staleTerminal = !m.shouldAttachPreviewTerminal(selected) ||
+					m.previewTerminalInstance != previewIdentityKey(selected)
 			}
 			if staleTerminal {
 				oldTerm := m.previewTerminal

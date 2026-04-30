@@ -2536,6 +2536,7 @@ func TestPreviewTerminal_RenderTickIntegration(t *testing.T) {
 
 	t.Run("render tick with active terminal returns event-driven cmd", func(t *testing.T) {
 		h, instA, _ := newTestHomeWithInstances(t)
+		h.previewRequested = true
 		h.nav.SelectInstance(instA)
 
 		term := session.NewDummyTerminal()
