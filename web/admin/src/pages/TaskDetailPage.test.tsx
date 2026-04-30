@@ -30,12 +30,14 @@ vi.mock("../components/PlanEditor", () => ({
   default: () => <div data-testid="plan-editor">editor</div>,
 }));
 
-const task: TaskEntry = {
+const baseTask: TaskEntry = {
   filename: "audit-architect-decisions",
   status: "implementing",
   goal: "show architect decisions",
   topic: "admin",
 };
+
+let task: TaskEntry = { ...baseTask };
 
 const subtasks: SubtaskEntry[] = [
   { task_number: 5, title: "wire task detail tab", status: "running" },
@@ -92,6 +94,7 @@ vi.mock("../hooks/useAutoRefresh", () => ({
 describe("TaskDetailPage", () => {
   beforeEach(() => {
     mockRefresh.mockClear();
+    task = { ...baseTask };
   });
 
   it("defaults to the plan tab and preserves plan editing", async () => {
@@ -119,5 +122,30 @@ describe("TaskDetailPage", () => {
     expect(screen.getByText("architect compared the planner draft with the baseline")).toBeTruthy();
     expect(screen.getByText("show a read-only architect decisions tab")).toBeTruthy();
     expect(screen.getByText("web/admin/src/pages/TaskDetailPage.tsx", { exact: false })).toBeTruthy();
+  });
+
+  it("renders linear identifier as external link when set", () => {
+    task = {
+      ...baseTask,
+      linear_identifier: "KAS-42",
+      linear_url: "https://linear.app/kasmos/issue/KAS-42/link-web-admin",
+    };
+
+    render(<TaskDetailPage />);
+
+    expect(screen.getByText("linear")).toBeTruthy();
+    const link = screen.getByRole("link", { name: "KAS-42" });
+    expect(link.getAttribute("href")).toBe(
+      "https://linear.app/kasmos/issue/KAS-42/link-web-admin",
+    );
+    expect(link.getAttribute("target")).toBe("_blank");
+    expect(link.getAttribute("rel")).toBe("noreferrer");
+  });
+
+  it("omits linear row when empty", () => {
+    render(<TaskDetailPage />);
+
+    expect(screen.queryByText("linear")).toBeNull();
+    expect(screen.queryByRole("link", { name: /KAS-/ })).toBeNull();
   });
 });

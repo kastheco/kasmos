@@ -39,6 +39,11 @@ export interface TaskEntry {
   goal?: string;
   content?: string;
   clickup_task_id?: string;
+  linear_issue_id?: string;
+  linear_identifier?: string;
+  linear_url?: string;
+  linear_team_key?: string;
+  linear_project_id?: string;
   review_cycle?: number;
   pr_url?: string;
   pr_review_decision?: string;

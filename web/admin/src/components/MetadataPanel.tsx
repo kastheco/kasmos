@@ -78,6 +78,17 @@ export default function MetadataPanel({ task }: MetadataPanelProps) {
           </>
         )}
 
+        {task.linear_identifier && (
+          <>
+            <dt className={styles.term}>linear</dt>
+            <dd className={`${styles.detail} ${styles.mono}`}>
+              <a href={task.linear_url} target="_blank" rel="noreferrer">
+                {task.linear_identifier}
+              </a>
+            </dd>
+          </>
+        )}
+
         <dt className={styles.term}>created</dt>
         <dd className={styles.detail}>{formatTimestamp(task.created_at)}</dd>
 
