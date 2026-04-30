@@ -518,6 +518,41 @@ func TestPreviewPane_SDKUpdateContent_RendersCachedContent(t *testing.T) {
 	require.Equal(t, "sdk agent line", previewPane.previewState.text)
 }
 
+func TestPreviewPane_TmuxLifecycleRowsKeepCachedContent(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name   string
+		status session.Status
+		exited bool
+	}{
+		{name: "paused", status: session.Paused},
+		{name: "exited", status: session.Ready, exited: true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			previewPane := NewPreviewPane()
+			previewPane.SetSize(80, 24)
+
+			inst := &session.Instance{
+				Title:            "retired-agent",
+				Status:           tc.status,
+				ExecutionMode:    session.ExecutionModeTmux,
+				CachedContent:    "retained terminal output",
+				CachedContentSet: true,
+				Exited:           tc.exited,
+			}
+
+			require.NoError(t, previewPane.UpdateContent(inst))
+			require.False(t, previewPane.previewState.fallback)
+			require.True(t, previewPane.isRawTerminal)
+			require.Equal(t, "retained terminal output", previewPane.previewState.text)
+			require.Contains(t, previewPane.String(), "retained terminal output")
+		})
+	}
+}
+
 // TestPreviewPane_SDKUpdateContent_ClearsStaleContentWhenCacheEmpty is a
 // regression test for the bug where selecting a newly spawned SDK instance
 // whose capture is empty left the previously selected instance's preview on

@@ -305,6 +305,9 @@ func (p *PreviewPane) UpdateContent(instance *session.Instance) error {
 		return nil
 
 	case instance.Status == session.Paused:
+		if p.setCachedTerminalContent(instance) {
+			return nil
+		}
 		p.setFallbackContent(lipgloss.JoinVertical(lipgloss.Center,
 			"Session is paused. Press 'r' to resume.",
 			"",
@@ -316,6 +319,9 @@ func (p *PreviewPane) UpdateContent(instance *session.Instance) error {
 		return nil
 
 	case instance.Exited:
+		if p.setCachedTerminalContent(instance) {
+			return nil
+		}
 		p.setFallbackContent(lipgloss.JoinVertical(lipgloss.Center,
 			lipgloss.NewStyle().Foreground(ColorMuted).Render("session exited"),
 			"",
@@ -365,6 +371,17 @@ func (p *PreviewPane) UpdateContent(instance *session.Instance) error {
 
 	// Normal mode: live content arrives via SetRawContent from the VT emulator.
 	return nil
+}
+
+func (p *PreviewPane) setCachedTerminalContent(instance *session.Instance) bool {
+	if instance == nil || !instance.CachedContentSet || instance.CachedContent == "" {
+		return false
+	}
+	p.previewState = previewState{text: instance.CachedContent}
+	p.isScrolling = false
+	p.isDocument = false
+	p.isRawTerminal = true
+	return true
 }
 
 // renderScrollbar builds a vertical scrollbar string for the given height.
