@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/x/vt"
 	"github.com/creack/pty"
+	"github.com/kastheco/kasmos/log"
 )
 
 // EmbeddedTerminal provides a zero-latency embedded terminal view.
@@ -77,8 +78,21 @@ func NewEmbeddedTerminal(sessionName string, cols, rows int) (*EmbeddedTerminal,
 	// repaint (a user-driven resize). The capture-pane output is the
 	// authoritative current rendering and writing it directly into the
 	// emulator guarantees the cache reflects current state immediately.
-	if snapshot, err := captureTmuxPane(sessionName); err == nil && len(snapshot) > 0 {
+	//
+	// Crucially, we activate the alternate screen buffer first. tmux uses
+	// the alternate screen for its display, and capture-pane returns the
+	// alt-screen contents. If we wrote those bytes to a fresh emulator
+	// (which starts in primary-screen mode), the snapshot would land on
+	// the primary buffer — and as soon as tmux's attach handshake sent
+	// `ESC [ ? 1049 h` to switch to alt screen, the emulator would reveal
+	// an empty alt buffer instead of our snapshot.
+	snapshot, snapErr := captureTmuxPane(sessionName)
+	if snapErr == nil && len(snapshot) > 0 {
+		_, _ = emu.Write([]byte("\x1b[?1049h\x1b[H\x1b[2J"))
 		_, _ = emu.Write(snapshot)
+		log.InfoLog.Printf("embedded_terminal: snapshot loaded for %q (%d bytes)", sessionName, len(snapshot))
+	} else {
+		log.InfoLog.Printf("embedded_terminal: snapshot capture failed for %q: err=%v len=%d", sessionName, snapErr, len(snapshot))
 	}
 
 	// Create a dedicated tmux attach for this terminal view
@@ -108,6 +122,7 @@ func NewEmbeddedTerminal(sessionName string, cols, rows int) (*EmbeddedTerminal,
 	if initial := emu.Render(); initial != "" {
 		t.cached = initial
 		t.hasNew = true
+		log.InfoLog.Printf("embedded_terminal: cache seeded for %q (rendered %d bytes)", sessionName, len(initial))
 	}
 	t.registerClipboardHandlers()
 
