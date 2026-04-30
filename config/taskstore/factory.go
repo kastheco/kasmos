@@ -2,6 +2,8 @@ package taskstore
 
 import (
 	"database/sql"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -78,7 +80,7 @@ func OpenAuthoritativeSignalGateway(project string) (SignalGateway, error) {
 }
 
 type taskStoreTOMLConfig struct {
-	DatabaseURL string `toml:"database_url"`
+	DatabaseURL string `json:"database_url" toml:"database_url"`
 }
 
 func loadConfiguredDatabaseURL() string {
@@ -87,6 +89,17 @@ func loadConfiguredDatabaseURL() string {
 		return ""
 	}
 	data, err := os.ReadFile(filepath.Join(configDir, "config.toml"))
+	if errors.Is(err, os.ErrNotExist) {
+		data, err = os.ReadFile(filepath.Join(configDir, "config.json"))
+		if err != nil {
+			return ""
+		}
+		var cfg taskStoreTOMLConfig
+		if err := json.Unmarshal(data, &cfg); err != nil {
+			return ""
+		}
+		return cfg.DatabaseURL
+	}
 	if err != nil {
 		return ""
 	}

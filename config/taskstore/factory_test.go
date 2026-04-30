@@ -74,6 +74,28 @@ func TestOpenAuthoritativeStore_UsesConfiguredHTTPAuthority(t *testing.T) {
 	assert.Equal(t, StatusReady, entry.Status)
 }
 
+func TestOpenAuthoritativeStore_UsesLegacyJSONDatabaseURL(t *testing.T) {
+	backend := newTestStore(t)
+	srv := httptest.NewServer(NewHandler(backend))
+	defer srv.Close()
+
+	repoDir := t.TempDir()
+	initTestRepo(t, repoDir)
+	configDir := filepath.Join(repoDir, ".kasmos")
+	require.NoError(t, os.MkdirAll(configDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.json"), []byte(fmt.Sprintf(`{"database_url":%q}`, srv.URL)), 0o644))
+	t.Chdir(repoDir)
+
+	store, err := OpenAuthoritativeStore("test-project")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = store.Close() })
+
+	require.NoError(t, store.Create("test-project", TaskEntry{Filename: "legacy-json", Status: StatusReady}))
+	entry, err := backend.Get("test-project", "legacy-json")
+	require.NoError(t, err)
+	assert.Equal(t, StatusReady, entry.Status)
+}
+
 func TestOpenAuthoritativeStore_UnreachableRemoteFails(t *testing.T) {
 	repoDir := t.TempDir()
 	initTestRepo(t, repoDir)
