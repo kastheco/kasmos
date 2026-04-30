@@ -15,10 +15,12 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/kastheco/kasmos/cmd"
 	"github.com/kastheco/kasmos/config"
+	"github.com/kastheco/kasmos/config/linearreceipt"
 	"github.com/kastheco/kasmos/config/taskfsm"
 	"github.com/kastheco/kasmos/config/taskparser"
 	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/kastheco/kasmos/daemon/api"
+	"github.com/kastheco/kasmos/internal/linear"
 	"github.com/kastheco/kasmos/internal/theme"
 	"github.com/kastheco/kasmos/orchestration"
 	"github.com/kastheco/kasmos/orchestration/loop"
@@ -28,6 +30,111 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+type daemonLinearClient struct {
+	mu       sync.Mutex
+	comments []daemonLinearComment
+}
+
+type daemonLinearComment struct {
+	issueID string
+	body    string
+}
+
+func (c *daemonLinearClient) CreateComment(_ context.Context, issueID, body string) (*linear.Comment, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.comments = append(c.comments, daemonLinearComment{issueID: issueID, body: body})
+	return &linear.Comment{ID: "comment-1", URL: "https://linear.app/comment/comment-1", Body: body}, nil
+}
+
+func (c *daemonLinearClient) UpdateIssue(_ context.Context, issueID string, _ linear.UpdateIssueInput) (*linear.Issue, error) {
+	return &linear.Issue{ID: issueID}, nil
+}
+
+func (c *daemonLinearClient) createCount() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return len(c.comments)
+}
+
+func (c *daemonLinearClient) firstComment() daemonLinearComment {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.comments[0]
+}
+
+func daemonLinearReceiptConfig(events ...taskfsm.Event) linearreceipt.Config {
+	cfg := linearreceipt.Config{
+		Enabled:       true,
+		Events:        map[taskfsm.Event]bool{},
+		StateMap:      map[taskstore.Status]string{},
+		PRReceipts:    true,
+		MergeReceipts: true,
+		CancelReceipt: true,
+	}
+	for _, event := range events {
+		cfg.Events[event] = true
+	}
+	return cfg
+}
+
+func TestDaemon_LinearReceiptHook_PostsPRCreatedAfterSetPRURL(t *testing.T) {
+	store := taskstore.NewTestStore(t)
+	const (
+		project  = "proj"
+		planFile = "plan"
+		prURL    = "https://github.com/kastheco/kasmos/pull/42"
+	)
+	require.NoError(t, store.Create(project, taskstore.TaskEntry{
+		Filename:         planFile,
+		Status:           taskstore.StatusDone,
+		Branch:           "plan/linear",
+		LinearIssueID:    "issue-1",
+		LinearIdentifier: "KAS-123",
+	}))
+
+	client := &daemonLinearClient{}
+	hook := linearreceipt.NewHook(daemonLinearReceiptConfig(), store, client, nil, project)
+	d := &Daemon{}
+	e := RepoEntry{Project: project, Store: store, LinearReceiptHook: hook}
+
+	require.NoError(t, store.SetPRURL(project, planFile, prURL))
+	d.notifyPRCreated(e, planFile, prURL)
+
+	require.Eventually(t, func() bool {
+		return client.createCount() == 1
+	}, time.Second, 10*time.Millisecond)
+	assert.Contains(t, client.firstComment().body, "kasmos pr receipt")
+	assert.Contains(t, client.firstComment().body, "pr: "+prURL)
+
+	time.Sleep(25 * time.Millisecond)
+	assert.Equal(t, 1, client.createCount())
+}
+
+func TestRepoEntry_NewFSMWithHooks_DisabledLinearReceiptsProduceNoCalls(t *testing.T) {
+	store := taskstore.NewTestStore(t)
+	const (
+		project  = "proj"
+		planFile = "plan"
+	)
+	require.NoError(t, store.Create(project, taskstore.TaskEntry{
+		Filename:         planFile,
+		Status:           taskstore.StatusImplementing,
+		LinearIssueID:    "issue-1",
+		LinearIdentifier: "KAS-123",
+	}))
+
+	client := &daemonLinearClient{}
+	hook := linearreceipt.NewHook(linearreceipt.Config{}, store, client, nil, project)
+	hooks := taskfsm.NewHookRegistry()
+	hooks.Add(hook, []taskfsm.Event{taskfsm.ImplementFinished})
+	e := RepoEntry{Project: project, Store: store, Hooks: hooks}
+
+	require.NoError(t, e.newFSMWithHooks().Transition(planFile, taskfsm.ImplementFinished))
+	time.Sleep(25 * time.Millisecond)
+	assert.Equal(t, 0, client.createCount())
+}
 
 func TestDaemon_TaskComplete_ReplayedFailedWaveEmitsOnce(t *testing.T) {
 	store := taskstore.NewTestStore(t)
