@@ -459,6 +459,55 @@ func TestDaemonSync_TickSkipsInactiveMissingInstances(t *testing.T) {
 	assert.Empty(t, msg.DaemonInstances, "inactive daemon instances should not be rehydrated into the sidebar")
 }
 
+func TestDaemonSync_TickRetainsInactiveExitedInstances(t *testing.T) {
+	// serial: modifies repoManagedByDaemon and listDaemonInstances
+	const planFile = "feature"
+
+	h, dir := newDaemonSyncTestHome(t, planFile)
+
+	oldManaged := repoManagedByDaemon
+	oldListInstances := listDaemonInstances
+	t.Cleanup(func() {
+		repoManagedByDaemon = oldManaged
+		listDaemonInstances = oldListInstances
+	})
+
+	repoManagedByDaemon = func(repoPath string) bool {
+		return filepath.Clean(repoPath) == filepath.Clean(dir)
+	}
+	listDaemonInstances = func(project string) ([]api.InstanceStatus, error) {
+		require.Equal(t, "test", project)
+		return []api.InstanceStatus{{
+			Title:        "feature-planning",
+			Plan:         planFile,
+			Role:         session.AgentTypePlanner,
+			Active:       false,
+			HealthReason: "exited",
+			Program:      "opencode",
+		}}, nil
+	}
+
+	_, cmd := h.Update(tickUpdateMetadataMessage{})
+	require.NotNil(t, cmd)
+
+	msg, ok := cmd().(metadataResultMsg)
+	require.True(t, ok)
+	assert.True(t, msg.DaemonManagedRepo)
+	assert.Equal(t, []string{"feature-planning"}, msg.DaemonTitles)
+	require.Len(t, msg.DaemonInstances, 1)
+	assert.Equal(t, session.Ready, msg.DaemonInstances[0].Status)
+	assert.True(t, msg.DaemonInstances[0].Exited)
+
+	model, _ := h.Update(msg)
+	updated := model.(*home)
+	require.Len(t, updated.nav.GetInstances(), 1)
+	retired := updated.nav.GetInstances()[0]
+	assert.Equal(t, "feature-planning", retired.Title)
+	assert.Equal(t, planFile, retired.TaskFile)
+	assert.True(t, retired.Exited)
+	assert.True(t, updated.nav.SelectInstance(retired), "exited daemon instance should remain selectable")
+}
+
 func TestDaemonSync_TickUpgradesLoadingPlaceholderWhenSessionAppears(t *testing.T) {
 	// serial: modifies repoManagedByDaemon, listDaemonInstances, and restoreInstanceFromData
 	const planFile = "feature"

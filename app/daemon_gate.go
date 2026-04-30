@@ -301,6 +301,46 @@ func newDaemonLoadingInstance(repoPath string, status api.InstanceStatus) (*sess
 	return inst, nil
 }
 
+func newDaemonRetiredInstance(repoPath string, status api.InstanceStatus) (*session.Instance, error) {
+	program := status.Program
+	if program == "" {
+		program = "opencode"
+	}
+	inst, err := session.NewInstance(session.InstanceOptions{
+		Title:           status.Title,
+		Path:            repoPath,
+		Program:         program,
+		ExecutionMode:   session.NormalizeExecutionMode(session.ExecutionMode(status.ExecutionMode)),
+		AutoYes:         true,
+		SkipPermissions: daemonStatusSkipPermissions(status),
+		TaskFile:        status.Plan,
+		AgentType:       status.Role,
+		TaskNumber:      status.TaskNumber,
+		WaveNumber:      status.WaveNumber,
+		ReviewCycle:     status.ReviewCycle,
+		WaveTaskIndex:   status.WaveTaskIndex,
+		WaveTaskCount:   status.WaveTaskCount,
+		SDKSpeedTier:    status.SDKSpeedTier,
+	})
+	if err != nil {
+		return nil, err
+	}
+	inst.SoloAgent = status.SoloAgent
+	inst.ResourceProfile = status.ResourceProfile
+	if status.CreatedAt != nil {
+		inst.CreatedAt = *status.CreatedAt
+	}
+	if status.LastActivity != nil {
+		inst.UpdatedAt = *status.LastActivity
+	}
+	if status.Branch != "" {
+		inst.BindSharedTaskWorktree(repoPath, status.Branch)
+	}
+	inst.Exited = true
+	inst.SetStatus(session.Ready)
+	return inst, nil
+}
+
 func restoreDaemonInstance(repoPath string, status api.InstanceStatus) (*session.Instance, error) {
 	// SDK-backed agents (codex/claude SDK) live as subprocesses inside the
 	// daemon; the TUI cannot meaningfully replicate their ExecutionSession

@@ -1193,6 +1193,19 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						}
 						daemonTitles = append(daemonTitles, title)
 						if !status.Active {
+							if status.HealthReason != "exited" {
+								continue
+							}
+							if existing, exists := knownInstances[title]; exists && existing != nil && existing.Started() && !existing.Exited && !existing.Paused() && existing.TmuxAlive() {
+								continue
+							}
+							inst, err := newDaemonRetiredInstance(repoPath, status)
+							if err != nil {
+								log.WarningLog.Printf("daemon instance sync: retired placeholder %q: %v", title, err)
+								continue
+							}
+							daemonInstances = append(daemonInstances, inst)
+							knownInstances[title] = inst
 							continue
 						}
 						// Skip the restore only when the locally-tracked instance is
