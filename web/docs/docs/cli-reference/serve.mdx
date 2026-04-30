@@ -166,3 +166,5 @@ A built-in web admin UI is served at `/admin/`. To use an externally built admin
 When `--mcp` is `true` (the default), a Streamable HTTP MCP server starts on `--mcp-port` (default `7434`). The MCP endpoint is at `http://<bind>:<mcp-port>/mcp`. It exposes the task store and signal gateway as MCP tools, plus filesystem tools scoped to the current working directory and repo root.
 
 The task MCP tools include lifecycle and content operations such as `task_list`, `task_show`, `task_create`, `task_update_content`, `task_delete`, and `task_transition`. They also expose explicit Linear linking operations: `task_link_linear` fetches and stores a Linear issue link, while `task_unlink_linear` clears the stored link. In multi-project mode these tools accept an optional `project` argument to select the target project namespace.
+
+When `[linear.receipts]` is enabled, transitions driven through both the task actions REST endpoints and the MCP `task_transition` tool fire the same Linear receipt hooks as the CLI. See [linear receipts](../guides/linear-receipts.mdx) for configuration and event allowlist details.
