@@ -3,6 +3,7 @@ package tasktools
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net"
 	"net/http"
 	"os"
@@ -11,8 +12,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kastheco/kasmos/config/auditlog"
+	"github.com/kastheco/kasmos/config/linearlink"
 	"github.com/kastheco/kasmos/config/taskstate"
 	"github.com/kastheco/kasmos/config/taskstore"
+	"github.com/kastheco/kasmos/internal/linear"
 	"github.com/kastheco/kasmos/internal/mcpserver/routing"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/stretchr/testify/assert"
@@ -96,6 +100,100 @@ func textResult(t *testing.T, result *mcp.CallToolResult) string {
 	tc, ok := result.Content[0].(mcp.TextContent)
 	require.True(t, ok)
 	return tc.Text
+}
+
+func withTaskLinearTestDeps(t *testing.T, fetcher *taskToolFakeIssueFetcher, logger *taskToolRecordingLogger) {
+	t.Helper()
+
+	oldFetcher := openTaskToolLinearFetcher
+	oldLogger := openTaskToolAuditLogger
+	openTaskToolLinearFetcher = func() (linearlink.IssueFetcher, error) {
+		if fetcher.err != nil {
+			return nil, fetcher.err
+		}
+		return fetcher, nil
+	}
+	openTaskToolAuditLogger = func() (auditlog.Logger, func(), error) {
+		return logger, func() {}, nil
+	}
+	t.Cleanup(func() {
+		openTaskToolLinearFetcher = oldFetcher
+		openTaskToolAuditLogger = oldLogger
+	})
+}
+
+func newTaskToolLinearStore(t *testing.T, project string) taskstore.Store {
+	t.Helper()
+	store := taskstore.NewTestSQLiteStore(t)
+	require.NoError(t, store.Create(project, taskstore.TaskEntry{
+		Filename:  "plan",
+		Status:    taskstore.StatusPlanning,
+		CreatedAt: time.Now(),
+	}))
+	return store
+}
+
+func decodeTaskLinearResult(t *testing.T, result *mcp.CallToolResult) taskLinearLinkResult {
+	t.Helper()
+	var payload taskLinearLinkResult
+	require.NoError(t, json.Unmarshal([]byte(textResult(t, result)), &payload))
+	return payload
+}
+
+type taskToolFakeIssueFetcher struct {
+	err            error
+	issueArg       string
+	issue          *linear.Issue
+	issueErr       error
+	commentIssueID string
+	commentBody    string
+	comment        *linear.Comment
+	commentErr     error
+}
+
+func newTaskToolFakeIssueFetcher() *taskToolFakeIssueFetcher {
+	return &taskToolFakeIssueFetcher{
+		issue: &linear.Issue{
+			ID:         "issue-123",
+			Identifier: "KAS-123",
+			URL:        "https://linear.app/kasmos/issue/KAS-123/linker-service",
+			Team:       &linear.Team{ID: "team-1", Key: "KAS", Name: "kasmos"},
+			Project:    &linear.Project{ID: "project-1", Name: "kasmos"},
+		},
+	}
+}
+
+func (f *taskToolFakeIssueFetcher) Issue(_ context.Context, idOrIdentifier string) (*linear.Issue, error) {
+	f.issueArg = idOrIdentifier
+	if f.issueErr != nil {
+		return nil, f.issueErr
+	}
+	return f.issue, nil
+}
+
+func (f *taskToolFakeIssueFetcher) CreateComment(_ context.Context, issueID, body string) (*linear.Comment, error) {
+	f.commentIssueID = issueID
+	f.commentBody = body
+	if f.commentErr != nil {
+		return nil, f.commentErr
+	}
+	return f.comment, nil
+}
+
+type taskToolRecordingLogger struct {
+	events []auditlog.Event
+}
+
+func (l *taskToolRecordingLogger) Emit(event auditlog.Event) {
+	l.events = append(l.events, event)
+}
+
+func (l *taskToolRecordingLogger) Query(auditlog.QueryFilter) ([]auditlog.Event, error) {
+	return l.events, nil
+}
+
+func (l *taskToolRecordingLogger) Close() error {
+	return nil
 }
 
 func TestTaskShowHandler_ReturnsStoredContent(t *testing.T) {
@@ -530,6 +628,190 @@ func TestTaskShowHandler_SingleProjectInMultiModeAcceptsWithoutArg(t *testing.T)
 	require.NoError(t, err)
 	assert.False(t, result.IsError)
 	assert.Equal(t, "# solo\n", textResult(t, result))
+}
+
+func TestTaskLinkLinear_Happy(t *testing.T) {
+	project := "test-project"
+	store := newTaskToolLinearStore(t, project)
+	fetcher := newTaskToolFakeIssueFetcher()
+	logger := &taskToolRecordingLogger{}
+	withTaskLinearTestDeps(t, fetcher, logger)
+
+	handler := makeTaskLinkLinearHandler(routing.NewRegisterConfig(project, nil), store)
+	result, err := handler(context.Background(), mockReq(map[string]any{
+		"filename": "plan.md",
+		"issue":    "KAS-123",
+		"reason":   "operator requested",
+	}))
+	require.NoError(t, err)
+	assert.False(t, result.IsError)
+
+	payload := decodeTaskLinearResult(t, result)
+	assert.Equal(t, project, payload.Project)
+	assert.Equal(t, "plan", payload.Filename)
+	assert.Equal(t, "issue-123", payload.LinearIssueID)
+	assert.Equal(t, "KAS-123", payload.LinearIdentifier)
+	assert.Equal(t, "https://linear.app/kasmos/issue/KAS-123/linker-service", payload.LinearURL)
+	assert.False(t, payload.Replaced)
+	assert.Empty(t, payload.CommentWarning)
+	assert.Equal(t, "KAS-123", fetcher.issueArg)
+
+	entry, err := store.Get(project, "plan")
+	require.NoError(t, err)
+	assert.Equal(t, payload.LinearIssueID, entry.LinearIssueID)
+	assert.Equal(t, payload.LinearIdentifier, entry.LinearIdentifier)
+	require.Len(t, logger.events, 1)
+	assert.Equal(t, auditlog.EventTaskLinearLinked, logger.events[0].Kind)
+	assert.Equal(t, project, logger.events[0].Project)
+	assert.Equal(t, "plan", logger.events[0].TaskFile)
+	assert.JSONEq(t, `{"new_identifier":"KAS-123","reason":"operator requested"}`, logger.events[0].Detail)
+}
+
+func TestTaskLinkLinear_DuplicateRejected(t *testing.T) {
+	project := "test-project"
+	store := newTaskToolLinearStore(t, project)
+	require.NoError(t, store.Create(project, taskstore.TaskEntry{
+		Filename:  "other",
+		Status:    taskstore.StatusImplementing,
+		CreatedAt: time.Now(),
+	}))
+	require.NoError(t, store.SetLinearLink(project, "other", taskstore.LinearLink{
+		LinearIssueID:    "issue-123",
+		LinearIdentifier: "KAS-123",
+	}))
+	fetcher := newTaskToolFakeIssueFetcher()
+	logger := &taskToolRecordingLogger{}
+	withTaskLinearTestDeps(t, fetcher, logger)
+
+	handler := makeTaskLinkLinearHandler(routing.NewRegisterConfig(project, nil), store)
+	result, err := handler(context.Background(), mockReq(map[string]any{"filename": "plan", "issue": "KAS-123"}))
+	require.NoError(t, err)
+	assert.True(t, result.IsError)
+	assert.Contains(t, textResult(t, result), "task_link_linear:")
+	assert.Contains(t, textResult(t, result), "duplicate active link")
+
+	entry, err := store.Get(project, "plan")
+	require.NoError(t, err)
+	assert.Empty(t, entry.LinearIssueID)
+	assert.Empty(t, logger.events)
+}
+
+func TestTaskLinkLinear_NotConfigured(t *testing.T) {
+	project := "test-project"
+	store := newTaskToolLinearStore(t, project)
+	fetcher := newTaskToolFakeIssueFetcher()
+	fetcher.err = linear.ErrNotConfigured
+	logger := &taskToolRecordingLogger{}
+	withTaskLinearTestDeps(t, fetcher, logger)
+
+	handler := makeTaskLinkLinearHandler(routing.NewRegisterConfig(project, nil), store)
+	result, err := handler(context.Background(), mockReq(map[string]any{"filename": "plan", "issue": "KAS-123"}))
+	require.NoError(t, err)
+	assert.True(t, result.IsError)
+	assert.Contains(t, textResult(t, result), "task_link_linear:")
+	assert.Contains(t, textResult(t, result), "not configured")
+	assert.Empty(t, logger.events)
+
+	missing, err := handler(context.Background(), mockReq(map[string]any{"filename": "plan"}))
+	require.NoError(t, err)
+	assert.True(t, missing.IsError)
+	assert.Contains(t, textResult(t, missing), "issue")
+}
+
+func TestTaskLinkLinear_ForceReplaces(t *testing.T) {
+	project := "test-project"
+	store := newTaskToolLinearStore(t, project)
+	require.NoError(t, store.SetLinearLink(project, "plan", taskstore.LinearLink{
+		LinearIssueID:    "old-issue",
+		LinearIdentifier: "KAS-1",
+		LinearURL:        "https://linear.app/kasmos/issue/KAS-1/old",
+	}))
+	fetcher := newTaskToolFakeIssueFetcher()
+	fetcher.commentErr = errors.New("linear: comment failed")
+	logger := &taskToolRecordingLogger{}
+	withTaskLinearTestDeps(t, fetcher, logger)
+
+	handler := makeTaskLinkLinearHandler(routing.NewRegisterConfig(project, nil), store)
+	result, err := handler(context.Background(), mockReq(map[string]any{
+		"filename": "plan",
+		"issue":    "KAS-123",
+		"force":    true,
+		"comment":  true,
+		"message":  "linked from kasmos",
+		"reason":   "replacement",
+	}))
+	require.NoError(t, err)
+	assert.False(t, result.IsError)
+
+	payload := decodeTaskLinearResult(t, result)
+	assert.True(t, payload.Replaced)
+	assert.Equal(t, "issue-123", payload.LinearIssueID)
+	assert.Contains(t, payload.CommentWarning, "comment failed")
+	assert.Equal(t, "issue-123", fetcher.commentIssueID)
+	assert.Equal(t, "linked from kasmos", fetcher.commentBody)
+	entry, err := store.Get(project, "plan")
+	require.NoError(t, err)
+	assert.Equal(t, "issue-123", entry.LinearIssueID)
+	require.Len(t, logger.events, 1)
+	assert.JSONEq(t, `{"previous_identifier":"KAS-1","new_identifier":"KAS-123","reason":"replacement"}`, logger.events[0].Detail)
+}
+
+func TestTaskUnlinkLinear_Happy(t *testing.T) {
+	project := "test-project"
+	store := newTaskToolLinearStore(t, project)
+	require.NoError(t, store.SetLinearLink(project, "plan", taskstore.LinearLink{
+		LinearIssueID:    "issue-123",
+		LinearIdentifier: "KAS-123",
+		LinearURL:        "https://linear.app/kasmos/issue/KAS-123/linker-service",
+		LinearTeamKey:    "KAS",
+		LinearProjectID:  "project-1",
+	}))
+	logger := &taskToolRecordingLogger{}
+	withTaskLinearTestDeps(t, newTaskToolFakeIssueFetcher(), logger)
+
+	handler := makeTaskUnlinkLinearHandler(routing.NewRegisterConfig(project, nil), store)
+	result, err := handler(context.Background(), mockReq(map[string]any{"filename": "plan.md", "reason": "wrong task"}))
+	require.NoError(t, err)
+	assert.False(t, result.IsError)
+
+	payload := decodeTaskLinearResult(t, result)
+	assert.Equal(t, project, payload.Project)
+	assert.Equal(t, "plan", payload.Filename)
+	assert.Equal(t, "issue-123", payload.LinearIssueID)
+	assert.Equal(t, "KAS-123", payload.LinearIdentifier)
+	assert.Equal(t, "KAS-123", payload.ClearedIdentifier)
+	assert.False(t, payload.NoLink)
+	entry, err := store.Get(project, "plan")
+	require.NoError(t, err)
+	assert.Empty(t, entry.LinearIssueID)
+	require.Len(t, logger.events, 1)
+	assert.Equal(t, auditlog.EventTaskLinearUnlinked, logger.events[0].Kind)
+	assert.JSONEq(t, `{"previous_identifier":"KAS-123","reason":"wrong task"}`, logger.events[0].Detail)
+}
+
+func TestTaskUnlinkLinear_NoLink(t *testing.T) {
+	project := "test-project"
+	store := newTaskToolLinearStore(t, project)
+	logger := &taskToolRecordingLogger{}
+	withTaskLinearTestDeps(t, newTaskToolFakeIssueFetcher(), logger)
+
+	handler := makeTaskUnlinkLinearHandler(routing.NewRegisterConfig(project, nil), store)
+	result, err := handler(context.Background(), mockReq(map[string]any{"filename": "plan"}))
+	require.NoError(t, err)
+	assert.False(t, result.IsError)
+
+	payload := decodeTaskLinearResult(t, result)
+	assert.Equal(t, project, payload.Project)
+	assert.Equal(t, "plan", payload.Filename)
+	assert.True(t, payload.NoLink)
+	assert.Empty(t, payload.LinearIssueID)
+	assert.Empty(t, payload.ClearedIdentifier)
+	assert.Empty(t, logger.events)
+
+	missing, err := handler(context.Background(), mockReq(map[string]any{}))
+	require.NoError(t, err)
+	assert.True(t, missing.IsError)
+	assert.Contains(t, textResult(t, missing), "filename")
 }
 
 func TestTaskShowHandler_FixedProjectRejectsDifferentProjectArg(t *testing.T) {

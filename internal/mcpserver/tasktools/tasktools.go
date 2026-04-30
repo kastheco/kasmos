@@ -7,9 +7,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kastheco/kasmos/config/auditlog"
+	"github.com/kastheco/kasmos/config/linearlink"
 	"github.com/kastheco/kasmos/config/taskfsm"
 	"github.com/kastheco/kasmos/config/taskstate"
 	"github.com/kastheco/kasmos/config/taskstore"
+	"github.com/kastheco/kasmos/internal/linear"
 	"github.com/kastheco/kasmos/internal/mcpserver/routing"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -37,6 +40,37 @@ type taskMutationResult struct {
 	Updated  bool   `json:"updated,omitempty"`
 	Forced   bool   `json:"forced,omitempty"`
 	Warning  string `json:"warning,omitempty"`
+}
+
+type taskLinearLinkResult struct {
+	Project           string `json:"project,omitempty"`
+	Filename          string `json:"filename"`
+	LinearIssueID     string `json:"linear_issue_id,omitempty"`
+	LinearIdentifier  string `json:"linear_identifier,omitempty"`
+	LinearURL         string `json:"linear_url,omitempty"`
+	LinearTeamKey     string `json:"linear_team_key,omitempty"`
+	LinearProjectID   string `json:"linear_project_id,omitempty"`
+	Replaced          bool   `json:"replaced,omitempty"`
+	CommentURL        string `json:"comment_url,omitempty"`
+	CommentWarning    string `json:"comment_warning,omitempty"`
+	ClearedIdentifier string `json:"cleared_identifier,omitempty"`
+	NoLink            bool   `json:"no_link,omitempty"`
+}
+
+var openTaskToolLinearFetcher = func() (linearlink.IssueFetcher, error) {
+	cfg, err := linear.ConfigFromEnv()
+	if err != nil {
+		return nil, err
+	}
+	return linear.NewClientFromConfig(cfg), nil
+}
+
+var openTaskToolAuditLogger = func() (auditlog.Logger, func(), error) {
+	logger, err := auditlog.NewSQLiteLogger(taskstore.ResolvedDBPath())
+	if err != nil {
+		return nil, nil, err
+	}
+	return logger, func() { _ = logger.Close() }, nil
 }
 
 func trimFilename(filename string) string {
@@ -269,6 +303,117 @@ func makeTaskDeleteHandler(rc routing.RegisterConfig, store taskstore.Store) ser
 	}
 }
 
+func makeTaskLinkLinearHandler(rc routing.RegisterConfig, store taskstore.Store) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		project, err := routing.ResolveProjectArg(req, rc.FixedProject, rc.Projects)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("task_link_linear: %v", err)), nil
+		}
+		resolvedStore, closeStore, err := resolveToolStore(project, store)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("task_link_linear: %v", err)), nil
+		}
+		defer closeStore()
+
+		filename, err := req.RequireString("filename")
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("task_link_linear: %v", err)), nil
+		}
+		issue, err := req.RequireString("issue")
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("task_link_linear: %v", err)), nil
+		}
+		filename = trimFilename(filename)
+
+		fetcher, err := openTaskToolLinearFetcher()
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("task_link_linear: %v", err)), nil
+		}
+		logger, closeLogger, err := openTaskToolAuditLogger()
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("task_link_linear: %v", err)), nil
+		}
+		defer closeLogger()
+
+		result, err := linearlink.New(resolvedStore, fetcher, logger, project).Link(ctx, linearlink.LinkInput{
+			Filename:    filename,
+			IssueArg:    issue,
+			Reason:      req.GetString("reason", ""),
+			CommentBody: req.GetString("message", ""),
+			Force:       req.GetBool("force", false),
+			PostComment: req.GetBool("comment", false),
+		})
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("task_link_linear: %v", err)), nil
+		}
+
+		payload, err := mcp.NewToolResultJSON(taskLinearLinkResult{
+			Project:          project,
+			Filename:         filename,
+			LinearIssueID:    result.Link.LinearIssueID,
+			LinearIdentifier: result.Link.LinearIdentifier,
+			LinearURL:        result.Link.LinearURL,
+			LinearTeamKey:    result.Link.LinearTeamKey,
+			LinearProjectID:  result.Link.LinearProjectID,
+			Replaced:         result.Replaced,
+			CommentURL:       result.CommentURL,
+			CommentWarning:   result.CommentWarning,
+		})
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("task_link_linear: encode result: %v", err)), nil
+		}
+		return payload, nil
+	}
+}
+
+func makeTaskUnlinkLinearHandler(rc routing.RegisterConfig, store taskstore.Store) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		project, err := routing.ResolveProjectArg(req, rc.FixedProject, rc.Projects)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("task_unlink_linear: %v", err)), nil
+		}
+		resolvedStore, closeStore, err := resolveToolStore(project, store)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("task_unlink_linear: %v", err)), nil
+		}
+		defer closeStore()
+
+		filename, err := req.RequireString("filename")
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("task_unlink_linear: %v", err)), nil
+		}
+		filename = trimFilename(filename)
+
+		logger, closeLogger, err := openTaskToolAuditLogger()
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("task_unlink_linear: %v", err)), nil
+		}
+		defer closeLogger()
+
+		result, err := linearlink.New(resolvedStore, nil, logger, project).Unlink(ctx, filename, req.GetString("reason", ""))
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("task_unlink_linear: %v", err)), nil
+		}
+
+		dto := taskLinearLinkResult{Project: project, Filename: filename}
+		if result.Link.LinearIssueID == "" {
+			dto.NoLink = true
+		} else {
+			dto.LinearIssueID = result.Link.LinearIssueID
+			dto.LinearIdentifier = result.Link.LinearIdentifier
+			dto.LinearURL = result.Link.LinearURL
+			dto.LinearTeamKey = result.Link.LinearTeamKey
+			dto.LinearProjectID = result.Link.LinearProjectID
+			dto.ClearedIdentifier = result.Link.LinearIdentifier
+		}
+		payload, err := mcp.NewToolResultJSON(dto)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("task_unlink_linear: encode result: %v", err)), nil
+		}
+		return payload, nil
+	}
+}
+
 func normalizeTaskEvent(raw string) (taskfsm.Event, error) {
 	ev, ok := taskfsm.EventByName(raw)
 	if !ok {
@@ -439,6 +584,24 @@ func RegisterTools(srv *server.MCPServer, project string, projects []string, sto
 		mcp.WithString("filename", mcp.Required(), mcp.Description("task filename or slug")),
 		mcp.WithString("project", mcp.Description("target project name (required in multi-repo mode)")),
 	), makeTaskDeleteHandler(rc, store))
+
+	srv.AddTool(mcp.NewTool("task_link_linear",
+		mcp.WithDescription("link a task store entry to a Linear issue"),
+		mcp.WithString("filename", mcp.Required(), mcp.Description("task filename or slug")),
+		mcp.WithString("issue", mcp.Required(), mcp.Description("Linear issue UUID or identifier")),
+		mcp.WithBoolean("force", mcp.Description("replace an existing link on this task")),
+		mcp.WithBoolean("comment", mcp.Description("post a backlink comment after the store write commits")),
+		mcp.WithString("message", mcp.Description("comment body when comment is true")),
+		mcp.WithString("reason", mcp.Description("operator reason stored in the audit detail")),
+		mcp.WithString("project", mcp.Description("target project name (required in multi-repo mode)")),
+	), makeTaskLinkLinearHandler(rc, store))
+
+	srv.AddTool(mcp.NewTool("task_unlink_linear",
+		mcp.WithDescription("clear a task store entry's Linear issue link"),
+		mcp.WithString("filename", mcp.Required(), mcp.Description("task filename or slug")),
+		mcp.WithString("reason", mcp.Description("operator reason stored in the audit detail")),
+		mcp.WithString("project", mcp.Description("target project name (required in multi-repo mode)")),
+	), makeTaskUnlinkLinearHandler(rc, store))
 
 	srv.AddTool(mcp.NewTool("task_transition",
 		mcp.WithDescription("apply an FSM event to a task entry"),
