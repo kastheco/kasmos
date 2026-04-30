@@ -249,6 +249,32 @@ func TestUpdateInfoPane_InstanceView_GoalAndLifecycle(t *testing.T) {
 	assert.False(t, data.ImplementingAt.IsZero(), "ImplementingAt must be set")
 }
 
+func TestUpdateInfoPane_InstanceView_LinearLink(t *testing.T) {
+	t.Parallel()
+	h, _, _, _ := buildInfoPaneHome(t)
+	require.NoError(t, h.taskState.SetLinearLink("plan.md", taskstore.LinearLink{
+		LinearIdentifier: "KAS-123",
+		LinearURL:        "https://linear.app/kasmos/issue/KAS-123/info-pane",
+	}))
+
+	inst, err := session.NewInstance(session.InstanceOptions{
+		Title:    "coder-T1",
+		Path:     t.TempDir(),
+		Program:  "claude",
+		TaskFile: "plan.md",
+	})
+	require.NoError(t, err)
+
+	h.nav.SetData([]ui.PlanDisplay{{Filename: "plan.md"}}, []*session.Instance{inst}, nil, nil, map[string]ui.TopicStatus{"plan.md": {}})
+	require.True(t, h.nav.SelectInstance(inst))
+
+	h.updateInfoPane()
+
+	data := h.tabbedWindow.GetInfoData()
+	assert.Equal(t, "KAS-123", data.LinearIdentifier)
+	assert.Equal(t, "https://linear.app/kasmos/issue/KAS-123/info-pane", data.LinearURL)
+}
+
 // TestUpdateInfoPane_InstanceView_TaskTitle verifies TaskTitle is populated from the plan.
 func TestUpdateInfoPane_InstanceView_TaskTitle(t *testing.T) {
 	t.Parallel()
@@ -394,6 +420,15 @@ func (f *failingSubtaskStore) SetPhaseTimestamp(project, filename, phase string,
 }
 func (f *failingSubtaskStore) SetClickUpTaskID(project, filename, taskID string) error {
 	return f.inner.SetClickUpTaskID(project, filename, taskID)
+}
+func (f *failingSubtaskStore) SetLinearLink(project, filename string, link taskstore.LinearLink) error {
+	return f.inner.SetLinearLink(project, filename, link)
+}
+func (f *failingSubtaskStore) ClearLinearLink(project, filename string) error {
+	return f.inner.ClearLinearLink(project, filename)
+}
+func (f *failingSubtaskStore) FindLinkedTask(project, issueID string, statuses ...taskstore.Status) (string, error) {
+	return f.inner.FindLinkedTask(project, issueID, statuses...)
 }
 func (f *failingSubtaskStore) IncrementReviewCycle(project, filename string) error {
 	return f.inner.IncrementReviewCycle(project, filename)

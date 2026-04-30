@@ -72,6 +72,63 @@ func TestInfoPane_PlanBoundInstance(t *testing.T) {
 	assert.Contains(t, output, "coder")
 }
 
+func TestInfoPane_RendersLinearRowWhenLinked(t *testing.T) {
+	p := NewInfoPane()
+	p.SetSize(80, 24)
+	p.SetData(InfoData{
+		HasInstance:      true,
+		HasPlan:          true,
+		Title:            "my-feature-coder",
+		Status:           "running",
+		PlanName:         "my-feature",
+		PlanStatus:       "implementing",
+		LinearIdentifier: "KAS-123",
+		LinearURL:        "https://linear.app/kasmos/issue/KAS-123/my-feature",
+	})
+
+	plain := stripANSI(p.String())
+	assert.Contains(t, plain, "linear")
+	assert.Contains(t, plain, "KAS-123  https://linear.app/kasmos/issue/KAS-123/my-feature")
+}
+
+func TestInfoPane_OmitsLinearRowWhenAbsent(t *testing.T) {
+	data := InfoData{
+		HasInstance:     true,
+		HasPlan:         true,
+		Title:           "my-feature-coder",
+		Program:         "claude",
+		Branch:          "plan/my-feature",
+		Status:          "running",
+		PlanName:        "my-feature",
+		PlanDescription: "add dark mode toggle",
+		PlanStatus:      "implementing",
+		ExecutionPhase:  "wave_running",
+		ActiveAgentType: "coder",
+		ActiveWave:      2,
+		PlanTopic:       "ui",
+		PlanBranch:      "plan/my-feature",
+		PlanCreated:     "2026-02-25",
+		AgentType:       "coder",
+		WaveNumber:      2,
+		TotalWaves:      3,
+		TaskNumber:      4,
+		TotalTasks:      6,
+	}
+
+	before := NewInfoPane()
+	before.SetSize(80, 24)
+	before.SetData(data)
+
+	after := NewInfoPane()
+	after.SetSize(80, 24)
+	data.LinearIdentifier = ""
+	data.LinearURL = ""
+	after.SetData(data)
+
+	assert.Equal(t, before.String(), after.String())
+	assert.NotContains(t, stripANSI(after.String()), "linear")
+}
+
 func TestInfoPane_PlannerProfileInstanceUsesLowercaseRole(t *testing.T) {
 	p := NewInfoPane()
 	p.SetSize(80, 24)

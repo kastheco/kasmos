@@ -1545,6 +1545,8 @@ func (m *home) updateInfoPaneForPlanHeader() {
 		PlanStatus:           string(entry.Status),
 		PlanTopic:            entry.Topic,
 		PlanBranch:           entry.Branch,
+		LinearIdentifier:     entry.LinearIdentifier,
+		LinearURL:            entry.LinearURL,
 		ExecutionPhase:       strings.TrimSpace(entry.ExecutionState.Phase),
 		ActiveAgentType:      strings.TrimSpace(entry.ExecutionState.ActiveAgentType),
 		ActiveWave:           entry.ExecutionState.ActiveWave,
@@ -1682,6 +1684,8 @@ func (m *home) updateInfoPane() {
 				data.PlanStatus = string(entry.Status)
 				data.PlanTopic = entry.Topic
 				data.PlanBranch = entry.Branch
+				data.LinearIdentifier = entry.LinearIdentifier
+				data.LinearURL = entry.LinearURL
 				data.ExecutionPhase = strings.TrimSpace(entry.ExecutionState.Phase)
 				data.ActiveAgentType = strings.TrimSpace(entry.ExecutionState.ActiveAgentType)
 				data.ActiveWave = entry.ExecutionState.ActiveWave

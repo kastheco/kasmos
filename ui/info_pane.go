@@ -52,22 +52,24 @@ type InfoData struct {
 	Status  string
 
 	// Plan fields (empty when no plan is associated)
-	PlanName        string
-	PlanDescription string
-	PlanStatus      string
-	PlanGoal        string
-	PlanTopic       string
-	PlanBranch      string
-	PlanCreated     string
-	ExecutionPhase  string
-	ActiveAgentType string
-	ActiveWave      int
-	ActiveRound     int
-	PlanningAt      time.Time
-	ImplementingAt  time.Time
-	ReviewingAt     time.Time
-	VerifyingAt     time.Time
-	DoneAt          time.Time
+	PlanName         string
+	PlanDescription  string
+	PlanStatus       string
+	PlanGoal         string
+	PlanTopic        string
+	PlanBranch       string
+	PlanCreated      string
+	LinearIdentifier string
+	LinearURL        string
+	ExecutionPhase   string
+	ActiveAgentType  string
+	ActiveWave       int
+	ActiveRound      int
+	PlanningAt       time.Time
+	ImplementingAt   time.Time
+	ReviewingAt      time.Time
+	VerifyingAt      time.Time
+	DoneAt           time.Time
 
 	// Plan summary fields (rendered when plan header row is selected)
 	PlanInstanceCount int
@@ -539,6 +541,9 @@ func (p *InfoPane) renderPlanSection() string {
 	}
 	if p.data.PlanCreated != "" {
 		rows = append(rows, p.renderRow("created", p.data.PlanCreated))
+	}
+	if p.data.LinearIdentifier != "" {
+		rows = append(rows, p.renderRow("linear", strings.TrimSpace(p.data.LinearIdentifier+"  "+p.data.LinearURL)))
 	}
 	return strings.Join(rows, "\n")
 }
