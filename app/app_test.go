@@ -3308,6 +3308,45 @@ func TestMetadataTick_ExitedInstanceTransitionsToReady(t *testing.T) {
 		"exited instance status should transition to Ready")
 }
 
+func TestMetadataTick_SDKInstanceIgnoresTmuxDeathDetection(t *testing.T) {
+	t.Parallel()
+	h := newTestHomeWithToast()
+	h.tabbedWindow.SetSize(80, 20)
+
+	inst, err := session.NewInstance(session.InstanceOptions{
+		Title:         "sdk-ready",
+		Path:          t.TempDir(),
+		Program:       "codex",
+		ExecutionMode: session.ExecutionModeSDK,
+	})
+	require.NoError(t, err)
+	inst.MarkStartedForTest()
+	inst.Status = session.Ready
+	inst.SetCachedPresentation([]*sessionsdk.PresentationTurn{{
+		Rows: []sessionsdk.PresentationRow{{Kind: sessionsdk.RowProse, Text: "cached sdk preview"}},
+	}})
+	_ = h.nav.AddInstance(inst)
+	h.allInstances = append(h.allInstances, inst)
+	require.True(t, h.nav.SelectInstance(inst))
+	require.NoError(t, h.tabbedWindow.UpdatePreview(inst))
+
+	ps, err := newTestPlanState(t, t.TempDir())
+	require.NoError(t, err)
+
+	model, _ := h.Update(metadataResultMsg{
+		Results: []instanceMetadata{{
+			Title:     inst.Title,
+			TmuxAlive: false,
+		}},
+		PlanState: ps,
+	})
+	updated := model.(*home)
+
+	require.False(t, inst.Exited, "sdk instance must not be marked exited by tmux liveness")
+	require.Same(t, inst, updated.nav.GetSelectedInstance(), "sdk instance must remain selected")
+	assert.Contains(t, updated.tabbedWindow.String(), "cached sdk preview")
+}
+
 func TestShouldCreatePROnApproval(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
