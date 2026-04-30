@@ -35,6 +35,12 @@ const (
 	EventWaveFailed    EventKind = "wave_failed"
 )
 
+// Linear link events.
+const (
+	EventTaskLinearLinked   EventKind = "task_linear_linked"
+	EventTaskLinearUnlinked EventKind = "task_linear_unlinked"
+)
+
 // Operational events.
 const (
 	EventPromptSent         EventKind = "prompt_sent"

@@ -125,23 +125,27 @@ func TestHandler_MultipleKindFilters(t *testing.T) {
 	logger.Emit(auditlog.Event{Kind: auditlog.EventAgentSpawned, Project: "p"})
 	logger.Emit(auditlog.Event{Kind: auditlog.EventWaveStarted, Project: "p"})
 	logger.Emit(auditlog.Event{Kind: auditlog.EventPlanCreated, Project: "p"})
+	logger.Emit(auditlog.Event{Kind: auditlog.EventTaskLinearLinked, Project: "p"})
+	logger.Emit(auditlog.Event{Kind: auditlog.EventTaskLinearUnlinked, Project: "p"})
 
 	srv := httptest.NewServer(auditlog.NewHandler(logger))
 	defer srv.Close()
 
-	resp, err := http.Get(srv.URL + "/v1/projects/p/audit-events?kind=agent_spawned&kind=wave_started")
+	resp, err := http.Get(srv.URL + "/v1/projects/p/audit-events?kind=agent_spawned&kind=wave_started&kind=task_linear_linked&kind=task_linear_unlinked")
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
 	var events []auditlog.Event
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&events))
-	assert.Len(t, events, 2)
+	assert.Len(t, events, 4)
 	kinds := make([]auditlog.EventKind, len(events))
 	for i, e := range events {
 		kinds[i] = e.Kind
 	}
 	assert.Contains(t, kinds, auditlog.EventAgentSpawned)
 	assert.Contains(t, kinds, auditlog.EventWaveStarted)
+	assert.Contains(t, kinds, auditlog.EventTaskLinearLinked)
+	assert.Contains(t, kinds, auditlog.EventTaskLinearUnlinked)
 }
 
 func TestHandler_ExtendedFiltersAndJSONID(t *testing.T) {

@@ -152,6 +152,40 @@ func WithKillDetails(action string, cleanup, branchPreserved bool) EventOption {
 	}
 }
 
+// WithLinearLink records structured Linear link metadata in Event.Detail.
+func WithLinearLink(prevIdentifier, newIdentifier, reason string) EventOption {
+	return func(e *Event) {
+		detail := map[string]any{}
+		if e.Detail != "" {
+			var existing any
+			if err := json.Unmarshal([]byte(e.Detail), &existing); err == nil {
+				if obj, ok := existing.(map[string]any); ok {
+					detail = obj
+				} else {
+					detail["detail"] = existing
+				}
+			} else {
+				detail["detail"] = e.Detail
+			}
+		}
+		if prevIdentifier != "" {
+			detail["previous_identifier"] = prevIdentifier
+		}
+		if newIdentifier != "" {
+			detail["new_identifier"] = newIdentifier
+		}
+		if reason != "" {
+			detail["reason"] = reason
+		}
+
+		encoded, err := json.Marshal(detail)
+		if err != nil {
+			return
+		}
+		e.Detail = string(encoded)
+	}
+}
+
 // WithWaveOutcome records structured wave outcome metadata in Event.Detail.
 func WithWaveOutcome(outcome string, failedTasks, totalTasks int, nextAction string, retryGen int) EventOption {
 	return func(e *Event) {
