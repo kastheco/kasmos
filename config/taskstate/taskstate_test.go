@@ -1,6 +1,7 @@
 package taskstate
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -26,6 +27,44 @@ func newTestPSWithStore(t *testing.T) (*TaskState, taskstore.Store) {
 	ps, err := Load(store, "test-proj", t.TempDir())
 	require.NoError(t, err)
 	return ps, store
+}
+
+type failingLinearStore struct {
+	taskstore.Store
+	setErr   error
+	clearErr error
+}
+
+func (s *failingLinearStore) SetLinearLink(project, filename string, link taskstore.LinearLink) error {
+	if s.setErr != nil {
+		return s.setErr
+	}
+	return s.Store.SetLinearLink(project, filename, link)
+}
+
+func (s *failingLinearStore) ClearLinearLink(project, filename string) error {
+	if s.clearErr != nil {
+		return s.clearErr
+	}
+	return s.Store.ClearLinearLink(project, filename)
+}
+
+func assertTaskEntryLinearLink(t *testing.T, entry TaskEntry, link taskstore.LinearLink) {
+	t.Helper()
+	assert.Equal(t, link.LinearIssueID, entry.LinearIssueID)
+	assert.Equal(t, link.LinearIdentifier, entry.LinearIdentifier)
+	assert.Equal(t, link.LinearURL, entry.LinearURL)
+	assert.Equal(t, link.LinearTeamKey, entry.LinearTeamKey)
+	assert.Equal(t, link.LinearProjectID, entry.LinearProjectID)
+}
+
+func assertStoreEntryLinearLink(t *testing.T, entry taskstore.TaskEntry, link taskstore.LinearLink) {
+	t.Helper()
+	assert.Equal(t, link.LinearIssueID, entry.LinearIssueID)
+	assert.Equal(t, link.LinearIdentifier, entry.LinearIdentifier)
+	assert.Equal(t, link.LinearURL, entry.LinearURL)
+	assert.Equal(t, link.LinearTeamKey, entry.LinearTeamKey)
+	assert.Equal(t, link.LinearProjectID, entry.LinearProjectID)
 }
 
 func TestLoad(t *testing.T) {
@@ -753,6 +792,157 @@ func TestSetClickUpTaskID_NotFound(t *testing.T) {
 	assert.Contains(t, err.Error(), "not found")
 }
 
+func TestSetLinearLink_Happy(t *testing.T) {
+	ps, store := newTestPSWithStore(t)
+	require.NoError(t, ps.Create("linear-test", "linear test", "plan/linear-test", "", time.Now()))
+
+	link := taskstore.LinearLink{
+		LinearIssueID:    "issue-123",
+		LinearIdentifier: "KAS-123",
+		LinearURL:        "https://linear.app/kas/issue/KAS-123",
+		LinearTeamKey:    "KAS",
+		LinearProjectID:  "project-456",
+	}
+	require.NoError(t, ps.SetLinearLink("linear-test", link))
+
+	entry, ok := ps.Entry("linear-test")
+	require.True(t, ok)
+	assertTaskEntryLinearLink(t, entry, link)
+
+	stored, err := store.Get("test-proj", "linear-test")
+	require.NoError(t, err)
+	assertStoreEntryLinearLink(t, stored, link)
+}
+
+func TestSetLinearLink_StoreFailurePreservesMemory(t *testing.T) {
+	base := taskstore.NewTestSQLiteStore(t)
+	require.NoError(t, base.Create("test-proj", taskstore.TaskEntry{
+		Filename:         "linear-test",
+		Status:           taskstore.StatusReady,
+		LinearIssueID:    "issue-original",
+		LinearIdentifier: "KAS-1",
+	}))
+	ps, err := Load(&failingLinearStore{Store: base, setErr: errors.New("set failed")}, "test-proj", t.TempDir())
+	require.NoError(t, err)
+
+	err = ps.SetLinearLink("linear-test", taskstore.LinearLink{
+		LinearIssueID:    "issue-new",
+		LinearIdentifier: "KAS-2",
+	})
+	require.Error(t, err)
+
+	entry, ok := ps.Entry("linear-test")
+	require.True(t, ok)
+	assert.Equal(t, "issue-original", entry.LinearIssueID)
+	assert.Equal(t, "KAS-1", entry.LinearIdentifier)
+}
+
+func TestSetLinearLink_NotFound(t *testing.T) {
+	ps := newTestPS(t)
+	err := ps.SetLinearLink("nonexistent", taskstore.LinearLink{LinearIssueID: "issue-123"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not found")
+}
+
+func TestClearLinearLink_Happy(t *testing.T) {
+	ps, store := newTestPSWithStore(t)
+	require.NoError(t, ps.Create("linear-test", "linear test", "plan/linear-test", "", time.Now()))
+	link := taskstore.LinearLink{
+		LinearIssueID:    "issue-123",
+		LinearIdentifier: "KAS-123",
+		LinearURL:        "https://linear.app/kas/issue/KAS-123",
+		LinearTeamKey:    "KAS",
+		LinearProjectID:  "project-456",
+	}
+	require.NoError(t, ps.SetLinearLink("linear-test", link))
+
+	require.NoError(t, ps.ClearLinearLink("linear-test"))
+
+	entry, ok := ps.Entry("linear-test")
+	require.True(t, ok)
+	assertTaskEntryLinearLink(t, entry, taskstore.LinearLink{})
+
+	stored, err := store.Get("test-proj", "linear-test")
+	require.NoError(t, err)
+	assertStoreEntryLinearLink(t, stored, taskstore.LinearLink{})
+}
+
+func TestClearLinearLink_StoreFailurePreservesMemory(t *testing.T) {
+	base := taskstore.NewTestSQLiteStore(t)
+	require.NoError(t, base.Create("test-proj", taskstore.TaskEntry{
+		Filename:         "linear-test",
+		Status:           taskstore.StatusReady,
+		LinearIssueID:    "issue-original",
+		LinearIdentifier: "KAS-1",
+	}))
+	ps, err := Load(&failingLinearStore{Store: base, clearErr: errors.New("clear failed")}, "test-proj", t.TempDir())
+	require.NoError(t, err)
+
+	err = ps.ClearLinearLink("linear-test")
+	require.Error(t, err)
+
+	entry, ok := ps.Entry("linear-test")
+	require.True(t, ok)
+	assert.Equal(t, "issue-original", entry.LinearIssueID)
+	assert.Equal(t, "KAS-1", entry.LinearIdentifier)
+}
+
+func TestClearLinearLink_NoLink_Idempotent(t *testing.T) {
+	ps, store := newTestPSWithStore(t)
+	require.NoError(t, ps.Create("linear-test", "linear test", "plan/linear-test", "", time.Now()))
+
+	require.NoError(t, ps.ClearLinearLink("linear-test"))
+
+	entry, ok := ps.Entry("linear-test")
+	require.True(t, ok)
+	assertTaskEntryLinearLink(t, entry, taskstore.LinearLink{})
+
+	stored, err := store.Get("test-proj", "linear-test")
+	require.NoError(t, err)
+	assertStoreEntryLinearLink(t, stored, taskstore.LinearLink{})
+}
+
+func TestLinearLink_SurvivesIngestContent(t *testing.T) {
+	ps, store := newTestPSWithStore(t)
+	require.NoError(t, ps.Create("linear-test", "linear test", "plan/linear-test", "", time.Now()))
+	link := taskstore.LinearLink{
+		LinearIssueID:    "issue-123",
+		LinearIdentifier: "KAS-123",
+		LinearURL:        "https://linear.app/kas/issue/KAS-123",
+		LinearTeamKey:    "KAS",
+		LinearProjectID:  "project-456",
+	}
+	require.NoError(t, ps.SetLinearLink("linear-test", link))
+
+	require.NoError(t, ps.IngestContent("linear-test", `# Plan
+
+**Goal:** updated without executable tasks
+`))
+	entry, ok := ps.Entry("linear-test")
+	require.True(t, ok)
+	assertTaskEntryLinearLink(t, entry, link)
+	stored, err := store.Get("test-proj", "linear-test")
+	require.NoError(t, err)
+	assertStoreEntryLinearLink(t, stored, link)
+
+	require.NoError(t, ps.IngestContent("linear-test", `# Plan
+
+**Goal:** updated with executable tasks
+
+## Wave 1
+
+### Task 1: keep link
+
+Do the work.
+`))
+	entry, ok = ps.Entry("linear-test")
+	require.True(t, ok)
+	assertTaskEntryLinearLink(t, entry, link)
+	stored, err = store.Get("test-proj", "linear-test")
+	require.NoError(t, err)
+	assertStoreEntryLinearLink(t, stored, link)
+}
+
 func TestTaskState_IngestContent_PerWaveTaskNumbers(t *testing.T) {
 	ps := newTestPS(t)
 	require.NoError(t, ps.Create("plan", "", "plan/plan", "", time.Now().UTC()))
@@ -921,6 +1111,33 @@ func TestTaskEntryFromStoreEntry_ReviewingWithoutReadinessStaysReviewing(t *test
 	entry := taskEntryFromStoreEntry(storeEntry, "some goal")
 	assert.Equal(t, StatusReviewing, entry.Status, "normal reviewing tasks must not be migrated")
 	assert.Equal(t, "reviewing", entry.ExecutionState.Phase)
+}
+
+func TestLinearLink_RoundTripsTaskstoreEntry(t *testing.T) {
+	ps := &TaskState{}
+	link := taskstore.LinearLink{
+		LinearIssueID:    "issue-123",
+		LinearIdentifier: "KAS-123",
+		LinearURL:        "https://linear.app/kas/issue/KAS-123",
+		LinearTeamKey:    "KAS",
+		LinearProjectID:  "project-456",
+	}
+	storeEntry := taskstore.TaskEntry{
+		Filename:             "test-plan",
+		Status:               taskstore.StatusReady,
+		LinearIssueID:        link.LinearIssueID,
+		LinearIdentifier:     link.LinearIdentifier,
+		LinearURL:            link.LinearURL,
+		LinearTeamKey:        link.LinearTeamKey,
+		LinearProjectID:      link.LinearProjectID,
+		LatestReviewFeedback: "keep review feedback",
+	}
+
+	entry := taskEntryFromStoreEntry(storeEntry, "some goal")
+	assertTaskEntryLinearLink(t, entry, link)
+
+	roundTrip := ps.toTaskstoreEntry("test-plan", entry)
+	assertStoreEntryLinearLink(t, roundTrip, link)
 }
 
 func TestIsActiveLifecycle_IncludesVerifying(t *testing.T) {

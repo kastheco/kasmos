@@ -212,6 +212,67 @@ func TestSQLiteStore_MigratesVerifyingAtColumn(t *testing.T) {
 	assert.False(t, updated.VerifyingAt.IsZero())
 }
 
+func TestLegacySchema_NoLinearColumns(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "taskstore.db")
+
+	legacyDB, err := sql.Open("sqlite", dbPath)
+	require.NoError(t, err)
+
+	_, err = legacyDB.Exec(`
+		CREATE TABLE tasks (
+			id INTEGER PRIMARY KEY,
+			project TEXT NOT NULL,
+			filename TEXT NOT NULL,
+			status TEXT NOT NULL DEFAULT 'ready',
+			description TEXT NOT NULL DEFAULT '',
+			branch TEXT NOT NULL DEFAULT '',
+			topic TEXT NOT NULL DEFAULT '',
+			created_at TEXT NOT NULL DEFAULT '',
+			implemented TEXT NOT NULL DEFAULT '',
+			planning_at TEXT NOT NULL DEFAULT '',
+			implementing_at TEXT NOT NULL DEFAULT '',
+			reviewing_at TEXT NOT NULL DEFAULT '',
+			verifying_at TEXT NOT NULL DEFAULT '',
+			done_at TEXT NOT NULL DEFAULT '',
+			execution_phase TEXT NOT NULL DEFAULT '',
+			active_agent_type TEXT NOT NULL DEFAULT '',
+			active_wave INTEGER NOT NULL DEFAULT 0,
+			goal TEXT NOT NULL DEFAULT '',
+			content TEXT NOT NULL DEFAULT '',
+			clickup_task_id TEXT NOT NULL DEFAULT '',
+			review_cycle INTEGER NOT NULL DEFAULT 0,
+			latest_review_feedback TEXT NOT NULL DEFAULT '',
+			pr_url TEXT NOT NULL DEFAULT '',
+			pr_review_decision TEXT NOT NULL DEFAULT '',
+			pr_check_status TEXT NOT NULL DEFAULT '',
+			UNIQUE(project, filename)
+		);
+		CREATE TABLE topics (
+			id INTEGER PRIMARY KEY,
+			project TEXT NOT NULL,
+			name TEXT NOT NULL,
+			created_at TEXT NOT NULL DEFAULT '',
+			UNIQUE(project, name)
+		);
+	`)
+	require.NoError(t, err)
+	_, err = legacyDB.Exec(`INSERT INTO tasks (project, filename, status) VALUES ('proj', 'legacy', 'ready')`)
+	require.NoError(t, err)
+	require.NoError(t, legacyDB.Close())
+
+	store, err := NewSQLiteStore(dbPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { store.Close() })
+
+	for _, column := range []string{"linear_issue_id", "linear_identifier", "linear_url", "linear_team_key", "linear_project_id"} {
+		require.True(t, hasTaskColumn(t, store.db, column), "%s column must be added by migration", column)
+	}
+	entry, err := store.Get("proj", "legacy")
+	require.NoError(t, err)
+	assert.Equal(t, "", entry.LinearIssueID)
+}
+
 // ---------------------------------------------------------------------------
 // MigrateRepoLocalToGlobal tests
 // ---------------------------------------------------------------------------

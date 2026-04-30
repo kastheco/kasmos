@@ -110,6 +110,23 @@ const goalMigration = `ALTER TABLE tasks ADD COLUMN goal TEXT NOT NULL DEFAULT '
 // clickupTaskIDMigration adds the clickup_task_id column to existing databases.
 const clickupTaskIDMigration = `ALTER TABLE tasks ADD COLUMN clickup_task_id TEXT NOT NULL DEFAULT ''`
 
+// linearIssueIDMigration adds the linear_issue_id column to existing databases.
+const linearIssueIDMigration = `ALTER TABLE tasks ADD COLUMN linear_issue_id TEXT NOT NULL DEFAULT ''`
+
+// linearIdentifierMigration adds the linear_identifier column to existing databases.
+const linearIdentifierMigration = `ALTER TABLE tasks ADD COLUMN linear_identifier TEXT NOT NULL DEFAULT ''`
+
+// linearURLMigration adds the linear_url column to existing databases.
+const linearURLMigration = `ALTER TABLE tasks ADD COLUMN linear_url TEXT NOT NULL DEFAULT ''`
+
+// linearTeamKeyMigration adds the linear_team_key column to existing databases.
+const linearTeamKeyMigration = `ALTER TABLE tasks ADD COLUMN linear_team_key TEXT NOT NULL DEFAULT ''`
+
+// linearProjectIDMigration adds the linear_project_id column to existing databases.
+const linearProjectIDMigration = `ALTER TABLE tasks ADD COLUMN linear_project_id TEXT NOT NULL DEFAULT ''`
+
+const linearIssueIDIndexMigration = `CREATE INDEX IF NOT EXISTS idx_tasks_linear_issue_id ON tasks(project, linear_issue_id)`
+
 // reviewCycleMigration adds the review_cycle column to existing databases.
 const reviewCycleMigration = `ALTER TABLE tasks ADD COLUMN review_cycle INTEGER NOT NULL DEFAULT 0`
 
@@ -185,6 +202,24 @@ func runStoreMigrations(db *sql.DB) error {
 
 	if err := migrateAddColumn(db, "clickup_task_id", clickupTaskIDMigration); err != nil {
 		return fmt.Errorf("migrate clickup_task_id column: %w", err)
+	}
+	if err := migrateAddColumn(db, "linear_issue_id", linearIssueIDMigration); err != nil {
+		return fmt.Errorf("migrate linear_issue_id column: %w", err)
+	}
+	if err := migrateAddColumn(db, "linear_identifier", linearIdentifierMigration); err != nil {
+		return fmt.Errorf("migrate linear_identifier column: %w", err)
+	}
+	if err := migrateAddColumn(db, "linear_url", linearURLMigration); err != nil {
+		return fmt.Errorf("migrate linear_url column: %w", err)
+	}
+	if err := migrateAddColumn(db, "linear_team_key", linearTeamKeyMigration); err != nil {
+		return fmt.Errorf("migrate linear_team_key column: %w", err)
+	}
+	if err := migrateAddColumn(db, "linear_project_id", linearProjectIDMigration); err != nil {
+		return fmt.Errorf("migrate linear_project_id column: %w", err)
+	}
+	if _, err := db.Exec(linearIssueIDIndexMigration); err != nil {
+		return fmt.Errorf("migrate linear_issue_id index: %w", err)
 	}
 	if err := migrateAddColumn(db, "review_cycle", reviewCycleMigration); err != nil {
 		return fmt.Errorf("migrate review_cycle column: %w", err)
@@ -370,8 +405,8 @@ func (s *SQLiteStore) Ping() error {
 // Returns an error if a task with the same filename already exists in the project.
 func (s *SQLiteStore) Create(project string, entry TaskEntry) error {
 	const q = `
-		INSERT INTO tasks (project, filename, status, description, branch, topic, created_at, implemented, planning_at, implementing_at, reviewing_at, verifying_at, done_at, execution_phase, active_agent_type, active_wave, goal, content, clickup_task_id, review_cycle, latest_review_feedback, pr_url, pr_review_decision, pr_check_status)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			INSERT INTO tasks (project, filename, status, description, branch, topic, created_at, implemented, planning_at, implementing_at, reviewing_at, verifying_at, done_at, execution_phase, active_agent_type, active_wave, goal, content, clickup_task_id, linear_issue_id, linear_identifier, linear_url, linear_team_key, linear_project_id, review_cycle, latest_review_feedback, pr_url, pr_review_decision, pr_check_status)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 	_, err := s.db.Exec(q,
 		project,
@@ -393,6 +428,11 @@ func (s *SQLiteStore) Create(project string, entry TaskEntry) error {
 		entry.Goal,
 		entry.Content,
 		entry.ClickUpTaskID,
+		entry.LinearIssueID,
+		entry.LinearIdentifier,
+		entry.LinearURL,
+		entry.LinearTeamKey,
+		entry.LinearProjectID,
 		entry.ReviewCycle,
 		entry.LatestReviewFeedback,
 		entry.PRURL,
@@ -412,7 +452,7 @@ func (s *SQLiteStore) Create(project string, entry TaskEntry) error {
 // Returns an error if the task is not found.
 func (s *SQLiteStore) Get(project, filename string) (TaskEntry, error) {
 	const q = `
-		SELECT filename, status, description, branch, topic, created_at, implemented, planning_at, implementing_at, reviewing_at, verifying_at, done_at, execution_phase, active_agent_type, active_wave, goal, content, clickup_task_id, review_cycle, latest_review_feedback, pr_url, pr_review_decision, pr_check_status
+			SELECT filename, status, description, branch, topic, created_at, implemented, planning_at, implementing_at, reviewing_at, verifying_at, done_at, execution_phase, active_agent_type, active_wave, goal, content, clickup_task_id, linear_issue_id, linear_identifier, linear_url, linear_team_key, linear_project_id, review_cycle, latest_review_feedback, pr_url, pr_review_decision, pr_check_status
 		FROM tasks
 		WHERE project = ? AND filename = ?
 	`
@@ -425,7 +465,7 @@ func (s *SQLiteStore) Get(project, filename string) (TaskEntry, error) {
 func (s *SQLiteStore) Update(project, filename string, entry TaskEntry) error {
 	const q = `
 		UPDATE tasks
-		SET status = ?, description = ?, branch = ?, topic = ?, created_at = ?, implemented = ?, planning_at = ?, implementing_at = ?, reviewing_at = ?, verifying_at = ?, done_at = ?, execution_phase = ?, active_agent_type = ?, active_wave = ?, goal = ?, clickup_task_id = ?, review_cycle = ?, latest_review_feedback = ?
+		SET status = ?, description = ?, branch = ?, topic = ?, created_at = ?, implemented = ?, planning_at = ?, implementing_at = ?, reviewing_at = ?, verifying_at = ?, done_at = ?, execution_phase = ?, active_agent_type = ?, active_wave = ?, goal = ?, clickup_task_id = ?, linear_issue_id = ?, linear_identifier = ?, linear_url = ?, linear_team_key = ?, linear_project_id = ?, review_cycle = ?, latest_review_feedback = ?
 		WHERE project = ? AND filename = ?
 	`
 	result, err := s.db.Exec(q,
@@ -445,6 +485,11 @@ func (s *SQLiteStore) Update(project, filename string, entry TaskEntry) error {
 		entry.ExecutionState.ActiveWave,
 		entry.Goal,
 		entry.ClickUpTaskID,
+		entry.LinearIssueID,
+		entry.LinearIdentifier,
+		entry.LinearURL,
+		entry.LinearTeamKey,
+		entry.LinearProjectID,
 		entry.ReviewCycle,
 		entry.LatestReviewFeedback,
 		project,
@@ -544,7 +589,7 @@ func (s *SQLiteStore) Delete(project, filename string) error {
 // List returns all task entries for the given project, sorted by filename.
 func (s *SQLiteStore) List(project string) ([]TaskEntry, error) {
 	const q = `
-		SELECT filename, status, description, branch, topic, created_at, implemented, planning_at, implementing_at, reviewing_at, verifying_at, done_at, execution_phase, active_agent_type, active_wave, goal, content, clickup_task_id, review_cycle, latest_review_feedback, pr_url, pr_review_decision, pr_check_status
+			SELECT filename, status, description, branch, topic, created_at, implemented, planning_at, implementing_at, reviewing_at, verifying_at, done_at, execution_phase, active_agent_type, active_wave, goal, content, clickup_task_id, linear_issue_id, linear_identifier, linear_url, linear_team_key, linear_project_id, review_cycle, latest_review_feedback, pr_url, pr_review_decision, pr_check_status
 		FROM tasks
 		WHERE project = ?
 		ORDER BY filename ASC
@@ -573,7 +618,7 @@ func (s *SQLiteStore) ListByStatus(project string, statuses ...Status) ([]TaskEn
 	}
 
 	q := fmt.Sprintf(`
-		SELECT filename, status, description, branch, topic, created_at, implemented, planning_at, implementing_at, reviewing_at, verifying_at, done_at, execution_phase, active_agent_type, active_wave, goal, content, clickup_task_id, review_cycle, latest_review_feedback, pr_url, pr_review_decision, pr_check_status
+			SELECT filename, status, description, branch, topic, created_at, implemented, planning_at, implementing_at, reviewing_at, verifying_at, done_at, execution_phase, active_agent_type, active_wave, goal, content, clickup_task_id, linear_issue_id, linear_identifier, linear_url, linear_team_key, linear_project_id, review_cycle, latest_review_feedback, pr_url, pr_review_decision, pr_check_status
 		FROM tasks
 		WHERE project = ? AND status IN (%s)
 		ORDER BY filename ASC
@@ -591,7 +636,7 @@ func (s *SQLiteStore) ListByStatus(project string, statuses ...Status) ([]TaskEn
 // sorted by filename.
 func (s *SQLiteStore) ListByTopic(project, topic string) ([]TaskEntry, error) {
 	const q = `
-		SELECT filename, status, description, branch, topic, created_at, implemented, planning_at, implementing_at, reviewing_at, verifying_at, done_at, execution_phase, active_agent_type, active_wave, goal, content, clickup_task_id, review_cycle, latest_review_feedback, pr_url, pr_review_decision, pr_check_status
+			SELECT filename, status, description, branch, topic, created_at, implemented, planning_at, implementing_at, reviewing_at, verifying_at, done_at, execution_phase, active_agent_type, active_wave, goal, content, clickup_task_id, linear_issue_id, linear_identifier, linear_url, linear_team_key, linear_project_id, review_cycle, latest_review_feedback, pr_url, pr_review_decision, pr_check_status
 		FROM tasks
 		WHERE project = ? AND topic = ?
 		ORDER BY filename ASC
@@ -701,6 +746,170 @@ func (s *SQLiteStore) SetClickUpTaskID(project, filename, taskID string) error {
 		return newNotFoundError("plan not found: %s/%s", project, filename)
 	}
 	return nil
+}
+
+// SetLinearLink stores Linear issue coordinates for an existing task entry.
+// Returns an error if the task is not found.
+func (s *SQLiteStore) SetLinearLink(project, filename string, link LinearLink) error {
+	const q = `
+		UPDATE tasks
+		SET linear_issue_id = ?, linear_identifier = ?, linear_url = ?, linear_team_key = ?, linear_project_id = ?
+		WHERE project = ? AND filename = ?
+	`
+	link = normalizedLinearLink(link)
+	result, err := s.db.Exec(q, link.LinearIssueID, link.LinearIdentifier, link.LinearURL, link.LinearTeamKey, link.LinearProjectID, project, filename)
+	if err != nil {
+		return fmt.Errorf("set linear link: %w", err)
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("set linear link rows affected: %w", err)
+	}
+	if n == 0 {
+		return newNotFoundError("plan not found: %s/%s", project, filename)
+	}
+	return nil
+}
+
+// SetLinearLinkIfNoActiveDuplicate stores Linear issue coordinates unless
+// another task in one of the supplied statuses already links the same issue.
+// The duplicate check and write run in a single transaction; the returned
+// string is the conflicting filename when the write is skipped.
+func (s *SQLiteStore) SetLinearLinkIfNoActiveDuplicate(project, filename string, link LinearLink, statuses ...Status) (string, error) {
+	link = normalizedLinearLink(link)
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return "", fmt.Errorf("begin set linear link transaction: %w", err)
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback()
+		}
+	}()
+
+	var existing string
+	if err := tx.QueryRow(`SELECT filename FROM tasks WHERE project = ? AND filename = ?`, project, filename).Scan(&existing); err != nil {
+		if err == sql.ErrNoRows {
+			return "", newNotFoundError("plan not found: %s/%s", project, filename)
+		}
+		return "", fmt.Errorf("check linear link target: %w", err)
+	}
+
+	if link.LinearIssueID != "" {
+		conflict, err := findLinkedTaskTx(tx, project, link.LinearIssueID, filename, statuses...)
+		if err != nil {
+			return "", err
+		}
+		if conflict != "" {
+			return conflict, nil
+		}
+	}
+
+	const q = `
+		UPDATE tasks
+		SET linear_issue_id = ?, linear_identifier = ?, linear_url = ?, linear_team_key = ?, linear_project_id = ?
+		WHERE project = ? AND filename = ?
+	`
+	result, err := tx.Exec(q, link.LinearIssueID, link.LinearIdentifier, link.LinearURL, link.LinearTeamKey, link.LinearProjectID, project, filename)
+	if err != nil {
+		return "", fmt.Errorf("set linear link: %w", err)
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return "", fmt.Errorf("set linear link rows affected: %w", err)
+	}
+	if n == 0 {
+		return "", newNotFoundError("plan not found: %s/%s", project, filename)
+	}
+	if err := tx.Commit(); err != nil {
+		return "", fmt.Errorf("commit set linear link: %w", err)
+	}
+	committed = true
+	return "", nil
+}
+
+// ClearLinearLink clears Linear issue coordinates for an existing task entry.
+// Returns an error if the task is not found.
+func (s *SQLiteStore) ClearLinearLink(project, filename string) error {
+	const q = `
+		UPDATE tasks
+		SET linear_issue_id = '', linear_identifier = '', linear_url = '', linear_team_key = '', linear_project_id = ''
+		WHERE project = ? AND filename = ?
+	`
+	result, err := s.db.Exec(q, project, filename)
+	if err != nil {
+		return fmt.Errorf("clear linear link: %w", err)
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("clear linear link rows affected: %w", err)
+	}
+	if n == 0 {
+		return newNotFoundError("plan not found: %s/%s", project, filename)
+	}
+	return nil
+}
+
+// FindLinkedTask returns the filename linked to a Linear issue in a project.
+func (s *SQLiteStore) FindLinkedTask(project, issueID string, statuses ...Status) (string, error) {
+	filename, err := findLinkedTaskQuery(s.db, project, issueID, "", statuses...)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return "", newNotFoundError("linear link not found: %s/%s", project, issueID)
+		}
+		return "", fmt.Errorf("find linked task: %w", err)
+	}
+	return filename, nil
+}
+
+func findLinkedTaskTx(tx *sql.Tx, project, issueID, excludeFilename string, statuses ...Status) (string, error) {
+	filename, err := findLinkedTaskQuery(tx, project, issueID, excludeFilename, statuses...)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return "", nil
+		}
+		return "", fmt.Errorf("find linked task: %w", err)
+	}
+	return filename, nil
+}
+
+type linkedTaskQuerier interface {
+	QueryRow(query string, args ...any) *sql.Row
+}
+
+func findLinkedTaskQuery(qr linkedTaskQuerier, project, issueID, excludeFilename string, statuses ...Status) (string, error) {
+	if strings.TrimSpace(issueID) == "" {
+		return "", sql.ErrNoRows
+	}
+	args := []any{project, issueID}
+	excludeClause := ""
+	if excludeFilename != "" {
+		excludeClause = " AND filename <> ?"
+		args = append(args, excludeFilename)
+	}
+	statusClause := ""
+	if len(statuses) > 0 {
+		placeholders := make([]string, len(statuses))
+		for i, status := range statuses {
+			placeholders[i] = "?"
+			args = append(args, string(status))
+		}
+		statusClause = fmt.Sprintf(" AND status IN (%s)", strings.Join(placeholders, ", "))
+	}
+	q := fmt.Sprintf(`
+		SELECT filename
+		FROM tasks INDEXED BY idx_tasks_linear_issue_id
+		WHERE project = ? AND linear_issue_id = ?%s%s
+		ORDER BY filename ASC
+		LIMIT 1
+	`, excludeClause, statusClause)
+	var filename string
+	if err := qr.QueryRow(q, args...).Scan(&filename); err != nil {
+		return "", err
+	}
+	return filename, nil
 }
 
 // SetExecutionState persists fine-grained execution lifecycle metadata.
@@ -1008,6 +1217,7 @@ func (s *SQLiteStore) ListPendingReviews(project, filename string) ([]PRReviewEn
 // scanTaskEntry scans a single row into a TaskEntry.
 func scanTaskEntry(row *sql.Row) (TaskEntry, error) {
 	var filename, status, description, branch, topic, createdAt, implemented, planningAt, implementingAt, reviewingAt, verifyingAt, doneAt, executionPhase, activeAgentType, goal, content, clickupTaskID, latestReviewFeedback string
+	var linearIssueID, linearIdentifier, linearURL, linearTeamKey, linearProjectID string
 	var activeWave, reviewCycle int
 	var prURL, prReviewDecision, prCheckStatus string
 	if err := row.Scan(
@@ -1029,6 +1239,11 @@ func scanTaskEntry(row *sql.Row) (TaskEntry, error) {
 		&goal,
 		&content,
 		&clickupTaskID,
+		&linearIssueID,
+		&linearIdentifier,
+		&linearURL,
+		&linearTeamKey,
+		&linearProjectID,
 		&reviewCycle,
 		&latestReviewFeedback,
 		&prURL,
@@ -1061,6 +1276,11 @@ func scanTaskEntry(row *sql.Row) (TaskEntry, error) {
 		Goal:                 goal,
 		Content:              content,
 		ClickUpTaskID:        clickupTaskID,
+		LinearIssueID:        linearIssueID,
+		LinearIdentifier:     linearIdentifier,
+		LinearURL:            linearURL,
+		LinearTeamKey:        linearTeamKey,
+		LinearProjectID:      linearProjectID,
 		ReviewCycle:          reviewCycle,
 		LatestReviewFeedback: latestReviewFeedback,
 		PRURL:                prURL,
@@ -1074,6 +1294,7 @@ func scanTaskEntries(rows *sql.Rows) ([]TaskEntry, error) {
 	entries := []TaskEntry{}
 	for rows.Next() {
 		var filename, status, description, branch, topic, createdAt, implemented, planningAt, implementingAt, reviewingAt, verifyingAt, doneAt, executionPhase, activeAgentType, goal, content, clickupTaskID, latestReviewFeedback string
+		var linearIssueID, linearIdentifier, linearURL, linearTeamKey, linearProjectID string
 		var activeWave, reviewCycle int
 		var prURL, prReviewDecision, prCheckStatus string
 		if err := rows.Scan(
@@ -1095,6 +1316,11 @@ func scanTaskEntries(rows *sql.Rows) ([]TaskEntry, error) {
 			&goal,
 			&content,
 			&clickupTaskID,
+			&linearIssueID,
+			&linearIdentifier,
+			&linearURL,
+			&linearTeamKey,
+			&linearProjectID,
 			&reviewCycle,
 			&latestReviewFeedback,
 			&prURL,
@@ -1124,6 +1350,11 @@ func scanTaskEntries(rows *sql.Rows) ([]TaskEntry, error) {
 			Goal:                 goal,
 			Content:              content,
 			ClickUpTaskID:        clickupTaskID,
+			LinearIssueID:        linearIssueID,
+			LinearIdentifier:     linearIdentifier,
+			LinearURL:            linearURL,
+			LinearTeamKey:        linearTeamKey,
+			LinearProjectID:      linearProjectID,
 			ReviewCycle:          reviewCycle,
 			LatestReviewFeedback: latestReviewFeedback,
 			PRURL:                prURL,

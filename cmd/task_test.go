@@ -100,6 +100,49 @@ func TestPlanList(t *testing.T) {
 	}
 }
 
+func TestList_LinearColumn_Hidden_WhenNoLinks(t *testing.T) {
+	store, _, project := setupTestPlanState(t)
+
+	output := executeTaskList(project, "", store)
+
+	want := strings.Join([]string{
+		fmt.Sprintf("%-14s %-50s %s", "implementing", "implementing-plan", "plan/implementing-plan"),
+		fmt.Sprintf("%-14s %-50s %s", "ready", "test-plan", "plan/test-plan"),
+	}, "\n") + "\n"
+	assert.Equal(t, want, output)
+	assert.NotContains(t, output, "LINEAR")
+}
+
+func TestList_LinearColumn_Visible_WhenAnyLink(t *testing.T) {
+	store, _, project := setupTestPlanState(t)
+	require.NoError(t, store.SetLinearLink(project, "implementing-plan", taskstore.LinearLink{
+		LinearIssueID:    "issue-123",
+		LinearIdentifier: "KAS-123",
+	}))
+
+	output := executeTaskList(project, "", store)
+
+	lines := strings.Split(strings.TrimSuffix(output, "\n"), "\n")
+	require.Len(t, lines, 2)
+	assert.Equal(t, strings.TrimRight(fmt.Sprintf("%-14s %-50s %-40s %s", "implementing", "implementing-plan", "plan/implementing-plan", "KAS-123"), " "), lines[0])
+	assert.Equal(t, strings.TrimRight(fmt.Sprintf("%-14s %-50s %-40s %s", "ready", "test-plan", "plan/test-plan", ""), " "), lines[1])
+	assert.NotContains(t, output, "(none)")
+}
+
+func TestList_StatusFilter_PreservesLinearColumn(t *testing.T) {
+	store, _, project := setupTestPlanState(t)
+	require.NoError(t, store.SetLinearLink(project, "cancelled-plan", taskstore.LinearLink{
+		LinearIssueID:    "issue-456",
+		LinearIdentifier: "KAS-456",
+	}))
+
+	output := executeTaskList(project, "cancelled", store)
+
+	want := strings.TrimRight(fmt.Sprintf("%-14s %-50s %-40s %s", "cancelled", "cancelled-plan", "plan/cancelled-plan", "KAS-456"), " ") + "\n"
+	assert.Equal(t, want, output)
+	assert.NotContains(t, output, "(none)")
+}
+
 func TestPlanSetStatus(t *testing.T) {
 	store, _, project := setupTestPlanState(t)
 

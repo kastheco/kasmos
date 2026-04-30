@@ -151,6 +151,118 @@ func TestServer_SetClickUpTaskID_NotFound(t *testing.T) {
 	resp.Body.Close()
 }
 
+func TestServer_SetLinearLink(t *testing.T) {
+	store := newTestStore(t)
+	srv := httptest.NewServer(taskstore.NewHandler(store))
+	defer srv.Close()
+
+	resp, err := http.Post(srv.URL+"/v1/projects/kasmos/tasks", "application/json", strings.NewReader(`{"filename":"plan","status":"ready"}`))
+	require.NoError(t, err)
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
+	resp.Body.Close()
+
+	body := `{"linear_issue_id":"issue-123","linear_identifier":"KAS-123","linear_url":"https://linear.app/kas/issue/KAS-123","linear_team_key":"KAS","linear_project_id":"project-456"}`
+	req, err := http.NewRequest(http.MethodPut, srv.URL+"/v1/projects/kasmos/tasks/plan/linear-link", strings.NewReader(body))
+	require.NoError(t, err)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err = http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	resp.Body.Close()
+
+	got, err := store.Get("kasmos", "plan")
+	require.NoError(t, err)
+	assert.Equal(t, "issue-123", got.LinearIssueID)
+	assert.Equal(t, "KAS-123", got.LinearIdentifier)
+
+	req, err = http.NewRequest(http.MethodPut, srv.URL+"/v1/projects/kasmos/tasks/missing/linear-link", strings.NewReader(body))
+	require.NoError(t, err)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err = http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
+	resp.Body.Close()
+}
+
+func TestServer_ClearLinearLink(t *testing.T) {
+	store := newTestStore(t)
+	srv := httptest.NewServer(taskstore.NewHandler(store))
+	defer srv.Close()
+
+	require.NoError(t, store.Create("kasmos", taskstore.TaskEntry{Filename: "plan", Status: taskstore.StatusReady}))
+	require.NoError(t, store.SetLinearLink("kasmos", "plan", taskstore.LinearLink{LinearIssueID: "issue-123", LinearIdentifier: "KAS-123"}))
+
+	req, err := http.NewRequest(http.MethodDelete, srv.URL+"/v1/projects/kasmos/tasks/plan/linear-link", nil)
+	require.NoError(t, err)
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	resp.Body.Close()
+
+	got, err := store.Get("kasmos", "plan")
+	require.NoError(t, err)
+	assert.Empty(t, got.LinearIssueID)
+
+	req, err = http.NewRequest(http.MethodDelete, srv.URL+"/v1/projects/kasmos/tasks/missing/linear-link", nil)
+	require.NoError(t, err)
+	resp, err = http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
+	resp.Body.Close()
+}
+
+func TestServer_FindLinkedTask(t *testing.T) {
+	store := newTestStore(t)
+	srv := httptest.NewServer(taskstore.NewHandler(store))
+	defer srv.Close()
+
+	require.NoError(t, store.Create("kasmos", taskstore.TaskEntry{Filename: "plan", Status: taskstore.StatusReady}))
+	require.NoError(t, store.SetLinearLink("kasmos", "plan", taskstore.LinearLink{LinearIssueID: "issue-123", LinearIdentifier: "KAS-123"}))
+
+	resp, err := http.Get(srv.URL + "/v1/projects/kasmos/tasks/_/linear-link/lookup?issue=issue-123&status=ready")
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	var payload struct {
+		Filename string `json:"filename"`
+	}
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&payload))
+	resp.Body.Close()
+	assert.Equal(t, "plan", payload.Filename)
+
+	resp, err = http.Get(srv.URL + "/v1/projects/kasmos/tasks/_/linear-link/lookup?issue=missing&status=ready")
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
+	resp.Body.Close()
+
+	resp, err = http.Get(srv.URL + "/v1/projects/kasmos/tasks/_/linear-link/lookup?status=ready")
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
+	resp.Body.Close()
+}
+
+func TestHTTPStore_SetLinearLinkIfNoActiveDuplicate(t *testing.T) {
+	store := newTestStore(t)
+	srv := httptest.NewServer(taskstore.NewHandler(store))
+	defer srv.Close()
+	client := taskstore.NewHTTPStore(srv.URL, "kasmos")
+
+	require.NoError(t, store.Create("kasmos", taskstore.TaskEntry{Filename: "plan", Status: taskstore.StatusPlanning}))
+	require.NoError(t, store.Create("kasmos", taskstore.TaskEntry{Filename: "other", Status: taskstore.StatusReviewing}))
+
+	link := taskstore.LinearLink{LinearIssueID: "issue-123", LinearIdentifier: "KAS-123"}
+	conflict, err := client.SetLinearLinkIfNoActiveDuplicate("kasmos", "plan", link, taskstore.StatusPlanning, taskstore.StatusReviewing)
+	require.NoError(t, err)
+	assert.Empty(t, conflict)
+
+	conflict, err = client.SetLinearLinkIfNoActiveDuplicate("kasmos", "other", link, taskstore.StatusPlanning, taskstore.StatusReviewing)
+	require.NoError(t, err)
+	assert.Equal(t, "plan", conflict)
+
+	other, err := store.Get("kasmos", "other")
+	require.NoError(t, err)
+	assert.Empty(t, other.LinearIssueID)
+}
+
 func TestServer_ContentEndpoints(t *testing.T) {
 	store := newTestStore(t)
 	srv := httptest.NewServer(taskstore.NewHandler(store))

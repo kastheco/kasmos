@@ -169,6 +169,11 @@ type TaskEntry struct {
 	DoneAt               time.Time                `json:"done_at,omitempty"`
 	Goal                 string                   `json:"goal,omitempty"`
 	ClickUpTaskID        string                   `json:"clickup_task_id,omitempty"`
+	LinearIssueID        string                   `json:"linear_issue_id,omitempty"`
+	LinearIdentifier     string                   `json:"linear_identifier,omitempty"`
+	LinearURL            string                   `json:"linear_url,omitempty"`
+	LinearTeamKey        string                   `json:"linear_team_key,omitempty"`
+	LinearProjectID      string                   `json:"linear_project_id,omitempty"`
 	ReviewCycle          int                      `json:"review_cycle,omitempty"`
 	LatestReviewFeedback string                   `json:"latest_review_feedback,omitempty"`
 }
@@ -201,13 +206,14 @@ func (ps *TaskState) requireStore() error {
 }
 
 type TaskInfo struct {
-	Filename    string
-	Status      Status
-	Description string
-	Branch      string
-	Topic       string
-	CreatedAt   time.Time
-	DoneAt      time.Time
+	Filename         string
+	Status           Status
+	Description      string
+	Branch           string
+	Topic            string
+	CreatedAt        time.Time
+	DoneAt           time.Time
+	LinearIdentifier string
 }
 
 type TopicInfo struct {
@@ -241,6 +247,11 @@ func taskEntryFromStoreEntry(entry taskstore.TaskEntry, goal string) TaskEntry {
 		DoneAt:               entry.DoneAt,
 		Goal:                 goal,
 		ClickUpTaskID:        entry.ClickUpTaskID,
+		LinearIssueID:        entry.LinearIssueID,
+		LinearIdentifier:     entry.LinearIdentifier,
+		LinearURL:            entry.LinearURL,
+		LinearTeamKey:        entry.LinearTeamKey,
+		LinearProjectID:      entry.LinearProjectID,
 		ReviewCycle:          entry.ReviewCycle,
 		LatestReviewFeedback: entry.LatestReviewFeedback,
 	}
@@ -471,12 +482,13 @@ func (ps *TaskState) List() []TaskInfo {
 	result := make([]TaskInfo, 0, len(ps.Plans))
 	for filename, entry := range ps.Plans {
 		result = append(result, TaskInfo{
-			Filename:    filename,
-			Status:      entry.Status,
-			Description: entry.Description,
-			Branch:      entry.Branch,
-			Topic:       entry.Topic,
-			CreatedAt:   entry.CreatedAt,
+			Filename:         filename,
+			Status:           entry.Status,
+			Description:      entry.Description,
+			Branch:           entry.Branch,
+			Topic:            entry.Topic,
+			CreatedAt:        entry.CreatedAt,
+			LinearIdentifier: entry.LinearIdentifier,
 		})
 	}
 	sort.Slice(result, func(i, j int) bool {
@@ -884,6 +896,11 @@ func (ps *TaskState) toTaskstoreEntry(filename string, e TaskEntry) taskstore.Ta
 		DoneAt:               e.DoneAt,
 		Goal:                 e.Goal,
 		ClickUpTaskID:        e.ClickUpTaskID,
+		LinearIssueID:        e.LinearIssueID,
+		LinearIdentifier:     e.LinearIdentifier,
+		LinearURL:            e.LinearURL,
+		LinearTeamKey:        e.LinearTeamKey,
+		LinearProjectID:      e.LinearProjectID,
 		ReviewCycle:          e.ReviewCycle,
 		LatestReviewFeedback: e.LatestReviewFeedback,
 	}
@@ -933,6 +950,50 @@ func (ps *TaskState) SetClickUpTaskID(filename, taskID string) error {
 	if err := ps.store.SetClickUpTaskID(ps.project, filename, taskID); err != nil {
 		return fmt.Errorf("task store: %w", err)
 	}
+	return nil
+}
+
+// SetLinearLink assigns Linear issue coordinates to an existing plan entry and
+// persists to the store.
+func (ps *TaskState) SetLinearLink(filename string, link taskstore.LinearLink) error {
+	if err := ps.requireStore(); err != nil {
+		return err
+	}
+	entry, ok := ps.Plans[filename]
+	if !ok {
+		return fmt.Errorf("plan not found: %s", filename)
+	}
+	if err := ps.store.SetLinearLink(ps.project, filename, link); err != nil {
+		return fmt.Errorf("task store: %w", err)
+	}
+	entry.LinearIssueID = link.LinearIssueID
+	entry.LinearIdentifier = link.LinearIdentifier
+	entry.LinearURL = link.LinearURL
+	entry.LinearTeamKey = link.LinearTeamKey
+	entry.LinearProjectID = link.LinearProjectID
+	ps.Plans[filename] = entry
+	return nil
+}
+
+// ClearLinearLink removes Linear issue coordinates from an existing plan entry
+// and persists to the store.
+func (ps *TaskState) ClearLinearLink(filename string) error {
+	if err := ps.requireStore(); err != nil {
+		return err
+	}
+	entry, ok := ps.Plans[filename]
+	if !ok {
+		return fmt.Errorf("plan not found: %s", filename)
+	}
+	if err := ps.store.ClearLinearLink(ps.project, filename); err != nil {
+		return fmt.Errorf("task store: %w", err)
+	}
+	entry.LinearIssueID = ""
+	entry.LinearIdentifier = ""
+	entry.LinearURL = ""
+	entry.LinearTeamKey = ""
+	entry.LinearProjectID = ""
+	ps.Plans[filename] = entry
 	return nil
 }
 

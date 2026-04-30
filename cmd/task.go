@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/kastheco/kasmos/config"
+	"github.com/kastheco/kasmos/config/linearlink"
 	"github.com/kastheco/kasmos/config/taskfsm"
 	"github.com/kastheco/kasmos/config/taskparser"
 	"github.com/kastheco/kasmos/config/taskstate"
@@ -79,18 +80,57 @@ func executeTaskList(project, statusFilter string, store taskstore.Store) string
 	if err != nil {
 		return fmt.Sprintf("error: %v", err)
 	}
-	var sb strings.Builder
-	for _, info := range ps.List() {
+	return formatTaskList(ps.List(), statusFilter)
+}
+
+func filteredTaskList(entries []taskstate.TaskInfo, statusFilter string) []taskstate.TaskInfo {
+	result := make([]taskstate.TaskInfo, 0, len(entries))
+	for _, info := range entries {
 		if statusFilter != "" && string(info.Status) != statusFilter {
 			continue
 		}
 		if statusFilter == "" && string(info.Status) == string(taskstore.StatusCancelled) {
 			continue
 		}
-		line := fmt.Sprintf("%-14s %-50s %s", info.Status, info.Filename, info.Branch)
-		sb.WriteString(strings.TrimRight(line, " ") + "\n")
+		result = append(result, info)
+	}
+	return result
+}
+
+func taskListIncludesLinear(entries []taskstate.TaskInfo) bool {
+	for _, info := range entries {
+		if info.LinearIdentifier != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func formatTaskListRow(info taskstate.TaskInfo, includeLinear bool) string {
+	if includeLinear {
+		line := fmt.Sprintf("%-14s %-50s %-40s %s", info.Status, info.Filename, info.Branch, info.LinearIdentifier)
+		return strings.TrimRight(line, " ")
+	}
+	line := fmt.Sprintf("%-14s %-50s %s", info.Status, info.Filename, info.Branch)
+	return strings.TrimRight(line, " ")
+}
+
+func formatTaskList(entries []taskstate.TaskInfo, statusFilter string) string {
+	entries = filteredTaskList(entries, statusFilter)
+	includeLinear := taskListIncludesLinear(entries)
+
+	var sb strings.Builder
+	for _, info := range entries {
+		sb.WriteString(formatTaskListRow(info, includeLinear) + "\n")
 	}
 	return sb.String()
+}
+
+func linearLinkDisplayID(link taskstore.LinearLink) string {
+	if link.LinearIdentifier != "" {
+		return link.LinearIdentifier
+	}
+	return link.LinearIssueID
 }
 
 // executeTaskListWithStore returns a formatted string listing all plans from a
@@ -103,18 +143,7 @@ func executeTaskListWithStore(storeURL, project, statusFilter string) string {
 	if err != nil {
 		return fmt.Sprintf("error: %v", err)
 	}
-	var sb strings.Builder
-	for _, info := range ps.List() {
-		if statusFilter != "" && string(info.Status) != statusFilter {
-			continue
-		}
-		if statusFilter == "" && string(info.Status) == string(taskstore.StatusCancelled) {
-			continue
-		}
-		line := fmt.Sprintf("%-14s %-50s %s", info.Status, info.Filename, info.Branch)
-		sb.WriteString(strings.TrimRight(line, " ") + "\n")
-	}
-	return sb.String()
+	return formatTaskList(ps.List(), statusFilter)
 }
 
 // executeTaskSetStatus force-overrides a plan's status, bypassing the FSM.
@@ -1166,6 +1195,92 @@ Deprecated aliases: readiness-approved (→ verify-approved), readiness-changes 
 	}
 	linkClickUpCmd.Flags().StringVar(&linkProject, "project", "", "project name (default: derived from current directory)")
 	planCmd.AddCommand(linkClickUpCmd)
+
+	var linkLinearForce bool
+	var linkLinearComment bool
+	var linkLinearMessage string
+	var linkLinearReason string
+	var linkLinearProject string
+	linkLinearCmd := &cobra.Command{
+		Use:   "link-linear <plan-file> <issue>",
+		Short: "link a task to a Linear issue",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			_, repoProject, err := resolveRepoInfo()
+			if err != nil {
+				return err
+			}
+			return withAuthoritativeStore(repoProject, func(store taskstore.Store) error {
+				project := repoProject
+				if linkLinearProject != "" {
+					project = linkLinearProject
+				}
+				filename := normalizeTaskFilename(args[0])
+				result, err := executeTaskLinkLinear(cmd.Context(), project, linearlink.LinkInput{
+					Filename:    filename,
+					IssueArg:    args[1],
+					Reason:      linkLinearReason,
+					CommentBody: linkLinearMessage,
+					Force:       linkLinearForce,
+					PostComment: linkLinearComment,
+				}, store)
+				if err != nil {
+					if errors.Is(err, linearlink.ErrAlreadyLinked) {
+						return fmt.Errorf("task already linked to a linear issue; use --force to replace it: %w", err)
+					}
+					if errors.Is(err, linearlink.ErrDuplicateLink) {
+						return fmt.Errorf("another active task is already linked to that linear issue: %w", err)
+					}
+					return err
+				}
+				fmt.Printf("linked %s → %s (%s)\n", filename, result.Link.LinearIdentifier, result.Link.LinearURL)
+				if result.CommentWarning != "" {
+					fmt.Fprintf(cmd.ErrOrStderr(), "comment warning: %s\n", result.CommentWarning)
+				}
+				return nil
+			})
+		},
+	}
+	linkLinearCmd.Flags().BoolVar(&linkLinearForce, "force", false, "replace an existing Linear link")
+	linkLinearCmd.Flags().BoolVar(&linkLinearComment, "comment", false, "post a backlink comment to Linear")
+	linkLinearCmd.Flags().StringVar(&linkLinearMessage, "message", "", "Linear comment body (default: generated backlink)")
+	linkLinearCmd.Flags().StringVar(&linkLinearReason, "reason", "", "reason recorded in audit metadata")
+	linkLinearCmd.Flags().StringVar(&linkLinearProject, "project", "", "project name (default: derived from current directory)")
+	planCmd.AddCommand(linkLinearCmd)
+
+	var unlinkLinearReason string
+	var unlinkLinearProject string
+	unlinkLinearCmd := &cobra.Command{
+		Use:   "unlink-linear <plan-file>",
+		Short: "clear a task's Linear issue link",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			_, repoProject, err := resolveRepoInfo()
+			if err != nil {
+				return err
+			}
+			return withAuthoritativeStore(repoProject, func(store taskstore.Store) error {
+				project := repoProject
+				if unlinkLinearProject != "" {
+					project = unlinkLinearProject
+				}
+				filename := normalizeTaskFilename(args[0])
+				result, err := executeTaskUnlinkLinear(cmd.Context(), project, filename, unlinkLinearReason, store)
+				if err != nil {
+					return err
+				}
+				if result.Link.LinearIssueID == "" {
+					fmt.Printf("no link to clear for %s\n", filename)
+					return nil
+				}
+				fmt.Printf("unlinked %s from %s\n", filename, linearLinkDisplayID(result.Link))
+				return nil
+			})
+		},
+	}
+	unlinkLinearCmd.Flags().StringVar(&unlinkLinearReason, "reason", "", "reason recorded in audit metadata")
+	unlinkLinearCmd.Flags().StringVar(&unlinkLinearProject, "project", "", "project name (default: derived from current directory)")
+	planCmd.AddCommand(unlinkLinearCmd)
 
 	return planCmd
 }

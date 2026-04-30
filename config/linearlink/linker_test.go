@@ -1,0 +1,387 @@
+package linearlink
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"testing"
+	"time"
+
+	"github.com/kastheco/kasmos/config/auditlog"
+	"github.com/kastheco/kasmos/config/taskstore"
+	"github.com/kastheco/kasmos/internal/linear"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+const testProject = "kasmos"
+
+func TestLinker_Link(t *testing.T) {
+	tests := []struct {
+		name       string
+		setup      func(t *testing.T, store taskstore.Store, fetcher *fakeIssueFetcher)
+		input      LinkInput
+		wantErr    error
+		assertErr  func(t *testing.T, err error)
+		assertDone func(t *testing.T, store taskstore.Store, fetcher *fakeIssueFetcher, logger *recordingLogger, result LinkResult)
+	}{
+		{
+			name: "happy path writes link and emits audit",
+			input: LinkInput{
+				Filename: "plan",
+				IssueArg: "KAS-123",
+				Reason:   "operator requested",
+			},
+			assertDone: func(t *testing.T, store taskstore.Store, fetcher *fakeIssueFetcher, logger *recordingLogger, result LinkResult) {
+				require.Equal(t, "KAS-123", fetcher.issueArg)
+				require.False(t, result.Replaced)
+				assert.Equal(t, "issue-123", result.Link.LinearIssueID)
+				entry := mustGet(t, store, "plan")
+				assert.Equal(t, "issue-123", entry.LinearIssueID)
+				require.Len(t, logger.events, 1)
+				assert.Equal(t, auditlog.EventTaskLinearLinked, logger.events[0].Kind)
+				assert.Equal(t, testProject, logger.events[0].Project)
+				assert.Equal(t, "plan", logger.events[0].TaskFile)
+				assert.Equal(t, "info", logger.events[0].Level)
+				assertLinearDetail(t, logger.events[0].Detail, "", "KAS-123", "operator requested")
+			},
+		},
+		{
+			name: "not configured propagates without write",
+			setup: func(t *testing.T, store taskstore.Store, fetcher *fakeIssueFetcher) {
+				fetcher.issueErr = linear.ErrNotConfigured
+			},
+			input: LinkInput{
+				Filename: "plan",
+				IssueArg: "KAS-123",
+			},
+			wantErr: linear.ErrNotConfigured,
+			assertDone: func(t *testing.T, store taskstore.Store, fetcher *fakeIssueFetcher, logger *recordingLogger, result LinkResult) {
+				assert.Empty(t, mustGet(t, store, "plan").LinearIssueID)
+				assert.Empty(t, logger.events)
+			},
+		},
+		{
+			name: "issue not found propagates without write",
+			setup: func(t *testing.T, store taskstore.Store, fetcher *fakeIssueFetcher) {
+				fetcher.issueErr = errors.New("linear: issue \"KAS-404\" not found")
+			},
+			input: LinkInput{
+				Filename: "plan",
+				IssueArg: "KAS-404",
+			},
+			assertErr: func(t *testing.T, err error) {
+				assert.ErrorContains(t, err, "not found")
+			},
+			assertDone: func(t *testing.T, store taskstore.Store, fetcher *fakeIssueFetcher, logger *recordingLogger, result LinkResult) {
+				assert.Empty(t, mustGet(t, store, "plan").LinearIssueID)
+				assert.Empty(t, logger.events)
+			},
+		},
+		{
+			name: "already linked without force returns sentinel and does not write",
+			setup: func(t *testing.T, store taskstore.Store, fetcher *fakeIssueFetcher) {
+				require.NoError(t, store.SetLinearLink(testProject, "plan", taskstore.LinearLink{
+					LinearIssueID:    "old-issue",
+					LinearIdentifier: "KAS-1",
+					LinearURL:        "https://linear.app/kasmos/issue/KAS-1/old",
+				}))
+			},
+			input: LinkInput{
+				Filename: "plan",
+				IssueArg: "KAS-123",
+			},
+			wantErr: ErrAlreadyLinked,
+			assertErr: func(t *testing.T, err error) {
+				var linked *AlreadyLinkedError
+				require.ErrorAs(t, err, &linked)
+				assert.Equal(t, "KAS-1", linked.Identifier)
+			},
+			assertDone: func(t *testing.T, store taskstore.Store, fetcher *fakeIssueFetcher, logger *recordingLogger, result LinkResult) {
+				assert.Empty(t, fetcher.issueArg)
+				assert.Equal(t, "old-issue", mustGet(t, store, "plan").LinearIssueID)
+				assert.Empty(t, logger.events)
+			},
+		},
+		{
+			name: "force replace fetches first then writes and records previous identifier",
+			setup: func(t *testing.T, store taskstore.Store, fetcher *fakeIssueFetcher) {
+				require.NoError(t, store.SetLinearLink(testProject, "plan", taskstore.LinearLink{
+					LinearIssueID:    "old-issue",
+					LinearIdentifier: "KAS-1",
+					LinearURL:        "https://linear.app/kasmos/issue/KAS-1/old",
+				}))
+			},
+			input: LinkInput{
+				Filename: "plan",
+				IssueArg: "KAS-123",
+				Reason:   "replacement",
+				Force:    true,
+			},
+			assertDone: func(t *testing.T, store taskstore.Store, fetcher *fakeIssueFetcher, logger *recordingLogger, result LinkResult) {
+				require.Equal(t, "KAS-123", fetcher.issueArg)
+				require.True(t, result.Replaced)
+				assert.Equal(t, "issue-123", mustGet(t, store, "plan").LinearIssueID)
+				require.Len(t, logger.events, 1)
+				assertLinearDetail(t, logger.events[0].Detail, "KAS-1", "KAS-123", "replacement")
+			},
+		},
+		{
+			name: "duplicate active task returns sentinel using canonical issue id and does not write",
+			setup: func(t *testing.T, store taskstore.Store, fetcher *fakeIssueFetcher) {
+				require.NoError(t, store.Create(testProject, taskstore.TaskEntry{
+					Filename:  "other",
+					Status:    taskstore.StatusImplementing,
+					CreatedAt: time.Now(),
+				}))
+				require.NoError(t, store.SetLinearLink(testProject, "other", taskstore.LinearLink{
+					LinearIssueID:    "issue-123",
+					LinearIdentifier: "DIFFERENT-999",
+					LinearURL:        "https://linear.app/kasmos/issue/DIFFERENT-999/conflict",
+				}))
+			},
+			input: LinkInput{
+				Filename: "plan",
+				IssueArg: "KAS-123",
+			},
+			wantErr: ErrDuplicateLink,
+			assertErr: func(t *testing.T, err error) {
+				var dup *DuplicateLinkError
+				require.ErrorAs(t, err, &dup)
+				assert.Equal(t, "other", dup.Filename)
+			},
+			assertDone: func(t *testing.T, store taskstore.Store, fetcher *fakeIssueFetcher, logger *recordingLogger, result LinkResult) {
+				assert.Empty(t, mustGet(t, store, "plan").LinearIssueID)
+				assert.Empty(t, logger.events)
+			},
+		},
+		{
+			name: "comment failure leaves link committed and returns warning",
+			setup: func(t *testing.T, store taskstore.Store, fetcher *fakeIssueFetcher) {
+				fetcher.commentErr = errors.New("linear: comment failed")
+			},
+			input: LinkInput{
+				Filename:    "plan",
+				IssueArg:    "KAS-123",
+				CommentBody: "linked from kasmos",
+				PostComment: true,
+			},
+			assertDone: func(t *testing.T, store taskstore.Store, fetcher *fakeIssueFetcher, logger *recordingLogger, result LinkResult) {
+				assert.Equal(t, "issue-123", mustGet(t, store, "plan").LinearIssueID)
+				assert.Equal(t, "issue-123", fetcher.commentIssueID)
+				assert.Equal(t, "linked from kasmos", fetcher.commentBody)
+				assert.Contains(t, result.CommentWarning, "comment failed")
+				require.Len(t, logger.events, 1)
+			},
+		},
+		{
+			name: "comment success returns url",
+			setup: func(t *testing.T, store taskstore.Store, fetcher *fakeIssueFetcher) {
+				fetcher.comment = &linear.Comment{ID: "comment-1", URL: "https://linear.app/comment/1", Body: "linked"}
+			},
+			input: LinkInput{
+				Filename:    "plan",
+				IssueArg:    "KAS-123",
+				CommentBody: "linked",
+				PostComment: true,
+			},
+			assertDone: func(t *testing.T, store taskstore.Store, fetcher *fakeIssueFetcher, logger *recordingLogger, result LinkResult) {
+				assert.Equal(t, "https://linear.app/comment/1", result.CommentURL)
+				assert.Empty(t, result.CommentWarning)
+			},
+		},
+		{
+			name: "comment true without body posts default backlink",
+			setup: func(t *testing.T, store taskstore.Store, fetcher *fakeIssueFetcher) {
+				fetcher.comment = &linear.Comment{ID: "comment-1", URL: "https://linear.app/comment/1", Body: "linked"}
+			},
+			input: LinkInput{
+				Filename:    "plan",
+				IssueArg:    "KAS-123",
+				PostComment: true,
+			},
+			assertDone: func(t *testing.T, store taskstore.Store, fetcher *fakeIssueFetcher, logger *recordingLogger, result LinkResult) {
+				assert.Equal(t, "issue-123", fetcher.commentIssueID)
+				assert.Equal(t, "kasmos task linked: plan @ plan-branch", fetcher.commentBody)
+				assert.Equal(t, "https://linear.app/comment/1", result.CommentURL)
+				assert.Empty(t, result.CommentWarning)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := newStoreWithTask(t)
+			fetcher := newFakeIssueFetcher()
+			logger := &recordingLogger{}
+			if tt.setup != nil {
+				tt.setup(t, store, fetcher)
+			}
+
+			result, err := New(store, fetcher, logger, testProject).Link(context.Background(), tt.input)
+			if tt.wantErr != nil {
+				require.ErrorIs(t, err, tt.wantErr)
+			}
+			if tt.assertErr != nil {
+				require.Error(t, err)
+				tt.assertErr(t, err)
+			} else if tt.wantErr == nil {
+				require.NoError(t, err)
+			}
+			if tt.assertDone != nil {
+				tt.assertDone(t, store, fetcher, logger, result)
+			}
+		})
+	}
+}
+
+func TestLinker_Unlink(t *testing.T) {
+	tests := []struct {
+		name       string
+		setup      func(t *testing.T, store taskstore.Store)
+		reason     string
+		assertDone func(t *testing.T, store taskstore.Store, fetcher *fakeIssueFetcher, logger *recordingLogger, result LinkResult)
+	}{
+		{
+			name: "happy path clears link and emits audit",
+			setup: func(t *testing.T, store taskstore.Store) {
+				require.NoError(t, store.SetLinearLink(testProject, "plan", taskstore.LinearLink{
+					LinearIssueID:    "issue-123",
+					LinearIdentifier: "KAS-123",
+					LinearURL:        "https://linear.app/kasmos/issue/KAS-123/link",
+				}))
+			},
+			reason: "wrong task",
+			assertDone: func(t *testing.T, store taskstore.Store, fetcher *fakeIssueFetcher, logger *recordingLogger, result LinkResult) {
+				assert.True(t, result.Replaced)
+				assert.Equal(t, "issue-123", result.Link.LinearIssueID)
+				assert.Empty(t, mustGet(t, store, "plan").LinearIssueID)
+				assert.Empty(t, fetcher.issueArg)
+				assert.Empty(t, fetcher.commentIssueID)
+				require.Len(t, logger.events, 1)
+				assert.Equal(t, auditlog.EventTaskLinearUnlinked, logger.events[0].Kind)
+				assertLinearDetail(t, logger.events[0].Detail, "KAS-123", "", "wrong task")
+			},
+		},
+		{
+			name: "no link returns empty result without audit",
+			assertDone: func(t *testing.T, store taskstore.Store, fetcher *fakeIssueFetcher, logger *recordingLogger, result LinkResult) {
+				assert.False(t, result.Replaced)
+				assert.Empty(t, result.Link.LinearIssueID)
+				assert.Empty(t, mustGet(t, store, "plan").LinearIssueID)
+				assert.Empty(t, logger.events)
+				assert.Empty(t, fetcher.issueArg)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := newStoreWithTask(t)
+			fetcher := newFakeIssueFetcher()
+			logger := &recordingLogger{}
+			if tt.setup != nil {
+				tt.setup(t, store)
+			}
+
+			result, err := New(store, fetcher, logger, testProject).Unlink(context.Background(), "plan", tt.reason)
+			require.NoError(t, err)
+			tt.assertDone(t, store, fetcher, logger, result)
+		})
+	}
+}
+
+func newStoreWithTask(t *testing.T) taskstore.Store {
+	t.Helper()
+	store := taskstore.NewTestSQLiteStore(t)
+	require.NoError(t, store.Create(testProject, taskstore.TaskEntry{
+		Filename:  "plan",
+		Status:    taskstore.StatusPlanning,
+		Branch:    "plan-branch",
+		CreatedAt: time.Now(),
+	}))
+	return store
+}
+
+func mustGet(t *testing.T, store taskstore.Store, filename string) taskstore.TaskEntry {
+	t.Helper()
+	entry, err := store.Get(testProject, filename)
+	require.NoError(t, err)
+	return entry
+}
+
+func newFakeIssueFetcher() *fakeIssueFetcher {
+	return &fakeIssueFetcher{
+		issue: &linear.Issue{
+			ID:         "issue-123",
+			Identifier: "KAS-123",
+			URL:        "https://linear.app/kasmos/issue/KAS-123/linker-service",
+			Team:       &linear.Team{ID: "team-1", Key: "KAS", Name: "kasmos"},
+			Project:    &linear.Project{ID: "project-1", Name: "kasmos"},
+		},
+	}
+}
+
+type fakeIssueFetcher struct {
+	issueArg       string
+	issue          *linear.Issue
+	issueErr       error
+	commentIssueID string
+	commentBody    string
+	comment        *linear.Comment
+	commentErr     error
+}
+
+func (f *fakeIssueFetcher) Issue(_ context.Context, idOrIdentifier string) (*linear.Issue, error) {
+	f.issueArg = idOrIdentifier
+	if f.issueErr != nil {
+		return nil, f.issueErr
+	}
+	return f.issue, nil
+}
+
+func (f *fakeIssueFetcher) CreateComment(_ context.Context, issueID, body string) (*linear.Comment, error) {
+	f.commentIssueID = issueID
+	f.commentBody = body
+	if f.commentErr != nil {
+		return nil, f.commentErr
+	}
+	return f.comment, nil
+}
+
+type recordingLogger struct {
+	events []auditlog.Event
+}
+
+func (l *recordingLogger) Emit(event auditlog.Event) {
+	l.events = append(l.events, event)
+}
+
+func (l *recordingLogger) Query(auditlog.QueryFilter) ([]auditlog.Event, error) {
+	return l.events, nil
+}
+
+func (l *recordingLogger) Close() error {
+	return nil
+}
+
+func assertLinearDetail(t *testing.T, raw, previous, next, reason string) {
+	t.Helper()
+	var detail map[string]string
+	require.NoError(t, json.Unmarshal([]byte(raw), &detail))
+	if previous == "" {
+		assert.NotContains(t, detail, "previous_identifier")
+	} else {
+		assert.Equal(t, previous, detail["previous_identifier"])
+	}
+	if next == "" {
+		assert.NotContains(t, detail, "new_identifier")
+	} else {
+		assert.Equal(t, next, detail["new_identifier"])
+	}
+	if reason == "" {
+		assert.NotContains(t, detail, "reason")
+	} else {
+		assert.Equal(t, reason, detail["reason"])
+	}
+}

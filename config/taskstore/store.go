@@ -81,11 +81,49 @@ type TaskEntry struct {
 	Goal                 string         `json:"goal,omitempty"`
 	Content              string         `json:"content,omitempty"`
 	ClickUpTaskID        string         `json:"clickup_task_id,omitempty"`
+	LinearIssueID        string         `json:"linear_issue_id,omitempty"`
+	LinearIdentifier     string         `json:"linear_identifier,omitempty"`
+	LinearURL            string         `json:"linear_url,omitempty"`
+	LinearTeamKey        string         `json:"linear_team_key,omitempty"`
+	LinearProjectID      string         `json:"linear_project_id,omitempty"`
 	ReviewCycle          int            `json:"review_cycle,omitempty"`
 	LatestReviewFeedback string         `json:"latest_review_feedback,omitempty"`
 	PRURL                string         `json:"pr_url,omitempty"`
 	PRReviewDecision     string         `json:"pr_review_decision,omitempty"`
 	PRCheckStatus        string         `json:"pr_check_status,omitempty"`
+}
+
+// LinearLink holds the persisted Linear issue coordinates for a task.
+type LinearLink struct {
+	LinearIssueID    string `json:"linear_issue_id,omitempty"`
+	LinearIdentifier string `json:"linear_identifier,omitempty"`
+	LinearURL        string `json:"linear_url,omitempty"`
+	LinearTeamKey    string `json:"linear_team_key,omitempty"`
+	LinearProjectID  string `json:"linear_project_id,omitempty"`
+	IssueID          string `json:"-"`
+	Identifier       string `json:"-"`
+	URL              string `json:"-"`
+	TeamKey          string `json:"-"`
+	ProjectID        string `json:"-"`
+}
+
+func normalizedLinearLink(link LinearLink) LinearLink {
+	if link.LinearIssueID == "" {
+		link.LinearIssueID = link.IssueID
+	}
+	if link.LinearIdentifier == "" {
+		link.LinearIdentifier = link.Identifier
+	}
+	if link.LinearURL == "" {
+		link.LinearURL = link.URL
+	}
+	if link.LinearTeamKey == "" {
+		link.LinearTeamKey = link.TeamKey
+	}
+	if link.LinearProjectID == "" {
+		link.LinearProjectID = link.ProjectID
+	}
+	return link
 }
 
 // ExecutionStateWriter persists execution lifecycle metadata without rewriting
@@ -146,6 +184,12 @@ type Store interface {
 
 	// ClickUp integration
 	SetClickUpTaskID(project, filename, taskID string) error
+
+	// Linear integration
+	SetLinearLink(project, filename string, link LinearLink) error
+	SetLinearLinkIfNoActiveDuplicate(project, filename string, link LinearLink, statuses ...Status) (string, error)
+	ClearLinearLink(project, filename string) error
+	FindLinkedTask(project, issueID string, statuses ...Status) (string, error)
 
 	// Review cycle
 	IncrementReviewCycle(project, filename string) error

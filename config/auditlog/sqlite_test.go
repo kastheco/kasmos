@@ -1,6 +1,7 @@
 package auditlog_test
 
 import (
+	"encoding/json"
 	"path/filepath"
 	"testing"
 	"time"
@@ -62,6 +63,62 @@ func TestSQLiteLogger_QueryFilterByKind(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, events, 1)
 	assert.Equal(t, auditlog.EventPlanTransition, events[0].Kind)
+}
+
+func TestSQLite_LinearLinkEventKinds(t *testing.T) {
+	logger, err := auditlog.NewSQLiteLogger(":memory:")
+	require.NoError(t, err)
+	defer logger.Close()
+
+	linked := auditlog.Event{
+		Kind:    auditlog.EventTaskLinearLinked,
+		Project: "p",
+		Detail:  `{"kept":true}`,
+	}
+	auditlog.WithLinearLink("", "LIN-123", "operator requested")(&linked)
+	logger.Emit(linked)
+
+	unlinked := auditlog.Event{
+		Kind:    auditlog.EventTaskLinearUnlinked,
+		Project: "p",
+		Detail:  `{"kept":true}`,
+	}
+	auditlog.WithLinearLink("LIN-123", "", "")(&unlinked)
+	logger.Emit(unlinked)
+
+	events, err := logger.Query(auditlog.QueryFilter{
+		Project: "p",
+		Kinds: []auditlog.EventKind{
+			auditlog.EventTaskLinearLinked,
+			auditlog.EventTaskLinearUnlinked,
+		},
+		Limit: 10,
+	})
+	require.NoError(t, err)
+	require.Len(t, events, 2)
+
+	kinds := []auditlog.EventKind{events[0].Kind, events[1].Kind}
+	assert.Contains(t, kinds, auditlog.EventTaskLinearLinked)
+	assert.Contains(t, kinds, auditlog.EventTaskLinearUnlinked)
+
+	byKind := make(map[auditlog.EventKind]auditlog.Event, len(events))
+	for _, event := range events {
+		byKind[event.Kind] = event
+	}
+
+	var linkedDetail map[string]any
+	require.NoError(t, json.Unmarshal([]byte(byKind[auditlog.EventTaskLinearLinked].Detail), &linkedDetail))
+	assert.Equal(t, true, linkedDetail["kept"])
+	assert.Equal(t, "LIN-123", linkedDetail["new_identifier"])
+	assert.Equal(t, "operator requested", linkedDetail["reason"])
+	assert.NotContains(t, linkedDetail, "previous_identifier")
+
+	var unlinkedDetail map[string]any
+	require.NoError(t, json.Unmarshal([]byte(byKind[auditlog.EventTaskLinearUnlinked].Detail), &unlinkedDetail))
+	assert.Equal(t, true, unlinkedDetail["kept"])
+	assert.Equal(t, "LIN-123", unlinkedDetail["previous_identifier"])
+	assert.NotContains(t, unlinkedDetail, "new_identifier")
+	assert.NotContains(t, unlinkedDetail, "reason")
 }
 
 func TestSQLiteLogger_QueryOrderDesc(t *testing.T) {

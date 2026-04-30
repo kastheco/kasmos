@@ -334,3 +334,52 @@ kas task link-clickup [--project <project>]
 | flag | description |
 |------|-------------|
 | `--project` | override project name (default: derived from current directory) |
+
+---
+
+### link-linear
+
+link one task to a Linear issue by fetching the issue from Linear and storing its canonical identifiers in the task store.
+
+```
+kas task link-linear <plan-file> <issue> [--force] [--comment] [--message <body>] [--reason <text>] [--project <project>]
+```
+
+```sh
+kas task link-linear my-feature KAS-123
+kas task link-linear my-feature KAS-456 --force --reason "replanned scope"
+kas task link-linear my-feature KAS-123 --comment --message "kasmos is now executing this task"
+```
+
+| flag | description |
+|------|-------------|
+| `--force` | replace an existing Linear link on this task |
+| `--comment` | post an opt-in backlink comment to the Linear issue after the store write commits |
+| `--message` | comment body to use with `--comment`; defaults to a generated backlink |
+| `--reason` | operator reason recorded in audit metadata |
+| `--project` | override project name (default: derived from current directory) |
+
+`link-linear` requires a Linear API key in `KASMOS_LINEAR_API_KEY` or `LINEAR_API_KEY`. set `KASMOS_LINEAR_API_URL` only when pointing at a non-default Linear-compatible GraphQL endpoint.
+
+before writing the link, kasmos rejects duplicate active links to the same canonical Linear issue id within the same project. active duplicate detection covers tasks in `planning`, `implementing`, `reviewing`, and `verifying`; `ready`, `done`, and `cancelled` tasks do not block a new link. use `--force` only to replace the link on the same task. it does not override a duplicate link owned by another active task.
+
+---
+
+### unlink-linear
+
+clear the stored Linear issue link from one task.
+
+```
+kas task unlink-linear <plan-file> [--reason <text>] [--project <project>]
+```
+
+```sh
+kas task unlink-linear my-feature --reason "issue moved back to planning"
+```
+
+| flag | description |
+|------|-------------|
+| `--reason` | operator reason recorded in audit metadata |
+| `--project` | override project name (default: derived from current directory) |
+
+unlinking updates only kasmos task metadata and audit history. it does not edit the Linear issue or drive any kasmos lifecycle transition.

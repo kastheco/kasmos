@@ -1,7 +1,10 @@
 package taskstore_test
 
 import (
+	"database/sql"
+	"errors"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -521,6 +524,166 @@ func TestClickUpTaskIDRoundTrip_NotFound(t *testing.T) {
 	err := store.SetClickUpTaskID("proj", "nonexistent", "CU-xyz")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not found")
+}
+
+func TestLinearLinkRoundTrip(t *testing.T) {
+	store := newTestStore(t)
+	require.NoError(t, store.Create("proj", taskstore.TaskEntry{Filename: "linear-test", Status: taskstore.StatusReady}))
+
+	link := taskstore.LinearLink{
+		LinearIssueID:    "issue-123",
+		LinearIdentifier: "KAS-123",
+		LinearURL:        "https://linear.app/kas/issue/KAS-123",
+		LinearTeamKey:    "KAS",
+		LinearProjectID:  "project-456",
+	}
+	require.NoError(t, store.SetLinearLink("proj", "linear-test", link))
+
+	got, err := store.Get("proj", "linear-test")
+	require.NoError(t, err)
+	assert.Equal(t, link.LinearIssueID, got.LinearIssueID)
+	assert.Equal(t, link.LinearIdentifier, got.LinearIdentifier)
+	assert.Equal(t, link.LinearURL, got.LinearURL)
+	assert.Equal(t, link.LinearTeamKey, got.LinearTeamKey)
+	assert.Equal(t, link.LinearProjectID, got.LinearProjectID)
+
+	plans, err := store.List("proj")
+	require.NoError(t, err)
+	require.Len(t, plans, 1)
+	assert.Equal(t, link.LinearIssueID, plans[0].LinearIssueID)
+
+	require.NoError(t, store.Rename("proj", "linear-test", "linear-renamed"))
+	renamed, err := store.Get("proj", "linear-renamed")
+	require.NoError(t, err)
+	assert.Equal(t, link.LinearIssueID, renamed.LinearIssueID)
+
+	require.NoError(t, store.ClearLinearLink("proj", "linear-renamed"))
+	cleared, err := store.Get("proj", "linear-renamed")
+	require.NoError(t, err)
+	assert.Empty(t, cleared.LinearIssueID)
+	require.NoError(t, store.ClearLinearLink("proj", "linear-renamed"))
+
+	require.NoError(t, store.SetLinearLink("proj", "linear-renamed", link))
+	updated, err := store.Get("proj", "linear-renamed")
+	require.NoError(t, err)
+	updated.Description = "metadata-only edit"
+	require.NoError(t, store.Update("proj", "linear-renamed", updated))
+	afterUpdate, err := store.Get("proj", "linear-renamed")
+	require.NoError(t, err)
+	assert.Equal(t, "metadata-only edit", afterUpdate.Description)
+	assert.Equal(t, link.LinearIssueID, afterUpdate.LinearIssueID)
+	assert.Equal(t, link.LinearIdentifier, afterUpdate.LinearIdentifier)
+}
+
+func TestLinearLink_FindLinkedTask(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "taskstore.db")
+	store, err := taskstore.NewSQLiteStore(dbPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { store.Close() })
+
+	require.NoError(t, store.Create("proj", taskstore.TaskEntry{Filename: "active", Status: taskstore.StatusImplementing}))
+	require.NoError(t, store.Create("proj", taskstore.TaskEntry{Filename: "done", Status: taskstore.StatusDone}))
+	require.NoError(t, store.Create("proj", taskstore.TaskEntry{Filename: "cancelled", Status: taskstore.StatusCancelled}))
+	require.NoError(t, store.Create("other", taskstore.TaskEntry{Filename: "active", Status: taskstore.StatusReady}))
+	link := taskstore.LinearLink{LinearIssueID: "issue-123", LinearIdentifier: "KAS-123"}
+	require.NoError(t, store.SetLinearLink("proj", "active", link))
+	require.NoError(t, store.SetLinearLink("proj", "done", link))
+	require.NoError(t, store.SetLinearLink("proj", "cancelled", link))
+	require.NoError(t, store.SetLinearLink("other", "active", taskstore.LinearLink{LinearIssueID: "issue-123"}))
+
+	filename, err := store.FindLinkedTask("proj", "issue-123", taskstore.StatusReady, taskstore.StatusPlanning, taskstore.StatusImplementing, taskstore.StatusReviewing, taskstore.StatusVerifying)
+	require.NoError(t, err)
+	assert.Equal(t, "active", filename)
+
+	_, err = store.FindLinkedTask("proj", "missing", taskstore.StatusReady)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, taskstore.ErrNotFound))
+
+	_, err = store.FindLinkedTask("proj", "", taskstore.StatusReady)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, taskstore.ErrNotFound))
+
+	filename, err = store.FindLinkedTask("other", "issue-123", taskstore.StatusReady)
+	require.NoError(t, err)
+	assert.Equal(t, "active", filename)
+
+	db, err := sql.Open("sqlite", dbPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+	var detail string
+	err = db.QueryRow(`EXPLAIN QUERY PLAN SELECT filename FROM tasks INDEXED BY idx_tasks_linear_issue_id WHERE project = ? AND linear_issue_id = ? AND status IN (?) ORDER BY filename ASC LIMIT 1`, "proj", "issue-123", "ready").Scan(new(int), new(int), new(int), &detail)
+	require.NoError(t, err)
+	assert.Contains(t, detail, "idx_tasks_linear_issue_id")
+}
+
+func TestLinearLink_SetIfNoActiveDuplicateConcurrent(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "taskstore.db")
+	storeA, err := taskstore.NewSQLiteStore(dbPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = storeA.Close() })
+	storeB, err := taskstore.NewSQLiteStore(dbPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = storeB.Close() })
+
+	require.NoError(t, storeA.Create("proj", taskstore.TaskEntry{Filename: "first", Status: taskstore.StatusImplementing}))
+	require.NoError(t, storeA.Create("proj", taskstore.TaskEntry{Filename: "second", Status: taskstore.StatusReviewing}))
+	link := taskstore.LinearLink{LinearIssueID: "issue-123", LinearIdentifier: "KAS-123"}
+
+	type result struct {
+		filename string
+		conflict string
+		err      error
+	}
+	start := make(chan struct{})
+	results := make(chan result, 2)
+	var wg sync.WaitGroup
+	for filename, store := range map[string]*taskstore.SQLiteStore{"first": storeA, "second": storeB} {
+		wg.Add(1)
+		go func(filename string, store *taskstore.SQLiteStore) {
+			defer wg.Done()
+			<-start
+			conflict, err := store.SetLinearLinkIfNoActiveDuplicate("proj", filename, link, taskstore.StatusImplementing, taskstore.StatusReviewing)
+			results <- result{filename: filename, conflict: conflict, err: err}
+		}(filename, store)
+	}
+	close(start)
+	wg.Wait()
+	close(results)
+
+	var successes, conflicts int
+	for result := range results {
+		require.NoError(t, result.err)
+		if result.conflict == "" {
+			successes++
+			continue
+		}
+		conflicts++
+		assert.NotEqual(t, result.filename, result.conflict)
+	}
+	assert.Equal(t, 1, successes)
+	assert.Equal(t, 1, conflicts)
+
+	linked, err := storeA.FindLinkedTask("proj", "issue-123", taskstore.StatusImplementing, taskstore.StatusReviewing)
+	require.NoError(t, err)
+	first, err := storeA.Get("proj", "first")
+	require.NoError(t, err)
+	second, err := storeA.Get("proj", "second")
+	require.NoError(t, err)
+	assert.Contains(t, []string{"first", "second"}, linked)
+	assert.NotEqual(t, first.LinearIssueID != "", second.LinearIssueID != "", "exactly one task should be linked")
+}
+
+func TestLinearLink_NotFound(t *testing.T) {
+	store := newTestStore(t)
+	err := store.SetLinearLink("proj", "missing", taskstore.LinearLink{LinearIssueID: "issue-123"})
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, taskstore.ErrNotFound))
+
+	err = store.ClearLinearLink("proj", "missing")
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, taskstore.ErrNotFound))
 }
 
 func TestSQLiteMigration_PlansTableToTasks(t *testing.T) {
