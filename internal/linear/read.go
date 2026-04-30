@@ -74,18 +74,22 @@ func (c *Client) Viewer(ctx context.Context) (*User, error) {
 	return &data.Viewer, nil
 }
 
+// Teams returns a paginated list of teams in the workspace.
 func (c *Client) Teams(ctx context.Context, p PageOptions) ([]Team, PageInfo, error) {
 	return readConnection[Team](ctx, c, queryTeams, "teams", p)
 }
 
+// WorkflowStates returns a paginated list of workflow states in the workspace.
 func (c *Client) WorkflowStates(ctx context.Context, p PageOptions) ([]WorkflowState, PageInfo, error) {
 	return readConnection[WorkflowState](ctx, c, queryWorkflowStates, "workflowStates", p)
 }
 
+// Projects returns a paginated list of projects in the workspace.
 func (c *Client) Projects(ctx context.Context, p PageOptions) ([]Project, PageInfo, error) {
 	return readConnection[Project](ctx, c, queryProjects, "projects", p)
 }
 
+// Labels returns a paginated list of issue labels in the workspace.
 func (c *Client) Labels(ctx context.Context, p PageOptions) ([]Label, PageInfo, error) {
 	return readConnection[Label](ctx, c, queryLabels, "issueLabels", p)
 }

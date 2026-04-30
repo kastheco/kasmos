@@ -83,7 +83,10 @@ func (c *Client) Do(ctx context.Context, query string, variables map[string]inte
 		return fmt.Errorf("linear: http: %w", err)
 	}
 	defer resp.Body.Close()
-	raw, _ := io.ReadAll(resp.Body)
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("linear: read body: %w", err)
+	}
 
 	if resp.StatusCode == http.StatusTooManyRequests {
 		rl := &RateLimitError{StatusCode: resp.StatusCode, Message: string(raw)}
