@@ -3,6 +3,7 @@ package lineartrigger
 import (
 	"strings"
 
+	"github.com/kastheco/kasmos/config/taskfsm"
 	"github.com/kastheco/kasmos/config/taskparser"
 	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/kastheco/kasmos/internal/linear"
@@ -109,6 +110,11 @@ func validatePlanEntry(entry taskstore.TaskEntry, issueID string) ReadinessResul
 func (v *Validator) validateStartEntry(entry taskstore.TaskEntry, issue linear.Issue) ReadinessResult {
 	result := validatePlanEntry(entry, issue.ID)
 	if !result.OK {
+		return result
+	}
+	if strings.TrimSpace(entry.ExecutionState.Phase) != string(taskfsm.ExecutionPhasePlanned) {
+		result.OK = false
+		result.Reason = "invalid_transition"
 		return result
 	}
 	if _, err := taskparser.Parse(entry.Content); err != nil {

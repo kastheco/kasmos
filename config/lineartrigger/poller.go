@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"sort"
 	"time"
@@ -172,9 +173,21 @@ func (p *Poller) enqueueIssueComments(ctx context.Context, entry taskstore.TaskE
 	if err != nil {
 		return err
 	}
-	comments, _, err := p.deps.Linear.Comments(ctx, entry.LinearIssueID, linear.PageOptions{First: 50})
-	if err != nil {
-		return err
+	comments := []linear.Comment{}
+	page := linear.PageOptions{First: 50}
+	for {
+		batch, pageInfo, err := p.deps.Linear.Comments(ctx, entry.LinearIssueID, page)
+		if err != nil {
+			return err
+		}
+		comments = append(comments, batch...)
+		if !pageInfo.HasNextPage {
+			break
+		}
+		if pageInfo.EndCursor == "" {
+			return fmt.Errorf("lineartrigger: comments page for %q missing end cursor", entry.LinearIssueID)
+		}
+		page.After = pageInfo.EndCursor
 	}
 	sort.SliceStable(comments, func(i, j int) bool {
 		return comments[i].CreatedAt.Before(comments[j].CreatedAt)
@@ -186,9 +199,20 @@ func (p *Poller) enqueueIssueComments(ctx context.Context, entry taskstore.TaskE
 		URL:        entry.LinearURL,
 	}
 	var maxSeen time.Time
+	firstPollCutoff := time.Time{}
+	if lastSeen.IsZero() {
+		lookback := p.deps.Config.Lookback
+		if lookback <= 0 {
+			lookback = defaultLookback
+		}
+		firstPollCutoff = p.deps.Now().Add(-lookback)
+	}
 	for _, comment := range comments {
 		if comment.CreatedAt.After(maxSeen) {
 			maxSeen = comment.CreatedAt
+		}
+		if !firstPollCutoff.IsZero() && comment.CreatedAt.Before(firstPollCutoff) {
+			continue
 		}
 		if !lastSeen.IsZero() && !comment.CreatedAt.After(lastSeen) {
 			continue
@@ -209,7 +233,7 @@ func (p *Poller) enqueueIssueComments(ctx context.Context, entry taskstore.TaskE
 			intent.AuthorID = comment.User.ID
 			intent.AuthorEmail = comment.User.Email
 		}
-		queued, err := p.enqueue(context.Background(), intent, issue, comment.CreatedAt)
+		queued, err := p.enqueue(ctx, intent, issue, comment.CreatedAt)
 		if err != nil {
 			return err
 		}
@@ -311,6 +335,10 @@ func (p *Poller) acknowledgeOutcome(ctx context.Context, trigger taskstore.Linea
 		}
 		return err
 	}
+	if outcome.Kind == OutcomeHelp || outcome.Kind == OutcomeStatusReply {
+		_, err := p.deps.Linear.CreateComment(ctx, issue.ID, body)
+		return err
+	}
 	return nil
 }
 
@@ -375,7 +403,7 @@ func (p *Poller) configuredTriggerLabels() map[string]Verb {
 	if p.deps.Config.Labels.Plan != "" {
 		labels[p.deps.Config.Labels.Plan] = VerbPlan
 	}
-	if p.deps.Config.Labels.Start != "" {
+	if p.deps.Config.StartGuard.AllowLabelStart && p.deps.Config.Labels.Start != "" {
 		labels[p.deps.Config.Labels.Start] = VerbStart
 	}
 	return labels
@@ -443,13 +471,14 @@ func labelSourceID(entry taskstore.LinearTriggerEntry) string {
 
 func (p *Poller) emit(kind auditlog.EventKind, trigger taskstore.LinearTriggerEntry, target, reason, level string) {
 	detail, _ := json.Marshal(map[string]string{
-		"linear_issue_id": trigger.LinearIssueID,
-		"identifier":      trigger.LinearIdentifier,
-		"verb":            trigger.CommandKind,
-		"source_kind":     trigger.SourceKind,
-		"source_id":       trigger.SourceID,
-		"target":          target,
-		"reason":          reason,
+		"linear_issue_id":   trigger.LinearIssueID,
+		"linear_identifier": trigger.LinearIdentifier,
+		"command_kind":      trigger.CommandKind,
+		"source_kind":       trigger.SourceKind,
+		"source_id":         trigger.SourceID,
+		"actor_id":          trigger.ActorID,
+		"target":            target,
+		"reason":            reason,
 	})
 	p.deps.Audit.Emit(auditlog.Event{
 		Kind:     kind,

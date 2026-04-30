@@ -2,6 +2,8 @@ package lineartrigger
 
 import (
 	"context"
+	"encoding/json"
+	"strconv"
 	"testing"
 	"time"
 
@@ -99,6 +101,41 @@ func TestPollerPollOnceReactionUnsupportedFallsBackToComment(t *testing.T) {
 	assert.Contains(t, h.linear.createdComments[0].body, "kasmos trigger status")
 }
 
+func TestPollerPollOnceReadOnlyRepliesPostCommentWhenReactionSucceeds(t *testing.T) {
+	ctx := context.Background()
+	h := newPollerHarness(t)
+	require.NoError(t, h.store.Create("proj", taskstore.TaskEntry{
+		Filename:         "eng-1",
+		Status:           taskstore.StatusReady,
+		Content:          "# plan\n\n## Wave 1\n\n### Task 1: test\n",
+		LinearIssueID:    "lin-plan",
+		LinearIdentifier: "ENG-1",
+	}))
+	h.linear.byID["lin-plan"] = testIssue("lin-plan")
+	h.linear.comments["lin-plan"] = []linear.Comment{
+		{
+			ID:        "comment-help",
+			Body:      "/kasmos help",
+			CreatedAt: h.now.Add(time.Minute),
+			User:      &linear.User{ID: "actor"},
+		},
+		{
+			ID:        "comment-status",
+			Body:      "/kasmos status",
+			CreatedAt: h.now.Add(2 * time.Minute),
+			User:      &linear.User{ID: "actor"},
+		},
+	}
+
+	stats := h.poller.PollOnce(ctx)
+	require.False(t, stats.Aborted, "unexpected poll error: %v", stats.Err)
+
+	require.Len(t, h.linear.reactions, 2)
+	require.Len(t, h.linear.createdComments, 2)
+	assert.Contains(t, h.linear.createdComments[0].body, "kasmos trigger help")
+	assert.Contains(t, h.linear.createdComments[1].body, "kasmos trigger status")
+}
+
 func TestPollerPollOnceLastSeenCommentAdvancesMonotonically(t *testing.T) {
 	ctx := context.Background()
 	h := newPollerHarness(t)
@@ -129,10 +166,141 @@ func TestPollerPollOnceLastSeenCommentAdvancesMonotonically(t *testing.T) {
 	assert.Equal(t, second.UTC(), gotAgain.UTC())
 }
 
+func TestPollerPollOncePreservesStartGuardLabelWhenLabelStartDisabled(t *testing.T) {
+	ctx := context.Background()
+	h := newPollerHarness(t)
+	h.poller.deps.Config.Labels.Create = ""
+	h.poller.deps.Config.Labels.Plan = ""
+	h.poller.deps.Config.Labels.Start = "label-start"
+	h.poller.deps.Config.StartGuard.AllowLabelStart = false
+	h.linear.issues = []linear.Issue{{
+		ID:         "lin-start",
+		Identifier: "ENG-2",
+		Title:      "Start guarded",
+		Team:       &linear.Team{ID: "team-1", Key: "ENG"},
+		Labels:     []linear.Label{{ID: "label-start", Name: "agent-ready"}},
+	}}
+
+	stats := h.poller.PollOnce(ctx)
+	require.False(t, stats.Aborted, "unexpected poll error: %v", stats.Err)
+
+	assert.Empty(t, h.linear.removedLabels)
+	triggers, err := h.store.ListUnprocessedLinearTriggers("proj", 10)
+	require.NoError(t, err)
+	assert.Empty(t, triggers)
+}
+
+func TestPollerPollOnceSkipsOldCommentsOnFirstPoll(t *testing.T) {
+	ctx := context.Background()
+	h := newPollerHarness(t)
+	require.NoError(t, h.store.Create("proj", taskstore.TaskEntry{
+		Filename:         "eng-1",
+		Status:           taskstore.StatusReady,
+		Content:          "# plan\n\n## Wave 1\n\n### Task 1: test\n",
+		LinearIssueID:    "lin-old",
+		LinearIdentifier: "ENG-1",
+	}))
+	h.linear.byID["lin-old"] = testIssue("lin-old")
+	h.linear.comments["lin-old"] = []linear.Comment{{
+		ID:        "old-command",
+		Body:      "/kasmos plan",
+		CreatedAt: h.now.Add(-time.Hour),
+		User:      &linear.User{ID: "actor"},
+	}}
+
+	stats := h.poller.PollOnce(ctx)
+	require.False(t, stats.Aborted, "unexpected poll error: %v", stats.Err)
+
+	signals, err := h.gateway.List("proj", taskstore.SignalPending)
+	require.NoError(t, err)
+	assert.Empty(t, signals)
+}
+
+func TestPollerPollOncePagesCommentsAndProcessesCreatedAtOrderOnce(t *testing.T) {
+	ctx := context.Background()
+	h := newPollerHarness(t)
+	require.NoError(t, h.store.Create("proj", taskstore.TaskEntry{
+		Filename:         "eng-1",
+		Status:           taskstore.StatusReady,
+		Content:          "# plan\n\n## Wave 1\n\n### Task 1: test\n",
+		LinearIssueID:    "lin-pages",
+		LinearIdentifier: "ENG-1",
+	}))
+	h.linear.byID["lin-pages"] = testIssue("lin-pages")
+	for i := 0; i < 49; i++ {
+		h.linear.comments["lin-pages"] = append(h.linear.comments["lin-pages"], linear.Comment{
+			ID:        "ordinary-" + strconv.Itoa(i),
+			Body:      "ordinary",
+			CreatedAt: h.now.Add(time.Duration(i) * time.Second),
+		})
+	}
+	h.linear.comments["lin-pages"] = append(h.linear.comments["lin-pages"],
+		linear.Comment{
+			ID:        "newer-help",
+			Body:      "/kasmos help",
+			CreatedAt: h.now.Add(2 * time.Minute),
+			User:      &linear.User{ID: "actor"},
+		},
+		linear.Comment{
+			ID:        "older-status",
+			Body:      "/kasmos status",
+			CreatedAt: h.now.Add(time.Minute),
+			User:      &linear.User{ID: "actor"},
+		},
+	)
+
+	stats := h.poller.PollOnce(ctx)
+	require.False(t, stats.Aborted, "unexpected poll error: %v", stats.Err)
+	stats = h.poller.PollOnce(ctx)
+	require.False(t, stats.Aborted, "unexpected poll error: %v", stats.Err)
+
+	require.GreaterOrEqual(t, len(h.linear.commentPages), 2)
+	require.Len(t, h.linear.createdComments, 2)
+	assert.Contains(t, h.linear.createdComments[0].body, "kasmos trigger status")
+	assert.Contains(t, h.linear.createdComments[1].body, "kasmos trigger help")
+}
+
+func TestPollerAuditDetailsUseStableTriggerFields(t *testing.T) {
+	ctx := context.Background()
+	h := newPollerHarness(t)
+	require.NoError(t, h.store.Create("proj", taskstore.TaskEntry{
+		Filename:         "eng-1",
+		Status:           taskstore.StatusReady,
+		Content:          "# plan\n\n## Wave 1\n\n### Task 1: test\n",
+		LinearIssueID:    "lin-audit",
+		LinearIdentifier: "ENG-1",
+	}))
+	h.linear.byID["lin-audit"] = testIssue("lin-audit")
+	h.linear.comments["lin-audit"] = []linear.Comment{{
+		ID:        "comment-audit",
+		Body:      "/kasmos status",
+		CreatedAt: h.now.Add(time.Minute),
+		User:      &linear.User{ID: "actor"},
+	}}
+
+	stats := h.poller.PollOnce(ctx)
+	require.False(t, stats.Aborted, "unexpected poll error: %v", stats.Err)
+
+	require.NotEmpty(t, h.audit.events)
+	for _, event := range h.audit.events {
+		var detail map[string]string
+		require.NoError(t, json.Unmarshal([]byte(event.Detail), &detail))
+		assert.Equal(t, "status", detail["command_kind"])
+		assert.Equal(t, "comment", detail["source_kind"])
+		assert.Equal(t, "comment-audit", detail["source_id"])
+		assert.Equal(t, "ENG-1", detail["linear_identifier"])
+		assert.Equal(t, "actor", detail["actor_id"])
+		assert.Contains(t, detail, "reason")
+		assert.NotContains(t, detail, "verb")
+		assert.NotContains(t, detail, "identifier")
+	}
+}
+
 type pollerHarness struct {
 	store   *taskstore.SQLiteStore
 	gateway taskstore.SignalGateway
 	linear  *fakeLinearClient
+	audit   *triggerRecordingLogger
 	poller  *Poller
 	now     time.Time
 }
@@ -148,6 +316,7 @@ func newPollerHarness(t *testing.T) *pollerHarness {
 	now := time.Date(2026, 4, 30, 12, 0, 0, 0, time.UTC)
 	client := newFakeLinearClient()
 	cfg := testConfig()
+	audit := &triggerRecordingLogger{}
 	linker := linearlink.New(store, client, auditlog.NopLogger(), "proj")
 	poller := NewPoller(PollerDeps{
 		Project: "proj",
@@ -156,17 +325,26 @@ func newPollerHarness(t *testing.T) *pollerHarness {
 		Linker:  linker,
 		Linear:  client,
 		Gateway: gateway,
-		Audit:   auditlog.NopLogger(),
+		Audit:   audit,
 		Now:     func() time.Time { return now },
 	})
-	return &pollerHarness{store: store, gateway: gateway, linear: client, poller: poller, now: now}
+	return &pollerHarness{store: store, gateway: gateway, linear: client, audit: audit, poller: poller, now: now}
 }
 
 type fakeLinearClient struct {
-	issues          []linear.Issue
-	byID            map[string]linear.Issue
-	comments        map[string][]linear.Comment
-	issueCalls      map[string]int
+	issues        []linear.Issue
+	byID          map[string]linear.Issue
+	comments      map[string][]linear.Comment
+	issueCalls    map[string]int
+	commentPages  []linear.PageOptions
+	removedLabels []struct {
+		issueID string
+		labels  []string
+	}
+	reactions []struct {
+		commentID string
+		emoji     string
+	}
 	createdComments []struct {
 		issueID string
 		body    string
@@ -211,15 +389,44 @@ func (f *fakeLinearClient) Issues(_ context.Context, q linear.IssueQuery) ([]lin
 	return out, linear.PageInfo{}, nil
 }
 
-func (f *fakeLinearClient) Comments(_ context.Context, issueID string, _ linear.PageOptions) ([]linear.Comment, linear.PageInfo, error) {
-	return append([]linear.Comment(nil), f.comments[issueID]...), linear.PageInfo{}, nil
+func (f *fakeLinearClient) Comments(_ context.Context, issueID string, p linear.PageOptions) ([]linear.Comment, linear.PageInfo, error) {
+	f.commentPages = append(f.commentPages, p)
+	all := f.comments[issueID]
+	first := p.First
+	if first <= 0 {
+		first = 25
+	}
+	start := 0
+	if p.After != "" {
+		parsed, err := strconv.Atoi(p.After)
+		if err == nil {
+			start = parsed
+		}
+	}
+	if start > len(all) {
+		start = len(all)
+	}
+	end := start + first
+	if end > len(all) {
+		end = len(all)
+	}
+	page := append([]linear.Comment(nil), all[start:end]...)
+	pageInfo := linear.PageInfo{HasNextPage: end < len(all)}
+	if pageInfo.HasNextPage {
+		pageInfo.EndCursor = strconv.Itoa(end)
+	}
+	return page, pageInfo, nil
 }
 
 func (f *fakeLinearClient) IssueLabel(_ context.Context, labelID string) (*linear.Label, error) {
 	return &linear.Label{ID: labelID}, nil
 }
 
-func (f *fakeLinearClient) RemoveLabelFromIssue(_ context.Context, _ string, _ []string) error {
+func (f *fakeLinearClient) RemoveLabelFromIssue(_ context.Context, issueID string, labels []string) error {
+	f.removedLabels = append(f.removedLabels, struct {
+		issueID string
+		labels  []string
+	}{issueID: issueID, labels: append([]string(nil), labels...)})
 	return nil
 }
 
@@ -231,11 +438,31 @@ func (f *fakeLinearClient) CreateComment(_ context.Context, issueID, body string
 	return &linear.Comment{ID: "created"}, nil
 }
 
-func (f *fakeLinearClient) CreateCommentReaction(_ context.Context, _ string, _ string) error {
+func (f *fakeLinearClient) CreateCommentReaction(_ context.Context, commentID string, emoji string) error {
+	f.reactions = append(f.reactions, struct {
+		commentID string
+		emoji     string
+	}{commentID: commentID, emoji: emoji})
 	return f.errReaction
 }
 
 func (f *fakeLinearClient) UpdateIssue(_ context.Context, issueID string, _ linear.UpdateIssueInput) (*linear.Issue, error) {
 	issue, _ := f.Issue(context.Background(), issueID)
 	return issue, nil
+}
+
+type triggerRecordingLogger struct {
+	events []auditlog.Event
+}
+
+func (l *triggerRecordingLogger) Emit(event auditlog.Event) {
+	l.events = append(l.events, event)
+}
+
+func (l *triggerRecordingLogger) Query(auditlog.QueryFilter) ([]auditlog.Event, error) {
+	return l.events, nil
+}
+
+func (l *triggerRecordingLogger) Close() error {
+	return nil
 }

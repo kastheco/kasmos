@@ -29,11 +29,12 @@ func TestServiceDecideDeterministicOutcomes(t *testing.T) {
 		store := newServiceStore()
 		svc := NewService("proj", testConfig(), store, nil, nil, nil)
 
-		out := svc.Decide(ctx, ParsedIntent{Source: SourceLabel, Verb: VerbCreate, LabelID: "label-create"}, issue)
+		out := svc.Decide(ctx, ParsedIntent{Source: SourceComment, Verb: VerbCreate, CommentID: "comment-1", TaskFileArg: "custom-task", AuthorID: "actor"}, issue)
 
 		require.Equal(t, OutcomeCreate, out.Kind)
 		require.NotNil(t, out.CreateInput)
 		assert.Equal(t, "lin-1", out.CreateInput.IssueArg)
+		assert.Equal(t, "custom-task", out.CreateInput.Filename)
 		assert.Equal(t, "linear", out.CreateInput.Topic)
 		assert.Equal(t, "linear/", out.CreateInput.BranchPrefix)
 	})

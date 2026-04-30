@@ -3,6 +3,7 @@ package lineartrigger
 import (
 	"testing"
 
+	"github.com/kastheco/kasmos/config/taskfsm"
 	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/kastheco/kasmos/internal/linear"
 	"github.com/stretchr/testify/assert"
@@ -88,10 +89,11 @@ func TestValidatorValidate(t *testing.T) {
 
 	t.Run("start rejects unparseable content without wave header", func(t *testing.T) {
 		entry := taskstore.TaskEntry{
-			Filename:      "task",
-			Status:        taskstore.StatusReady,
-			LinearIssueID: "issue-1",
-			Content:       "**Goal:** not enough",
+			Filename:       "task",
+			Status:         taskstore.StatusReady,
+			ExecutionState: taskstore.ExecutionState{Phase: string(taskfsm.ExecutionPhasePlanned)},
+			LinearIssueID:  "issue-1",
+			Content:        "**Goal:** not enough",
 		}
 
 		result := NewValidator(Config{}, nil, "").Validate(VerbStart, entry, issue)
@@ -100,12 +102,27 @@ func TestValidatorValidate(t *testing.T) {
 		assert.Equal(t, "unparseable_plan", result.Reason)
 	})
 
-	t.Run("start requires start label when guard is enabled", func(t *testing.T) {
+	t.Run("start rejects draft-ready parseable task", func(t *testing.T) {
 		entry := taskstore.TaskEntry{
 			Filename:      "task",
 			Status:        taskstore.StatusReady,
 			LinearIssueID: "issue-1",
 			Content:       validContent,
+		}
+
+		result := NewValidator(Config{}, nil, "").Validate(VerbStart, entry, issue)
+
+		assert.False(t, result.OK)
+		assert.Equal(t, "invalid_transition", result.Reason)
+	})
+
+	t.Run("start requires start label when guard is enabled", func(t *testing.T) {
+		entry := taskstore.TaskEntry{
+			Filename:       "task",
+			Status:         taskstore.StatusReady,
+			ExecutionState: taskstore.ExecutionState{Phase: string(taskfsm.ExecutionPhasePlanned)},
+			LinearIssueID:  "issue-1",
+			Content:        validContent,
 		}
 		cfg := Config{StartGuard: StartGuard{RequireStartLabel: true}, Labels: LabelMap{Start: "start-label"}}
 
@@ -117,10 +134,11 @@ func TestValidatorValidate(t *testing.T) {
 
 	t.Run("start accepts ready linked parseable task with start label", func(t *testing.T) {
 		entry := taskstore.TaskEntry{
-			Filename:      "task",
-			Status:        taskstore.StatusReady,
-			LinearIssueID: "issue-1",
-			Content:       validContent,
+			Filename:       "task",
+			Status:         taskstore.StatusReady,
+			ExecutionState: taskstore.ExecutionState{Phase: string(taskfsm.ExecutionPhasePlanned)},
+			LinearIssueID:  "issue-1",
+			Content:        validContent,
 		}
 		cfg := Config{StartGuard: StartGuard{RequireStartLabel: true}, Labels: LabelMap{Start: "start-label"}}
 

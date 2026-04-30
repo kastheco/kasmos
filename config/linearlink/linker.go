@@ -265,6 +265,9 @@ func (l *Linker) CreateFromIssue(ctx context.Context, in CreateFromIssueInput) (
 		return CreateFromIssueResult{}, err
 	}
 	if err := l.store.SetContent(l.project, filename, seedBody); err != nil {
+		if cleanupErr := l.store.Delete(l.project, filename); cleanupErr != nil {
+			return CreateFromIssueResult{}, fmt.Errorf("linearlink: delete failed-created task %q after content error %v: %w", filename, err, cleanupErr)
+		}
 		return CreateFromIssueResult{}, err
 	}
 
@@ -278,6 +281,9 @@ func (l *Linker) CreateFromIssue(ctx context.Context, in CreateFromIssueInput) (
 		taskstore.StatusVerifying,
 	)
 	if err != nil {
+		if cleanupErr := l.store.Delete(l.project, filename); cleanupErr != nil {
+			return CreateFromIssueResult{}, fmt.Errorf("linearlink: delete failed-created task %q after link error %v: %w", filename, err, cleanupErr)
+		}
 		return CreateFromIssueResult{}, err
 	}
 	if conflict != "" {

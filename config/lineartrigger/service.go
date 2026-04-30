@@ -139,6 +139,7 @@ func (s *Service) Decide(ctx context.Context, intent ParsedIntent, issue linear.
 		}
 		return Outcome{Kind: OutcomeCreate, CreateInput: &linearlink.CreateFromIssueInput{
 			IssueArg:     issue.ID,
+			Filename:     intent.TaskFileArg,
 			Topic:        route.Match.Topic,
 			BranchPrefix: route.Match.BranchPrefix,
 			Reason:       "linear-trigger-create",

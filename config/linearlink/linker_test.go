@@ -335,6 +335,48 @@ func TestLinker_CreateFromIssue(t *testing.T) {
 		assert.Empty(t, logger.events)
 	})
 
+	t.Run("content persistence failure deletes created task", func(t *testing.T) {
+		base := taskstore.NewTestSQLiteStore(t)
+		store := &contentFailureStore{
+			Store: base,
+			err:   errors.New("content failed"),
+		}
+		logger := &recordingLogger{}
+
+		_, err := New(store, newFakeIssueFetcher(), logger, testProject).CreateFromIssue(context.Background(), CreateFromIssueInput{
+			IssueArg: "KAS-123",
+			Filename: "new-task",
+			Topic:    "linear",
+		})
+		require.ErrorContains(t, err, "content failed")
+		assert.Equal(t, "new-task", store.deleted)
+
+		_, getErr := base.Get(testProject, "new-task")
+		assert.ErrorIs(t, getErr, taskstore.ErrNotFound)
+		assert.Empty(t, logger.events)
+	})
+
+	t.Run("link persistence failure deletes created task", func(t *testing.T) {
+		base := taskstore.NewTestSQLiteStore(t)
+		store := &linkFailureStore{
+			Store: base,
+			err:   errors.New("link failed"),
+		}
+		logger := &recordingLogger{}
+
+		_, err := New(store, newFakeIssueFetcher(), logger, testProject).CreateFromIssue(context.Background(), CreateFromIssueInput{
+			IssueArg: "KAS-123",
+			Filename: "new-task",
+			Topic:    "linear",
+		})
+		require.ErrorContains(t, err, "link failed")
+		assert.Equal(t, "new-task", store.deleted)
+
+		_, getErr := base.Get(testProject, "new-task")
+		assert.ErrorIs(t, getErr, taskstore.ErrNotFound)
+		assert.Empty(t, logger.events)
+	})
+
 	t.Run("identifier fallback filename is sanitised", func(t *testing.T) {
 		store := taskstore.NewTestSQLiteStore(t)
 		fetcher := newFakeIssueFetcher()
@@ -485,6 +527,36 @@ func (s *lateConflictStore) SetLinearLinkIfNoActiveDuplicate(project, filename s
 }
 
 func (s *lateConflictStore) Delete(project, filename string) error {
+	s.deleted = filename
+	return s.Store.Delete(project, filename)
+}
+
+type contentFailureStore struct {
+	taskstore.Store
+	err     error
+	deleted string
+}
+
+func (s *contentFailureStore) SetContent(project, filename, content string) error {
+	return s.err
+}
+
+func (s *contentFailureStore) Delete(project, filename string) error {
+	s.deleted = filename
+	return s.Store.Delete(project, filename)
+}
+
+type linkFailureStore struct {
+	taskstore.Store
+	err     error
+	deleted string
+}
+
+func (s *linkFailureStore) SetLinearLinkIfNoActiveDuplicate(project, filename string, link taskstore.LinearLink, statuses ...taskstore.Status) (string, error) {
+	return "", s.err
+}
+
+func (s *linkFailureStore) Delete(project, filename string) error {
 	s.deleted = filename
 	return s.Store.Delete(project, filename)
 }
