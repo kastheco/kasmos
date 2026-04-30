@@ -19,6 +19,7 @@
 - **global task store** — tasks live at `~/.config/kasmos/taskstore.db`, shared across all managed repos via the daemon
 - **shared http mcp endpoint** — `kas serve` (or the `kasmosdb` systemd/launchd service) hosts a single mcp server at `http://127.0.0.1:7434/mcp`; all scaffolded harness configs point agents here — no per-agent stdio subprocess needed
 - **wave-based orchestration** — planning → architect → implement → review → readiness review lifecycle with per-wave agent concurrency
+- **Linear receipts** — optionally post one-way lifecycle, PR, merge, and cancellation receipts to linked Linear issues; see the [linear receipts guide](https://kasmos.kasthe.co/docs/guides/linear-receipts)
 - **multi-harness support** — works with claude, opencode, codex, and other mcp-aware agents
 - **tui + admin spa + daemon** — terminal and browser control surfaces backed by the same service pair
 - **git worktree isolation** — each task runs in its own branch and worktree; merges are handled at review time

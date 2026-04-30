@@ -4,7 +4,7 @@ title: "linear linking"
 
 # linear linking
 
-linear linking lets operators keep Linear as the human planning surface while kasmos remains the execution source of truth. a link is explicit task metadata: kasmos stores the Linear issue coordinates, shows them in task surfaces, and records audit events. it does not scrape plan content or synchronize lifecycle state.
+linear linking lets operators keep Linear as the human planning surface while kasmos remains the execution source of truth. a link is explicit task metadata: kasmos stores the Linear issue coordinates, shows them in task surfaces, and records audit events. it does not scrape plan content or let Linear drive kasmos lifecycle state.
 
 ## setup
 
@@ -82,9 +82,13 @@ GET /v1/projects/{project}/tasks/_/linear-link/lookup?issue={linear_issue_id}&st
 
 the http task store does not call Linear. use the cli or mcp linker when you need Linear fetch, duplicate checking, audit events, and optional backlink comments in one operator flow. use the raw http endpoints only when you already have canonical Linear fields.
 
-## what not to expect
+## what kasmos does and does not do with Linear
 
-kasmos does not sync lifecycle state to or from Linear. moving a Linear issue does not transition a kasmos task, and transitioning a kasmos task does not update Linear status, assignee, labels, title, or description. the only Linear write is the optional backlink comment requested with `--comment`.
+kasmos is the lifecycle source of truth. moving, assigning, labelling, renaming, or commenting on a Linear issue never transitions a kasmos task.
+
+when configured, kasmos can write one-way receipts back to the linked Linear issue. the linker command can post the explicit backlink comment requested with `--comment`; the optional [linear receipts](./linear-receipts.mdx) feature can post deterministic lifecycle, pull request, merge, and cancellation comments; and `[linear.receipts.state_map]` can map kasmos task statuses to Linear workflow state ids. these writes are outbound only and never let Linear drive kasmos.
+
+kasmos does not update Linear assignee, labels, title, description, priority, estimate, cycle, or project fields.
 
 kasmos also does not derive links from markdown content. link state lives in the task store columns and changes only through explicit link or unlink operations.
 
