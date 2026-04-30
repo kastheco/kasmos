@@ -43,7 +43,6 @@ func actorAllowed(policy ActorPolicy, intent ParsedIntent) bool {
 				return true
 			}
 		}
-		return false
 	}
 	if intent.AuthorEmail == "" {
 		return false

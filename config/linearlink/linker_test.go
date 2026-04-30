@@ -128,11 +128,11 @@ func TestLinker_Link(t *testing.T) {
 			},
 		},
 		{
-			name: "duplicate active task returns sentinel using canonical issue id and does not write",
+			name: "duplicate ready task returns sentinel using canonical issue id and does not write",
 			setup: func(t *testing.T, store taskstore.Store, fetcher *fakeIssueFetcher) {
 				require.NoError(t, store.Create(testProject, taskstore.TaskEntry{
 					Filename:  "other",
-					Status:    taskstore.StatusImplementing,
+					Status:    taskstore.StatusReady,
 					CreatedAt: time.Now(),
 				}))
 				require.NoError(t, store.SetLinearLink(testProject, "other", taskstore.LinearLink{

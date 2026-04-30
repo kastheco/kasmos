@@ -43,7 +43,7 @@ func TestAuthoriserAllow(t *testing.T) {
 		assert.Empty(t, reason)
 	})
 
-	t.Run("rejects unknown author id even when email is allowlisted", func(t *testing.T) {
+	t.Run("allows configured email even when author id is not configured", func(t *testing.T) {
 		authoriser := NewAuthoriser(Config{Actor: ActorPolicy{
 			AllowedUserIDs:    []string{"user-1"},
 			AllowedUserEmails: []string{"ops@example.com"},
@@ -55,8 +55,8 @@ func TestAuthoriserAllow(t *testing.T) {
 			AuthorEmail: "ops@example.com",
 		}, VerbStart)
 
-		assert.False(t, allowed)
-		assert.Equal(t, "actor_not_allowed", reason)
+		assert.True(t, allowed)
+		assert.Empty(t, reason)
 	})
 
 	t.Run("label plan bypasses actor allowlist", func(t *testing.T) {
