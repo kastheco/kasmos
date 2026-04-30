@@ -783,6 +783,47 @@ func TestPreviewPane_SDKPresentation_RendersTurnHierarchy(t *testing.T) {
 		"composer footer must appear after the turn timeline")
 }
 
+func TestPreviewPane_InactiveSDKInstanceRendersCachedPresentation(t *testing.T) {
+	tests := []struct {
+		name   string
+		status session.Status
+		exited bool
+	}{
+		{name: "paused", status: session.Paused},
+		{name: "exited", status: session.Ready, exited: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pane := NewPreviewPane()
+			pane.SetSize(80, 24)
+
+			inst, err := session.NewInstance(session.InstanceOptions{
+				Title:         "sdk-done",
+				Path:          t.TempDir(),
+				Program:       "codex",
+				ExecutionMode: session.ExecutionModeSDK,
+			})
+			require.NoError(t, err)
+			inst.SetStatus(tt.status)
+			inst.Exited = tt.exited
+			inst.SetCachedPresentation([]*sdk.PresentationTurn{{
+				ID:     "t1",
+				Number: 1,
+				Rows: []sdk.PresentationRow{
+					{Kind: sdk.RowProse, Text: "finished sdk output"},
+				},
+			}})
+
+			require.NoError(t, pane.UpdateContent(inst))
+			output := pane.String()
+			require.Contains(t, output, "finished sdk output")
+			require.NotContains(t, output, "session exited")
+			require.NotContains(t, output, "Session is paused")
+		})
+	}
+}
+
 // TestPreviewPane_SDKPresentation_ErrorResultColor verifies that result rows with
 // IsError=true are rendered in ColorLove (distinct from ok results in ColorMuted).
 func TestPreviewPane_SDKPresentation_ErrorResultColor(t *testing.T) {

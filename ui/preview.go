@@ -305,6 +305,9 @@ func (p *PreviewPane) UpdateContent(instance *session.Instance) error {
 		return nil
 
 	case instance.Status == session.Paused:
+		if p.setCachedSDKPresentation(instance) {
+			return nil
+		}
 		if p.setCachedTerminalContent(instance) {
 			return nil
 		}
@@ -319,6 +322,9 @@ func (p *PreviewPane) UpdateContent(instance *session.Instance) error {
 		return nil
 
 	case instance.Exited:
+		if p.setCachedSDKPresentation(instance) {
+			return nil
+		}
 		if p.setCachedTerminalContent(instance) {
 			return nil
 		}
@@ -378,9 +384,27 @@ func (p *PreviewPane) setCachedTerminalContent(instance *session.Instance) bool 
 		return false
 	}
 	p.previewState = previewState{text: instance.CachedContent}
+	p.sdkView = nil
 	p.isScrolling = false
 	p.isDocument = false
 	p.isRawTerminal = true
+	return true
+}
+
+func (p *PreviewPane) setCachedSDKPresentation(instance *session.Instance) bool {
+	if instance == nil || session.NormalizeExecutionMode(instance.ExecutionMode) != session.ExecutionModeSDK {
+		return false
+	}
+	turns := instance.CapturePresentation()
+	if len(turns) == 0 {
+		return false
+	}
+	view := buildSDKPresentationView(turns, p.width, p.sdkComposerText, p.sdkComposerCursor, p.sdkComposerImages, p.sdkFocusMode, instance.Program, instance.SDKSpeedTier, time.Now(), p.sdkComposerShellMode)
+	p.sdkView = &view
+	p.previewState = previewState{text: joinSDKView(&view, p.width)}
+	p.isScrolling = false
+	p.isDocument = false
+	p.isRawTerminal = false
 	return true
 }
 
