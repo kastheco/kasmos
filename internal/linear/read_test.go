@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/kastheco/kasmos/internal/linear"
 	"github.com/stretchr/testify/assert"
@@ -138,6 +139,27 @@ func TestRead_IssuesFilterAndOrder(t *testing.T) {
 	}, vars["filter"])
 }
 
+func TestRead_IssuesLabelAndUpdatedSinceFilter(t *testing.T) {
+	srv, requests := newReadServer(t, func(w http.ResponseWriter, _ *http.Request, _ readRequest) {
+		_, _ = w.Write([]byte(`{"data":{"issues":{"nodes":[],"pageInfo":{"hasNextPage":false,"hasPreviousPage":false,"startCursor":"","endCursor":""}}}}`))
+	})
+	defer srv.Close()
+
+	updatedSince := time.Date(2026, 4, 30, 12, 30, 0, 0, time.UTC)
+	client := linear.NewClient(srv.URL, "test-key", srv.Client())
+	_, _, err := client.Issues(context.Background(), linear.IssueQuery{
+		LabelID:      "label_1",
+		UpdatedSince: &updatedSince,
+	})
+	require.NoError(t, err)
+
+	require.Len(t, *requests, 1)
+	assert.Equal(t, map[string]interface{}{
+		"labels":    map[string]interface{}{"id": map[string]interface{}{"eq": "label_1"}},
+		"updatedAt": map[string]interface{}{"gte": "2026-04-30T12:30:00Z"},
+	}, (*requests)[0].Variables["filter"])
+}
+
 func TestRead_IssuesEmptyConnection(t *testing.T) {
 	srv, _ := newReadServer(t, func(w http.ResponseWriter, _ *http.Request, _ readRequest) {
 		_, _ = w.Write([]byte(`{"data":{"issues":{"nodes":[],"pageInfo":{"hasNextPage":false,"hasPreviousPage":true,"startCursor":"s","endCursor":"e"}}}}`))
@@ -178,4 +200,67 @@ func TestRead_NoAutoPagination(t *testing.T) {
 	require.Len(t, issues, 1)
 	assert.True(t, page.HasNextPage)
 	assert.Len(t, *requests, 1)
+}
+
+func TestRead_IssueLabel(t *testing.T) {
+	srv, requests := newReadServer(t, func(w http.ResponseWriter, _ *http.Request, _ readRequest) {
+		_, _ = w.Write([]byte(`{"data":{"issueLabel":{"id":"label_1","name":"create","color":"#00ff00"}}}`))
+	})
+	defer srv.Close()
+
+	client := linear.NewClient(srv.URL, "test-key", srv.Client())
+	label, err := client.IssueLabel(context.Background(), "label_1")
+	require.NoError(t, err)
+
+	require.Len(t, *requests, 1)
+	assert.Equal(t, map[string]interface{}{"id": "label_1"}, (*requests)[0].Variables)
+	assert.Equal(t, &linear.Label{ID: "label_1", Name: "create", Color: "#00ff00"}, label)
+}
+
+func TestRead_IssueLabelUnknown(t *testing.T) {
+	srv, _ := newReadServer(t, func(w http.ResponseWriter, _ *http.Request, _ readRequest) {
+		_, _ = w.Write([]byte(`{"data":{"issueLabel":null}}`))
+	})
+	defer srv.Close()
+
+	client := linear.NewClient(srv.URL, "test-key", srv.Client())
+	label, err := client.IssueLabel(context.Background(), "missing")
+	require.NoError(t, err)
+	assert.Nil(t, label)
+}
+
+func TestRead_CommentsAscendingAndIssueID(t *testing.T) {
+	srv, requests := newReadServer(t, func(w http.ResponseWriter, _ *http.Request, _ readRequest) {
+		_, _ = w.Write([]byte(`{"data":{"issue":{"id":"issue_1","comments":{"nodes":[{"id":"comment_1","url":"https://linear.app/acme/comment/comment_1","body":"/kasmos create","createdAt":"2026-04-30T10:00:00Z","updatedAt":"2026-04-30T10:01:00Z","user":{"id":"user_1","name":"ann","email":"ann@example.com"}},{"id":"comment_2","url":"https://linear.app/acme/comment/comment_2","body":"/kasmos plan","createdAt":"2026-04-30T10:02:00Z","updatedAt":"2026-04-30T10:03:00Z"}],"pageInfo":{"hasNextPage":false,"hasPreviousPage":false,"startCursor":"s","endCursor":"e"}}}}}`))
+	})
+	defer srv.Close()
+
+	client := linear.NewClient(srv.URL, "test-key", srv.Client())
+	comments, page, err := client.Comments(context.Background(), "ENG-7", linear.PageOptions{First: 2, After: "cursor"})
+	require.NoError(t, err)
+
+	require.Len(t, *requests, 1)
+	assert.Contains(t, (*requests)[0].Query, "orderBy: createdAt")
+	assert.Equal(t, map[string]interface{}{"issueId": "ENG-7", "first": float64(2), "after": "cursor"}, (*requests)[0].Variables)
+	require.Len(t, comments, 2)
+	assert.Equal(t, "issue_1", comments[0].IssueID)
+	assert.Equal(t, "issue_1", comments[1].IssueID)
+	assert.True(t, comments[0].CreatedAt.Before(comments[1].CreatedAt))
+	require.NotNil(t, comments[0].User)
+	assert.Equal(t, "ann@example.com", comments[0].User.Email)
+	assert.Nil(t, comments[1].User)
+	assert.Equal(t, "e", page.EndCursor)
+}
+
+func TestRead_CommentsIssueNotFound(t *testing.T) {
+	srv, _ := newReadServer(t, func(w http.ResponseWriter, _ *http.Request, _ readRequest) {
+		_, _ = w.Write([]byte(`{"data":{"issue":null}}`))
+	})
+	defer srv.Close()
+
+	client := linear.NewClient(srv.URL, "test-key", srv.Client())
+	comments, _, err := client.Comments(context.Background(), "ENG-404", linear.PageOptions{})
+	require.Error(t, err)
+	assert.Nil(t, comments)
+	assert.Contains(t, err.Error(), "ENG-404")
 }

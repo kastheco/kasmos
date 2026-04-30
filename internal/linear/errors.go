@@ -67,6 +67,20 @@ func (e *MutationFailedError) Error() string {
 	return fmt.Sprintf("linear: mutation %s returned success=false", e.OperationName)
 }
 
+// ReactionsUnsupportedError is returned when Linear's commentReactionCreate
+// mutation rejects the request because the workspace tier does not support
+// reactions. Callers should fall back to a reply comment.
+type ReactionsUnsupportedError struct {
+	Message string
+}
+
+func (e *ReactionsUnsupportedError) Error() string {
+	if e.Message == "" {
+		return "linear: comment reactions unsupported on this workspace"
+	}
+	return "linear: comment reactions unsupported on this workspace: " + e.Message
+}
+
 func truncate(s string, n int) string {
 	if len(s) <= n {
 		return s
