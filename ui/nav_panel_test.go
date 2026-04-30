@@ -592,6 +592,21 @@ func TestAutoCollapse_NoRunningNoNotification(t *testing.T) {
 	assert.True(t, n.rows[0].Collapsed)
 }
 
+func TestReadyStartedInstanceKeepsPlanExpanded(t *testing.T) {
+	n := newTestPanel()
+	plans := []PlanDisplay{{Filename: "p", Status: "implementing"}}
+	inst := makeInst("inst", "p", session.Ready)
+	inst.MarkStartedForTest()
+	n.SetData(plans, []*session.Instance{inst}, nil, nil, nil)
+
+	require.Len(t, n.rows, 2)
+	assert.False(t, n.rows[0].Collapsed)
+	assert.Equal(t, navRowInstance, n.rows[1].Kind)
+	assert.Equal(t, inst, n.rows[1].Instance)
+	assert.False(t, n.rows[0].HasRunning, "ready agent must not show plan as running")
+	assert.True(t, n.rows[0].HasActive, "ready started agent must keep child row visible")
+}
+
 func TestUserOverride_PreservesCollapsedState(t *testing.T) {
 	n := newTestPanel()
 	plans := []PlanDisplay{{Filename: "p"}}
@@ -817,6 +832,21 @@ func TestSelectionPersistence_AcrossRebuild(t *testing.T) {
 	// Refresh data — same plans, selection should be preserved
 	n.SetData(plans, nil, nil, nil, nil)
 	assert.Equal(t, prevID, n.rows[n.selectedIdx].ID)
+}
+
+func TestSelectionPersistence_ReadyStartedInstanceStaysSelected(t *testing.T) {
+	n := newTestPanel()
+	plans := []PlanDisplay{{Filename: "p", Status: "implementing"}}
+	inst := makeInst("inst", "p", session.Ready)
+	inst.MarkStartedForTest()
+	n.SetData(plans, []*session.Instance{inst}, nil, nil, nil)
+	require.True(t, n.SelectInstance(inst))
+	prevID := n.rows[n.selectedIdx].ID
+
+	n.SetData(plans, []*session.Instance{inst}, nil, nil, nil)
+
+	assert.Equal(t, prevID, n.rows[n.selectedIdx].ID)
+	assert.Equal(t, inst, n.GetSelectedInstance())
 }
 
 // ---------- Kill/Remove ----------

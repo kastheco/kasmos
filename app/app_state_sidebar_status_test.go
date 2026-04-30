@@ -62,6 +62,7 @@ func TestMergePlanStatus(t *testing.T) {
 	pausedCoder := newSidebarStatusTestInstance(t, "plan")
 	pausedCoder.Status = session.Paused
 	paused := mergePlanStatus(ui.TopicStatus{}, pausedCoder, true)
+	assert.False(t, paused.HasActive)
 	assert.False(t, paused.HasRunning)
 	assert.False(t, paused.HasNotification)
 
@@ -69,6 +70,8 @@ func TestMergePlanStatus(t *testing.T) {
 	promptedPlanner.Status = session.Running
 	promptedPlanner.PromptDetected = true
 	prompted := mergePlanStatus(ui.TopicStatus{}, promptedPlanner, true)
+	assert.True(t, prompted.HasActive,
+		"prompt-detected planners/coders must stay visible while they wait at the prompt")
 	assert.False(t, prompted.HasRunning,
 		"prompt-detected planners/coders sitting at a shell prompt must not keep the plan in running state")
 

@@ -37,6 +37,7 @@ type PlanDisplay struct {
 
 // TopicStatus captures aggregate run/notification state for a plan.
 type TopicStatus struct {
+	HasActive       bool
 	HasRunning      bool
 	HasNotification bool
 }
@@ -78,6 +79,7 @@ type navRow struct {
 	Instance        *session.Instance
 	Retired         bool
 	Collapsed       bool
+	HasActive       bool
 	HasRunning      bool
 	HasNotification bool
 	Indent          int
@@ -422,8 +424,8 @@ func (n *NavigationPanel) rebuildRows() {
 	// appendPlan emits a plan header row and optionally its child instance rows.
 	appendPlan := func(p PlanDisplay, indent int) {
 		insts := byPlan[p.Filename]
-		hasRunning, hasNotif := aggregateNavPlanStatus(insts, n.planStatuses[p.Filename])
-		collapsed := n.isPlanCollapsed(p.Filename, hasRunning, hasNotif)
+		hasActive, hasRunning, hasNotif := aggregateNavPlanStatus(insts, n.planStatuses[p.Filename])
+		collapsed := n.isPlanCollapsed(p.Filename, hasActive, hasRunning, hasNotif)
 		sortKey := navPlanSortKey(p, insts, n.planStatuses[p.Filename])
 		rows = append(rows, navRow{
 			Kind:            navRowPlanHeader,
@@ -437,6 +439,7 @@ func (n *NavigationPanel) rebuildRows() {
 			ActiveRound:     p.ActiveRound,
 			PlanSortKey:     sortKey,
 			Collapsed:       collapsed,
+			HasActive:       hasActive,
 			HasRunning:      hasRunning,
 			HasNotification: hasNotif,
 			Indent:          indent,
@@ -763,12 +766,16 @@ func navPlanRowLabel(p PlanDisplay) string {
 	return label + " · " + stage
 }
 
-// aggregateNavPlanStatus derives combined running/notification flags from
-// instance state and stored plan status flags.
-func aggregateNavPlanStatus(insts []*session.Instance, st TopicStatus) (hasRunning, hasNotif bool) {
+// aggregateNavPlanStatus derives combined active/running/notification flags
+// from instance state and stored plan status flags.
+func aggregateNavPlanStatus(insts []*session.Instance, st TopicStatus) (hasActive, hasRunning, hasNotif bool) {
+	hasActive = st.HasActive
 	hasRunning = st.HasRunning
 	hasNotif = st.HasNotification
 	for _, inst := range insts {
+		if navInstanceActive(inst) {
+			hasActive = true
+		}
 		if inst.Notified {
 			hasNotif = true
 		}
@@ -779,13 +786,26 @@ func aggregateNavPlanStatus(insts []*session.Instance, st TopicStatus) (hasRunni
 	return
 }
 
+func navInstanceActive(inst *session.Instance) bool {
+	if inst == nil || inst.Paused() || inst.Exited || inst.ImplementationComplete {
+		return false
+	}
+	if inst.Status == session.Running || inst.Status == session.Loading {
+		return true
+	}
+	if inst.Started() {
+		return true
+	}
+	return session.NormalizeExecutionMode(inst.ExecutionMode) == session.ExecutionModeSDK
+}
+
 // isPlanCollapsed returns whether a plan should be shown collapsed.
-// User overrides always win; otherwise collapse unless running or notified.
-func (n *NavigationPanel) isPlanCollapsed(planFile string, hasRunning, hasNotif bool) bool {
+// User overrides always win; otherwise collapse unless active, running, or notified.
+func (n *NavigationPanel) isPlanCollapsed(planFile string, hasActive, hasRunning, hasNotif bool) bool {
 	if _, ok := n.userOverrides[planFile]; ok {
 		return n.collapsed[planFile]
 	}
-	return !hasRunning && !hasNotif
+	return !hasActive && !hasRunning && !hasNotif
 }
 
 // ---------- layout ----------
