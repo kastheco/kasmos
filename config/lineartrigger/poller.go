@@ -256,6 +256,22 @@ func (p *Poller) drainTrigger(ctx context.Context, trigger taskstore.LinearTrigg
 	outcome := p.deps.Service.Decide(ctx, intent, *issue)
 	target, execErr := p.executeOutcome(ctx, outcome)
 	if execErr != nil {
+		var duplicate *linearlink.DuplicateLinkError
+		if errors.As(execErr, &duplicate) {
+			stats.Rejected++
+			if err := p.deps.Store.MarkLinearTriggerRejected(p.deps.Project, trigger.ID, "duplicate_link"); err != nil {
+				return err
+			}
+			p.emit(auditlog.EventTaskLinearTriggerRejected, trigger, target, "duplicate_link", "warn")
+			if err := p.acknowledgeOutcome(ctx, trigger, *issue, Outcome{Kind: OutcomeRejected, Reject: &RejectDetail{Reason: "duplicate_link", Body: FormatReject(RejectInput{Verb: intent.Verb, Reason: "duplicate_link"})}}); err != nil {
+				stats.AckFailed++
+				_ = p.deps.Store.MarkLinearTriggerAck(p.deps.Project, trigger.ID, "ack_failed")
+				p.emit(auditlog.EventTaskLinearTriggerCommentFailed, trigger, target, err.Error(), "error")
+			} else {
+				_ = p.deps.Store.MarkLinearTriggerAck(p.deps.Project, trigger.ID, "acked")
+			}
+			return nil
+		}
 		stats.Failed++
 		_ = p.deps.Store.MarkLinearTriggerFailed(p.deps.Project, trigger.ID, execErr.Error())
 		p.emit(auditlog.EventTaskLinearTriggerCommentFailed, trigger, target, execErr.Error(), "error")
@@ -309,7 +325,15 @@ func (p *Poller) executeOutcome(ctx context.Context, outcome Outcome) (string, e
 		if outcome.StartSignal == nil {
 			return "", errors.New("lineartrigger: missing gateway signal")
 		}
-		return outcome.StartSignal.PlanFile, taskfsm.EmitGatewaySignal(p.deps.Gateway, outcome.StartSignal.Project, outcome.StartSignal.SignalType, outcome.StartSignal.PlanFile, outcome.StartSignal.Payload)
+		signal := *outcome.StartSignal
+		if outcome.Kind == OutcomePlanRequest && outcome.CreateInput != nil {
+			result, err := p.deps.Linker.CreateFromIssue(ctx, *outcome.CreateInput)
+			if err != nil {
+				return "", err
+			}
+			signal.PlanFile = result.Filename
+		}
+		return signal.PlanFile, taskfsm.EmitGatewaySignal(p.deps.Gateway, signal.Project, signal.SignalType, signal.PlanFile, signal.Payload)
 	default:
 		return "", nil
 	}

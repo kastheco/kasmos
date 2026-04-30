@@ -98,6 +98,54 @@ func TestPollerEndToEndGuardedLinearTriggers(t *testing.T) {
 	h.requireAuditCount(t, auditlog.EventTaskLinearTriggerRejected, "actor_not_allowed", 1)
 }
 
+func TestPollerEndToEndUnlinkedPlanTriggersCreateAndPlanOnce(t *testing.T) {
+	ctx := context.Background()
+	h := newE2EHarness(t)
+
+	h.linear.issues["lin-label-plan"] = e2eIssue("lin-label-plan", "ENG-202", "Plan from label", []linear.Label{
+		{ID: "kasmos-plan", Name: "kasmos-plan"},
+	})
+	stats := h.poller.PollOnce(ctx)
+	require.False(t, stats.Aborted, "unexpected poll error: %v", stats.Err)
+	h.reopenStore(t)
+	stats = h.poller.PollOnce(ctx)
+	require.False(t, stats.Aborted, "unexpected poll error: %v", stats.Err)
+
+	labelEntry, err := h.store.Get("proj", "eng-202")
+	require.NoError(t, err)
+	assert.Equal(t, "lin-label-plan", labelEntry.LinearIssueID)
+	assert.Empty(t, h.linear.issueLabels("lin-label-plan"), "plan trigger label should be removed after dispatch")
+	h.requireSignals(t, "plan_start", 1)
+	h.requireAuditCount(t, auditlog.EventTaskLinearTriggerDispatched, "plan", 1)
+
+	h.linear.issues["lin-comment-plan"] = e2eIssue("lin-comment-plan", "ENG-203", "Plan from comment", nil)
+	queued, err := h.store.EnqueueLinearTrigger("proj", taskstore.LinearTriggerEntry{
+		LinearIssueID:    "lin-comment-plan",
+		LinearIdentifier: "ENG-203",
+		CommandKind:      string(VerbPlan),
+		SourceKind:       string(SourceComment),
+		SourceID:         "comment-plan-custom",
+		ActorID:          "allowed-user",
+		TaskArg:          "custom-plan",
+		DetectedAt:       h.now.Add(time.Minute),
+	})
+	require.NoError(t, err)
+	require.True(t, queued)
+
+	stats = h.poller.PollOnce(ctx)
+	require.False(t, stats.Aborted, "unexpected poll error: %v", stats.Err)
+	h.reopenStore(t)
+	stats = h.poller.PollOnce(ctx)
+	require.False(t, stats.Aborted, "unexpected poll error: %v", stats.Err)
+
+	commentEntry, err := h.store.Get("proj", "custom-plan")
+	require.NoError(t, err)
+	assert.Equal(t, "lin-comment-plan", commentEntry.LinearIssueID)
+	h.requireSignals(t, "plan_start", 2)
+	h.requireAuditCount(t, auditlog.EventTaskLinearTriggerDispatched, "plan", 2)
+	assert.Equal(t, []string{"comment-plan-custom"}, h.linear.reactions)
+}
+
 type e2eHarness struct {
 	db      *sql.DB
 	store   *taskstore.SQLiteStore
@@ -171,7 +219,7 @@ func e2eConfig() Config {
 			VerbPlan:   true,
 			VerbStart:  true,
 		},
-		Labels:         LabelMap{Create: "kasmos-ready"},
+		Labels:         LabelMap{Create: "kasmos-ready", Plan: "kasmos-plan"},
 		Actor:          ActorPolicy{AllowedUserIDs: []string{"allowed-user"}},
 		AckCommentBody: "kasmos trigger ack",
 	}
@@ -212,6 +260,7 @@ type e2eLinearServer struct {
 	issues               map[string]linear.Issue
 	comments             map[string][]linear.Comment
 	rateLimitCommentsFor map[string]int
+	reactions            []string
 }
 
 func newE2ELinearServer(t *testing.T) *e2eLinearServer {
@@ -254,7 +303,7 @@ func (f *e2eLinearServer) handleGraphQL(w http.ResponseWriter, r *http.Request) 
 	case strings.Contains(req.Query, "mutation IssueUpdate"):
 		f.writeIssueUpdate(w, stringVar(req.Variables, "id"), req.Variables["input"])
 	case strings.Contains(req.Query, "mutation CommentReactionCreate"):
-		writeJSON(w, map[string]any{"data": map[string]any{"reactionCreate": map[string]any{"success": true, "reaction": map[string]any{"id": "reaction-1", "emoji": "eyes"}}}})
+		f.writeReaction(w, req.Variables["input"])
 	case strings.Contains(req.Query, "mutation CommentCreate"):
 		writeJSON(w, map[string]any{"data": map[string]any{"commentCreate": map[string]any{"success": true, "comment": map[string]any{"id": "created-comment", "url": "https://linear.test/comment/created", "body": "ack"}}}})
 	default:
@@ -323,6 +372,14 @@ func (f *e2eLinearServer) writeIssueUpdate(w http.ResponseWriter, issueID string
 		f.issues[issueID] = issue
 	}
 	writeJSON(w, map[string]any{"data": map[string]any{"issueUpdate": map[string]any{"success": true, "issue": issueNode(issue)}}})
+}
+
+func (f *e2eLinearServer) writeReaction(w http.ResponseWriter, rawInput any) {
+	input, _ := rawInput.(map[string]any)
+	if commentID, _ := input["commentId"].(string); commentID != "" {
+		f.reactions = append(f.reactions, commentID)
+	}
+	writeJSON(w, map[string]any{"data": map[string]any{"reactionCreate": map[string]any{"success": true, "reaction": map[string]any{"id": "reaction-1", "emoji": "eyes"}}}})
 }
 
 func (f *e2eLinearServer) issueLabels(issueID string) []linear.Label {

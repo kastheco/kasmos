@@ -147,7 +147,20 @@ func (s *Service) Decide(ctx context.Context, intent ParsedIntent, issue linear.
 	case VerbPlan:
 		entry, ok := s.linkedEntry(issue.ID)
 		if !ok {
-			return s.reject(intent.Verb, "unlinked_target")
+			return Outcome{
+				Kind: OutcomePlanRequest,
+				CreateInput: &linearlink.CreateFromIssueInput{
+					IssueArg:     issue.ID,
+					Filename:     intent.TaskFileArg,
+					Topic:        route.Match.Topic,
+					BranchPrefix: route.Match.BranchPrefix,
+					Reason:       "linear-trigger-plan-create",
+				},
+				StartSignal: &GatewayEmit{
+					Project:    s.project,
+					SignalType: string(taskfsm.PlanStart),
+				},
+			}
 		}
 		if result := s.validator.Validate(VerbPlan, entry, issue); !result.OK {
 			return s.reject(intent.Verb, result.Reason)

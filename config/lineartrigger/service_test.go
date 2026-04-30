@@ -57,6 +57,24 @@ func TestServiceDecideDeterministicOutcomes(t *testing.T) {
 		assert.Equal(t, "eng-1", out.StartSignal.PlanFile)
 	})
 
+	t.Run("plan creates then plans unlinked routed issue", func(t *testing.T) {
+		store := newServiceStore()
+		svc := NewService("proj", testConfig(), store, nil, nil, nil)
+
+		out := svc.Decide(ctx, ParsedIntent{Source: SourceLabel, Verb: VerbPlan, LabelID: "label-plan", TaskFileArg: "custom-plan"}, issue)
+
+		require.Equal(t, OutcomePlanRequest, out.Kind)
+		require.NotNil(t, out.CreateInput)
+		require.NotNil(t, out.StartSignal)
+		assert.Equal(t, "lin-1", out.CreateInput.IssueArg)
+		assert.Equal(t, "custom-plan", out.CreateInput.Filename)
+		assert.Equal(t, "linear", out.CreateInput.Topic)
+		assert.Equal(t, "linear/", out.CreateInput.BranchPrefix)
+		assert.Equal(t, "linear-trigger-plan-create", out.CreateInput.Reason)
+		assert.Equal(t, "plan_start", out.StartSignal.SignalType)
+		assert.Empty(t, out.StartSignal.PlanFile)
+	})
+
 	t.Run("disabled label verb is ignored", func(t *testing.T) {
 		cfg := testConfig()
 		cfg.Verbs[VerbCreate] = false

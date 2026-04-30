@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -60,6 +61,81 @@ func TestPollerPollOnceIdempotentCommentPlanAcrossTwoCycles(t *testing.T) {
 	require.Len(t, signals, 1)
 	assert.Equal(t, "plan_start", signals[0].SignalType)
 	assert.Equal(t, "eng-1", signals[0].PlanFile)
+}
+
+func TestPollerPollOnceUnlinkedLabelPlanCreatesAndPlansOnce(t *testing.T) {
+	ctx := context.Background()
+	h := newPollerHarness(t)
+	h.poller.deps.Config.Labels.Create = ""
+	h.linear.issues = []linear.Issue{{
+		ID:          "lin-label-plan",
+		Identifier:  "ENG-9",
+		Title:       "Plan from label",
+		Description: "issue body",
+		URL:         "https://linear.local/ENG-9",
+		Team:        &linear.Team{ID: "team-1", Key: "ENG"},
+		Labels:      []linear.Label{{ID: "label-plan", Name: "kasmos-plan"}},
+	}}
+
+	stats := h.poller.PollOnce(ctx)
+	require.False(t, stats.Aborted, "unexpected poll error: %v", stats.Err)
+	stats = h.poller.PollOnce(ctx)
+	require.False(t, stats.Aborted, "unexpected poll error: %v", stats.Err)
+
+	entries, err := h.store.ListByStatus("proj", taskstore.StatusReady)
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+	assert.Equal(t, "eng-9", entries[0].Filename)
+	signals, err := h.gateway.List("proj", taskstore.SignalPending)
+	require.NoError(t, err)
+	require.Len(t, signals, 1)
+	assert.Equal(t, "plan_start", signals[0].SignalType)
+	assert.Equal(t, "eng-9", signals[0].PlanFile)
+	require.Len(t, h.linear.removedLabels, 1)
+	assert.Equal(t, "lin-label-plan", h.linear.removedLabels[0].issueID)
+	h.requireAuditDetailCount(t, auditlog.EventTaskLinearTriggerDispatched, "plan", 1)
+}
+
+func TestPollerPollOnceUnlinkedCommentPlanWithTaskArgCreatesAndPlansOnce(t *testing.T) {
+	ctx := context.Background()
+	h := newPollerHarness(t)
+	h.linear.byID["lin-comment-plan"] = linear.Issue{
+		ID:          "lin-comment-plan",
+		Identifier:  "ENG-10",
+		Title:       "Plan from comment",
+		Description: "issue body",
+		URL:         "https://linear.local/ENG-10",
+		Team:        &linear.Team{ID: "team-1", Key: "ENG"},
+	}
+	queued, err := h.store.EnqueueLinearTrigger("proj", taskstore.LinearTriggerEntry{
+		LinearIssueID:    "lin-comment-plan",
+		LinearIdentifier: "ENG-10",
+		CommandKind:      string(VerbPlan),
+		SourceKind:       string(SourceComment),
+		SourceID:         "comment-plan-custom",
+		ActorID:          "actor",
+		TaskArg:          "custom-plan",
+		DetectedAt:       h.now,
+	})
+	require.NoError(t, err)
+	require.True(t, queued)
+
+	stats := h.poller.PollOnce(ctx)
+	require.False(t, stats.Aborted, "unexpected poll error: %v", stats.Err)
+	stats = h.poller.PollOnce(ctx)
+	require.False(t, stats.Aborted, "unexpected poll error: %v", stats.Err)
+
+	entry, err := h.store.Get("proj", "custom-plan")
+	require.NoError(t, err)
+	assert.Equal(t, "lin-comment-plan", entry.LinearIssueID)
+	signals, err := h.gateway.List("proj", taskstore.SignalPending)
+	require.NoError(t, err)
+	require.Len(t, signals, 1)
+	assert.Equal(t, "plan_start", signals[0].SignalType)
+	assert.Equal(t, "custom-plan", signals[0].PlanFile)
+	require.Len(t, h.linear.reactions, 1)
+	assert.Equal(t, "comment-plan-custom", h.linear.reactions[0].commentID)
+	h.requireAuditDetailCount(t, auditlog.EventTaskLinearTriggerDispatched, "plan", 1)
 }
 
 func TestPollerPollOnceRateLimitAbortsWithoutPartialEnqueue(t *testing.T) {
@@ -465,4 +541,15 @@ func (l *triggerRecordingLogger) Query(auditlog.QueryFilter) ([]auditlog.Event, 
 
 func (l *triggerRecordingLogger) Close() error {
 	return nil
+}
+
+func (h *pollerHarness) requireAuditDetailCount(t *testing.T, kind auditlog.EventKind, needle string, want int) {
+	t.Helper()
+	got := 0
+	for _, event := range h.audit.events {
+		if event.Kind == kind && strings.Contains(event.Detail, needle) {
+			got++
+		}
+	}
+	assert.Equal(t, want, got, "kind=%s needle=%s", kind, needle)
 }
