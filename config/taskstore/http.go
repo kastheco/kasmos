@@ -658,6 +658,98 @@ func (s *HTTPStore) SetClickUpTaskID(project, filename, taskID string) error {
 	return nil
 }
 
+// SetLinearLink stores Linear issue coordinates for an existing task entry.
+func (s *HTTPStore) SetLinearLink(project, filename string, link LinearLink) error {
+	link = normalizedLinearLink(link)
+	body, err := json.Marshal(link)
+	if err != nil {
+		return fmt.Errorf("task store: marshal linear link: %w", err)
+	}
+	u := fmt.Sprintf("%s/linear-link", s.taskItemURL(project, filename))
+	req, err := http.NewRequest(http.MethodPut, u, bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("task store: build request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := s.do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return newNotFoundError("task store: plan not found: %s", filename)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return decodeError(resp)
+	}
+	return nil
+}
+
+// ClearLinearLink clears Linear issue coordinates for an existing task entry.
+func (s *HTTPStore) ClearLinearLink(project, filename string) error {
+	u := fmt.Sprintf("%s/linear-link", s.taskItemURL(project, filename))
+	req, err := http.NewRequest(http.MethodDelete, u, nil)
+	if err != nil {
+		return fmt.Errorf("task store: build request: %w", err)
+	}
+
+	resp, err := s.do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return newNotFoundError("task store: plan not found: %s", filename)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return decodeError(resp)
+	}
+	return nil
+}
+
+// FindLinkedTask returns the filename linked to a Linear issue in a project.
+func (s *HTTPStore) FindLinkedTask(project, issueID string, statuses ...Status) (string, error) {
+	u, err := url.Parse(fmt.Sprintf("%s/linear-link/lookup", s.taskItemURL(project, "_")))
+	if err != nil {
+		return "", fmt.Errorf("task store: build URL: %w", err)
+	}
+	q := u.Query()
+	q.Set("issue", issueID)
+	for _, status := range statuses {
+		q.Add("status", string(status))
+	}
+	u.RawQuery = q.Encode()
+
+	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
+	if err != nil {
+		return "", fmt.Errorf("task store: build request: %w", err)
+	}
+
+	resp, err := s.do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return "", newNotFoundError("task store: linear link not found: %s", issueID)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return "", decodeError(resp)
+	}
+
+	var payload struct {
+		Filename string `json:"filename"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return "", fmt.Errorf("task store: decode linear link lookup: %w", err)
+	}
+	return payload.Filename, nil
+}
+
 // IncrementReviewCycle increments the review cycle counter for an existing task entry.
 func (s *HTTPStore) IncrementReviewCycle(project, filename string) error {
 	u := fmt.Sprintf("%s/increment-review-cycle", s.taskItemURL(project, filename))

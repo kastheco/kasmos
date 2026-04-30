@@ -387,6 +387,62 @@ func NewHandler(store Store) http.Handler {
 		w.WriteHeader(http.StatusOK)
 	})
 
+	mux.HandleFunc("PUT /v1/projects/{project}/tasks/{filename}/linear-link", func(w http.ResponseWriter, r *http.Request) {
+		project := r.PathValue("project")
+		filename := normalizeFilename(r.PathValue("filename"))
+		var link LinearLink
+		if err := json.NewDecoder(r.Body).Decode(&link); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+			return
+		}
+		link = normalizedLinearLink(link)
+		if err := store.SetLinearLink(project, filename, link); err != nil {
+			if isNotFound(err) {
+				writeError(w, http.StatusNotFound, "task not found: "+filename)
+				return
+			}
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+
+	mux.HandleFunc("DELETE /v1/projects/{project}/tasks/{filename}/linear-link", func(w http.ResponseWriter, r *http.Request) {
+		project := r.PathValue("project")
+		filename := normalizeFilename(r.PathValue("filename"))
+		if err := store.ClearLinearLink(project, filename); err != nil {
+			if isNotFound(err) {
+				writeError(w, http.StatusNotFound, "task not found: "+filename)
+				return
+			}
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+
+	mux.HandleFunc("GET /v1/projects/{project}/tasks/{filename}/linear-link/lookup", func(w http.ResponseWriter, r *http.Request) {
+		project := r.PathValue("project")
+		issueID := r.URL.Query().Get("issue")
+		statusFilters := r.URL.Query()["status"]
+		statuses := make([]Status, len(statusFilters))
+		for i, status := range statusFilters {
+			statuses[i] = Status(status)
+		}
+		filename, err := store.FindLinkedTask(project, issueID, statuses...)
+		if err != nil {
+			if isNotFound(err) {
+				writeError(w, http.StatusNotFound, "linear link not found: "+issueID)
+				return
+			}
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, struct {
+			Filename string `json:"filename"`
+		}{Filename: filename})
+	})
+
 	// Increment review cycle
 	mux.HandleFunc("POST /v1/projects/{project}/tasks/{filename}/increment-review-cycle", func(w http.ResponseWriter, r *http.Request) {
 		project := r.PathValue("project")
