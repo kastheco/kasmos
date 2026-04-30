@@ -503,6 +503,59 @@ func TestMigrateRepoLocalToGlobal_PRReviews(t *testing.T) {
 	_ = localDBPath // suppress unused warning
 }
 
+func TestMigrateRepoLocalToGlobal_LinearTriggers(t *testing.T) {
+	repoKasmosDir := t.TempDir()
+
+	local := createLocalRepoStore(t, repoKasmosDir)
+	detectedAt := time.Date(2026, 4, 30, 10, 0, 0, 0, time.UTC)
+	queued, err := local.EnqueueLinearTrigger("proj", LinearTriggerEntry{
+		LinearIssueID:    "lin-1",
+		LinearIdentifier: "KAS-1",
+		CommandKind:      "plan",
+		SourceKind:       "comment",
+		SourceID:         "comment-1",
+		ActorID:          "actor-1",
+		ActorEmail:       "agent@example.com",
+		TaskArg:          "task-a",
+		DetectedAt:       detectedAt,
+	})
+	require.NoError(t, err)
+	require.True(t, queued)
+	require.NoError(t, local.SetLastSeenCommentAt("proj", "lin-1", detectedAt))
+	local.Close()
+
+	globalDir := t.TempDir()
+	globalDBPath := filepath.Join(globalDir, "taskstore.db")
+	globalStore, err := NewSQLiteStore(globalDBPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { globalStore.Close() })
+
+	migrated, err := MigrateRepoLocalToGlobal(globalStore, "proj", repoKasmosDir)
+	require.NoError(t, err)
+	assert.Equal(t, 0, migrated)
+
+	triggers, err := globalStore.ListUnprocessedLinearTriggers("proj", 10)
+	require.NoError(t, err)
+	require.Len(t, triggers, 1)
+	assert.Equal(t, "comment-1", triggers[0].SourceID)
+	assert.Equal(t, detectedAt, triggers[0].DetectedAt)
+
+	cursor, err := globalStore.LastSeenCommentAt("proj", "lin-1")
+	require.NoError(t, err)
+	assert.Equal(t, detectedAt, cursor)
+
+	_, err = MigrateRepoLocalToGlobal(globalStore, "proj", repoKasmosDir)
+	require.NoError(t, err)
+
+	var count int
+	err = globalStore.db.QueryRow(
+		`SELECT count(*) FROM linear_triggers WHERE project = ? AND linear_issue_id = ? AND command_kind = ? AND source_id = ?`,
+		"proj", "lin-1", "plan", "comment-1",
+	).Scan(&count)
+	require.NoError(t, err)
+	assert.Equal(t, 1, count)
+}
+
 func TestMigrateRepoLocalToGlobal_Signals(t *testing.T) {
 	repoKasmosDir := t.TempDir()
 	localDBPath := filepath.Join(repoKasmosDir, "taskstore.db")

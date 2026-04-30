@@ -14,7 +14,7 @@ import (
 )
 
 // MigrateRepoLocalToGlobal copies tasks, content, subtasks, topics, PR reviews,
-// and signals from a repo-local taskstore.db into the global store. If the
+// Linear triggers, comment cursors, and signals from a repo-local taskstore.db into the global store. If the
 // repo-local DB does not exist, it returns (0, nil) — a no-op. The migration
 // is idempotent: duplicate tasks, topics, and PR reviews are silently skipped;
 // subtasks are overwritten (SetSubtasks replaces all); signals are deduplicated
@@ -99,6 +99,12 @@ func MigrateRepoLocalToGlobal(globalStore Store, project, repoKasmosDir string) 
 			if err := migrateRepoLocalPRReviews(globalSQLite.db, localDBPath, sourceProject, targetProject); err != nil {
 				return migrated, err
 			}
+			if err := migrateRepoLocalLinearTriggers(globalSQLite.db, localDBPath, sourceProject, targetProject); err != nil {
+				return migrated, err
+			}
+			if err := migrateRepoLocalLinearCommentCursors(globalSQLite.db, localDBPath, sourceProject, targetProject); err != nil {
+				return migrated, err
+			}
 			if err := migrateRepoLocalSignals(globalSQLite.db, localDBPath, sourceProject, targetProject); err != nil {
 				return migrated, err
 			}
@@ -143,7 +149,7 @@ func listMigratedProjects(localStore *SQLiteStore, fallbackProject string) ([]st
 		return rows.Err()
 	}
 
-	for _, table := range []string{"tasks", "topics", "pr_reviews", "signals"} {
+	for _, table := range []string{"tasks", "topics", "pr_reviews", "linear_triggers", "linear_comment_cursor", "signals"} {
 		if err := collect(table); err != nil {
 			return nil, err
 		}
@@ -209,6 +215,86 @@ func migrateRepoLocalPRReviews(globalDB *sql.DB, localDBPath, sourceProject, tar
 		WHERE project = ?
 	`, alias), targetProject, sourceProject); err != nil {
 		return fmt.Errorf("copy pr_reviews: %w", err)
+	}
+	return nil
+}
+
+func migrateRepoLocalLinearTriggers(globalDB *sql.DB, localDBPath, sourceProject, targetProject string) error {
+	ctx := context.Background()
+	const alias = "local_linear_triggers"
+
+	conn, err := globalDB.Conn(ctx)
+	if err != nil {
+		return fmt.Errorf("acquire conn for linear_triggers migration: %w", err)
+	}
+	defer conn.Close()
+
+	if _, err := conn.ExecContext(ctx, fmt.Sprintf("ATTACH DATABASE %q AS %s", localDBPath, alias)); err != nil {
+		return fmt.Errorf("attach local DB for linear_triggers: %w", err)
+	}
+	defer conn.ExecContext(ctx, fmt.Sprintf("DETACH DATABASE %s", alias)) //nolint:errcheck
+
+	var hasTable int
+	if err := conn.QueryRowContext(ctx,
+		fmt.Sprintf("SELECT count(*) FROM %s.sqlite_master WHERE type='table' AND name='linear_triggers'", alias),
+	).Scan(&hasTable); err != nil {
+		return fmt.Errorf("check linear_triggers table in local DB: %w", err)
+	}
+	if hasTable == 0 {
+		return nil
+	}
+
+	if _, err := conn.ExecContext(ctx, fmt.Sprintf(`
+		INSERT OR IGNORE INTO linear_triggers
+			(project, linear_issue_id, linear_identifier, command_kind, source_kind,
+			 source_id, actor_id, actor_email, task_arg, detected_at, processed,
+			 processed_at, outcome, rejection_reason, target_filename, ack_state)
+		SELECT ?, linear_issue_id, linear_identifier, command_kind, source_kind,
+		       source_id, actor_id, actor_email, task_arg, detected_at, processed,
+		       processed_at, outcome, rejection_reason, target_filename, ack_state
+		FROM %s.linear_triggers
+		WHERE project = ?
+	`, alias), targetProject, sourceProject); err != nil {
+		return fmt.Errorf("copy linear_triggers: %w", err)
+	}
+	return nil
+}
+
+func migrateRepoLocalLinearCommentCursors(globalDB *sql.DB, localDBPath, sourceProject, targetProject string) error {
+	ctx := context.Background()
+	const alias = "local_linear_cursor"
+
+	conn, err := globalDB.Conn(ctx)
+	if err != nil {
+		return fmt.Errorf("acquire conn for linear_comment_cursor migration: %w", err)
+	}
+	defer conn.Close()
+
+	if _, err := conn.ExecContext(ctx, fmt.Sprintf("ATTACH DATABASE %q AS %s", localDBPath, alias)); err != nil {
+		return fmt.Errorf("attach local DB for linear_comment_cursor: %w", err)
+	}
+	defer conn.ExecContext(ctx, fmt.Sprintf("DETACH DATABASE %s", alias)) //nolint:errcheck
+
+	var hasTable int
+	if err := conn.QueryRowContext(ctx,
+		fmt.Sprintf("SELECT count(*) FROM %s.sqlite_master WHERE type='table' AND name='linear_comment_cursor'", alias),
+	).Scan(&hasTable); err != nil {
+		return fmt.Errorf("check linear_comment_cursor table in local DB: %w", err)
+	}
+	if hasTable == 0 {
+		return nil
+	}
+
+	if _, err := conn.ExecContext(ctx, fmt.Sprintf(`
+		INSERT INTO linear_comment_cursor (project, linear_issue_id, last_seen_at)
+		SELECT ?, linear_issue_id, last_seen_at
+		FROM %s.linear_comment_cursor
+		WHERE project = ?
+		ON CONFLICT (project, linear_issue_id) DO UPDATE SET
+			last_seen_at = excluded.last_seen_at
+		WHERE excluded.last_seen_at > linear_comment_cursor.last_seen_at
+	`, alias), targetProject, sourceProject); err != nil {
+		return fmt.Errorf("copy linear_comment_cursor: %w", err)
 	}
 	return nil
 }

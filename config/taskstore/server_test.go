@@ -621,6 +621,22 @@ func TestServer_PRReviews_BadRequestOnMalformedBody(t *testing.T) {
 	assert.Contains(t, errBody["error"], "invalid request body")
 }
 
+func TestServer_LinearTriggers_BadRequests(t *testing.T) {
+	store := newTestStore(t)
+	srv := httptest.NewServer(taskstore.NewHandler(store))
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/v1/projects/proj/linear-triggers")
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+
+	resp, err = http.Post(srv.URL+"/v1/projects/proj/linear-triggers/not-an-id/dispatched", "application/json", strings.NewReader(`{}`))
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+}
+
 // TestServer_NormalizeFilename verifies that .md-suffixed names and bare slugs
 // are treated as the same stored task across every ingress point.
 func TestServer_NormalizeFilename(t *testing.T) {
