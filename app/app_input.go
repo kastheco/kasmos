@@ -142,7 +142,7 @@ func (m *home) handleMenuHighlighting(msg tea.KeyPressMsg) (cmd tea.Cmd, returnE
 		m.keySent = false
 		return nil, false
 	}
-	if m.state == statePrompt || m.state == stateHelp || m.state == stateConfirm || m.state == stateNewPlan || m.state == stateNewPlanDeriving || m.state == stateNewPlanTopic || m.state == stateSpawnHarnessPicker || m.state == stateSpawnExecutionModePicker || m.state == stateSpawnAgent || m.state == stateSearch || m.state == stateContextMenu || m.state == statePRTitle || m.state == statePRBody || m.state == stateRenameInstance || m.state == stateRenameTask || m.state == stateSendPrompt || m.state == stateFocusAgent || m.state == stateChangeTopic || m.state == stateSetStatus || m.state == stateClickUpSearch || m.state == stateClickUpPicker || m.state == stateClickUpFetching || m.state == stateClickUpWorkspacePicker || m.state == statePermission || m.state == stateTmuxBrowser || m.state == stateChatAboutTask || m.state == stateAuditCursor || m.state == stateLauncher || m.state == stateKeybindBrowser || m.state == stateWaveDecision {
+	if m.state == statePrompt || m.state == stateHelp || m.state == stateConfirm || m.state == stateNewPlan || m.state == stateNewPlanDeriving || m.state == stateNewPlanTopic || m.state == stateSpawnHarnessPicker || m.state == stateSpawnExecutionModePicker || m.state == stateSpawnAgent || m.state == stateSearch || m.state == stateContextMenu || m.state == statePRTitle || m.state == statePRBody || m.state == stateRenameInstance || m.state == stateRenameTask || m.state == stateLinearLinkIssue || m.state == stateSendPrompt || m.state == stateFocusAgent || m.state == stateChangeTopic || m.state == stateSetStatus || m.state == stateClickUpSearch || m.state == stateClickUpPicker || m.state == stateClickUpFetching || m.state == stateClickUpWorkspacePicker || m.state == statePermission || m.state == stateTmuxBrowser || m.state == stateChatAboutTask || m.state == stateAuditCursor || m.state == stateLauncher || m.state == stateKeybindBrowser || m.state == stateWaveDecision {
 		return nil, false
 	}
 	// If it's in the global keymap, we should try to highlight it.
@@ -672,6 +672,12 @@ func (m *home) handleActiveOverlayMouse(msg tea.MouseClickMsg) (tea.Model, tea.C
 		return m, tea.RequestWindowSize
 
 	case stateRenameTask:
+		m.state = stateDefault
+		m.menu.SetState(ui.StateDefault)
+		return m, tea.RequestWindowSize
+
+	case stateLinearLinkIssue:
+		m.pendingLinearLinkTask = ""
 		m.state = stateDefault
 		m.menu.SetState(ui.StateDefault)
 		return m, tea.RequestWindowSize
@@ -1318,6 +1324,25 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 					m.nav.SelectByID(ui.SidebarPlanPrefix + newFile)
 				}
 			}
+			m.state = stateDefault
+			m.menu.SetState(ui.StateDefault)
+			return m, tea.RequestWindowSize
+		}
+		return m, nil
+	}
+
+	if m.state == stateLinearLinkIssue {
+		if !m.overlays.IsActive() {
+			m.pendingLinearLinkTask = ""
+			m.state = stateDefault
+			return m, nil
+		}
+		result := m.overlays.HandleKey(msg)
+		if result.Dismissed {
+			if result.Submitted {
+				return m.submitLinearIssueLink(result.Value)
+			}
+			m.pendingLinearLinkTask = ""
 			m.state = stateDefault
 			m.menu.SetState(ui.StateDefault)
 			return m, tea.RequestWindowSize

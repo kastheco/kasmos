@@ -181,6 +181,8 @@ const (
 	stateRenameInstance
 	// stateRenameTask is the state when the user is renaming a plan.
 	stateRenameTask
+	// stateLinearLinkIssue is the state when the user is entering a Linear issue.
+	stateLinearLinkIssue
 	// stateRenameTopic is the state when the user is renaming a topic.
 	stateRenameTopic
 	// stateSendPrompt is the state when the user is sending a prompt via text overlay.
@@ -339,6 +341,8 @@ type home struct {
 	pendingChangeTopicTask string
 	// pendingSetStatusTask stores the plan filename during the set-status flow
 	pendingSetStatusTask string
+	// pendingLinearLinkTask stores the plan filename during the Linear link flow
+	pendingLinearLinkTask string
 	// pendingChatAboutTask stores the plan filename during the chat-about-plan flow
 	pendingChatAboutTask string
 	// pendingLogEvent stores the audit event that triggered the log-action context
@@ -510,6 +514,9 @@ type home struct {
 	// planBrowserOpener starts or reuses kas serve and opens the admin plan browser.
 	// Injected for testability.
 	planBrowserOpener func(repoRoot, project, planFile string) (string, bool, error)
+	// urlOpener opens external URLs such as linked Linear issues.
+	// Injected for testability.
+	urlOpener func(rawURL string) error
 
 	// pendingReviewFeedback holds review feedback from sentinel files, keyed by
 	// plan filename, to be injected as context for the next coder session.
@@ -606,6 +613,7 @@ func newHomeWithConfig(ctx context.Context, program string, autoYes bool, versio
 		daemonStatusChecker:        checkDaemonStatus,
 		daemonRepoRegistrar:        registerRepoWithDaemon,
 		planBrowserOpener:          cmd2.OpenPlanBrowser,
+		urlOpener:                  cmd2.OpenURL,
 		instanceFinalizers:         make(map[*session.Instance]func()),
 		dismissedInstanceTitles:    make(map[string]struct{}),
 		waveOrchestrators:          make(map[string]*orchestration.WaveOrchestrator),
@@ -969,6 +977,12 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.toastManager.Success("opened plan browser")
 		}
 		return m, m.toastTickCmd()
+	case linearTaskLinkMsg:
+		return m.applyLinearTaskLinkMsg(msg)
+	case linearTaskUnlinkMsg:
+		return m.applyLinearTaskUnlinkMsg(msg)
+	case linearIssueOpenedMsg:
+		return m.applyLinearIssueOpenedMsg(msg)
 	case prErrorMsg:
 		log.ErrorLog.Printf("%v", msg.err)
 		m.toastManager.Resolve(msg.id, overlay.ToastError, msg.err.Error())

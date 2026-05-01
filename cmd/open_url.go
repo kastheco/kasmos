@@ -20,3 +20,8 @@ func openURL(rawURL string) error {
 	}
 	return cmd.Start()
 }
+
+// OpenURL opens rawURL in the default browser.
+func OpenURL(rawURL string) error {
+	return openURL(rawURL)
+}

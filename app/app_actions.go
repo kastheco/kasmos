@@ -356,6 +356,31 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 	case "open_plan_browser":
 		return m.openPlanBrowserForSelection()
 
+	case "link_linear_issue":
+		planFile := m.nav.GetSelectedPlanFile()
+		if planFile == "" {
+			return m, nil
+		}
+		m.pendingLinearLinkTask = planFile
+		m.state = stateLinearLinkIssue
+		tio := overlay.NewTextInputOverlay("linear issue", "")
+		tio.SetPlaceholder("issue id or key")
+		tio.SetSize(60, 1)
+		m.overlays.Show(tio)
+		return m, nil
+
+	case "open_linear_issue_browser":
+		return m.openLinearIssueForSelection()
+
+	case "copy_linear_issue_url":
+		return m.copyLinearIssueURLForSelection()
+
+	case "copy_linear_issue_id":
+		return m.copyLinearIssueIDForSelection()
+
+	case "unlink_linear_issue":
+		return m.unlinkLinearIssueForSelection()
+
 	case "rename_plan":
 		planFile := m.nav.GetSelectedPlanFile()
 		if planFile == "" {
@@ -1479,6 +1504,10 @@ func (m *home) openTaskContextMenu() (tea.Model, tea.Cmd) {
 		{Label: "open in browser", Action: "open_plan_browser"},
 	}
 	items = append(items, overlay.ContextMenuItem{Label: "sync", Children: syncItems})
+
+	if entryOk {
+		items = append(items, overlay.ContextMenuItem{Label: "linear", Children: taskLinearItems(entry)})
+	}
 
 	// config group: task metadata and toggle options.
 	autoPlannerLabel := "auto-advance planner: off"
