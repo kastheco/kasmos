@@ -3371,7 +3371,7 @@ func TestPreviewTick_DetachesStoppedTmuxTerminalAndShowsCachedPreview(t *testing
 	h.previewRequested = true
 	h.previewTerminal = term
 	h.previewTerminalInstance = inst.IdentityKey()
-	h.tabbedWindow.SetPreviewContent("stale live terminal")
+	h.tabbedWindow.SetPreviewContent("stale live terminal", inst.IdentityKey())
 
 	model, cmd := h.Update(previewTickMsg{})
 	updated := model.(*home)

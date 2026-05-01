@@ -346,7 +346,7 @@ func TestPreviewContentWithoutScrolling(t *testing.T) {
 
 	// Simulate the VT emulator pushing rendered content via SetRawContent.
 	expectedContent := "$ echo test\ntest"
-	previewPane.SetRawContent(expectedContent)
+	previewPane.SetRawContent(expectedContent, "test-instance")
 
 	// Verify we're not in scrolling mode
 	require.False(t, previewPane.isScrolling, "Should not be in scrolling mode")
@@ -387,7 +387,7 @@ func TestPreviewPaneViewportUpdate_DocumentModeHandlesNativeKeys(t *testing.T) {
 func TestPreviewPaneViewportUpdate_NoOpOutsideScrollableModes(t *testing.T) {
 	previewPane := NewPreviewPane()
 	previewPane.SetSize(30, 5)
-	previewPane.SetRawContent("plain preview")
+	previewPane.SetRawContent("plain preview", "test-instance")
 
 	cmd := previewPane.ViewportUpdate(tea.KeyPressMsg{Code: tea.KeyPgDown})
 
@@ -406,7 +406,7 @@ func TestPreviewPaneSetRawContent_PreservesScrollMode(t *testing.T) {
 
 	before := previewPane.viewport.View()
 
-	previewPane.SetRawContent("live terminal update")
+	previewPane.SetRawContent("live terminal update", "test-instance")
 
 	after := previewPane.viewport.View()
 	require.True(t, previewPane.isScrolling)
@@ -475,7 +475,7 @@ func TestPreviewPane_RawTerminalContent_NoEllipsis(t *testing.T) {
 	}
 	rawContent := strings.Join(lineStrs, "\n")
 
-	previewPane.SetRawContent(rawContent)
+	previewPane.SetRawContent(rawContent, "test-instance")
 
 	rendered := previewPane.String()
 	plain := stripPreviewANSI(rendered)
@@ -564,7 +564,7 @@ func TestPreviewPane_SDKUpdateContent_ClearsStaleContentWhenCacheEmpty(t *testin
 
 	// Seed the pane with visible preview content from a different (prior)
 	// instance — simulating a switch from a tmux or populated-SDK row.
-	previewPane.SetRawContent("previous instance content")
+	previewPane.SetRawContent("previous instance content", "test-instance")
 	require.Equal(t, "previous instance content", previewPane.previewState.text)
 
 	cases := []struct {
@@ -591,7 +591,7 @@ func TestPreviewPane_SDKUpdateContent_ClearsStaleContentWhenCacheEmpty(t *testin
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			previewPane.SetRawContent("previous instance content")
+			previewPane.SetRawContent("previous instance content", "test-instance")
 			require.NoError(t, previewPane.UpdateContent(tc.instance))
 			require.False(t, previewPane.previewState.fallback,
 				"empty SDK capture should render the empty SDK view, not the fallback banner")

@@ -1022,7 +1022,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			if content, changed := m.previewTerminal.Render(); changed {
 				log.InfoLog.Printf("preview_tick: %s render changed=true len=%d", m.previewTerminalInstance, len(content))
-				m.tabbedWindow.SetPreviewContent(content)
+				m.tabbedWindow.SetPreviewContent(content, m.previewTerminalInstance)
 			}
 			if !m.previewClipboardPending {
 				if selection, ok := m.previewTerminal.PollClipboardRequest(); ok {

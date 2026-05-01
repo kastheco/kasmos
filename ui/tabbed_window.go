@@ -142,8 +142,12 @@ func (w *TabbedWindow) UpdatePreview(instance *session.Instance) error {
 
 // SetPreviewContent sets preview content directly from a pre-rendered string.
 // Used by the embedded terminal in focus mode to bypass tmux capture-pane.
-func (w *TabbedWindow) SetPreviewContent(content string) {
-	w.preview.SetRawContent(content)
+// instanceKey identifies the agent the content belongs to so the underlying
+// preview pane can keep its lastInstanceKey synchronised — without that
+// synchronisation the metadata tick's UpdateContent would clear the freshly
+// written content as soon as the next tick fires.
+func (w *TabbedWindow) SetPreviewContent(content string, instanceKey string) {
+	w.preview.SetRawContent(content, instanceKey)
 }
 
 func (w *TabbedWindow) AppendSDKComposerText(text string) {

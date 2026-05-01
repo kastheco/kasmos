@@ -121,14 +121,19 @@ func (p *PreviewPane) TickSpring() {
 
 // SetRawContent sets preview content from a pre-rendered string (VT emulator path).
 // Clears scroll, document, and fallback flags and marks the pane as raw-terminal.
-func (p *PreviewPane) SetRawContent(content string) {
-	log.InfoLog.Printf("preview_state: SetRawContent len=%d scrolling=%v key=%q", len(content), p.isScrolling, p.lastInstanceKey)
-	// Keep live terminal frames buffered while the user is inspecting scrollback.
-	// Active sessions can repaint frequently; clearing scroll mode here would snap
-	// the viewport back to the bottom on the next render tick.
+//
+// instanceKey identifies the agent the content belongs to. It is recorded as
+// the pane's lastInstanceKey so a subsequent UpdateContent call with the same
+// instance does not see the "instance changed" condition and wipe the
+// just-written content. Without this synchronisation, the metadata tick path
+// (refreshSelectedPreview → UpdateContent) would race the previewTickMsg
+// path (Render → SetRawContent) and clear previewState the instant after it
+// was filled — exactly the "preview goes blank after navigate-back" bug.
+func (p *PreviewPane) SetRawContent(content string, instanceKey string) {
 	if p.isScrolling {
 		p.previewState = previewState{text: content}
 		p.isRawTerminal = true
+		p.lastInstanceKey = instanceKey
 		return
 	}
 
@@ -136,6 +141,7 @@ func (p *PreviewPane) SetRawContent(content string) {
 	p.isScrolling = false
 	p.isDocument = false
 	p.isRawTerminal = true
+	p.lastInstanceKey = instanceKey
 }
 
 // SetSize stores the pane dimensions and configures the viewport.
