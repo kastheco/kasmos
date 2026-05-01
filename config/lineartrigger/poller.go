@@ -90,7 +90,30 @@ func (p *Poller) PollOnce(ctx context.Context) PollStats {
 	if err := p.enqueueCommentTriggers(ctx, &stats); err != nil {
 		return p.abort(stats, err)
 	}
-	triggers, err := p.deps.Store.ListUnprocessedLinearTriggers(p.deps.Project, p.maxIssues())
+	drainStats := p.DrainQueued(ctx, p.maxIssues())
+	stats.Dispatched += drainStats.Dispatched
+	stats.Rejected += drainStats.Rejected
+	stats.Ignored += drainStats.Ignored
+	stats.Failed += drainStats.Failed
+	stats.AckFailed += drainStats.AckFailed
+	stats.Aborted = drainStats.Aborted
+	stats.Err = drainStats.Err
+	return stats
+}
+
+// DrainQueued processes up to limit unprocessed linear_triggers rows for this
+// project. It is the same loop that PollOnce runs after enqueueing, but it
+// can be invoked without doing label/comment polling, which webhook ingestion
+// needs when labels/comments are already known.
+func (p *Poller) DrainQueued(ctx context.Context, limit int) PollStats {
+	var stats PollStats
+	if !p.deps.Config.Enabled || p.deps.Store == nil || p.deps.Linear == nil {
+		return stats
+	}
+	if limit <= 0 {
+		limit = p.maxIssues()
+	}
+	triggers, err := p.deps.Store.ListUnprocessedLinearTriggers(p.deps.Project, limit)
 	if err != nil {
 		return p.abort(stats, err)
 	}
@@ -105,7 +128,7 @@ func (p *Poller) PollOnce(ctx context.Context) PollStats {
 }
 
 func (p *Poller) enqueueLabelTriggers(ctx context.Context, stats *PollStats) error {
-	for labelID, verb := range p.configuredTriggerLabels() {
+	for labelID, verb := range p.deps.Config.TriggerLabels() {
 		seen := 0
 		for _, route := range p.deps.Config.Routes {
 			if seen >= p.maxIssues() {
@@ -414,25 +437,11 @@ func (p *Poller) enqueue(_ context.Context, intent ParsedIntent, issue linear.Is
 		TaskArg:          intent.TaskFileArg,
 		DetectedAt:       detectedAt,
 	}
-	queued, err := p.deps.Store.EnqueueLinearTrigger(p.deps.Project, entry)
+	_, queued, err := p.deps.Store.EnqueueLinearTrigger(p.deps.Project, entry)
 	if queued {
 		p.emit(auditlog.EventTaskLinearTriggerReceived, entry, "", "", "info")
 	}
 	return queued, err
-}
-
-func (p *Poller) configuredTriggerLabels() map[string]Verb {
-	labels := map[string]Verb{}
-	if p.deps.Config.Labels.Create != "" {
-		labels[p.deps.Config.Labels.Create] = VerbCreate
-	}
-	if p.deps.Config.Labels.Plan != "" {
-		labels[p.deps.Config.Labels.Plan] = VerbPlan
-	}
-	if p.deps.Config.StartGuard.AllowLabelStart && p.deps.Config.Labels.Start != "" {
-		labels[p.deps.Config.Labels.Start] = VerbStart
-	}
-	return labels
 }
 
 func (p *Poller) maxIssues() int {

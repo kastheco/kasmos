@@ -315,6 +315,12 @@ allow_public_status = true
 [linear.triggers.start_guard]
 require_start_label = true
 allow_label_start = false
+
+[linear.triggers.webhook]
+enabled = true
+secret_env = "KASMOS_LINEAR_WEBHOOK_SECRET"
+timestamp_tolerance = "5m"
+max_body_bytes = 1048576
 ```
 
 | field | type | default | validation |
@@ -343,6 +349,13 @@ allow_label_start = false
 | `[linear.triggers.start_guard]` | table | both false | optional guard settings for start triggers |
 | `require_start_label` | bool | `false` | when true, `/kasmos start` requires the issue to carry `labels.start` |
 | `allow_label_start` | bool | `false` | when true, label-only start is allowed; validation requires `labels.start` |
+| `[linear.triggers.webhook]` | table | disabled | optional inbound linear webhook ingestion settings |
+| `enabled` | bool | `false` | when true, `kas serve` accepts signed linear webhook deliveries for the project endpoint |
+| `secret_env` | string | `KASMOS_LINEAR_WEBHOOK_SECRET` | environment variable that contains the linear webhook signing secret |
+| `timestamp_tolerance` | duration | `"5m"` | accepted delivery timestamp skew; clamped from `"1m"` to `"15m"` |
+| `max_body_bytes` | int64 | `1048576` | maximum raw request body size before the webhook returns `body_too_large` |
+
+linear webhook delivery ids are part of the ingestion contract, not optional metadata. requests missing `Linear-Delivery` are rejected with `missing_delivery` before kasmos records a delivery row or evaluates duplicate state, so a proxy/header issue cannot collapse unrelated deliveries onto an empty dedupe key. if a delivery was recorded but processing stopped in `received` or `failed`, a retry with the same delivery id resumes normalization and enqueue instead of being treated as a terminal duplicate. after accepted deliveries enqueue trigger rows, `kas serve` drains the queue until no rows remain or a retryable error stops the pass.
 
 ## `[[hooks]]` — FSM transition hooks
 

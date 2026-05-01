@@ -85,6 +85,7 @@ func TestExecuteStatus_Empty(t *testing.T) {
 	assert.Contains(t, output, "no instances")
 	assert.Contains(t, output, "no orphan tmux sessions")
 	assert.Contains(t, output, "linear triggers: disabled")
+	assert.Contains(t, output, "linear webhooks: disabled")
 }
 
 func TestExecuteStatus_LinearTriggersEnabledCounts(t *testing.T) {
@@ -92,7 +93,7 @@ func TestExecuteStatus_LinearTriggersEnabledCounts(t *testing.T) {
 	project := "linear-status-project"
 	now := time.Date(2026, 4, 30, 12, 0, 0, 0, time.UTC)
 	for i, outcome := range []string{"dispatched", "dispatched", "dispatched", "rejected", "failed"} {
-		queued, err := store.EnqueueLinearTrigger(project, taskstore.LinearTriggerEntry{
+		_, queued, err := store.EnqueueLinearTrigger(project, taskstore.LinearTriggerEntry{
 			LinearIssueID:    "issue",
 			LinearIdentifier: "ENG-1",
 			CommandKind:      outcome,
@@ -124,6 +125,37 @@ func TestExecuteStatus_LinearTriggersEnabledCounts(t *testing.T) {
 
 	assert.Contains(t, output, "linear triggers: enabled")
 	assert.Contains(t, output, "3 dispatched, 1 rejected, 1 errors")
+}
+
+func TestExecuteStatus_LinearWebhooksEnabledCounts(t *testing.T) {
+	store := taskstore.NewTestSQLiteStore(t)
+	project := "linear-webhook-status-project"
+	now := time.Date(2026, 4, 30, 12, 0, 0, 0, time.UTC)
+	for i, status := range []string{"accepted", "accepted", "accepted", "duplicate", "ignored", "rejected", "failed"} {
+		receivedAt := now.Add(-time.Duration(i+1) * time.Minute)
+		recorded, err := store.RecordLinearWebhookDelivery(project, taskstore.LinearWebhookDelivery{
+			DeliveryID:    "delivery-" + status + "-" + strconv.Itoa(i),
+			LinearEvent:   "Issue",
+			Action:        "update",
+			LinearIssueID: "issue",
+			SourceKind:    "label",
+			SourceID:      "label",
+			Status:        status,
+			ReceivedAt:    receivedAt,
+		})
+		require.NoError(t, err)
+		require.True(t, recorded)
+	}
+
+	state := newTestStateFromRaw(t, nil)
+	ex := cmd_test.NewMockExecutor()
+	ex.OutputFunc = func(_ *exec.Cmd) ([]byte, error) {
+		return nil, errors.New("no tmux")
+	}
+	output := executeStatusWithLinearTriggers(state, store, project, ex, "text", lineartrigger.Config{Webhook: lineartrigger.WebhookConfig{Enabled: true}}, now)
+
+	assert.Contains(t, output, "linear webhooks: enabled")
+	assert.Contains(t, output, "3 accepted, 1 duplicate, 1 ignored, 1 rejected, 1 errors")
 }
 
 func TestExecuteStatus_JSON(t *testing.T) {

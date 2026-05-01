@@ -9,18 +9,17 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/kastheco/kasmos/config"
 	"github.com/kastheco/kasmos/config/auditlog"
-	"github.com/kastheco/kasmos/config/linearlink"
 	"github.com/kastheco/kasmos/config/linearreceipt"
 	"github.com/kastheco/kasmos/config/lineartrigger"
 	"github.com/kastheco/kasmos/config/taskfsm"
 	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/kastheco/kasmos/internal/linear"
+	"github.com/kastheco/kasmos/internal/linearruntime"
 	theme "github.com/kastheco/kasmos/internal/theme"
 	"github.com/kastheco/kasmos/orchestration/loop"
 )
@@ -319,71 +318,31 @@ func (m *RepoManager) loadLinearReceiptHook(path, project string) (*linearreceip
 }
 
 func (m *RepoManager) loadLinearTriggerPoller(path, project string, store taskstore.Store, gateway taskstore.SignalGateway) (*lineartrigger.Poller, lineartrigger.Config) {
-	projTomlPath := filepath.Join(path, ".kasmos", config.TOMLConfigFileName)
-	if _, err := os.Stat(projTomlPath); err != nil {
-		return nil, lineartrigger.Config{}
-	}
-	result, err := config.LoadTOMLConfigFrom(projTomlPath)
-	if err != nil {
-		slog.Warn("daemon: failed to load linear trigger config for repo", "repo", path, "err", err)
-		return nil, lineartrigger.Config{}
-	}
-	if result == nil || !result.LinearTriggers.Enabled {
-		return nil, lineartrigger.Config{}
-	}
-
-	cfg, err := linearConfigForRepo(path)
-	if err != nil {
-		if !errors.Is(err, linear.ErrNotConfigured) {
-			slog.Warn("daemon: failed to create linear trigger client for repo", "repo", path, "err", err)
-		}
-		return nil, result.LinearTriggers
-	}
-	client := linear.NewClientFromConfig(cfg)
-
 	var auditLogger auditlog.Logger
 	if m.globalDB != nil {
 		if l, err := auditlog.NewSQLiteLoggerFromDB(m.globalDB); err == nil {
 			auditLogger = l
 		}
 	}
-
-	linker := linearlink.New(store, client, auditLogger, project)
-	router := lineartrigger.NewRouter(result.LinearTriggers)
-	auth := lineartrigger.NewAuthoriser(result.LinearTriggers)
-	validator := lineartrigger.NewValidator(result.LinearTriggers, store, project)
-	service := lineartrigger.NewService(project, result.LinearTriggers, store, router, auth, validator)
-	deps := lineartrigger.PollerDeps{
-		Project: project,
-		Config:  result.LinearTriggers,
+	resolved, err := linearruntime.Resolve(context.Background(), path, project, linearruntime.Options{
 		Store:   store,
-		Linker:  linker,
-		Linear:  client,
 		Gateway: gateway,
 		Audit:   auditLogger,
-		Service: service,
 		Now:     time.Now,
 		Logger:  slog.Default().With("monitor", "linear_trigger", "project", project),
+	})
+	if err != nil {
+		slog.Warn("daemon: failed to load linear trigger config for repo", "repo", path, "err", err)
+		return nil, lineartrigger.Config{}
 	}
-	return lineartrigger.NewPoller(deps), result.LinearTriggers
+	if resolved == nil {
+		return nil, lineartrigger.Config{}
+	}
+	return resolved.Poller, resolved.TriggerCfg
 }
 
 func linearConfigForRepo(path string) (linear.Config, error) {
-	values, err := config.ReadDotEnv(filepath.Join(path, ".env"))
-	if err != nil {
-		if os.IsNotExist(err) {
-			values = config.DotEnvValues{}
-		} else {
-			return linear.Config{}, err
-		}
-	}
-	return linear.ConfigFromLookup(func(key string) (string, bool) {
-		if value, ok := os.LookupEnv(key); ok && strings.TrimSpace(value) != "" {
-			return value, true
-		}
-		value, ok := values[key]
-		return value, ok
-	})
+	return linearruntime.LinearConfigForRepo(path)
 }
 
 func eventsFromConfig(cfg linearreceipt.Config) []taskfsm.Event {
