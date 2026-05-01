@@ -85,6 +85,12 @@ type IssueFetcher interface {
 	CreateComment(ctx context.Context, issueID, body string) (*linear.Comment, error)
 }
 
+// IssueCreator is the Linear write seam needed when creating a new Linear
+// issue for an existing kasmos task.
+type IssueCreator interface {
+	CreateIssue(ctx context.Context, in linear.CreateIssueInput) (*linear.Issue, error)
+}
+
 // Linker coordinates Linear fetches, task-store writes, audit events, and
 // optional backlink comments.
 type Linker struct {
@@ -117,12 +123,27 @@ type LinkInput struct {
 	PostComment bool
 }
 
+// CreateIssueForTaskInput describes an operator-requested Linear issue creation
+// for an existing unlinked kasmos task.
+type CreateIssueForTaskInput struct {
+	Filename  string
+	TeamID    string
+	ProjectID string
+	Reason    string
+}
+
 // LinkResult reports the persisted link and any non-fatal side-effect outcome.
 type LinkResult struct {
 	Link           taskstore.LinearLink
 	Replaced       bool
 	CommentURL     string
 	CommentWarning string
+}
+
+// CreateIssueForTaskResult reports the persisted link and created Linear issue.
+type CreateIssueForTaskResult struct {
+	Link  taskstore.LinearLink
+	Issue linear.Issue
 }
 
 // CreateFromIssueInput is the typed input for CreateFromIssue.
@@ -202,6 +223,75 @@ func (l *Linker) Link(ctx context.Context, in LinkInput) (LinkResult, error) {
 		}
 	}
 	return result, nil
+}
+
+// CreateIssueForTask creates a Linear issue from an existing unlinked kasmos
+// task, persists the resulting canonical link, and emits a link audit event.
+func (l *Linker) CreateIssueForTask(ctx context.Context, in CreateIssueForTaskInput) (CreateIssueForTaskResult, error) {
+	entry, err := l.store.Get(l.project, in.Filename)
+	if err != nil {
+		return CreateIssueForTaskResult{}, err
+	}
+	prev := currentLink(entry)
+	if prev.LinearIssueID != "" {
+		return CreateIssueForTaskResult{}, &AlreadyLinkedError{Identifier: prev.LinearIdentifier}
+	}
+	creator, ok := l.client.(IssueCreator)
+	if !ok {
+		return CreateIssueForTaskResult{}, fmt.Errorf("linearlink: issue creator is not configured")
+	}
+
+	content, err := l.store.GetContent(l.project, in.Filename)
+	if err != nil && !errors.Is(err, taskstore.ErrNotFound) {
+		return CreateIssueForTaskResult{}, err
+	}
+	title := strings.TrimSpace(entry.Description)
+	if title == "" {
+		title = strings.TrimSpace(entry.Goal)
+	}
+	if title == "" {
+		title = taskDisplayName(in.Filename)
+	}
+
+	issue, err := creator.CreateIssue(ctx, linear.CreateIssueInput{
+		Title:       title,
+		TeamID:      in.TeamID,
+		ProjectID:   in.ProjectID,
+		Description: createIssueDescription(entry, content),
+	})
+	if err != nil {
+		return CreateIssueForTaskResult{}, fmt.Errorf("linearlink: create issue for %q: %w", in.Filename, err)
+	}
+
+	linkedIssue := linkvalue.FromIssue(issue)
+	if err := linkedIssue.Validate(); err != nil {
+		return CreateIssueForTaskResult{}, fmt.Errorf("linearlink: invalid created issue link: %w", err)
+	}
+	link := linkedIssue.ToTaskstore()
+
+	conflict, err := l.store.SetLinearLinkIfNoActiveDuplicate(
+		l.project,
+		in.Filename,
+		link,
+		taskstore.StatusReady,
+		taskstore.StatusPlanning,
+		taskstore.StatusImplementing,
+		taskstore.StatusReviewing,
+		taskstore.StatusVerifying,
+	)
+	if err != nil {
+		return CreateIssueForTaskResult{}, err
+	}
+	if conflict != "" {
+		return CreateIssueForTaskResult{}, &DuplicateLinkError{Filename: conflict}
+	}
+
+	reason := in.Reason
+	if reason == "" {
+		reason = "linear-create-issue"
+	}
+	l.emit(auditlog.EventTaskLinearLinked, in.Filename, "", link.LinearIdentifier, reason)
+	return CreateIssueForTaskResult{Link: link, Issue: *issue}, nil
 }
 
 // CreateFromIssue fetches the issue, validates duplicate linking, creates a
@@ -413,6 +503,37 @@ func createSeedBody(issue linear.Issue) string {
 	}
 	b.WriteString("## Wave 1\n\n### Task 1: refine plan\n")
 	return b.String()
+}
+
+func createIssueDescription(entry taskstore.TaskEntry, content string) string {
+	var b strings.Builder
+	if entry.Filename != "" {
+		fmt.Fprintf(&b, "kasmos task: %s\n", entry.Filename)
+	}
+	if entry.Branch != "" {
+		fmt.Fprintf(&b, "branch: %s\n", entry.Branch)
+	}
+	if entry.Topic != "" {
+		fmt.Fprintf(&b, "topic: %s\n", entry.Topic)
+	}
+	content = strings.TrimSpace(content)
+	if content != "" {
+		if b.Len() > 0 {
+			b.WriteString("\n")
+		}
+		b.WriteString(truncateUTF8Bytes(content, 8*1024))
+	}
+	return b.String()
+}
+
+func taskDisplayName(filename string) string {
+	name := strings.TrimSuffix(filename, ".md")
+	name = strings.ReplaceAll(name, "-", " ")
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return filename
+	}
+	return name
 }
 
 func truncateUTF8Bytes(s string, max int) string {

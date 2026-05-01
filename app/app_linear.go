@@ -34,6 +34,7 @@ type linearIssueOpenedMsg struct {
 func taskLinearItems(entry taskstate.TaskEntry) []overlay.ContextMenuItem {
 	if entry.LinearIssueID == "" {
 		return []overlay.ContextMenuItem{
+			{Label: "create issue", Action: "create_linear_issue"},
 			{Label: "link issue", Action: "link_linear_issue"},
 		}
 	}
@@ -45,6 +46,71 @@ func taskLinearItems(entry taskstate.TaskEntry) []overlay.ContextMenuItem {
 		{Label: "unlink issue", Action: "unlink_linear_issue"},
 	}
 	return items
+}
+
+func (m *home) createLinearIssueForSelection() (tea.Model, tea.Cmd) {
+	planFile := m.nav.GetSelectedPlanFile()
+	if planFile == "" {
+		return m, nil
+	}
+	entry, ok := m.linearEntryForSelection()
+	if !ok {
+		return m, nil
+	}
+	if m.taskStore == nil {
+		return m, m.handleError(fmt.Errorf("task store is not configured"))
+	}
+	teamID, projectID, err := m.linearIssueCreateRoute(entry)
+	if err != nil {
+		return m, m.handleError(err)
+	}
+
+	m.toastManager.Info("creating linear issue...")
+	store := m.taskStore
+	project := m.taskStoreProject
+	logger := m.auditLogger
+	return m, tea.Batch(m.toastTickCmd(), func() tea.Msg {
+		cfg, err := linear.ConfigFromEnv()
+		if err != nil {
+			return linearTaskLinkMsg{planFile: planFile, err: err}
+		}
+		result, err := linearlink.New(store, linear.NewClientFromConfig(cfg), logger, project).CreateIssueForTask(context.Background(), linearlink.CreateIssueForTaskInput{
+			Filename:  planFile,
+			TeamID:    teamID,
+			ProjectID: projectID,
+			Reason:    "tui task menu",
+		})
+		if err != nil {
+			return linearTaskLinkMsg{planFile: planFile, err: err}
+		}
+		return linearTaskLinkMsg{planFile: planFile, issue: linearDisplayID(result.Link)}
+	})
+}
+
+func (m *home) linearIssueCreateRoute(entry taskstate.TaskEntry) (teamID, projectID string, err error) {
+	if m.appConfig == nil || !m.appConfig.LinearTriggers.Enabled || len(m.appConfig.LinearTriggers.Routes) == 0 {
+		return "", "", fmt.Errorf("linear issue creation requires one [linear.triggers].routes entry")
+	}
+	routes := m.appConfig.LinearTriggers.Routes
+	if len(routes) == 1 {
+		return routes[0].TeamID, routes[0].ProjectID, nil
+	}
+
+	topic := strings.TrimSpace(entry.Topic)
+	var matches []int
+	for i, route := range routes {
+		if route.Topic == topic {
+			matches = append(matches, i)
+		}
+	}
+	if len(matches) == 1 {
+		route := routes[matches[0]]
+		return route.TeamID, route.ProjectID, nil
+	}
+	if topic == "" {
+		return "", "", fmt.Errorf("multiple linear routes are configured; set a task topic before creating a Linear issue")
+	}
+	return "", "", fmt.Errorf("multiple linear routes are configured and topic %q does not match exactly one route", topic)
 }
 
 func (m *home) submitLinearIssueLink(issueArg string) (tea.Model, tea.Cmd) {

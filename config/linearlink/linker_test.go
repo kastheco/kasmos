@@ -236,6 +236,73 @@ func TestLinker_Link(t *testing.T) {
 	}
 }
 
+func TestLinker_CreateIssueForTask(t *testing.T) {
+	t.Run("successful create writes link and emits audit", func(t *testing.T) {
+		store := taskstore.NewTestSQLiteStore(t)
+		require.NoError(t, store.Create(testProject, taskstore.TaskEntry{
+			Filename:    "plan",
+			Status:      taskstore.StatusReady,
+			Branch:      "plan-branch",
+			Description: "ship linear create menu",
+			Topic:       "linear",
+			CreatedAt:   time.Now(),
+		}))
+		require.NoError(t, store.SetContent(testProject, "plan", "# Plan\n\n## Wave 1\n\n### Task 1: Ship it\n"))
+		fetcher := newFakeIssueFetcher()
+		fetcher.createdIssue = &linear.Issue{
+			ID:         "issue-created",
+			Identifier: "KAS-456",
+			URL:        "https://linear.app/kasmos/issue/KAS-456/created",
+			Team:       &linear.Team{ID: "team-1", Key: "KAS", Name: "kasmos"},
+			Project:    &linear.Project{ID: "project-1", Name: "kasmos"},
+		}
+		logger := &recordingLogger{}
+
+		result, err := New(store, fetcher, logger, testProject).CreateIssueForTask(context.Background(), CreateIssueForTaskInput{
+			Filename:  "plan",
+			TeamID:    "team-1",
+			ProjectID: "project-1",
+			Reason:    "operator requested",
+		})
+		require.NoError(t, err)
+
+		assert.Equal(t, "ship linear create menu", fetcher.createInput.Title)
+		assert.Equal(t, "team-1", fetcher.createInput.TeamID)
+		assert.Equal(t, "project-1", fetcher.createInput.ProjectID)
+		assert.Contains(t, fetcher.createInput.Description, "kasmos task: plan")
+		assert.Contains(t, fetcher.createInput.Description, "# Plan")
+		assert.Equal(t, "issue-created", result.Link.LinearIssueID)
+
+		entry := mustGet(t, store, "plan")
+		assert.Equal(t, "issue-created", entry.LinearIssueID)
+		assert.Equal(t, "KAS-456", entry.LinearIdentifier)
+		assert.Equal(t, "https://linear.app/kasmos/issue/KAS-456/created", entry.LinearURL)
+		assert.Equal(t, "KAS", entry.LinearTeamKey)
+		assert.Equal(t, "project-1", entry.LinearProjectID)
+
+		require.Len(t, logger.events, 1)
+		assert.Equal(t, auditlog.EventTaskLinearLinked, logger.events[0].Kind)
+		assert.Equal(t, "plan", logger.events[0].TaskFile)
+		assertLinearDetail(t, logger.events[0].Detail, "", "KAS-456", "operator requested")
+	})
+
+	t.Run("already linked does not create issue", func(t *testing.T) {
+		store := newStoreWithTask(t)
+		require.NoError(t, store.SetLinearLink(testProject, "plan", taskstore.LinearLink{
+			LinearIssueID:    "issue-123",
+			LinearIdentifier: "KAS-123",
+		}))
+		fetcher := newFakeIssueFetcher()
+
+		_, err := New(store, fetcher, &recordingLogger{}, testProject).CreateIssueForTask(context.Background(), CreateIssueForTaskInput{
+			Filename: "plan",
+			TeamID:   "team-1",
+		})
+		require.ErrorIs(t, err, ErrAlreadyLinked)
+		assert.Empty(t, fetcher.createInput.Title)
+	})
+}
+
 func TestLinker_CreateFromIssue(t *testing.T) {
 	t.Run("successful create persists task content link and audit", func(t *testing.T) {
 		store := taskstore.NewTestSQLiteStore(t)
@@ -489,6 +556,9 @@ type fakeIssueFetcher struct {
 	issueArg       string
 	issue          *linear.Issue
 	issueErr       error
+	createInput    linear.CreateIssueInput
+	createdIssue   *linear.Issue
+	createErr      error
 	commentIssueID string
 	commentBody    string
 	comment        *linear.Comment
@@ -499,6 +569,17 @@ func (f *fakeIssueFetcher) Issue(_ context.Context, idOrIdentifier string) (*lin
 	f.issueArg = idOrIdentifier
 	if f.issueErr != nil {
 		return nil, f.issueErr
+	}
+	return f.issue, nil
+}
+
+func (f *fakeIssueFetcher) CreateIssue(_ context.Context, in linear.CreateIssueInput) (*linear.Issue, error) {
+	f.createInput = in
+	if f.createErr != nil {
+		return nil, f.createErr
+	}
+	if f.createdIssue != nil {
+		return f.createdIssue, nil
 	}
 	return f.issue, nil
 }

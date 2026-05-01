@@ -356,6 +356,9 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 	case "open_plan_browser":
 		return m.openPlanBrowserForSelection()
 
+	case "create_linear_issue":
+		return m.createLinearIssueForSelection()
+
 	case "link_linear_issue":
 		planFile := m.nav.GetSelectedPlanFile()
 		if planFile == "" {

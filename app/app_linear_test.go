@@ -1,6 +1,7 @@
 package app
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -8,6 +9,8 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/kastheco/kasmos/config"
+	"github.com/kastheco/kasmos/config/lineartrigger"
 	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/kastheco/kasmos/ui"
 	"github.com/kastheco/kasmos/ui/overlay"
@@ -69,9 +72,11 @@ func TestTaskContextMenu_LinearGroupUnlinkedOffersLink(t *testing.T) {
 	require.True(t, ok)
 
 	group := linearMenuGroup(t, menu)
-	require.Len(t, group.Children, 1)
-	assert.Equal(t, "link issue", group.Children[0].Label)
-	assert.Equal(t, "link_linear_issue", group.Children[0].Action)
+	require.Len(t, group.Children, 2)
+	assert.Equal(t, "create issue", group.Children[0].Label)
+	assert.Equal(t, "create_linear_issue", group.Children[0].Action)
+	assert.Equal(t, "link issue", group.Children[1].Label)
+	assert.Equal(t, "link_linear_issue", group.Children[1].Action)
 }
 
 func TestTaskContextMenu_LinearGroupLinkedOffersUsefulActions(t *testing.T) {
@@ -97,7 +102,57 @@ func TestTaskContextMenu_LinearGroupLinkedOffersUsefulActions(t *testing.T) {
 	assert.Contains(t, actions, "copy_linear_issue_url")
 	assert.Contains(t, actions, "copy_linear_issue_id")
 	assert.Contains(t, actions, "unlink_linear_issue")
+	assert.NotContains(t, actions, "create_linear_issue")
 	assert.NotContains(t, actions, "link_linear_issue")
+}
+
+func TestCreateLinearIssueForSelection_CreatesAndPersistsTaskLink(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Query     string `json:"query"`
+			Variables struct {
+				Input map[string]interface{} `json:"input"`
+			} `json:"variables"`
+		}
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+		assert.Contains(t, body.Query, "issueCreate")
+		assert.Equal(t, "linear task", body.Variables.Input["title"])
+		assert.Equal(t, "team-1", body.Variables.Input["teamId"])
+		assert.Equal(t, "project-1", body.Variables.Input["projectId"])
+		assert.Contains(t, body.Variables.Input["description"], "kasmos task: linear-create")
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":{"issueCreate":{"success":true,"issue":{"id":"issue-created","identifier":"KAS-789","title":"linear task","url":"https://linear.app/kas/issue/KAS-789/linear-task","priority":0,"createdAt":"2026-04-30T12:00:00Z","updatedAt":"2026-04-30T12:01:00Z","team":{"id":"team-1","key":"KAS","name":"kasmos"},"project":{"id":"project-1","name":"kasmos","url":"https://linear.app/kas/project/kasmos"}}}}}`))
+	}))
+	t.Cleanup(server.Close)
+	t.Setenv("KASMOS_LINEAR_API_KEY", "test-key")
+	t.Setenv("KASMOS_LINEAR_API_URL", server.URL)
+
+	h := newLinearTaskMenuHome(t, "linear-create")
+	h.appConfig = config.DefaultConfig()
+	h.appConfig.LinearTriggers = lineartrigger.Config{
+		Enabled: true,
+		Routes: []lineartrigger.Route{{
+			TeamID:    "team-1",
+			ProjectID: "project-1",
+			Topic:     "linear",
+		}},
+	}
+
+	_, cmd := h.createLinearIssueForSelection()
+	require.NotNil(t, cmd)
+	msgs := collectLinearTaskLinkMsgs(cmd)
+	require.Len(t, msgs, 1)
+	require.NoError(t, msgs[0].err)
+	assert.Equal(t, "KAS-789", msgs[0].issue)
+
+	entry, err := h.taskStore.Get("test", "linear-create")
+	require.NoError(t, err)
+	assert.Equal(t, "issue-created", entry.LinearIssueID)
+	assert.Equal(t, "KAS-789", entry.LinearIdentifier)
+	assert.Equal(t, "https://linear.app/kas/issue/KAS-789/linear-task", entry.LinearURL)
+	assert.Equal(t, "KAS", entry.LinearTeamKey)
+	assert.Equal(t, "project-1", entry.LinearProjectID)
 }
 
 func TestExecuteContextAction_LinkLinearIssueOpensPrompt(t *testing.T) {
