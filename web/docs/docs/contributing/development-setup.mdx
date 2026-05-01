@@ -125,3 +125,27 @@ kasmos scaffolds agent harness configuration into `.agents/`, `.claude/`, and `.
 ```bash
 kas check -v
 ```
+
+## docs-drift hook (pre-push)
+
+The kasmos repo blocks `git push` when code changes have no matching docs edits. The map lives at `docs/docs-drift-map.yml`; the hook lives at `scripts/git-hooks/pre-push`.
+
+Install the hook once per clone:
+
+```bash
+just hooks
+# or, without just:
+bash scripts/git-hooks/install.sh
+```
+
+This sets `git config core.hooksPath scripts/git-hooks`. If you already use a custom `core.hooksPath` (e.g. husky, lefthook), the installer refuses to overwrite — pass `--force` to override.
+
+### bypass options
+
+When the hook flags a false positive (typically a pure refactor), three escape hatches are available — use sparingly:
+
+- `git push --no-verify` — skips all client-side hooks for this push.
+- `KASMOS_SKIP_DOCS_DRIFT=1 git push` — skips just the docs-drift check, leaves other hooks active.
+- `Docs-Drift-Skip: <reason>` commit trailer on any commit in the push range — auditable, preserved in history.
+
+CI runs the same check as a required status, so `--no-verify` lands you in a failing PR. Maintainers can override at branch protection level.

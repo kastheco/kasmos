@@ -33,6 +33,7 @@ Key points:
 - **Arrow-key navigation in overlays**: use ↑↓ for navigation, not j/k vim bindings. Letter keys should always type into search/filter when present.
 - Signals are gateway-backed first. `.kasmos/signals/` still exists for compatibility, but do not document filesystem sentinels as the primary lifecycle path.
 - **Daemon runs via systemd.** The kasmos daemon and DB server run as `systemctl --user` services (`kasmos` and `kasmosdb`). Always use `systemctl --user restart kasmos` (not `kas daemon start`). The CLI commands (`kas daemon start/stop`) exist for development and CI only.
+- **Docs drift is blocked at push-time** by `scripts/git-hooks/pre-push`. Run `just hooks` once after cloning. CI enforces the same check as a required status, so `--no-verify` lands you in a failing PR.
 
 ## MCP-First Tooling
 
