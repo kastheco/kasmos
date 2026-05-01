@@ -8,7 +8,11 @@ on:
       - 'daemon/**.go'
       - 'internal/**.go'
       - 'orchestration/**.go'
+      - 'docs/docs-drift-map.yml'
+      - 'scripts/detect-docs-drift.sh'
+      - 'scripts/git-hooks/**'
       - 'web/docs/docs/**'
+      - '.github/workflows/docs-drift.yml'
   workflow_dispatch:
 
 permissions:

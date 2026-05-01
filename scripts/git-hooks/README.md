@@ -18,7 +18,7 @@ The hook iterates every line. Special cases:
 
 - `<local sha>` is the all-zero sha → ref deletion, allow.
 - `<remote ref>` matches `refs/tags/*` → tag push, allow.
-- `<remote sha>` is the all-zero sha → new branch, compare against the pushed remote's default branch, or `${KASMOS_DEFAULT_BRANCH}` when set.
+- `<remote sha>` is the all-zero sha → new branch, compare against the pushed remote's default branch, or `${KASMOS_DEFAULT_BRANCH}` when set. If the local remote-tracking ref is missing, the hook fetches that branch; if it still cannot find a merge base, the push is blocked.
 
 ### bypass
 
@@ -36,7 +36,7 @@ CI runs the same check as a required status. `--no-verify` and `KASMOS_SKIP_DOCS
 
 ### tests
 
-- `scripts/git-hooks/test/run.sh` — synthetic-repo unit scenarios (8 cases, hermetic).
+- `scripts/git-hooks/test/run.sh` — synthetic-repo unit scenarios.
 - `scripts/git-hooks/test/smoke.sh` — runs hook against the real repo HEAD and asserts agreement with the detector.
 
 Both are invoked from `.github/workflows/docs-drift.yml`.

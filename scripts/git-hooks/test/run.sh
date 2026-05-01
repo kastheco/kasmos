@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 HOOK_SRC="$ROOT/scripts/git-hooks/pre-push"
+INSTALL_SRC="$ROOT/scripts/git-hooks/install.sh"
 DETECTOR_SRC="$ROOT/scripts/detect-docs-drift.sh"
 MAP_SRC="$ROOT/docs/docs-drift-map.yml"
 ZERO_SHA="0000000000000000000000000000000000000000"
@@ -40,6 +41,8 @@ seed_repo() {
   fi
   cp "$HOOK_SRC" "$repo/scripts/git-hooks/pre-push"
   chmod +x "$repo/scripts/git-hooks/pre-push"
+  cp "$INSTALL_SRC" "$repo/scripts/git-hooks/install.sh"
+  chmod +x "$repo/scripts/git-hooks/install.sh"
 
   printf 'package main\n' >"$repo/cmd/task.go"
   printf '# task docs\n' >"$repo/web/docs/docs/cli-reference/task.mdx"
@@ -238,6 +241,36 @@ scenario_new_branch_uses_push_remote() {
   assert_stderr_contains "web/docs/docs/cli-reference/task.mdx"
 }
 
+scenario_new_branch_fetches_missing_remote_base() {
+  local repo remote_repo local_sha
+  repo="$(seed_repo)" || return 1
+  SCENARIO_TMP="$repo"
+  remote_repo="$repo/remote.git"
+  git init --bare -q --initial-branch=main "$remote_repo"
+  git -C "$repo" remote add upstream "$remote_repo"
+  git -C "$repo" push -q upstream main
+  SCENARIO_REMOTE_NAME="upstream"
+  with_feature_branch "$repo"
+  make_drift_commit "$repo"
+  local_sha="$(git -C "$repo" rev-parse HEAD)"
+  run_hook "$repo" "refs/heads/feature $local_sha refs/heads/feature $ZERO_SHA" env
+  assert_status 1 || return 1
+  assert_stderr_contains "web/docs/docs/cli-reference/task.mdx"
+}
+
+scenario_new_branch_fails_when_base_unavailable() {
+  local repo local_sha
+  repo="$(seed_repo)" || return 1
+  SCENARIO_TMP="$repo"
+  SCENARIO_REMOTE_NAME="missing-remote"
+  with_feature_branch "$repo"
+  make_drift_commit "$repo"
+  local_sha="$(git -C "$repo" rev-parse HEAD)"
+  run_hook "$repo" "refs/heads/feature $local_sha refs/heads/feature $ZERO_SHA" env
+  assert_status 1 || return 1
+  assert_stderr_contains "refusing to skip docs drift check"
+}
+
 scenario_non_head_push_ref() {
   local repo remote feature_sha
   repo="$(seed_repo)" || return 1
@@ -308,6 +341,25 @@ scenario_missing_yq() {
   assert_stderr_contains "yq and jq required"
 }
 
+scenario_install_from_subdirectory() {
+  local repo
+  repo="$(seed_repo)" || return 1
+  SCENARIO_TMP="$repo"
+  mkdir -p "$repo/nested/dir"
+  (
+    cd "$repo/nested/dir"
+    bash "$repo/scripts/git-hooks/install.sh" >/dev/null
+  )
+  if [ "$(git -C "$repo" config --get core.hooksPath)" != "scripts/git-hooks" ]; then
+    fail "installer did not configure core.hooksPath"
+    return 1
+  fi
+  if [ ! -x "$repo/scripts/git-hooks/pre-push" ]; then
+    fail "installer did not chmod repo-root pre-push hook"
+    return 1
+  fi
+}
+
 run_scenario() {
   local name="$1"
   local fn="$2"
@@ -331,7 +383,7 @@ run_scenario() {
 
 main() {
   local passed=0
-  local total=10
+  local total=13
 
   local scenarios=(
     "drift_detected:scenario_drift_detected"
@@ -340,10 +392,13 @@ main() {
     "tag_push:scenario_tag_push"
     "new_branch:scenario_new_branch"
     "new_branch_uses_push_remote:scenario_new_branch_uses_push_remote"
+    "new_branch_fetches_missing_remote_base:scenario_new_branch_fetches_missing_remote_base"
+    "new_branch_fails_when_base_unavailable:scenario_new_branch_fails_when_base_unavailable"
     "non_head_push_ref:scenario_non_head_push_ref"
     "bypass_env:scenario_bypass_env"
     "bypass_trailer:scenario_bypass_trailer"
     "missing_yq:scenario_missing_yq"
+    "install_from_subdirectory:scenario_install_from_subdirectory"
   )
 
   for scenario in "${scenarios[@]}"; do

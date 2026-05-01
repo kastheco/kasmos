@@ -55,21 +55,29 @@ print_docs_drift_rejection() {
 
 remote_default_ref() {
 	local remote="$1"
+	local branch
+
+	branch="$(remote_default_branch "$remote")"
+	printf '%s/%s\n' "$remote" "$branch"
+}
+
+remote_default_branch() {
+	local remote="$1"
 	local configured_default="${KASMOS_DEFAULT_BRANCH:-}"
 	local remote_head
 
 	if [ -n "$configured_default" ]; then
-		printf '%s/%s\n' "$remote" "$configured_default"
+		printf '%s\n' "$configured_default"
 		return
 	fi
 
 	remote_head="$(git symbolic-ref --quiet --short "refs/remotes/$remote/HEAD" 2>/dev/null || true)"
 	if [ -n "$remote_head" ]; then
-		printf '%s\n' "$remote_head"
+		printf '%s\n' "${remote_head#"$remote/"}"
 		return
 	fi
 
-	printf '%s/main\n' "$remote"
+	printf 'main\n'
 }
 
 while read -r local_ref local_sha remote_ref remote_sha; do
@@ -93,11 +101,17 @@ while read -r local_ref local_sha remote_ref remote_sha; do
 	fi
 
 	if [ "$remote_sha" = "$ZERO_SHA" ]; then
+		default_branch_name="$(remote_default_branch "$remote_name")"
 		default_branch="$(remote_default_ref "$remote_name")"
 		base="$(git merge-base "$local_sha" "$default_branch" 2>/dev/null || true)"
 		if [ -z "$base" ]; then
-			echo "docs-drift: warning: unable to find merge-base for $local_ref and $default_branch; skipping docs drift check" >&2
-			continue
+			if git fetch --quiet "$remote_name" "$default_branch_name" 2>/dev/null; then
+				base="$(git merge-base "$local_sha" FETCH_HEAD 2>/dev/null || true)"
+			fi
+		fi
+		if [ -z "$base" ]; then
+			echo "docs-drift: unable to find merge-base for $local_ref and $default_branch; refusing to skip docs drift check" >&2
+			exit 1
 		fi
 	else
 		base="$remote_sha"

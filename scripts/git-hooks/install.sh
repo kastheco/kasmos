@@ -43,7 +43,7 @@ if [ -n "$current" ] && ! is_kasmos_hooks_path "$current" && [ "$force" -ne 1 ];
 fi
 
 git config core.hooksPath scripts/git-hooks
-chmod +x scripts/git-hooks/pre-push
+chmod +x "$repo_root/scripts/git-hooks/pre-push"
 git fetch origin "${KASMOS_DEFAULT_BRANCH:-main}" --quiet >/dev/null 2>&1 || true
 
 echo "installed: core.hooksPath=scripts/git-hooks"
