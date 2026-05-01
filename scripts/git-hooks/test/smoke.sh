@@ -64,7 +64,7 @@ hook_status=0
 
 drift_count="$(
   cd "$ROOT"
-  BASE_REF="$base_sha" bash "$DETECTOR" | jq '.drift | length'
+  BASE_REF="$base_sha" TARGET_REF="$head_sha" bash "$DETECTOR" | jq '.drift | length'
 )"
 
 if [ "$drift_count" -eq 0 ]; then
@@ -83,7 +83,8 @@ if [ "$hook_status" -eq 0 ]; then
   exit 1
 fi
 
-if ! rg -q --fixed-strings "docs-drift: push blocked" "$stderr_file"; then
+stderr_contents="$(cat "$stderr_file")"
+if [[ "$stderr_contents" != *"docs-drift: push blocked"* ]]; then
   echo "expected hook stderr to contain docs-drift block message" >&2
   tr '\n' ' ' <"$stderr_file" >&2
   echo >&2

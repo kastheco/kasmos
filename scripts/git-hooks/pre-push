@@ -95,7 +95,7 @@ while read -r local_ref local_sha remote_ref remote_sha; do
 		continue
 	fi
 
-	REPORT="$(BASE_REF="$base" bash scripts/detect-docs-drift.sh)"
+	REPORT="$(BASE_REF="$base" TARGET_REF="$local_sha" bash scripts/detect-docs-drift.sh)"
 	if [ "$(jq '.drift | length' <<<"$REPORT")" != "0" ]; then
 		print_docs_drift_rejection "$REPORT"
 		exit 1

@@ -103,7 +103,9 @@ assert_status() {
 
 assert_stderr_contains() {
   local expected="$1"
-  if ! rg -q --fixed-strings "$expected" "$SCENARIO_STDERR"; then
+  local stderr
+  stderr="$(cat "$SCENARIO_STDERR")"
+  if [[ "$stderr" != *"$expected"* ]]; then
     fail "stderr missing '$expected'; got: $(tr '\n' ' ' <"$SCENARIO_STDERR")"
     return 1
   fi
@@ -199,6 +201,20 @@ scenario_new_branch() {
   assert_stderr_contains "web/docs/docs/cli-reference/task.mdx"
 }
 
+scenario_non_head_push_ref() {
+  local repo remote feature_sha
+  repo="$(seed_repo)" || return 1
+  SCENARIO_TMP="$repo"
+  remote="$(git -C "$repo" rev-parse HEAD)"
+  with_feature_branch "$repo"
+  make_drift_commit "$repo"
+  feature_sha="$(git -C "$repo" rev-parse HEAD)"
+  git -C "$repo" switch -q main
+  run_hook "$repo" "refs/heads/feature $feature_sha refs/heads/feature $remote" env
+  assert_status 1 || return 1
+  assert_stderr_contains "web/docs/docs/cli-reference/task.mdx"
+}
+
 scenario_bypass_env() {
   local repo remote local_sha
   repo="$(seed_repo)" || return 1
@@ -277,7 +293,7 @@ run_scenario() {
 
 main() {
   local passed=0
-  local total=8
+  local total=9
 
   local scenarios=(
     "drift_detected:scenario_drift_detected"
@@ -285,6 +301,7 @@ main() {
     "deletion_ref:scenario_deletion_ref"
     "tag_push:scenario_tag_push"
     "new_branch:scenario_new_branch"
+    "non_head_push_ref:scenario_non_head_push_ref"
     "bypass_env:scenario_bypass_env"
     "bypass_trailer:scenario_bypass_trailer"
     "missing_yq:scenario_missing_yq"
