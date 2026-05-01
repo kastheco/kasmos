@@ -218,10 +218,20 @@ func renderGitHooks(cmd *cobra.Command, status *check.HookStatus) {
 	out := cmd.OutOrStdout()
 	fmt.Fprintf(out, "\npre-push hook:\n")
 	if status.Configured {
-		fmt.Fprintf(out, "  ✓ core.hooksPath=%s\n", status.ExpectedPath)
+		fmt.Fprintf(out, "  ✓ core.hooksPath=%s\n", configuredHooksPathDisplay(status))
 		return
 	}
 	fmt.Fprintf(out, "  ✗ pre-push hook not installed (core.hooksPath=%q)\n", status.ActualPath)
+}
+
+func configuredHooksPathDisplay(status *check.HookStatus) string {
+	if status != nil && status.ActualPath != "" {
+		return status.ActualPath
+	}
+	if status != nil {
+		return status.ExpectedPath
+	}
+	return ""
 }
 
 // renderBinaryPath prints a dedicated binary-path section before the health summary.

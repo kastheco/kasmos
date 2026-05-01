@@ -281,6 +281,24 @@ func TestCheckCmd_PrePushHookHealthy(t *testing.T) {
 	assert.Contains(t, out, "✓ core.hooksPath=scripts/git-hooks")
 }
 
+func TestCheckCmd_PrePushHookHealthyAbsolutePath(t *testing.T) {
+	var hookPath string
+	prev := check.SetGitConfigFnForTest(func(string) (string, error) { return hookPath, nil })
+	t.Cleanup(func() { check.SetGitConfigFnForTest(prev) })
+
+	out := captureCheckOutput(t, func(home, project string) {
+		hookPath = filepath.Join(project, "scripts", "git-hooks")
+		require.NoError(t, os.MkdirAll(filepath.Join(project, "docs"), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(project, "docs", "docs-drift-map.yml"), []byte("[]"), 0o644))
+		require.NoError(t, os.MkdirAll(hookPath, 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(hookPath, "pre-push"), []byte("#!/usr/bin/env bash\n"), 0o755))
+	})
+
+	assert.Contains(t, out, "pre-push hook:")
+	assert.Contains(t, out, "✓ core.hooksPath="+hookPath)
+	assert.NotContains(t, out, "pre-push hook not installed")
+}
+
 func TestCheckCmd_PrePushHookMissing(t *testing.T) {
 	prev := check.SetGitConfigFnForTest(func(string) (string, error) { return "", nil })
 	t.Cleanup(func() { check.SetGitConfigFnForTest(prev) })

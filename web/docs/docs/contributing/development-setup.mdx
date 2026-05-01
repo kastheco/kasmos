@@ -138,7 +138,7 @@ just hooks
 bash scripts/git-hooks/install.sh
 ```
 
-This sets `git config core.hooksPath scripts/git-hooks`. If you already use a custom `core.hooksPath` (e.g. husky, lefthook), the installer refuses to overwrite — pass `--force` to override.
+This sets `git config core.hooksPath scripts/git-hooks`. An existing relative or absolute path to `scripts/git-hooks` is treated as already configured. If you already use a different custom `core.hooksPath` (e.g. husky, lefthook), the installer refuses to overwrite — pass `--force` to override.
 
 ### bypass options
 

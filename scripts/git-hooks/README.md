@@ -1,6 +1,6 @@
 # kasmos git hooks
 
-This directory holds the checked-in client-side git hooks for kasmos contributors. Install with `just hooks` (sets `git config core.hooksPath`).
+This directory holds the checked-in client-side git hooks for kasmos contributors. Install with `just hooks` (sets `git config core.hooksPath`). `kas check` treats both `scripts/git-hooks` and an absolute path to this directory as configured.
 
 ## pre-push
 

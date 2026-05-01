@@ -10,8 +10,8 @@ import (
 // HookStatus describes the pre-push hook installation state for a kasmos clone.
 type HookStatus struct {
 	Skipped        bool   // true when cwd is not a kasmos clone (no docs-drift-map.yml)
-	Configured     bool   // core.hooksPath == ExpectedPath AND HookFileExists
-	ExpectedPath   string // always "scripts/git-hooks"
+	Configured     bool   // core.hooksPath points at ExpectedPath AND HookFileExists
+	ExpectedPath   string // canonical relative hook path, "scripts/git-hooks"
 	ActualPath     string // raw value of core.hooksPath ("" when unset)
 	HookFileExists bool   // scripts/git-hooks/pre-push exists in repoRoot
 }
@@ -62,6 +62,19 @@ func CheckPrePushHook(repoRoot string) HookStatus {
 		return status
 	}
 	status.ActualPath = actual
-	status.Configured = (actual == status.ExpectedPath) && status.HookFileExists
+	status.Configured = hooksPathMatches(repoRoot, actual, status.ExpectedPath) && status.HookFileExists
 	return status
+}
+
+func hooksPathMatches(repoRoot, actual, expected string) bool {
+	actual = strings.TrimSpace(actual)
+	if actual == "" {
+		return false
+	}
+	expected = filepath.Clean(expected)
+	actual = filepath.Clean(actual)
+	if !filepath.IsAbs(actual) {
+		return actual == expected
+	}
+	return actual == filepath.Clean(filepath.Join(repoRoot, expected))
 }
