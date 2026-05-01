@@ -189,6 +189,7 @@ func NewSQLiteStore(dbPath string) (*SQLiteStore, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite db: %w", err)
 	}
+	limitMemorySQLitePool(db, dbPath)
 
 	if err := runStoreMigrations(db); err != nil {
 		db.Close()

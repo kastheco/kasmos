@@ -42,6 +42,7 @@ func NewSQLiteSignalGateway(dbPath string) (*SQLiteSignalGateway, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite db: %w", err)
 	}
+	limitMemorySQLitePool(db, dbPath)
 
 	if _, err := db.Exec(signalsSchema); err != nil {
 		db.Close()

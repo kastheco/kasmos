@@ -181,6 +181,7 @@ func OpenSharedDB(dbPath string) (*sql.DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open shared sqlite db: %w", err)
 	}
+	limitMemorySQLitePool(db, dbPath)
 	// sql.Open is lazy — Ping forces the driver to actually create the
 	// connection (and the DB file) now, so callers get the same behaviour they
 	// had with the old Exec-based PRAGMA setup. It also surfaces DSN typos.
@@ -216,6 +217,12 @@ func buildSQLiteDSN(dbPath string) string {
 		"&_pragma=foreign_keys(on)" +
 		"&_pragma=synchronous(normal)" +
 		"&_txlock=immediate"
+}
+
+func limitMemorySQLitePool(db *sql.DB, dbPath string) {
+	if dbPath == ":memory:" {
+		db.SetMaxOpenConns(1)
+	}
 }
 
 // OpenBackingSharedDB is a convenience wrapper that calls OpenSharedDB with
