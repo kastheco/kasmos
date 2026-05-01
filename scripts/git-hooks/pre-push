@@ -1,0 +1,139 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ZERO_SHA="0000000000000000000000000000000000000000"
+remote_name="${1:-origin}"
+
+repo_root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+if [ -z "$repo_root" ]; then
+	exit 0
+fi
+cd "$repo_root"
+
+require_docs_drift_tools() {
+	if ! command -v yq >/dev/null 2>&1 || ! command -v jq >/dev/null 2>&1; then
+		echo "docs-drift: yq and jq required (install them, or set KASMOS_SKIP_DOCS_DRIFT=1)" >&2
+		exit 1
+	fi
+}
+
+has_docs_drift_skip_trailer() {
+	local base="$1"
+	local local_sha="$2"
+
+	git log --format=%B "$base..$local_sha" 2>/dev/null | grep -E -q '^Docs-Drift-Skip:'
+}
+
+docs_drift_skip_reason() {
+	local base="$1"
+	local local_sha="$2"
+
+	git log --format=%B "$base..$local_sha" 2>/dev/null | grep -E '^Docs-Drift-Skip:' | head -1
+}
+
+print_docs_drift_rejection() {
+	local report="$1"
+
+	{
+		echo "docs-drift: push blocked - code changed without matching docs"
+		echo
+		jq -r '
+			.drift[]
+			| .code_changed as $code
+			| .docs_not_changed as $docs
+			| $code,
+			  "  expected docs:",
+			  ($docs[] | "    \(.)"),
+			  ""
+		' <<<"$report"
+		echo "bypass options (use sparingly):"
+		echo "  git push --no-verify"
+		echo "  KASMOS_SKIP_DOCS_DRIFT=1 git push"
+		echo "  commit with trailer:  Docs-Drift-Skip: <reason>"
+	} >&2
+}
+
+remote_default_ref() {
+	local remote="$1"
+	local branch
+
+	branch="$(remote_default_branch "$remote")"
+	printf '%s/%s\n' "$remote" "$branch"
+}
+
+remote_default_branch() {
+	local remote="$1"
+	local configured_default="${KASMOS_DEFAULT_BRANCH:-}"
+	local remote_head
+
+	if [ -n "$configured_default" ]; then
+		printf '%s\n' "$configured_default"
+		return
+	fi
+
+	remote_head="$(git symbolic-ref --quiet --short "refs/remotes/$remote/HEAD" 2>/dev/null || true)"
+	if [ -n "$remote_head" ]; then
+		printf '%s\n' "${remote_head#"$remote/"}"
+		return
+	fi
+
+	printf 'main\n'
+}
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+	if [ -z "${local_ref:-}" ]; then
+		continue
+	fi
+
+	if [ "$local_sha" = "$ZERO_SHA" ]; then
+		continue
+	fi
+
+	case "$remote_ref" in
+		refs/tags/*)
+			continue
+			;;
+	esac
+
+	if [ "${KASMOS_SKIP_DOCS_DRIFT:-}" = "1" ]; then
+		echo "docs-drift: bypassed via KASMOS_SKIP_DOCS_DRIFT=1" >&2
+		continue
+	fi
+
+	if [ "$remote_sha" = "$ZERO_SHA" ]; then
+		default_branch_name="$(remote_default_branch "$remote_name")"
+		default_branch="$(remote_default_ref "$remote_name")"
+		base="$(git merge-base "$local_sha" "$default_branch" 2>/dev/null || true)"
+		if [ -z "$base" ]; then
+			if git fetch --quiet "$remote_name" "$default_branch_name" 2>/dev/null; then
+				base="$(git merge-base "$local_sha" FETCH_HEAD 2>/dev/null || true)"
+			fi
+		fi
+		if [ -z "$base" ]; then
+			echo "docs-drift: unable to find merge-base for $local_ref and $default_branch; refusing to skip docs drift check" >&2
+			exit 1
+		fi
+	else
+		base="$remote_sha"
+	fi
+
+	if has_docs_drift_skip_trailer "$base" "$local_sha"; then
+		reason="$(docs_drift_skip_reason "$base" "$local_sha")"
+		echo "docs-drift: bypassed via trailer (${reason})" >&2
+		continue
+	fi
+
+	require_docs_drift_tools
+
+	if [ -z "$(git diff --name-only "$base..$local_sha")" ]; then
+		continue
+	fi
+
+	REPORT="$(BASE_REF="$base" TARGET_REF="$local_sha" bash scripts/detect-docs-drift.sh)"
+	if [ "$(jq '.drift | length' <<<"$REPORT")" != "0" ]; then
+		print_docs_drift_rejection "$REPORT"
+		exit 1
+	fi
+done
+
+exit 0

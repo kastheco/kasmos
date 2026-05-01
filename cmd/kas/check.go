@@ -84,6 +84,9 @@ func runCheck(cmd *cobra.Command, args []string) error {
 	defer probeCancel()
 	mcpProbeErr := probeSharedMCPFunc(probeCtx)
 	renderMCPEndpoint(cmd, mcpProbeErr)
+	if result.GitHooks != nil {
+		renderGitHooks(cmd, result.GitHooks)
+	}
 
 	// Detect long-lived stdio mcp subprocesses (threshold: 60 s).
 	mcpProcs, _ := check.ListLongLivedMCPProcesses(60)
@@ -177,6 +180,9 @@ func collectRemediationHints(result *check.AuditResult, mcpProcs []check.MCPProc
 			add("re-run `kas scaffold sync` to update config files with the current binary path, or reinstall service units")
 		}
 	}
+	if result.GitHooks != nil && !result.GitHooks.Configured {
+		add("run 'just hooks' to install the docs-drift pre-push hook")
+	}
 
 	// Long-lived stdio mcp process hint.
 	if len(mcpProcs) > 0 {
@@ -206,6 +212,26 @@ func renderMCPEndpoint(cmd *cobra.Command, probeErr error) {
 		return
 	}
 	fmt.Fprintf(out, "  ✗ %s unreachable (%s)\n", mcpclient.SharedEndpointURL, probeErr)
+}
+
+func renderGitHooks(cmd *cobra.Command, status *check.HookStatus) {
+	out := cmd.OutOrStdout()
+	fmt.Fprintf(out, "\npre-push hook:\n")
+	if status.Configured {
+		fmt.Fprintf(out, "  ✓ core.hooksPath=%s\n", configuredHooksPathDisplay(status))
+		return
+	}
+	fmt.Fprintf(out, "  ✗ pre-push hook not installed (core.hooksPath=%q)\n", status.ActualPath)
+}
+
+func configuredHooksPathDisplay(status *check.HookStatus) string {
+	if status != nil && status.ActualPath != "" {
+		return status.ActualPath
+	}
+	if status != nil {
+		return status.ExpectedPath
+	}
+	return ""
 }
 
 // renderBinaryPath prints a dedicated binary-path section before the health summary.

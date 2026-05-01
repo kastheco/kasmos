@@ -68,6 +68,7 @@ type AuditResult struct {
 	Project    []ProjectSkillEntry
 	InProject  bool              // whether cwd is a kas project
 	BinaryPath *BinaryPathResult // always populated
+	GitHooks   *HookStatus
 }
 
 // Audit runs all three audit layers and returns a complete result.
@@ -96,6 +97,10 @@ func Audit(home, projectDir string, registry *harness.Registry) *AuditResult {
 
 	// Binary path audit — always populated regardless of project detection.
 	result.BinaryPath = AuditBinaryPaths(home, projectDir, runtime.GOOS)
+	gh := CheckPrePushHook(projectDir)
+	if !gh.Skipped {
+		result.GitHooks = &gh
+	}
 
 	return result
 }
@@ -137,6 +142,12 @@ func (r *AuditResult) Summary() (int, int) {
 		bpOK, bpTotal := r.BinaryPath.summary()
 		ok += bpOK
 		total += bpTotal
+	}
+	if r.GitHooks != nil {
+		total++
+		if r.GitHooks.Configured {
+			ok++
+		}
 	}
 	return ok, total
 }

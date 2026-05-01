@@ -1,4 +1,4 @@
-.PHONY: run build test test-fast test-full test-race bench-tests clean
+.PHONY: run build test test-fast test-full test-race bench-tests clean hooks
 
 run: build
 	./kas $(ARGS)
@@ -19,6 +19,9 @@ test-race:
 
 bench-tests:
 	./scripts/bench_tests.sh
+
+hooks:
+	bash scripts/git-hooks/install.sh
 
 clean:
 	rm -f kas kasmos

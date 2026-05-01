@@ -266,6 +266,63 @@ func TestCheckCmd_BinaryPathHealthyNoMismatch(t *testing.T) {
 	assert.NotContains(t, out, "/nonexistent/stale/kas")
 }
 
+func TestCheckCmd_PrePushHookHealthy(t *testing.T) {
+	prev := check.SetGitConfigFnForTest(func(string) (string, error) { return "scripts/git-hooks", nil })
+	t.Cleanup(func() { check.SetGitConfigFnForTest(prev) })
+
+	out := captureCheckOutput(t, func(home, project string) {
+		require.NoError(t, os.MkdirAll(filepath.Join(project, "docs"), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(project, "docs", "docs-drift-map.yml"), []byte("[]"), 0o644))
+		require.NoError(t, os.MkdirAll(filepath.Join(project, "scripts", "git-hooks"), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(project, "scripts", "git-hooks", "pre-push"), []byte("#!/usr/bin/env bash\n"), 0o755))
+	})
+
+	assert.Contains(t, out, "pre-push hook:")
+	assert.Contains(t, out, "✓ core.hooksPath=scripts/git-hooks")
+}
+
+func TestCheckCmd_PrePushHookHealthyAbsolutePath(t *testing.T) {
+	var hookPath string
+	prev := check.SetGitConfigFnForTest(func(string) (string, error) { return hookPath, nil })
+	t.Cleanup(func() { check.SetGitConfigFnForTest(prev) })
+
+	out := captureCheckOutput(t, func(home, project string) {
+		hookPath = filepath.Join(project, "scripts", "git-hooks")
+		require.NoError(t, os.MkdirAll(filepath.Join(project, "docs"), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(project, "docs", "docs-drift-map.yml"), []byte("[]"), 0o644))
+		require.NoError(t, os.MkdirAll(hookPath, 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(hookPath, "pre-push"), []byte("#!/usr/bin/env bash\n"), 0o755))
+	})
+
+	assert.Contains(t, out, "pre-push hook:")
+	assert.Contains(t, out, "✓ core.hooksPath="+hookPath)
+	assert.NotContains(t, out, "pre-push hook not installed")
+}
+
+func TestCheckCmd_PrePushHookMissing(t *testing.T) {
+	prev := check.SetGitConfigFnForTest(func(string) (string, error) { return "", nil })
+	t.Cleanup(func() { check.SetGitConfigFnForTest(prev) })
+
+	out := captureCheckOutput(t, func(home, project string) {
+		require.NoError(t, os.MkdirAll(filepath.Join(project, "docs"), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(project, "docs", "docs-drift-map.yml"), []byte("[]"), 0o644))
+		require.NoError(t, os.MkdirAll(filepath.Join(project, "scripts", "git-hooks"), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(project, "scripts", "git-hooks", "pre-push"), []byte("#!/usr/bin/env bash\n"), 0o755))
+	})
+
+	assert.Contains(t, out, "pre-push hook not installed")
+	assert.Contains(t, out, "run 'just hooks' to install the docs-drift pre-push hook")
+}
+
+func TestCheckCmd_PrePushHookSkippedOutsideKasmos(t *testing.T) {
+	prev := check.SetGitConfigFnForTest(func(string) (string, error) { return "", nil })
+	t.Cleanup(func() { check.SetGitConfigFnForTest(prev) })
+
+	out := captureCheckOutput(t, nil) // no setup -> no docs-drift-map.yml
+
+	assert.NotContains(t, out, "pre-push hook:")
+}
+
 // TestCheckCmd_ShowsCopyGlyph verifies that a non-symlink directory in a harness dir
 // shows the ≈ glyph.
 func TestCheckCmd_ShowsCopyGlyph(t *testing.T) {
