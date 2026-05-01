@@ -105,7 +105,7 @@ func (p *Poller) PollOnce(ctx context.Context) PollStats {
 }
 
 func (p *Poller) enqueueLabelTriggers(ctx context.Context, stats *PollStats) error {
-	for labelID, verb := range p.configuredTriggerLabels() {
+	for labelID, verb := range p.deps.Config.TriggerLabels() {
 		seen := 0
 		for _, route := range p.deps.Config.Routes {
 			if seen >= p.maxIssues() {
@@ -419,20 +419,6 @@ func (p *Poller) enqueue(_ context.Context, intent ParsedIntent, issue linear.Is
 		p.emit(auditlog.EventTaskLinearTriggerReceived, entry, "", "", "info")
 	}
 	return queued, err
-}
-
-func (p *Poller) configuredTriggerLabels() map[string]Verb {
-	labels := map[string]Verb{}
-	if p.deps.Config.Labels.Create != "" {
-		labels[p.deps.Config.Labels.Create] = VerbCreate
-	}
-	if p.deps.Config.Labels.Plan != "" {
-		labels[p.deps.Config.Labels.Plan] = VerbPlan
-	}
-	if p.deps.Config.StartGuard.AllowLabelStart && p.deps.Config.Labels.Start != "" {
-		labels[p.deps.Config.Labels.Start] = VerbStart
-	}
-	return labels
 }
 
 func (p *Poller) maxIssues() int {

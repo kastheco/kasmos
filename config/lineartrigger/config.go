@@ -228,6 +228,21 @@ func ToTOML(cfg Config) TOMLBlock {
 	}
 }
 
+// TriggerLabels returns configured Linear label IDs mapped to trigger verbs.
+func (c Config) TriggerLabels() map[string]Verb {
+	labels := map[string]Verb{}
+	if c.Labels.Create != "" {
+		labels[c.Labels.Create] = VerbCreate
+	}
+	if c.Labels.Plan != "" {
+		labels[c.Labels.Plan] = VerbPlan
+	}
+	if c.StartGuard.AllowLabelStart && c.Labels.Start != "" {
+		labels[c.Labels.Start] = VerbStart
+	}
+	return labels
+}
+
 func resolvePollInterval(value time.Duration) time.Duration {
 	if value <= 0 {
 		warnPollInterval(value, defaultPollInterval)
