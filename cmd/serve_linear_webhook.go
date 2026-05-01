@@ -66,7 +66,7 @@ func (h *linearWebhookHandler) ServeHTTP(w http.ResponseWriter, r *http.Request)
 	secret, rejection := lineartrigger.ResolveWebhookSecret(cfg, h.runtime.SecretLookup)
 	if rejection == lineartrigger.RejectMissingSecret {
 		h.auditWarn("linear webhook secret missing")
-		writeLinearWebhookJSON(w, http.StatusServiceUnavailable, "rejected", string(rejection))
+		writeLinearWebhookJSON(w, http.StatusServiceUnavailable, "unavailable", string(rejection))
 		return
 	}
 

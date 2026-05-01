@@ -154,7 +154,7 @@ func TestLinearWebhookHandler(t *testing.T) {
 
 		resp := postLinearWebhook(t, srv.URL+"/v1/projects/proj/linear/webhook", "delivery-no-secret", secret, testCommentWebhookBody(t, now), nil)
 		require.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
-		assertLinearWebhookResponse(t, resp, "rejected", "missing_secret")
+		assertLinearWebhookResponse(t, resp, "unavailable", "missing_secret")
 	})
 
 	t.Run("handler returns before drain", func(t *testing.T) {
