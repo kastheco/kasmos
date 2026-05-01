@@ -118,9 +118,11 @@ the webhook response contract is stable for retries and operator debugging:
 | duplicate `Linear-Delivery` | 200 | `{"status":"duplicate"}` |
 | ignored event (no command, unsupported type, label-less issue) | 200 | `{"status":"ignored","reason":<lowercase>}` |
 | missing or invalid signature, stale timestamp | 401 | `{"status":"rejected","reason":<lowercase>}` |
+| missing `Linear-Delivery` | 400 | `{"status":"rejected","reason":"missing_delivery"}` |
 | oversized body | 413 | `{"status":"rejected","reason":"body_too_large"}` |
 | malformed json | 400 | `{"status":"rejected","reason":"malformed_body"}` |
 | missing secret or disabled | 503 | `{"status":"unavailable","reason":<lowercase>}` |
+| store or queue failure | 503 | `{"status":"failed","reason":<lowercase>}` |
 
 for troubleshooting, start with `kas linear webhook status` and then inspect recent attempts with `kas linear webhook deliveries`. `kas status` also includes the webhook line, for example:
 
@@ -128,7 +130,7 @@ for troubleshooting, start with `kas linear webhook status` and then inspect rec
 linear webhooks: enabled (last delivery 5m ago, 12 accepted, 2 duplicate, 4 ignored, 1 rejected, 0 errors)
 ```
 
-webhooks accelerate the trigger path; they do not replace the daemon poller. if the webhook worker crashes after a row is queued, the next daemon poll catches up because `Poller.DrainQueued` runs the same dispatch, audit, acknowledgement, and fsm signal path.
+webhooks accelerate the trigger path; they do not replace the daemon poller. after a delivery queues work, the serve worker drains queued rows until the queue is empty or a retryable error stops the pass. if the webhook worker crashes after a row is queued, the next daemon poll catches up because `Poller.DrainQueued` runs the same dispatch, audit, acknowledgement, and fsm signal path.
 
 ## actor allowlist
 

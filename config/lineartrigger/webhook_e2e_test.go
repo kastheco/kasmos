@@ -182,7 +182,7 @@ func (h *webhookE2EHarness) postWebhook(ctx context.Context, deliveryID, event s
 	}
 	result, err := h.ingestor.Ingest(ctx, env, headers, body)
 	if err != nil {
-		return webhookHTTPResponse{statusCode: 200, body: webhookE2EBody(result.DeliveryStatus, result.Reason)}
+		return webhookHTTPResponse{statusCode: 503, body: webhookE2EBody(result.DeliveryStatus, result.Reason)}
 	}
 	if drain {
 		_ = h.poller.DrainQueued(ctx, 10)

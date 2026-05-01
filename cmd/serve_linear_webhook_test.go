@@ -111,6 +111,23 @@ func TestLinearWebhookHandler(t *testing.T) {
 		assertNoLinearTriggers(t, store)
 	})
 
+	t.Run("missing delivery header rejects without dedupe row", func(t *testing.T) {
+		store := taskstore.NewTestSQLiteStore(t)
+		srv := newLinearWebhookTestServer(newLinearWebhookProjectHandler(map[string]*linearruntime.Resolved{
+			"proj": testLinearWebhookRuntime(store, now, secret, true),
+		}, nil, func() time.Time { return now }))
+		defer srv.Close()
+
+		resp := postLinearWebhook(t, srv.URL+"/v1/projects/proj/linear/webhook", "", secret, testCommentWebhookBody(t, now), nil)
+		require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+		assertLinearWebhookResponse(t, resp, "rejected", "missing_delivery")
+		assertNoLinearTriggers(t, store)
+
+		deliveries, err := store.ListRecentLinearWebhookDeliveries("proj", 10)
+		require.NoError(t, err)
+		assert.Empty(t, deliveries)
+	})
+
 	t.Run("body too large rejects", func(t *testing.T) {
 		store := taskstore.NewTestSQLiteStore(t)
 		runtime := testLinearWebhookRuntime(store, now, secret, true)
@@ -184,6 +201,38 @@ func TestLinearWebhookHandler(t *testing.T) {
 		require.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
 		assertLinearWebhookResponse(t, resp, "failed", "enqueue_failed")
 	})
+}
+
+func TestRunLinearWebhookDrainerDrainsUntilQueueBelowLimit(t *testing.T) {
+	now := time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC)
+	store := taskstore.NewTestSQLiteStore(t)
+	runtime := testLinearWebhookRuntime(store, now, "webhook-secret", true)
+	runtime.TriggerCfg.MaxIssuesPerPoll = 1
+	for _, sourceID := range []string{"label-create-1", "label-create-2"} {
+		_, queued, err := store.EnqueueLinearTrigger("proj", taskstore.LinearTriggerEntry{
+			LinearIssueID:    "issue-1",
+			LinearIdentifier: "ENG-1",
+			CommandKind:      string(lineartrigger.VerbCreate),
+			SourceKind:       string(lineartrigger.SourceLabel),
+			SourceID:         sourceID,
+			DetectedAt:       now,
+		})
+		require.NoError(t, err)
+		require.True(t, queued)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	drainCh := make(chan string, 1)
+	errCh := make(chan error, 1)
+	go runLinearWebhookDrainer(ctx, map[string]*linearruntime.Resolved{"proj": runtime}, drainCh, errCh)
+
+	drainCh <- "proj"
+
+	require.Eventually(t, func() bool {
+		remaining, err := store.ListUnprocessedLinearTriggers("proj", 10)
+		require.NoError(t, err)
+		return len(remaining) == 0
+	}, time.Second, 10*time.Millisecond)
 }
 
 func newLinearWebhookTestServer(handler http.Handler) *httptest.Server {

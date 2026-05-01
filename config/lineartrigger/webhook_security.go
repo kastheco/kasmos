@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"strings"
 	"time"
 )
 
@@ -28,6 +29,7 @@ const (
 	RejectStaleTimestamp   WebhookRejection = "stale_timestamp"
 	RejectBodyTooLarge     WebhookRejection = "body_too_large"
 	RejectMissingSecret    WebhookRejection = "missing_secret"
+	RejectMissingDelivery  WebhookRejection = "missing_delivery"
 )
 
 // Verify returns RejectNone on success and a stable lowercase reason on failure.
@@ -42,6 +44,9 @@ func (v WebhookVerifier) Verify(body []byte, headers WebhookHeaders, webhookTime
 	}
 	if headers.Signature == "" {
 		return RejectMissingSignature
+	}
+	if strings.TrimSpace(headers.Delivery) == "" {
+		return RejectMissingDelivery
 	}
 	got, err := hex.DecodeString(headers.Signature)
 	if err != nil {

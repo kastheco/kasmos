@@ -88,7 +88,7 @@ func (h *linearWebhookHandler) ServeHTTP(w http.ResponseWriter, r *http.Request)
 	}
 	if rejection = verifier.Verify(body, headers, ts); rejection != lineartrigger.RejectNone {
 		h.recordRejectedDelivery(headers, string(rejection))
-		writeLinearWebhookJSON(w, http.StatusUnauthorized, "rejected", string(rejection))
+		writeLinearWebhookJSON(w, linearWebhookRejectionStatus(rejection), "rejected", string(rejection))
 		return
 	}
 
@@ -181,6 +181,17 @@ func writeLinearWebhookJSON(w http.ResponseWriter, statusCode int, status, reaso
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
+func linearWebhookRejectionStatus(rejection lineartrigger.WebhookRejection) int {
+	switch rejection {
+	case lineartrigger.RejectBodyTooLarge:
+		return http.StatusRequestEntityTooLarge
+	case lineartrigger.RejectMalformedBody, lineartrigger.RejectMissingDelivery:
+		return http.StatusBadRequest
+	default:
+		return http.StatusUnauthorized
+	}
+}
+
 func linearWebhookAuditDetail(detail map[string]any) []byte {
 	allowed := map[string]struct{}{
 		"delivery_id":     {},
@@ -217,11 +228,55 @@ func runLinearWebhookDrainer(ctx context.Context, runtimeByProject map[string]*l
 				continue
 			}
 			drainCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-			stats := runtime.Poller.DrainQueued(drainCtx, runtime.TriggerCfg.MaxIssuesPerPoll)
+			stats := drainLinearWebhookQueue(drainCtx, runtime)
 			cancel()
 			if stats.Err != nil {
 				slog.Warn("linear webhook drain failed", "project", project, "error", stats.Err)
 			}
 		}
 	}
+}
+
+func drainLinearWebhookQueue(ctx context.Context, runtime *linearruntime.Resolved) lineartrigger.PollStats {
+	var total lineartrigger.PollStats
+	if runtime == nil || runtime.Poller == nil {
+		return total
+	}
+	limit := runtime.TriggerCfg.MaxIssuesPerPoll
+	for {
+		stats := runtime.Poller.DrainQueued(ctx, limit)
+		total.Received += stats.Received
+		total.Dispatched += stats.Dispatched
+		total.Rejected += stats.Rejected
+		total.Ignored += stats.Ignored
+		total.Failed += stats.Failed
+		total.AckFailed += stats.AckFailed
+		total.Aborted = stats.Aborted
+		total.Err = stats.Err
+		if stats.Err != nil || stats.Aborted {
+			return total
+		}
+		processed := stats.Dispatched + stats.Rejected + stats.Ignored + stats.Failed
+		hasMore, err := linearWebhookQueueHasMore(ctx, runtime)
+		if err != nil {
+			total.Aborted = true
+			total.Err = err
+			return total
+		}
+		if !hasMore || processed == 0 {
+			return total
+		}
+	}
+}
+
+func linearWebhookQueueHasMore(ctx context.Context, runtime *linearruntime.Resolved) (bool, error) {
+	_ = ctx
+	if runtime == nil || runtime.Ingestor == nil || runtime.Ingestor.Store == nil {
+		return false, nil
+	}
+	rows, err := runtime.Ingestor.Store.ListUnprocessedLinearTriggers(runtime.Project, 1)
+	if err != nil {
+		return false, err
+	}
+	return len(rows) > 0, nil
 }

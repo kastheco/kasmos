@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/kastheco/kasmos/config/auditlog"
@@ -16,6 +17,7 @@ const (
 	webhookDeliveryDuplicate = "duplicate"
 	webhookDeliveryFailed    = "failed"
 	webhookDeliveryIgnored   = "ignored"
+	webhookDeliveryRejected  = "rejected"
 
 	webhookReasonTriggerSourceDuplicate = "trigger_source_duplicate"
 )
@@ -49,6 +51,9 @@ func (w *WebhookIngestor) Ingest(ctx context.Context, env WebhookEnvelope, heade
 	}
 	now := w.now()
 	deliveryID := headers.Delivery
+	if strings.TrimSpace(deliveryID) == "" {
+		return IngestResult{DeliveryStatus: webhookDeliveryRejected, Reason: string(RejectMissingDelivery)}, errors.New("lineartrigger: missing Linear-Delivery header")
+	}
 	delivery := taskstore.LinearWebhookDelivery{
 		DeliveryID:  deliveryID,
 		LinearEvent: headers.Event,

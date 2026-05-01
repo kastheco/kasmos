@@ -66,6 +66,23 @@ func TestWebhookIngestorIngestDuplicateDeliveryDoesNotReenqueue(t *testing.T) {
 	require.Len(t, triggers, 1)
 }
 
+func TestWebhookIngestorRejectsMissingDeliveryBeforeRecording(t *testing.T) {
+	ctx := context.Background()
+	h := newWebhookIngestorHarness(t)
+
+	result, err := h.ingestor.Ingest(ctx, commentWebhook("delivery-missing", "/kasmos plan"), WebhookHeaders{Event: "Comment"}, nil)
+
+	require.Error(t, err)
+	assert.Equal(t, webhookDeliveryRejected, result.DeliveryStatus)
+	assert.Equal(t, string(RejectMissingDelivery), result.Reason)
+	triggers, err := h.store.ListUnprocessedLinearTriggers("proj", 10)
+	require.NoError(t, err)
+	assert.Empty(t, triggers)
+	deliveries, err := h.store.ListRecentLinearWebhookDeliveries("proj", 10)
+	require.NoError(t, err)
+	assert.Empty(t, deliveries)
+}
+
 func TestWebhookIngestorIngestIgnoredCommentUpdatesDelivery(t *testing.T) {
 	ctx := context.Background()
 	h := newWebhookIngestorHarness(t)

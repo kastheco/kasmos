@@ -28,7 +28,7 @@ func TestWebhookVerifierVerify(t *testing.T) {
 		{
 			name:      "known good signature",
 			body:      body,
-			headers:   WebhookHeaders{Signature: signature},
+			headers:   WebhookHeaders{Signature: signature, Delivery: "delivery-1"},
 			secret:    secret,
 			timestamp: now.UnixMilli(),
 			want:      RejectNone,
@@ -36,7 +36,7 @@ func TestWebhookVerifierVerify(t *testing.T) {
 		{
 			name:      "uppercase hex signature",
 			body:      body,
-			headers:   WebhookHeaders{Signature: stringsToUpper(signature)},
+			headers:   WebhookHeaders{Signature: stringsToUpper(signature), Delivery: "delivery-1"},
 			secret:    secret,
 			timestamp: now.UnixMilli(),
 			want:      RejectNone,
@@ -44,7 +44,7 @@ func TestWebhookVerifierVerify(t *testing.T) {
 		{
 			name:      "mutated body",
 			body:      []byte(`{"webhookTimestamp":1700000000000,"type":"Issue"}`),
-			headers:   WebhookHeaders{Signature: signature},
+			headers:   WebhookHeaders{Signature: signature, Delivery: "delivery-1"},
 			secret:    secret,
 			timestamp: now.UnixMilli(),
 			want:      RejectInvalidSignature,
@@ -52,7 +52,7 @@ func TestWebhookVerifierVerify(t *testing.T) {
 		{
 			name:      "mutated signature",
 			body:      body,
-			headers:   WebhookHeaders{Signature: mutateWebhookTestSignature(signature)},
+			headers:   WebhookHeaders{Signature: mutateWebhookTestSignature(signature), Delivery: "delivery-1"},
 			secret:    secret,
 			timestamp: now.UnixMilli(),
 			want:      RejectInvalidSignature,
@@ -68,7 +68,7 @@ func TestWebhookVerifierVerify(t *testing.T) {
 		{
 			name:      "non hex signature",
 			body:      body,
-			headers:   WebhookHeaders{Signature: "not-hex"},
+			headers:   WebhookHeaders{Signature: "not-hex", Delivery: "delivery-1"},
 			secret:    secret,
 			timestamp: now.UnixMilli(),
 			want:      RejectInvalidSignature,
@@ -76,7 +76,7 @@ func TestWebhookVerifierVerify(t *testing.T) {
 		{
 			name:      "wrong length signature",
 			body:      body,
-			headers:   WebhookHeaders{Signature: "00"},
+			headers:   WebhookHeaders{Signature: "00", Delivery: "delivery-1"},
 			secret:    secret,
 			timestamp: now.UnixMilli(),
 			want:      RejectInvalidSignature,
@@ -84,15 +84,23 @@ func TestWebhookVerifierVerify(t *testing.T) {
 		{
 			name:      "odd length signature",
 			body:      body,
-			headers:   WebhookHeaders{Signature: "abc"},
+			headers:   WebhookHeaders{Signature: "abc", Delivery: "delivery-1"},
 			secret:    secret,
 			timestamp: now.UnixMilli(),
 			want:      RejectInvalidSignature,
 		},
 		{
-			name:      "timestamp before tolerance",
+			name:      "empty delivery",
 			body:      body,
 			headers:   WebhookHeaders{Signature: signature},
+			secret:    secret,
+			timestamp: now.UnixMilli(),
+			want:      RejectMissingDelivery,
+		},
+		{
+			name:      "timestamp before tolerance",
+			body:      body,
+			headers:   WebhookHeaders{Signature: signature, Delivery: "delivery-1"},
 			secret:    secret,
 			timestamp: now.Add(-6 * time.Minute).UnixMilli(),
 			want:      RejectStaleTimestamp,
@@ -100,7 +108,7 @@ func TestWebhookVerifierVerify(t *testing.T) {
 		{
 			name:      "timestamp after tolerance",
 			body:      body,
-			headers:   WebhookHeaders{Signature: signature},
+			headers:   WebhookHeaders{Signature: signature, Delivery: "delivery-1"},
 			secret:    secret,
 			timestamp: now.Add(6 * time.Minute).UnixMilli(),
 			want:      RejectStaleTimestamp,
@@ -108,7 +116,7 @@ func TestWebhookVerifierVerify(t *testing.T) {
 		{
 			name:      "empty secret",
 			body:      body,
-			headers:   WebhookHeaders{Signature: signature},
+			headers:   WebhookHeaders{Signature: signature, Delivery: "delivery-1"},
 			timestamp: now.UnixMilli(),
 			want:      RejectMissingSecret,
 		},
@@ -141,6 +149,7 @@ func TestWebhookVerifierRejectsBodyTooLarge(t *testing.T) {
 
 	assert.Equal(t, RejectBodyTooLarge, verifier.Verify(body, WebhookHeaders{
 		Signature: webhookTestSignature(t, body, secret),
+		Delivery:  "delivery-1",
 	}, now.UnixMilli()))
 }
 
