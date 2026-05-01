@@ -14,6 +14,8 @@ linear triggers require:
 - `KASMOS_LINEAR_API_KEY` or `LINEAR_API_KEY` with permission to read issues and comments, write comments, and manage the configured trigger labels.
 - the daemon running under systemd so the Linear trigger monitor can poll continuously.
 
+the key may be exported globally or placed in the registered repo's `<repo-root>/.env`. kas does not override already-exported variables with same-name `.env` values.
+
 use `kas linear discover labels` to list canonical Linear label UUIDs before writing trigger config. paste the UUID, not the display name.
 
 ## safety model
@@ -136,7 +138,7 @@ linear triggers are inbound: Linear comments or configured labels ask kasmos to 
 
 | symptom | likely cause | what to check |
 |---------|--------------|---------------|
-| no trigger is processed | missing `KASMOS_LINEAR_API_KEY` or `LINEAR_API_KEY`, or the daemon is not running | confirm the systemd unit environment and daemon status. |
+| no trigger is processed | missing `KASMOS_LINEAR_API_KEY` or `LINEAR_API_KEY`, or the daemon is not running | confirm the systemd unit environment, repo `.env`, and daemon status. |
 | trigger is rejected with `route_missing` | no `[[linear.triggers.routes]]` entry matched the issue team, project, and required labels | compare the issue's Linear UUIDs with the configured route. |
 | trigger is rejected with `route_ambiguous` | more than one route matched | make one route more specific with `project_id` or `require_labels`. |
 | trigger is rejected as unauthorized | the actor is not in `allowed_user_ids` or `allowed_user_emails` | add the canonical `User.id` or resolvable email alias. |

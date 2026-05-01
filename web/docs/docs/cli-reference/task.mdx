@@ -361,7 +361,7 @@ kas task link-linear my-feature KAS-123 --comment --message "kasmos is now execu
 | `--reason` | operator reason recorded in audit metadata |
 | `--project` | override project name (default: derived from current directory) |
 
-`link-linear` requires a Linear API key in `KASMOS_LINEAR_API_KEY` or `LINEAR_API_KEY`. set `KASMOS_LINEAR_API_URL` only when pointing at a non-default Linear-compatible GraphQL endpoint.
+`link-linear` requires a Linear API key in `KASMOS_LINEAR_API_KEY` or `LINEAR_API_KEY`. kas loads `<repo-root>/.env` on startup without overriding already-exported variables, so the key can be project-local. set `KASMOS_LINEAR_API_URL` only when pointing at a non-default Linear-compatible GraphQL endpoint.
 
 before writing the link, kasmos rejects duplicate active links to the same canonical Linear issue id within the same project. active duplicate detection covers tasks in `planning`, `implementing`, `reviewing`, and `verifying`; `ready`, `done`, and `cancelled` tasks do not block a new link. use `--force` only to replace the link on the same task. it does not override a duplicate link owned by another active task.
 

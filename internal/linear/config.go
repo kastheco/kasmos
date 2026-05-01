@@ -32,16 +32,34 @@ func (c Config) String() string {
 // optionally KASMOS_LINEAR_API_URL for endpoint override. Returns
 // ErrNotConfigured when no key is present.
 func ConfigFromEnv() (Config, error) {
-	key := strings.TrimSpace(os.Getenv("KASMOS_LINEAR_API_KEY"))
+	return ConfigFromLookup(os.LookupEnv)
+}
+
+// ConfigFromLookup resolves Linear config through lookup. It is useful for
+// callers that need to layer repo-local dotenv values under the process
+// environment without mutating global process state.
+func ConfigFromLookup(lookup func(string) (string, bool)) (Config, error) {
+	key := strings.TrimSpace(lookupValue(lookup, "KASMOS_LINEAR_API_KEY"))
 	if key == "" {
-		key = strings.TrimSpace(os.Getenv("LINEAR_API_KEY"))
+		key = strings.TrimSpace(lookupValue(lookup, "LINEAR_API_KEY"))
 	}
 	if key == "" {
 		return Config{}, ErrNotConfigured
 	}
-	endpoint := strings.TrimSpace(os.Getenv("KASMOS_LINEAR_API_URL"))
+	endpoint := strings.TrimSpace(lookupValue(lookup, "KASMOS_LINEAR_API_URL"))
 	if endpoint == "" {
 		endpoint = DefaultEndpoint
 	}
 	return Config{Endpoint: endpoint, APIKey: key}, nil
+}
+
+func lookupValue(lookup func(string) (string, bool), key string) string {
+	if lookup == nil {
+		return ""
+	}
+	value, ok := lookup(key)
+	if !ok {
+		return ""
+	}
+	return value
 }

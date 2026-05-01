@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -299,10 +300,14 @@ func (m *RepoManager) loadLinearReceiptHook(path, project string) (*linearreceip
 	if result == nil || !result.LinearReceipts.Enabled {
 		return nil, linearreceipt.Config{}
 	}
-	client, err := linearreceipt.NewClientFromEnv()
+	cfg, err := linearConfigForRepo(path)
 	if err != nil && !errors.Is(err, linear.ErrNotConfigured) {
 		slog.Warn("daemon: failed to create linear receipt client for repo, receipts disabled", "repo", path, "error", err)
 		return nil, result.LinearReceipts
+	}
+	var client linearreceipt.ClientAdapter
+	if err == nil {
+		client = linear.NewClientFromConfig(cfg)
 	}
 	var auditLogger auditlog.Logger
 	if m.globalDB != nil {
@@ -327,7 +332,7 @@ func (m *RepoManager) loadLinearTriggerPoller(path, project string, store taskst
 		return nil, lineartrigger.Config{}
 	}
 
-	cfg, err := linear.ConfigFromEnv()
+	cfg, err := linearConfigForRepo(path)
 	if err != nil {
 		if !errors.Is(err, linear.ErrNotConfigured) {
 			slog.Warn("daemon: failed to create linear trigger client for repo", "repo", path, "err", err)
@@ -361,6 +366,24 @@ func (m *RepoManager) loadLinearTriggerPoller(path, project string, store taskst
 		Logger:  slog.Default().With("monitor", "linear_trigger", "project", project),
 	}
 	return lineartrigger.NewPoller(deps), result.LinearTriggers
+}
+
+func linearConfigForRepo(path string) (linear.Config, error) {
+	values, err := config.ReadDotEnv(filepath.Join(path, ".env"))
+	if err != nil {
+		if os.IsNotExist(err) {
+			values = config.DotEnvValues{}
+		} else {
+			return linear.Config{}, err
+		}
+	}
+	return linear.ConfigFromLookup(func(key string) (string, bool) {
+		if value, ok := os.LookupEnv(key); ok && strings.TrimSpace(value) != "" {
+			return value, true
+		}
+		value, ok := values[key]
+		return value, ok
+	})
 }
 
 func eventsFromConfig(cfg linearreceipt.Config) []taskfsm.Event {

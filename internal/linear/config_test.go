@@ -75,6 +75,21 @@ func TestConfigFromEnvEndpointDefaultAndOverride(t *testing.T) {
 	}
 }
 
+func TestConfigFromLookupUsesProvidedValues(t *testing.T) {
+	cfg, err := linear.ConfigFromLookup(func(key string) (string, bool) {
+		values := map[string]string{
+			"KASMOS_LINEAR_API_KEY": "lookup-secret-token",
+			"KASMOS_LINEAR_API_URL": "https://lookup.example/graphql",
+		}
+		value, ok := values[key]
+		return value, ok
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, "lookup-secret-token", cfg.APIKey)
+	assert.Equal(t, "https://lookup.example/graphql", cfg.Endpoint)
+}
+
 func TestConfigStringRedactsCredential(t *testing.T) {
 	cfg := linear.Config{
 		Endpoint: linear.DefaultEndpoint,

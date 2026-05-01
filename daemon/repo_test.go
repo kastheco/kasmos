@@ -250,6 +250,36 @@ func TestRepoManager_MigratesRepoLocalTasks(t *testing.T) {
 	assert.Equal(t, taskstore.StatusReady, entry.Status)
 }
 
+func TestLinearConfigForRepoReadsDotEnv(t *testing.T) {
+	t.Setenv("KASMOS_LINEAR_API_KEY", "")
+	t.Setenv("LINEAR_API_KEY", "")
+	t.Setenv("KASMOS_LINEAR_API_URL", "")
+
+	repoDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(repoDir, ".env"), []byte(`
+KASMOS_LINEAR_API_KEY=repo-token
+KASMOS_LINEAR_API_URL=https://linear.example/graphql
+`), 0o600))
+
+	cfg, err := linearConfigForRepo(repoDir)
+	require.NoError(t, err)
+	assert.Equal(t, "repo-token", cfg.APIKey)
+	assert.Equal(t, "https://linear.example/graphql", cfg.Endpoint)
+}
+
+func TestLinearConfigForRepoEnvironmentWinsOverDotEnv(t *testing.T) {
+	t.Setenv("KASMOS_LINEAR_API_KEY", "env-token")
+	t.Setenv("LINEAR_API_KEY", "")
+	t.Setenv("KASMOS_LINEAR_API_URL", "")
+
+	repoDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(repoDir, ".env"), []byte("KASMOS_LINEAR_API_KEY=repo-token\n"), 0o600))
+
+	cfg, err := linearConfigForRepo(repoDir)
+	require.NoError(t, err)
+	assert.Equal(t, "env-token", cfg.APIKey)
+}
+
 func TestRepoManager_PlannerProfilesConfig(t *testing.T) {
 	t.Run("defaults legacy without project config", func(t *testing.T) {
 		repoDir := t.TempDir()

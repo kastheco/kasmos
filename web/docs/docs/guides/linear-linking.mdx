@@ -16,6 +16,12 @@ export KASMOS_LINEAR_API_KEY=lin_api_...
 export LINEAR_API_KEY=lin_api_...
 ```
 
+kas also loads `<repo-root>/.env` on startup without overriding already-exported variables, so project-local credentials can live there instead:
+
+```sh
+KASMOS_LINEAR_API_KEY=lin_api_...
+```
+
 `KASMOS_LINEAR_API_URL` is optional and defaults to Linear's GraphQL API. set it only for a compatible alternate endpoint.
 
 ## link a task

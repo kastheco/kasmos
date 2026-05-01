@@ -277,6 +277,10 @@ func init() {
 }
 
 func main() {
+	if err := config.LoadProjectDotEnv(); err != nil {
+		fmt.Printf("failed to load .env: %v\n", err)
+		os.Exit(1)
+	}
 	if err := rootCmd.Execute(); err != nil {
 		if errors.Is(err, errUnhealthy) {
 			os.Exit(1)
