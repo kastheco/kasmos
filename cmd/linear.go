@@ -7,11 +7,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/kastheco/kasmos/config"
-	"github.com/kastheco/kasmos/config/linearlink"
-	"github.com/kastheco/kasmos/config/lineartrigger"
 	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/kastheco/kasmos/internal/linear"
+	"github.com/kastheco/kasmos/internal/linearruntime"
 	"github.com/spf13/cobra"
 )
 
@@ -26,11 +24,6 @@ type linearDiscoveryClient interface {
 	Teams(ctx context.Context, p linear.PageOptions) ([]linear.Team, linear.PageInfo, error)
 	WorkflowStates(ctx context.Context, p linear.PageOptions) ([]linear.WorkflowState, linear.PageInfo, error)
 	Projects(ctx context.Context, p linear.PageOptions) ([]linear.Project, linear.PageInfo, error)
-}
-
-type linearPollClient interface {
-	lineartrigger.LinearClient
-	linearlink.IssueFetcher
 }
 
 // NewLinearCmd builds the top-level `kas linear` command group.
@@ -58,25 +51,9 @@ func NewLinearCmd() *cobra.Command {
 }
 
 func runLinearPollOnce(cmd *cobra.Command, _ []string) error {
-	_, project, err := resolveRepoInfo()
+	repoPath, project, err := resolveRepoInfo()
 	if err != nil {
 		return err
-	}
-	tomlCfg, err := config.LoadTOMLConfig()
-	if err != nil {
-		return err
-	}
-	if tomlCfg == nil || !tomlCfg.LinearTriggers.Enabled {
-		fmt.Fprintln(cmd.OutOrStdout(), "linear triggers: disabled")
-		return nil
-	}
-	linearCfg, err := linear.ConfigFromEnv()
-	if err != nil {
-		return err
-	}
-	client, ok := newLinearClient(linearCfg).(linearPollClient)
-	if !ok {
-		return fmt.Errorf("linear client does not support trigger polling")
 	}
 
 	store, err := taskstore.OpenAuthoritativeStore(project)
@@ -92,16 +69,19 @@ func runLinearPollOnce(cmd *cobra.Command, _ []string) error {
 	logger, closeLogger := openTaskAuditLogger()
 	defer closeLogger()
 
-	poller := lineartrigger.NewPoller(lineartrigger.PollerDeps{
-		Project: project,
-		Config:  tomlCfg.LinearTriggers,
+	runtime, err := linearruntime.Resolve(cmd.Context(), repoPath, project, linearruntime.Options{
 		Store:   store,
-		Linker:  linearlink.New(store, client, logger, project),
-		Linear:  client,
 		Gateway: gateway,
 		Audit:   logger,
 	})
-	stats := poller.PollOnce(cmd.Context())
+	if err != nil {
+		return err
+	}
+	if runtime == nil {
+		fmt.Fprintln(cmd.OutOrStdout(), "linear triggers: disabled")
+		return nil
+	}
+	stats := runtime.Poller.PollOnce(cmd.Context())
 	if stats.Err != nil {
 		var rateLimit *linear.RateLimitError
 		if errors.As(stats.Err, &rateLimit) {

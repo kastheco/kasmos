@@ -1114,3 +1114,25 @@ func TestNewServeAPIRootMux_ConfigAPIEndToEnd(t *testing.T) {
 	assert.Equal(t, "text/plain; charset=utf-8", rec.Header().Get("Content-Type"))
 	assert.Equal(t, configContent, rec.Body.String())
 }
+
+func TestNewServeAPIRootMux_LinearWebhookPrecedesTaskstorePrefix(t *testing.T) {
+	taskCalled := false
+	taskAPI := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		taskCalled = true
+		w.WriteHeader(http.StatusTeapot)
+	})
+	webhookCalled := false
+	webhookAPI := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		webhookCalled = true
+		w.WriteHeader(http.StatusAccepted)
+	})
+
+	mux := newServeAPIRootMux(nil, serveRepoRegistration{}, taskAPI, http.NotFoundHandler(), http.NotFoundHandler(), http.NotFoundHandler(), http.NotFoundHandler(), http.NotFoundHandler(), webhookAPI)
+	req := httptest.NewRequest(http.MethodPost, "/v1/projects/proj/linear/webhook", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	assert.True(t, webhookCalled)
+	assert.False(t, taskCalled)
+	assert.Equal(t, http.StatusAccepted, rec.Code)
+}
