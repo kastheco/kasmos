@@ -2,6 +2,7 @@ package lineartrigger
 
 import (
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -10,12 +11,20 @@ import (
 )
 
 const (
-	defaultPollInterval   = 60 * time.Second
-	minPollInterval       = 15 * time.Second
-	defaultLookback       = 15 * time.Minute
-	defaultMaxIssues      = 100
-	defaultAckCommentBody = "kasmos trigger ack"
+	defaultPollInterval              = 60 * time.Second
+	minPollInterval                  = 15 * time.Second
+	defaultLookback                  = 15 * time.Minute
+	defaultMaxIssues                 = 100
+	defaultAckCommentBody            = "kasmos trigger ack"
+	defaultWebhookSecretEnv          = "KASMOS_LINEAR_WEBHOOK_SECRET"
+	defaultWebhookTimestampTolerance = 5 * time.Minute
+	minWebhookTimestampTolerance     = time.Minute
+	maxWebhookTimestampTolerance     = 15 * time.Minute
+	defaultWebhookMaxBodyBytes       = int64(1 << 20)
+	minWebhookMaxBodyBytes           = int64(16 << 10)
 )
+
+var webhookSecretEnvPattern = regexp.MustCompile(`^[A-Z_][A-Z0-9_]*$`)
 
 // Config is the resolved [linear.triggers] block. Zero value = "disabled".
 type Config struct {
@@ -28,6 +37,7 @@ type Config struct {
 	Labels           LabelMap
 	Actor            ActorPolicy
 	StartGuard       StartGuard
+	Webhook          WebhookConfig
 	AckCommentBody   string // default: "kasmos trigger ack"
 }
 
@@ -61,6 +71,14 @@ type StartGuard struct {
 	AllowLabelStart   bool // when true, label-only start is allowed (default false)
 }
 
+// WebhookConfig is the resolved Linear webhook security configuration.
+type WebhookConfig struct {
+	Enabled            bool
+	SecretEnv          string // env key name, never the value
+	TimestampTolerance time.Duration
+	MaxBodyBytes       int64
+}
+
 // TOMLBlock mirrors [linear.triggers].
 type TOMLBlock struct {
 	Enabled          bool            `toml:"enabled"`
@@ -72,6 +90,7 @@ type TOMLBlock struct {
 	Labels           TOMLLabelMap    `toml:"labels,omitempty"`
 	Actor            TOMLActorPolicy `toml:"actor,omitempty"`
 	StartGuard       TOMLStartGuard  `toml:"start_guard,omitempty"`
+	Webhook          TOMLWebhook     `toml:"webhook,omitempty"`
 	AckCommentBody   string          `toml:"ack_comment_body,omitempty"`
 }
 
@@ -103,6 +122,14 @@ type TOMLActorPolicy struct {
 type TOMLStartGuard struct {
 	RequireStartLabel bool `toml:"require_start_label,omitempty"`
 	AllowLabelStart   bool `toml:"allow_label_start,omitempty"`
+}
+
+// TOMLWebhook mirrors [linear.triggers.webhook].
+type TOMLWebhook struct {
+	Enabled            bool          `toml:"enabled,omitempty"`
+	SecretEnv          string        `toml:"secret_env,omitempty"`
+	TimestampTolerance time.Duration `toml:"timestamp_tolerance,omitempty"`
+	MaxBodyBytes       int64         `toml:"max_body_bytes,omitempty"`
 }
 
 // FromTOML parses and validates a TOMLBlock.
@@ -141,6 +168,13 @@ func FromTOML(b TOMLBlock) (Config, error) {
 	}
 	if cfg.AckCommentBody == "" {
 		cfg.AckCommentBody = defaultAckCommentBody
+	}
+	if b.Webhook.Enabled {
+		webhook, err := resolveWebhookConfig(b.Webhook)
+		if err != nil {
+			return Config{}, err
+		}
+		cfg.Webhook = webhook
 	}
 
 	seenRoutes := make(map[string]bool, len(b.Routes))
@@ -224,6 +258,12 @@ func ToTOML(cfg Config) TOMLBlock {
 			RequireStartLabel: cfg.StartGuard.RequireStartLabel,
 			AllowLabelStart:   cfg.StartGuard.AllowLabelStart,
 		},
+		Webhook: TOMLWebhook{
+			Enabled:            cfg.Webhook.Enabled,
+			SecretEnv:          cfg.Webhook.SecretEnv,
+			TimestampTolerance: cfg.Webhook.TimestampTolerance,
+			MaxBodyBytes:       cfg.Webhook.MaxBodyBytes,
+		},
 		AckCommentBody: cfg.AckCommentBody,
 	}
 }
@@ -264,6 +304,52 @@ func warnPollInterval(got, using time.Duration) {
 func resolvePositiveDuration(value, fallback time.Duration) time.Duration {
 	if value <= 0 {
 		return fallback
+	}
+	return value
+}
+
+func resolveWebhookConfig(raw TOMLWebhook) (WebhookConfig, error) {
+	secretEnv := raw.SecretEnv
+	if secretEnv == "" {
+		secretEnv = defaultWebhookSecretEnv
+	}
+	if !webhookSecretEnvPattern.MatchString(secretEnv) {
+		return WebhookConfig{}, fmt.Errorf("linear triggers: webhook secret_env must be an environment variable name")
+	}
+
+	return WebhookConfig{
+		Enabled:            true,
+		SecretEnv:          secretEnv,
+		TimestampTolerance: resolveWebhookTimestampTolerance(raw.TimestampTolerance),
+		MaxBodyBytes:       resolveWebhookMaxBodyBytes(raw.MaxBodyBytes),
+	}, nil
+}
+
+func resolveWebhookTimestampTolerance(value time.Duration) time.Duration {
+	resolved := resolvePositiveDuration(value, defaultWebhookTimestampTolerance)
+	if resolved < minWebhookTimestampTolerance {
+		warnWebhookTimestampTolerance(value, minWebhookTimestampTolerance)
+		return minWebhookTimestampTolerance
+	}
+	if resolved > maxWebhookTimestampTolerance {
+		warnWebhookTimestampTolerance(value, maxWebhookTimestampTolerance)
+		return maxWebhookTimestampTolerance
+	}
+	return resolved
+}
+
+func warnWebhookTimestampTolerance(got, using time.Duration) {
+	if log.WarningLog != nil {
+		log.WarningLog.Printf("linear triggers: webhook timestamp_tolerance %s is outside allowed range; using %s", got, using)
+	}
+}
+
+func resolveWebhookMaxBodyBytes(value int64) int64 {
+	if value <= 0 {
+		return defaultWebhookMaxBodyBytes
+	}
+	if value < minWebhookMaxBodyBytes {
+		return minWebhookMaxBodyBytes
 	}
 	return value
 }

@@ -55,6 +55,9 @@ type webhookIssueRef struct {
 
 // WebhookHeaders carries Linear webhook header metadata used for audit and dedup.
 type WebhookHeaders struct {
+	Signature   string // raw value of the "Linear-Signature" header
+	Delivery    string // raw value of the "Linear-Delivery" header
+	Event       string // raw value of the "Linear-Event" header
 	DeliveryID  string
 	LinearEvent string
 }

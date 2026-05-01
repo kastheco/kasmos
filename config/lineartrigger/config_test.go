@@ -125,6 +125,21 @@ func TestFromTOML(t *testing.T) {
 		require.Error(t, err)
 		assert.EqualError(t, err, "linear triggers: allow_label_start requires labels.start")
 	})
+
+	t.Run("rejects invalid webhook secret env", func(t *testing.T) {
+		_, err := FromTOML(TOMLBlock{
+			Enabled: true,
+			Routes:  []TOMLRoute{validRoute},
+			Verbs:   []string{"status"},
+			Actor:   TOMLActorPolicy{AllowPublicStatus: true},
+			Webhook: TOMLWebhook{
+				Enabled:   true,
+				SecretEnv: "not-a-secret-literal",
+			},
+		})
+		require.Error(t, err)
+		assert.EqualError(t, err, "linear triggers: webhook secret_env must be an environment variable name")
+	})
 }
 
 func TestToTOMLRoundTrip(t *testing.T) {
@@ -150,7 +165,13 @@ func TestToTOMLRoundTrip(t *testing.T) {
 			AllowedUserEmails: []string{"ops@example.com"},
 			AllowPublicStatus: true,
 		},
-		StartGuard:     TOMLStartGuard{RequireStartLabel: true},
+		StartGuard: TOMLStartGuard{RequireStartLabel: true},
+		Webhook: TOMLWebhook{
+			Enabled:            true,
+			SecretEnv:          "KASMOS_LINEAR_WEBHOOK_SECRET_ALT",
+			TimestampTolerance: 7 * time.Minute,
+			MaxBodyBytes:       32 << 10,
+		},
 		AckCommentBody: "ack",
 	}
 
@@ -158,4 +179,34 @@ func TestToTOMLRoundTrip(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, block, ToTOML(cfg))
+}
+
+func TestWebhookConfigRoundTripAndDefaults(t *testing.T) {
+	block := TOMLBlock{
+		Enabled: true,
+		Routes:  []TOMLRoute{{TeamID: "team-1", Topic: "eng"}},
+		Verbs:   []string{"status"},
+		Actor:   TOMLActorPolicy{AllowPublicStatus: true},
+		Webhook: TOMLWebhook{Enabled: true},
+	}
+
+	cfg, err := FromTOML(block)
+	require.NoError(t, err)
+	require.True(t, cfg.Webhook.Enabled)
+	assert.Equal(t, "KASMOS_LINEAR_WEBHOOK_SECRET", cfg.Webhook.SecretEnv)
+	assert.Equal(t, 5*time.Minute, cfg.Webhook.TimestampTolerance)
+	assert.Equal(t, int64(1<<20), cfg.Webhook.MaxBodyBytes)
+
+	roundTrip := ToTOML(cfg)
+	assert.Equal(t, "KASMOS_LINEAR_WEBHOOK_SECRET", roundTrip.Webhook.SecretEnv)
+	assert.NotContains(t, roundTrip.Webhook.SecretEnv, "secret-value")
+
+	cfg, err = FromTOML(roundTrip)
+	require.NoError(t, err)
+	assert.Equal(t, WebhookConfig{
+		Enabled:            true,
+		SecretEnv:          "KASMOS_LINEAR_WEBHOOK_SECRET",
+		TimestampTolerance: 5 * time.Minute,
+		MaxBodyBytes:       int64(1 << 20),
+	}, cfg.Webhook)
 }
