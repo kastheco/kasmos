@@ -101,7 +101,15 @@ func (h *linearWebhookHandler) ServeHTTP(w http.ResponseWriter, r *http.Request)
 	result, err := h.runtime.Ingestor.Ingest(r.Context(), env, headers, body)
 	if err != nil {
 		slog.Warn("linear webhook ingest failed", "project", h.project, "error", err)
-		writeLinearWebhookJSON(w, http.StatusOK, result.DeliveryStatus, result.Reason)
+		status := result.DeliveryStatus
+		if status == "" {
+			status = "failed"
+		}
+		reason := result.Reason
+		if reason == "" {
+			reason = "ingest_failed"
+		}
+		writeLinearWebhookJSON(w, http.StatusServiceUnavailable, status, reason)
 		return
 	}
 	if len(result.EnqueuedRowIDs) > 0 && h.drainCh != nil {

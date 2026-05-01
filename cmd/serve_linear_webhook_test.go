@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -171,6 +172,18 @@ func TestLinearWebhookHandler(t *testing.T) {
 		require.Equal(t, http.StatusOK, resp.StatusCode)
 		assert.Less(t, elapsed, 500*time.Millisecond)
 	})
+
+	t.Run("ingest failure returns retryable status", func(t *testing.T) {
+		store := &failingLinearWebhookEnqueueStore{Store: taskstore.NewTestSQLiteStore(t)}
+		srv := newLinearWebhookTestServer(newLinearWebhookProjectHandler(map[string]*linearruntime.Resolved{
+			"proj": testLinearWebhookRuntime(store, now, secret, true),
+		}, make(chan string, 1), func() time.Time { return now }))
+		defer srv.Close()
+
+		resp := postLinearWebhook(t, srv.URL+"/v1/projects/proj/linear/webhook", "delivery-ingest-fails", secret, testCommentWebhookBody(t, now), nil)
+		require.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
+		assertLinearWebhookResponse(t, resp, "failed", "enqueue_failed")
+	})
 }
 
 func newLinearWebhookTestServer(handler http.Handler) *httptest.Server {
@@ -325,6 +338,14 @@ func assertNoLinearTriggers(t *testing.T, store taskstore.Store) {
 	triggers, err := store.ListUnprocessedLinearTriggers("proj", 10)
 	require.NoError(t, err)
 	assert.Empty(t, triggers)
+}
+
+type failingLinearWebhookEnqueueStore struct {
+	taskstore.Store
+}
+
+func (s *failingLinearWebhookEnqueueStore) EnqueueLinearTrigger(project string, e taskstore.LinearTriggerEntry) (int64, bool, error) {
+	return 0, false, errors.New("enqueue unavailable")
 }
 
 type serveLinearWebhookFakeLinear struct{}
