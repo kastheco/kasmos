@@ -44,6 +44,24 @@ func TestRead_Viewer(t *testing.T) {
 	assert.Equal(t, &linear.User{ID: "u_1", Name: "x", Email: "e"}, viewer)
 }
 
+func TestRead_UsersPagination(t *testing.T) {
+	srv, requests := newReadServer(t, func(w http.ResponseWriter, _ *http.Request, _ readRequest) {
+		_, _ = w.Write([]byte(`{"data":{"users":{"nodes":[{"id":"u_1","name":"ann","email":"ann@example.com"}],"pageInfo":{"hasNextPage":true,"hasPreviousPage":false,"startCursor":"s","endCursor":"e"}}}}`))
+	})
+	defer srv.Close()
+
+	client := linear.NewClient(srv.URL, "test-key", srv.Client())
+	users, page, err := client.Users(context.Background(), linear.PageOptions{First: 5, After: "cursor_1"})
+	require.NoError(t, err)
+
+	require.Len(t, *requests, 1)
+	assert.Contains(t, (*requests)[0].Query, "users(first:")
+	assert.Equal(t, map[string]interface{}{"first": float64(5), "after": "cursor_1"}, (*requests)[0].Variables)
+	assert.Equal(t, []linear.User{{ID: "u_1", Name: "ann", Email: "ann@example.com"}}, users)
+	assert.Equal(t, "e", page.EndCursor)
+	assert.True(t, page.HasNextPage)
+}
+
 func TestRead_TeamsPagination(t *testing.T) {
 	srv, requests := newReadServer(t, func(w http.ResponseWriter, _ *http.Request, _ readRequest) {
 		_, _ = w.Write([]byte(`{"data":{"teams":{"nodes":[{"id":"team_1","key":"ENG","name":"engineering"}],"pageInfo":{"hasNextPage":false,"hasPreviousPage":false,"startCursor":"s","endCursor":"e"}}}}`))

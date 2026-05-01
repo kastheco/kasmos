@@ -44,7 +44,6 @@ func TestServiceDecideDeterministicOutcomes(t *testing.T) {
 		store.entry = taskstore.TaskEntry{
 			Filename:      "eng-1",
 			Status:        taskstore.StatusReady,
-			Content:       "# plan\n\n## Wave 1\n\n### Task 1: test\n",
 			LinearIssueID: "lin-1",
 		}
 		svc := NewService("proj", testConfig(), store, nil, nil, nil)
@@ -55,6 +54,21 @@ func TestServiceDecideDeterministicOutcomes(t *testing.T) {
 		require.NotNil(t, out.StartSignal)
 		assert.Equal(t, "plan_start", out.StartSignal.SignalType)
 		assert.Equal(t, "eng-1", out.StartSignal.PlanFile)
+	})
+
+	t.Run("status resolves linked terminal task", func(t *testing.T) {
+		store := newServiceStore()
+		store.entry = taskstore.TaskEntry{
+			Filename:      "eng-1",
+			Status:        taskstore.StatusDone,
+			LinearIssueID: "lin-1",
+		}
+		svc := NewService("proj", testConfig(), store, nil, nil, nil)
+
+		out := svc.Decide(ctx, ParsedIntent{Source: SourceComment, Verb: VerbStatus, AuthorID: "other"}, issue)
+
+		require.Equal(t, OutcomeStatusReply, out.Kind)
+		assert.Contains(t, out.StatusReply, "status: done")
 	})
 
 	t.Run("plan creates then plans unlinked routed issue", func(t *testing.T) {

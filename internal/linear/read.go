@@ -10,9 +10,16 @@ import (
 const (
 	queryViewer = `query Viewer { viewer { id name email } }`
 
+	queryUsers = `query Users($first: Int!, $after: String) {
+	        users(first: $first, after: $after) {
+	            nodes { id name email }
+	            pageInfo { hasNextPage hasPreviousPage startCursor endCursor }
+	        }
+	    }`
+
 	queryTeams = `query Teams($first: Int!, $after: String) {
-        teams(first: $first, after: $after) {
-            nodes { id key name }
+	        teams(first: $first, after: $after) {
+	            nodes { id key name }
             pageInfo { hasNextPage hasPreviousPage startCursor endCursor }
         }
     }`
@@ -90,6 +97,11 @@ func (c *Client) Viewer(ctx context.Context) (*User, error) {
 		return nil, err
 	}
 	return &data.Viewer, nil
+}
+
+// Users returns a paginated list of users in the workspace.
+func (c *Client) Users(ctx context.Context, p PageOptions) ([]User, PageInfo, error) {
+	return readConnection[User](ctx, c, queryUsers, "users", p)
 }
 
 // Teams returns a paginated list of teams in the workspace.

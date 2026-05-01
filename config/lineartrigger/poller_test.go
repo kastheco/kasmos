@@ -212,6 +212,30 @@ func TestPollerPollOnceReadOnlyRepliesPostCommentWhenReactionSucceeds(t *testing
 	assert.Contains(t, h.linear.createdComments[1].body, "kasmos trigger status")
 }
 
+func TestPollerPollOncePollsTerminalLinkedTasksForStatusComments(t *testing.T) {
+	ctx := context.Background()
+	h := newPollerHarness(t)
+	require.NoError(t, h.store.Create("proj", taskstore.TaskEntry{
+		Filename:         "eng-1",
+		Status:           taskstore.StatusDone,
+		LinearIssueID:    "lin-done",
+		LinearIdentifier: "ENG-1",
+	}))
+	h.linear.byID["lin-done"] = testIssue("lin-done")
+	h.linear.comments["lin-done"] = []linear.Comment{{
+		ID:        "comment-status-done",
+		Body:      "/kasmos status",
+		CreatedAt: h.now.Add(time.Minute),
+		User:      &linear.User{ID: "other"},
+	}}
+
+	stats := h.poller.PollOnce(ctx)
+	require.False(t, stats.Aborted, "unexpected poll error: %v", stats.Err)
+
+	require.Len(t, h.linear.createdComments, 1)
+	assert.Contains(t, h.linear.createdComments[0].body, "status: done")
+}
+
 func TestPollerPollOnceLastSeenCommentAdvancesMonotonically(t *testing.T) {
 	ctx := context.Background()
 	h := newPollerHarness(t)

@@ -195,6 +195,8 @@ func (s *Service) linkedEntry(issueID string) (taskstore.TaskEntry, bool) {
 		taskstore.StatusImplementing,
 		taskstore.StatusReviewing,
 		taskstore.StatusVerifying,
+		taskstore.StatusDone,
+		taskstore.StatusCancelled,
 	)
 	if errors.Is(err, taskstore.ErrNotFound) || filename == "" {
 		return taskstore.TaskEntry{}, false

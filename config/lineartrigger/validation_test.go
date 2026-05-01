@@ -74,7 +74,7 @@ func TestValidatorValidate(t *testing.T) {
 		assert.Equal(t, taskstore.StatusImplementing, result.CurrentStatus)
 	})
 
-	t.Run("plan requires content", func(t *testing.T) {
+	t.Run("plan accepts ready linked task before content exists", func(t *testing.T) {
 		entry := taskstore.TaskEntry{
 			Filename:      "task",
 			Status:        taskstore.StatusReady,
@@ -82,6 +82,20 @@ func TestValidatorValidate(t *testing.T) {
 		}
 
 		result := NewValidator(Config{}, nil, "").Validate(VerbPlan, entry, issue)
+
+		assert.True(t, result.OK)
+		assert.Empty(t, result.Reason)
+	})
+
+	t.Run("start requires content", func(t *testing.T) {
+		entry := taskstore.TaskEntry{
+			Filename:       "task",
+			Status:         taskstore.StatusReady,
+			ExecutionState: taskstore.ExecutionState{Phase: string(taskfsm.ExecutionPhasePlanned)},
+			LinearIssueID:  "issue-1",
+		}
+
+		result := NewValidator(Config{}, nil, "").Validate(VerbStart, entry, issue)
 
 		assert.False(t, result.OK)
 		assert.Equal(t, "missing_plan_content", result.Reason)

@@ -146,6 +146,8 @@ func (p *Poller) enqueueCommentTriggers(ctx context.Context, stats *PollStats) e
 		taskstore.StatusImplementing,
 		taskstore.StatusReviewing,
 		taskstore.StatusVerifying,
+		taskstore.StatusDone,
+		taskstore.StatusCancelled,
 	)
 	if err != nil {
 		return err

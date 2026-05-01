@@ -44,6 +44,22 @@ func TestLinearDiscoverLabelsSortedByName(t *testing.T) {
 	assert.Equal(t, "label-a\talpha\nlabel-b\talpha\nlabel-z\tzeta\n", out.String())
 }
 
+func TestLinearDiscoverUsersListsWorkspaceUsers(t *testing.T) {
+	client := &linearDiscoverFake{
+		users: []linear.User{
+			{ID: "user-z", Name: "zara", Email: "zara@example.com"},
+			{ID: "user-a", Email: "ann@example.com"},
+		},
+	}
+	rows, err := discoverLinearRows(context.Background(), client, "users")
+	require.NoError(t, err)
+
+	assert.Equal(t, []linearDiscoverRow{
+		{ID: "user-a", Name: "ann@example.com"},
+		{ID: "user-z", Name: "zara"},
+	}, sortedLinearRows(rows))
+}
+
 func TestRootCommandRegistersLinearGroup(t *testing.T) {
 	cmd, _, err := NewRootCmd().Find([]string{"linear", "discover"})
 	require.NoError(t, err)
@@ -64,10 +80,18 @@ func sortedLinearRows(rows []linearDiscoverRow) []linearDiscoverRow {
 
 type linearDiscoverFake struct {
 	labels []linear.Label
+	users  []linear.User
 }
 
 func (f *linearDiscoverFake) Viewer(context.Context) (*linear.User, error) {
 	return &linear.User{ID: "user-1", Name: "viewer"}, nil
+}
+
+func (f *linearDiscoverFake) Users(context.Context, linear.PageOptions) ([]linear.User, linear.PageInfo, error) {
+	if f.users == nil {
+		return []linear.User{{ID: "user-1", Name: "viewer"}}, linear.PageInfo{}, nil
+	}
+	return append([]linear.User(nil), f.users...), linear.PageInfo{}, nil
 }
 
 func (f *linearDiscoverFake) Labels(context.Context, linear.PageOptions) ([]linear.Label, linear.PageInfo, error) {

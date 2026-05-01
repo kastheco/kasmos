@@ -21,6 +21,7 @@ var newLinearClient = func(cfg linear.Config) linearDiscoveryClient {
 
 type linearDiscoveryClient interface {
 	Viewer(ctx context.Context) (*linear.User, error)
+	Users(ctx context.Context, p linear.PageOptions) ([]linear.User, linear.PageInfo, error)
 	Labels(ctx context.Context, p linear.PageOptions) ([]linear.Label, linear.PageInfo, error)
 	Teams(ctx context.Context, p linear.PageOptions) ([]linear.Team, linear.PageInfo, error)
 	WorkflowStates(ctx context.Context, p linear.PageOptions) ([]linear.WorkflowState, linear.PageInfo, error)
@@ -184,15 +185,18 @@ func discoverLinearRows(ctx context.Context, client linearDiscoveryClient, kind 
 			return rows, page, err
 		})
 	case "users":
-		viewer, err := client.Viewer(ctx)
-		if err != nil {
-			return nil, err
-		}
-		name := viewer.Name
-		if strings.TrimSpace(name) == "" {
-			name = viewer.Email
-		}
-		return []linearDiscoverRow{{ID: viewer.ID, Name: name}}, nil
+		return collectLinearRows(ctx, func(p linear.PageOptions) ([]linearDiscoverRow, linear.PageInfo, error) {
+			users, page, err := client.Users(ctx, p)
+			rows := make([]linearDiscoverRow, 0, len(users))
+			for _, user := range users {
+				name := user.Name
+				if strings.TrimSpace(name) == "" {
+					name = user.Email
+				}
+				rows = append(rows, linearDiscoverRow{ID: user.ID, Name: name})
+			}
+			return rows, page, err
+		})
 	default:
 		return nil, fmt.Errorf("unsupported linear discovery kind %q", kind)
 	}

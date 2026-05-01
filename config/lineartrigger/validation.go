@@ -99,10 +99,6 @@ func validatePlanEntry(entry taskstore.TaskEntry, issueID string) ReadinessResul
 		result.Reason = "invalid_transition"
 		return result
 	}
-	if strings.TrimSpace(entry.Content) == "" {
-		result.Reason = "missing_plan_content"
-		return result
-	}
 	result.OK = true
 	return result
 }
@@ -115,6 +111,11 @@ func (v *Validator) validateStartEntry(entry taskstore.TaskEntry, issue linear.I
 	if strings.TrimSpace(entry.ExecutionState.Phase) != string(taskfsm.ExecutionPhasePlanned) {
 		result.OK = false
 		result.Reason = "invalid_transition"
+		return result
+	}
+	if strings.TrimSpace(entry.Content) == "" {
+		result.OK = false
+		result.Reason = "missing_plan_content"
 		return result
 	}
 	if _, err := taskparser.Parse(entry.Content); err != nil {
