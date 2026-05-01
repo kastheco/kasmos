@@ -26,9 +26,9 @@ The hook iterates every line. Special cases:
 |-----|------|
 | `git push --no-verify` | one-off escape, skips all client hooks |
 | `KASMOS_SKIP_DOCS_DRIFT=1` env | scoped to docs-drift only |
-| `Docs-Drift-Skip: <reason>` commit trailer | auditable, preserved in history |
+| `Docs-Drift-Skip: <reason>` commit trailer | auditable, preserved in history, honored by CI |
 
-CI runs the same check as a required status. Bypassing the hook does not bypass CI.
+CI runs the same check as a required status. `--no-verify` and `KASMOS_SKIP_DOCS_DRIFT=1` do not bypass CI.
 
 ### dependencies
 

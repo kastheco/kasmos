@@ -56,6 +56,20 @@ jobs:
             const report = JSON.parse(process.env.REPORT || '{"drift":[]}');
             if (!report.drift.length) return;
 
+            const trailerPattern = /^Docs-Drift-Skip:\s*(.+)$/m;
+            const commits = await github.paginate(github.rest.pulls.listCommits, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number,
+              per_page: 100,
+            });
+            const bypassCommit = commits.find((commit) => trailerPattern.test(commit.commit.message));
+            if (bypassCommit) {
+              const trailer = bypassCommit.commit.message.match(trailerPattern)?.[0] || "Docs-Drift-Skip";
+              core.notice(`docs drift bypassed via trailer (${trailer})`);
+              return;
+            }
+
             const marker = "<!-- docs-drift-report -->";
             const body = `${marker}
             ## docs drift detected
