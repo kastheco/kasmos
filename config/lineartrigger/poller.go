@@ -90,7 +90,30 @@ func (p *Poller) PollOnce(ctx context.Context) PollStats {
 	if err := p.enqueueCommentTriggers(ctx, &stats); err != nil {
 		return p.abort(stats, err)
 	}
-	triggers, err := p.deps.Store.ListUnprocessedLinearTriggers(p.deps.Project, p.maxIssues())
+	drainStats := p.DrainQueued(ctx, p.maxIssues())
+	stats.Dispatched += drainStats.Dispatched
+	stats.Rejected += drainStats.Rejected
+	stats.Ignored += drainStats.Ignored
+	stats.Failed += drainStats.Failed
+	stats.AckFailed += drainStats.AckFailed
+	stats.Aborted = drainStats.Aborted
+	stats.Err = drainStats.Err
+	return stats
+}
+
+// DrainQueued processes up to limit unprocessed linear_triggers rows for this
+// project. It is the same loop that PollOnce runs after enqueueing, but it
+// can be invoked without doing label/comment polling, which webhook ingestion
+// needs when labels/comments are already known.
+func (p *Poller) DrainQueued(ctx context.Context, limit int) PollStats {
+	var stats PollStats
+	if !p.deps.Config.Enabled || p.deps.Store == nil || p.deps.Linear == nil {
+		return stats
+	}
+	if limit <= 0 {
+		limit = p.maxIssues()
+	}
+	triggers, err := p.deps.Store.ListUnprocessedLinearTriggers(p.deps.Project, limit)
 	if err != nil {
 		return p.abort(stats, err)
 	}
