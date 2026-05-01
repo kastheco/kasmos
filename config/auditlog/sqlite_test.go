@@ -161,6 +161,59 @@ func TestSQLite_LinearTriggerEventKinds(t *testing.T) {
 	}
 }
 
+func TestSQLite_LinearWebhookEventKinds(t *testing.T) {
+	logger, err := auditlog.NewSQLiteLogger(":memory:")
+	require.NoError(t, err)
+	defer logger.Close()
+
+	kinds := []auditlog.EventKind{
+		auditlog.EventTaskLinearWebhookReceived,
+		auditlog.EventTaskLinearWebhookAccepted,
+		auditlog.EventTaskLinearWebhookDuplicate,
+		auditlog.EventTaskLinearWebhookIgnored,
+		auditlog.EventTaskLinearWebhookRejected,
+		auditlog.EventTaskLinearWebhookFailed,
+	}
+	for _, kind := range kinds {
+		detail := linearWebhookDetail(t, kind)
+		logger.Emit(auditlog.Event{
+			Kind:    kind,
+			Project: "p",
+			Message: kind.String(),
+			Detail:  detail,
+		})
+	}
+
+	events, err := logger.Query(auditlog.QueryFilter{
+		Project: "p",
+		Kinds:   kinds,
+		Limit:   10,
+	})
+	require.NoError(t, err)
+	require.Len(t, events, len(kinds))
+
+	allowed := map[string]struct{}{
+		"delivery_id":     {},
+		"linear_event":    {},
+		"action":          {},
+		"linear_issue_id": {},
+		"source_kind":     {},
+		"source_id":       {},
+		"reason":          {},
+		"enqueued_count":  {},
+	}
+	for _, event := range events {
+		var detail map[string]any
+		require.NoError(t, json.Unmarshal([]byte(event.Detail), &detail))
+		for key := range detail {
+			assert.Contains(t, allowed, key)
+		}
+		assert.NotContains(t, detail, "body")
+		assert.NotContains(t, detail, "signature")
+		assert.NotContains(t, detail, "secret_env")
+	}
+}
+
 func TestSQLite_LinearLinkEventKinds(t *testing.T) {
 	logger, err := auditlog.NewSQLiteLogger(":memory:")
 	require.NoError(t, err)
@@ -359,6 +412,31 @@ func linearTriggerDetail(t *testing.T, kind auditlog.EventKind) string {
 		detail["reason"] = "actor_not_allowed"
 	case auditlog.EventTaskLinearTriggerCommentFailed:
 		detail["error"] = "reaction unsupported"
+	}
+
+	encoded, err := json.Marshal(detail)
+	require.NoError(t, err)
+	return string(encoded)
+}
+
+func linearWebhookDetail(t *testing.T, kind auditlog.EventKind) string {
+	t.Helper()
+
+	detail := map[string]any{
+		"delivery_id":     "delivery-uuid",
+		"linear_event":    "Issue",
+		"action":          "update",
+		"linear_issue_id": "issue-uuid",
+		"source_kind":     "label",
+		"source_id":       "label-uuid",
+		"enqueued_count":  1,
+	}
+	switch kind {
+	case auditlog.EventTaskLinearWebhookDuplicate,
+		auditlog.EventTaskLinearWebhookIgnored,
+		auditlog.EventTaskLinearWebhookRejected,
+		auditlog.EventTaskLinearWebhookFailed:
+		detail["reason"] = "duplicate"
 	}
 
 	encoded, err := json.Marshal(detail)

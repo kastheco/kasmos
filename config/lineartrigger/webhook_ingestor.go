@@ -43,6 +43,7 @@ type IngestResult struct {
 // timestamp, and body verification have already succeeded.
 func (w *WebhookIngestor) Ingest(ctx context.Context, env WebhookEnvelope, headers WebhookHeaders, rawBody []byte) (IngestResult, error) {
 	_ = ctx
+	_ = rawBody
 	if w.Store == nil {
 		return IngestResult{DeliveryStatus: webhookDeliveryFailed, Reason: "store_missing"}, errors.New("lineartrigger: webhook ingestor store is nil")
 	}
@@ -57,22 +58,62 @@ func (w *WebhookIngestor) Ingest(ctx context.Context, env WebhookEnvelope, heade
 	}
 	recorded, err := w.Store.RecordLinearWebhookDelivery(w.Project, delivery)
 	if err != nil {
+		w.emitDelivery(webhookAuditDelivery{
+			Kind:       auditlog.EventTaskLinearWebhookFailed,
+			DeliveryID: deliveryID,
+			Env:        env,
+			Headers:    headers,
+			Reason:     "record_failed",
+		})
 		return IngestResult{DeliveryStatus: webhookDeliveryFailed, Reason: "record_failed"}, err
 	}
+	w.emitDelivery(webhookAuditDelivery{
+		Kind:       auditlog.EventTaskLinearWebhookReceived,
+		DeliveryID: deliveryID,
+		Env:        env,
+		Headers:    headers,
+	})
 	if !recorded {
+		w.emitDelivery(webhookAuditDelivery{
+			Kind:       auditlog.EventTaskLinearWebhookDuplicate,
+			DeliveryID: deliveryID,
+			Env:        env,
+			Headers:    headers,
+		})
 		return IngestResult{DeliveryStatus: webhookDeliveryDuplicate}, nil
 	}
 
 	normalized, err := NormalizeWebhook(w.Config, env, headers)
 	if err != nil {
 		_ = w.Store.UpdateLinearWebhookDelivery(w.Project, deliveryID, webhookDeliveryFailed, "normalize_failed")
+		w.emitDelivery(webhookAuditDelivery{
+			Kind:       auditlog.EventTaskLinearWebhookFailed,
+			DeliveryID: deliveryID,
+			Env:        env,
+			Headers:    headers,
+			Reason:     "normalize_failed",
+		})
 		return IngestResult{DeliveryStatus: webhookDeliveryFailed, Reason: "normalize_failed"}, err
 	}
 	if len(normalized) == 1 && normalized[0].Kind == WebhookNormalizedIgnored {
 		reason := normalized[0].IgnoredReason
 		if err := w.Store.UpdateLinearWebhookDelivery(w.Project, deliveryID, webhookDeliveryIgnored, reason); err != nil {
+			w.emitDelivery(webhookAuditDelivery{
+				Kind:       auditlog.EventTaskLinearWebhookFailed,
+				DeliveryID: deliveryID,
+				Env:        env,
+				Headers:    headers,
+				Reason:     "update_failed",
+			})
 			return IngestResult{DeliveryStatus: webhookDeliveryFailed, Reason: "update_failed"}, err
 		}
+		w.emitDelivery(webhookAuditDelivery{
+			Kind:       auditlog.EventTaskLinearWebhookIgnored,
+			DeliveryID: deliveryID,
+			Env:        env,
+			Headers:    headers,
+			Reason:     reason,
+		})
 		return IngestResult{DeliveryStatus: webhookDeliveryIgnored, Reason: reason}, nil
 	}
 
@@ -96,6 +137,16 @@ func (w *WebhookIngestor) Ingest(ctx context.Context, env WebhookEnvelope, heade
 		queued, err := w.Store.EnqueueLinearTrigger(w.Project, entry)
 		if err != nil {
 			_ = w.Store.UpdateLinearWebhookDelivery(w.Project, deliveryID, webhookDeliveryFailed, "enqueue_failed")
+			w.emitDelivery(webhookAuditDelivery{
+				Kind:          auditlog.EventTaskLinearWebhookFailed,
+				DeliveryID:    deliveryID,
+				Env:           env,
+				Headers:       headers,
+				LinearIssueID: norm.LinearIssueID,
+				SourceKind:    string(norm.Intent.Source),
+				SourceID:      sourceID(norm.Intent),
+				Reason:        "enqueue_failed",
+			})
 			return IngestResult{DeliveryStatus: webhookDeliveryFailed, Reason: "enqueue_failed"}, err
 		}
 		if !queued {
@@ -105,6 +156,16 @@ func (w *WebhookIngestor) Ingest(ctx context.Context, env WebhookEnvelope, heade
 		rowID, err := w.enqueuedRowID(entry)
 		if err != nil {
 			_ = w.Store.UpdateLinearWebhookDelivery(w.Project, deliveryID, webhookDeliveryFailed, "lookup_failed")
+			w.emitDelivery(webhookAuditDelivery{
+				Kind:          auditlog.EventTaskLinearWebhookFailed,
+				DeliveryID:    deliveryID,
+				Env:           env,
+				Headers:       headers,
+				LinearIssueID: norm.LinearIssueID,
+				SourceKind:    string(norm.Intent.Source),
+				SourceID:      sourceID(norm.Intent),
+				Reason:        "lookup_failed",
+			})
 			return IngestResult{DeliveryStatus: webhookDeliveryFailed, Reason: "lookup_failed"}, err
 		}
 		result.EnqueuedRowIDs = append(result.EnqueuedRowIDs, rowID)
@@ -119,13 +180,25 @@ func (w *WebhookIngestor) Ingest(ctx context.Context, env WebhookEnvelope, heade
 		reason = webhookReasonTriggerSourceDuplicate
 	}
 	if err := w.Store.UpdateLinearWebhookDelivery(w.Project, deliveryID, status, reason); err != nil {
+		w.emitDelivery(webhookAuditDelivery{
+			Kind:       auditlog.EventTaskLinearWebhookFailed,
+			DeliveryID: deliveryID,
+			Env:        env,
+			Headers:    headers,
+			Reason:     "update_failed",
+		})
 		return IngestResult{DeliveryStatus: webhookDeliveryFailed, Reason: "update_failed"}, err
 	}
 	result.DeliveryStatus = status
 	result.Reason = reason
-	if status == webhookDeliveryAccepted {
-		w.emitAccepted(deliveryID, result, rawBody)
-	}
+	w.emitDelivery(webhookAuditDelivery{
+		Kind:          webhookAuditKind(status),
+		DeliveryID:    deliveryID,
+		Env:           env,
+		Headers:       headers,
+		Reason:        reason,
+		EnqueuedCount: len(result.EnqueuedRowIDs),
+	})
 	return result, nil
 }
 
@@ -155,18 +228,56 @@ func sameTriggerSource(got, want taskstore.LinearTriggerEntry) bool {
 		got.SourceID == want.SourceID
 }
 
-func (w *WebhookIngestor) emitAccepted(deliveryID string, result IngestResult, rawBody []byte) {
+type webhookAuditDelivery struct {
+	Kind          auditlog.EventKind
+	DeliveryID    string
+	Env           WebhookEnvelope
+	Headers       WebhookHeaders
+	LinearIssueID string
+	SourceKind    string
+	SourceID      string
+	Reason        string
+	EnqueuedCount int
+}
+
+func webhookAuditKind(status string) auditlog.EventKind {
+	switch status {
+	case webhookDeliveryDuplicate:
+		return auditlog.EventTaskLinearWebhookDuplicate
+	case webhookDeliveryFailed:
+		return auditlog.EventTaskLinearWebhookFailed
+	case webhookDeliveryIgnored:
+		return auditlog.EventTaskLinearWebhookIgnored
+	default:
+		return auditlog.EventTaskLinearWebhookAccepted
+	}
+}
+
+func (w *WebhookIngestor) emitDelivery(delivery webhookAuditDelivery) {
 	if w.Audit == nil {
 		return
 	}
-	detail, _ := json.Marshal(map[string]any{
-		"delivery_id":      deliveryID,
-		"enqueued_row_ids": result.EnqueuedRowIDs,
-		"reason":           result.Reason,
-		"raw_body_bytes":   len(rawBody),
-	})
+	detailMap := map[string]any{
+		"delivery_id":    delivery.DeliveryID,
+		"linear_event":   webhookHeaderEvent(delivery.Headers),
+		"action":         delivery.Env.Action,
+		"enqueued_count": delivery.EnqueuedCount,
+	}
+	if delivery.LinearIssueID != "" {
+		detailMap["linear_issue_id"] = delivery.LinearIssueID
+	}
+	if delivery.SourceKind != "" {
+		detailMap["source_kind"] = delivery.SourceKind
+	}
+	if delivery.SourceID != "" {
+		detailMap["source_id"] = delivery.SourceID
+	}
+	if delivery.Reason != "" {
+		detailMap["reason"] = delivery.Reason
+	}
+	detail, _ := json.Marshal(detailMap)
 	w.Audit.Emit(auditlog.Event{
-		Kind:    auditlog.EventKind("task_linear_webhook_accepted"),
+		Kind:    delivery.Kind,
 		Project: w.Project,
 		Detail:  string(detail),
 		Level:   "info",

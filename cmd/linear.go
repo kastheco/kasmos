@@ -2,11 +2,15 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
+	"github.com/kastheco/kasmos/config"
+	"github.com/kastheco/kasmos/config/lineartrigger"
 	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/kastheco/kasmos/internal/linear"
 	"github.com/kastheco/kasmos/internal/linearruntime"
@@ -47,7 +51,37 @@ func NewLinearCmd() *cobra.Command {
 
 	linearCmd.AddCommand(linearPollOnceCmd)
 	linearCmd.AddCommand(linearDiscoverCmd)
+	linearCmd.AddCommand(newLinearWebhookCmd())
 	return linearCmd
+}
+
+func newLinearWebhookCmd() *cobra.Command {
+	webhookCmd := &cobra.Command{Use: "webhook", Short: "linear webhook observability"}
+	var statusJSON bool
+	statusCmd := &cobra.Command{
+		Use:   "status",
+		Short: "show linear webhook delivery summary",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runLinearWebhookStatus(cmd, statusJSON, time.Now())
+		},
+	}
+	statusCmd.Flags().BoolVar(&statusJSON, "json", false, "output as JSON")
+
+	var limit int
+	deliveriesCmd := &cobra.Command{
+		Use:   "deliveries",
+		Short: "list recent linear webhook deliveries",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runLinearWebhookDeliveries(cmd, limit)
+		},
+	}
+	deliveriesCmd.Flags().IntVar(&limit, "limit", 25, "number of deliveries to show")
+
+	webhookCmd.AddCommand(statusCmd)
+	webhookCmd.AddCommand(deliveriesCmd)
+	return webhookCmd
 }
 
 func runLinearPollOnce(cmd *cobra.Command, _ []string) error {
@@ -92,6 +126,78 @@ func runLinearPollOnce(cmd *cobra.Command, _ []string) error {
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "linear triggers: %d received, %d dispatched, %d rejected, %d ignored, %d errors\n",
 		stats.Received, stats.Dispatched, stats.Rejected, stats.Ignored, stats.Failed)
+	return nil
+}
+
+func runLinearWebhookStatus(cmd *cobra.Command, jsonOutput bool, now time.Time) error {
+	_, project, err := resolveRepoInfo()
+	if err != nil {
+		return err
+	}
+	tomlResult, err := config.LoadTOMLConfig()
+	if err != nil {
+		return err
+	}
+	var triggerCfg lineartrigger.Config
+	if tomlResult != nil {
+		triggerCfg = tomlResult.LinearTriggers
+	}
+	store, err := taskstore.OpenAuthoritativeStore(project)
+	if err != nil {
+		return err
+	}
+	defer store.Close()
+
+	summary := statusLinearWebhookSummary(store, project, triggerCfg, now)
+	if jsonOutput {
+		return writeLinearWebhookStatusJSON(cmd, summary)
+	}
+	fmt.Fprint(cmd.OutOrStdout(), renderStatusLinearWebhooks(summary))
+	return nil
+}
+
+func writeLinearWebhookStatusJSON(cmd *cobra.Command, summary statusLinearWebhooks) error {
+	encoded, err := json.Marshal(summary)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintln(cmd.OutOrStdout(), string(encoded))
+	return nil
+}
+
+func runLinearWebhookDeliveries(cmd *cobra.Command, limit int) error {
+	_, project, err := resolveRepoInfo()
+	if err != nil {
+		return err
+	}
+	store, err := taskstore.OpenAuthoritativeStore(project)
+	if err != nil {
+		return err
+	}
+	defer store.Close()
+	return writeLinearWebhookDeliveries(cmd, store, project, limit)
+}
+
+func writeLinearWebhookDeliveries(cmd *cobra.Command, store taskstore.Store, project string, limit int) error {
+	if limit <= 0 {
+		limit = 25
+	}
+	if limit > 200 {
+		limit = 200
+	}
+	deliveries, err := store.ListRecentLinearWebhookDeliveries(project, limit)
+	if err != nil {
+		return err
+	}
+	for _, delivery := range deliveries {
+		fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\t%s\t%s\t%s\n",
+			delivery.DeliveryID,
+			delivery.Status,
+			delivery.Reason,
+			delivery.ReceivedAt.Format(time.RFC3339),
+			delivery.LinearIssueID,
+		)
+	}
 	return nil
 }
 

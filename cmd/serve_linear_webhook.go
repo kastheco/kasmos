@@ -137,6 +137,19 @@ func (h *linearWebhookHandler) recordRejectedDelivery(headers lineartrigger.Webh
 	if err != nil {
 		slog.Warn("linear webhook rejected delivery record failed", "project", h.runtime.Project, "reason", reason, "error", err)
 	}
+	if h.runtime.Audit == nil {
+		return
+	}
+	h.runtime.Audit.Emit(auditlog.Event{
+		Kind:    auditlog.EventTaskLinearWebhookRejected,
+		Project: h.runtime.Project,
+		Detail: string(linearWebhookAuditDetail(map[string]any{
+			"delivery_id":  deliveryID,
+			"linear_event": firstNonEmpty(headers.Event, headers.LinearEvent),
+			"reason":       reason,
+		})),
+		Level: "warn",
+	})
 }
 
 func (h *linearWebhookHandler) auditWarn(message string) {
@@ -148,7 +161,7 @@ func (h *linearWebhookHandler) auditWarn(message string) {
 		project = h.runtime.Project
 	}
 	h.runtime.Audit.Emit(auditlog.Event{
-		Kind:    auditlog.EventKind("task_linear_webhook_rejected"),
+		Kind:    auditlog.EventTaskLinearWebhookRejected,
 		Project: project,
 		Message: message,
 		Level:   "warn",
@@ -172,6 +185,27 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func linearWebhookAuditDetail(detail map[string]any) []byte {
+	allowed := map[string]struct{}{
+		"delivery_id":     {},
+		"linear_event":    {},
+		"action":          {},
+		"linear_issue_id": {},
+		"source_kind":     {},
+		"source_id":       {},
+		"reason":          {},
+		"enqueued_count":  {},
+	}
+	safe := make(map[string]any, len(detail))
+	for key, value := range detail {
+		if _, ok := allowed[key]; ok {
+			safe[key] = value
+		}
+	}
+	encoded, _ := json.Marshal(safe)
+	return encoded
 }
 
 func runLinearWebhookDrainer(ctx context.Context, runtimeByProject map[string]*linearruntime.Resolved, drainCh <-chan string, errCh chan<- error) {
