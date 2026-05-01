@@ -2,6 +2,7 @@ package taskstore
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -1282,23 +1283,24 @@ func (s *SQLiteStore) ListPendingReviews(project, filename string) ([]PRReviewEn
 }
 
 // EnqueueLinearTrigger records an inbound Linear trigger if it has not already been seen.
-func (s *SQLiteStore) EnqueueLinearTrigger(project string, e LinearTriggerEntry) (bool, error) {
+func (s *SQLiteStore) EnqueueLinearTrigger(project string, e LinearTriggerEntry) (int64, bool, error) {
 	const q = `
 		INSERT INTO linear_triggers
 			(project, linear_issue_id, linear_identifier, command_kind, source_kind, source_id,
 			 actor_id, actor_email, task_arg, detected_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (project, linear_issue_id, command_kind, source_id) DO NOTHING
+		RETURNING id
 	`
-	result, err := s.db.Exec(q, project, e.LinearIssueID, e.LinearIdentifier, e.CommandKind, e.SourceKind, e.SourceID, e.ActorID, e.ActorEmail, e.TaskArg, formatTime(e.DetectedAt))
-	if err != nil {
-		return false, fmt.Errorf("enqueue linear trigger: %w", err)
+	var id int64
+	err := s.db.QueryRow(q, project, e.LinearIssueID, e.LinearIdentifier, e.CommandKind, e.SourceKind, e.SourceID, e.ActorID, e.ActorEmail, e.TaskArg, formatTime(e.DetectedAt)).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, false, nil
 	}
-	n, err := result.RowsAffected()
 	if err != nil {
-		return false, fmt.Errorf("enqueue linear trigger rows affected: %w", err)
+		return 0, false, fmt.Errorf("enqueue linear trigger: %w", err)
 	}
-	return n > 0, nil
+	return id, true, nil
 }
 
 // MarkLinearTriggerDispatched marks an enqueued Linear trigger as dispatched.

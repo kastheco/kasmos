@@ -71,11 +71,9 @@ func (h *linearWebhookHandler) ServeHTTP(w http.ResponseWriter, r *http.Request)
 	}
 
 	headers := lineartrigger.WebhookHeaders{
-		Signature:   r.Header.Get("Linear-Signature"),
-		Delivery:    r.Header.Get("Linear-Delivery"),
-		Event:       r.Header.Get("Linear-Event"),
-		DeliveryID:  r.Header.Get("Linear-Delivery"),
-		LinearEvent: r.Header.Get("Linear-Event"),
+		Signature: r.Header.Get("Linear-Signature"),
+		Delivery:  r.Header.Get("Linear-Delivery"),
+		Event:     r.Header.Get("Linear-Event"),
 	}
 	ts, rejection := lineartrigger.ParseWebhookTimestamp(body)
 	if rejection == lineartrigger.RejectMalformedBody {
@@ -121,14 +119,11 @@ func (h *linearWebhookHandler) recordRejectedDelivery(headers lineartrigger.Webh
 	}
 	deliveryID := headers.Delivery
 	if deliveryID == "" {
-		deliveryID = headers.DeliveryID
-	}
-	if deliveryID == "" {
 		return
 	}
 	_, err := h.runtime.Ingestor.Store.RecordLinearWebhookDelivery(h.runtime.Project, taskstore.LinearWebhookDelivery{
 		DeliveryID:  deliveryID,
-		LinearEvent: firstNonEmpty(headers.Event, headers.LinearEvent),
+		LinearEvent: headers.Event,
 		Status:      "rejected",
 		Reason:      reason,
 		ReceivedAt:  h.now(),
@@ -145,7 +140,7 @@ func (h *linearWebhookHandler) recordRejectedDelivery(headers lineartrigger.Webh
 		Project: h.runtime.Project,
 		Detail: string(linearWebhookAuditDetail(map[string]any{
 			"delivery_id":  deliveryID,
-			"linear_event": firstNonEmpty(headers.Event, headers.LinearEvent),
+			"linear_event": headers.Event,
 			"reason":       reason,
 		})),
 		Level: "warn",
@@ -176,15 +171,6 @@ func writeLinearWebhookJSON(w http.ResponseWriter, statusCode int, status, reaso
 		resp["reason"] = reason
 	}
 	_ = json.NewEncoder(w).Encode(resp)
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if value != "" {
-			return value
-		}
-	}
-	return ""
 }
 
 func linearWebhookAuditDetail(detail map[string]any) []byte {

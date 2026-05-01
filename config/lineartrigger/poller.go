@@ -437,7 +437,7 @@ func (p *Poller) enqueue(_ context.Context, intent ParsedIntent, issue linear.Is
 		TaskArg:          intent.TaskFileArg,
 		DetectedAt:       detectedAt,
 	}
-	queued, err := p.deps.Store.EnqueueLinearTrigger(p.deps.Project, entry)
+	_, queued, err := p.deps.Store.EnqueueLinearTrigger(p.deps.Project, entry)
 	if queued {
 		p.emit(auditlog.EventTaskLinearTriggerReceived, entry, "", "", "info")
 	}

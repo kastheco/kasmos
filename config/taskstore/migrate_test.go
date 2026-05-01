@@ -508,7 +508,7 @@ func TestMigrateRepoLocalToGlobal_LinearTriggers(t *testing.T) {
 
 	local := createLocalRepoStore(t, repoKasmosDir)
 	detectedAt := time.Date(2026, 4, 30, 10, 0, 0, 0, time.UTC)
-	queued, err := local.EnqueueLinearTrigger("proj", LinearTriggerEntry{
+	_, queued, err := local.EnqueueLinearTrigger("proj", LinearTriggerEntry{
 		LinearIssueID:    "lin-1",
 		LinearIdentifier: "KAS-1",
 		CommandKind:      "plan",

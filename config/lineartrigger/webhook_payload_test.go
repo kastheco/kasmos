@@ -11,7 +11,7 @@ import (
 func TestNormalizeWebhook(t *testing.T) {
 	commentCreatedAt := time.Date(2026, 5, 1, 12, 30, 0, 0, time.UTC)
 	issueUpdatedAt := time.Date(2026, 5, 1, 13, 30, 0, 0, time.UTC)
-	headers := WebhookHeaders{DeliveryID: "delivery-1", LinearEvent: "Issue"}
+	headers := WebhookHeaders{Delivery: "delivery-1", Event: "Issue"}
 	labelCfg := Config{
 		Labels:     LabelMap{Create: "label-create", Plan: "label-plan", Start: "label-start"},
 		StartGuard: StartGuard{AllowLabelStart: true},
@@ -40,8 +40,8 @@ func TestNormalizeWebhook(t *testing.T) {
 			},
 			want: []WebhookNormalized{{
 				Kind:          WebhookNormalizedComment,
-				DeliveryID:    headers.DeliveryID,
-				LinearEvent:   headers.LinearEvent,
+				DeliveryID:    headers.Delivery,
+				LinearEvent:   headers.Event,
 				DetectedAt:    commentCreatedAt,
 				LinearIssueID: "issue-1",
 				Intent: ParsedIntent{
@@ -70,8 +70,8 @@ func TestNormalizeWebhook(t *testing.T) {
 			want: []WebhookNormalized{{
 				Kind:          WebhookNormalizedIgnored,
 				IgnoredReason: "comment_not_command",
-				DeliveryID:    headers.DeliveryID,
-				LinearEvent:   headers.LinearEvent,
+				DeliveryID:    headers.Delivery,
+				LinearEvent:   headers.Event,
 				DetectedAt:    commentCreatedAt,
 				LinearIssueID: "issue-2",
 			}},
@@ -91,8 +91,8 @@ func TestNormalizeWebhook(t *testing.T) {
 			want: []WebhookNormalized{{
 				Kind:          WebhookNormalizedIgnored,
 				IgnoredReason: "comment_action_skipped",
-				DeliveryID:    headers.DeliveryID,
-				LinearEvent:   headers.LinearEvent,
+				DeliveryID:    headers.Delivery,
+				LinearEvent:   headers.Event,
 				DetectedAt:    commentCreatedAt,
 			}},
 		},
@@ -111,8 +111,8 @@ func TestNormalizeWebhook(t *testing.T) {
 			},
 			want: []WebhookNormalized{{
 				Kind:          WebhookNormalizedComment,
-				DeliveryID:    headers.DeliveryID,
-				LinearEvent:   headers.LinearEvent,
+				DeliveryID:    headers.Delivery,
+				LinearEvent:   headers.Event,
 				DetectedAt:    commentCreatedAt,
 				LinearIssueID: "issue-4",
 				Intent: ParsedIntent{
@@ -141,8 +141,8 @@ func TestNormalizeWebhook(t *testing.T) {
 			want: []WebhookNormalized{
 				{
 					Kind:             WebhookNormalizedLabelCandidate,
-					DeliveryID:       headers.DeliveryID,
-					LinearEvent:      headers.LinearEvent,
+					DeliveryID:       headers.Delivery,
+					LinearEvent:      headers.Event,
 					DetectedAt:       issueUpdatedAt,
 					LinearIssueID:    "issue-5",
 					LinearIdentifier: "KAS-5",
@@ -152,8 +152,8 @@ func TestNormalizeWebhook(t *testing.T) {
 				},
 				{
 					Kind:             WebhookNormalizedLabelCandidate,
-					DeliveryID:       headers.DeliveryID,
-					LinearEvent:      headers.LinearEvent,
+					DeliveryID:       headers.Delivery,
+					LinearEvent:      headers.Event,
 					DetectedAt:       issueUpdatedAt,
 					LinearIssueID:    "issue-5",
 					LinearIdentifier: "KAS-5",
@@ -179,8 +179,8 @@ func TestNormalizeWebhook(t *testing.T) {
 			want: []WebhookNormalized{{
 				Kind:             WebhookNormalizedIgnored,
 				IgnoredReason:    "issue_no_trigger_label",
-				DeliveryID:       headers.DeliveryID,
-				LinearEvent:      headers.LinearEvent,
+				DeliveryID:       headers.Delivery,
+				LinearEvent:      headers.Event,
 				DetectedAt:       issueUpdatedAt,
 				LinearIssueID:    "issue-6",
 				LinearIdentifier: "KAS-6",
@@ -196,8 +196,8 @@ func TestNormalizeWebhook(t *testing.T) {
 			want: []WebhookNormalized{{
 				Kind:          WebhookNormalizedIgnored,
 				IgnoredReason: "event_unsupported",
-				DeliveryID:    headers.DeliveryID,
-				LinearEvent:   headers.LinearEvent,
+				DeliveryID:    headers.Delivery,
+				LinearEvent:   headers.Event,
 				DetectedAt:    commentCreatedAt,
 			}},
 		},
@@ -211,8 +211,8 @@ func TestNormalizeWebhook(t *testing.T) {
 			want: []WebhookNormalized{{
 				Kind:          WebhookNormalizedIgnored,
 				IgnoredReason: "event_unsupported",
-				DeliveryID:    headers.DeliveryID,
-				LinearEvent:   headers.LinearEvent,
+				DeliveryID:    headers.Delivery,
+				LinearEvent:   headers.Event,
 				DetectedAt:    commentCreatedAt,
 			}},
 		},
@@ -246,7 +246,7 @@ func TestNormalizeWebhookRemoveSkipped(t *testing.T) {
 		Action:           "remove",
 		Type:             "Issue",
 		WebhookTimestamp: detectedAt.UnixMilli(),
-	}, WebhookHeaders{DeliveryID: "delivery-remove", LinearEvent: "Issue"})
+	}, WebhookHeaders{Delivery: "delivery-remove", Event: "Issue"})
 
 	require.NoError(t, err)
 	require.Equal(t, []WebhookNormalized{{

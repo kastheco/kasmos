@@ -30,6 +30,23 @@ func TestWebhookIngestorIngestCommentCreateEnqueuesTrigger(t *testing.T) {
 	h.requireDelivery(t, "delivery-comment", webhookDeliveryAccepted, "")
 }
 
+func TestWebhookIngestorIngestKeepsReturnedRowIDWhenTriggerDrainsImmediately(t *testing.T) {
+	ctx := context.Background()
+	h := newWebhookIngestorHarness(t)
+	h.ingestor.Store = &processingAfterEnqueueStore{Store: h.store}
+
+	result, err := h.ingestor.Ingest(ctx, commentWebhook("delivery-drained", "/kasmos plan demo-task"), webhookHeaders("delivery-drained", "Comment"), nil)
+
+	require.NoError(t, err)
+	assert.Equal(t, webhookDeliveryAccepted, result.DeliveryStatus)
+	require.Len(t, result.EnqueuedRowIDs, 1)
+	assert.NotZero(t, result.EnqueuedRowIDs[0])
+	triggers, err := h.store.ListUnprocessedLinearTriggers("proj", 10)
+	require.NoError(t, err)
+	assert.Empty(t, triggers)
+	h.requireDelivery(t, "delivery-drained", webhookDeliveryAccepted, "")
+}
+
 func TestWebhookIngestorIngestDuplicateDeliveryDoesNotReenqueue(t *testing.T) {
 	ctx := context.Background()
 	h := newWebhookIngestorHarness(t)
@@ -84,7 +101,7 @@ func TestWebhookIngestorIngestIssueCreateEnqueuesTwoLabelCandidates(t *testing.T
 func TestWebhookIngestorIngestIssueCreateAcceptedWithPartialTriggerDuplicate(t *testing.T) {
 	ctx := context.Background()
 	h := newWebhookIngestorHarness(t)
-	queued, err := h.store.EnqueueLinearTrigger("proj", taskstore.LinearTriggerEntry{
+	_, queued, err := h.store.EnqueueLinearTrigger("proj", taskstore.LinearTriggerEntry{
 		LinearIssueID:    "issue-delivery-partial",
 		LinearIdentifier: "ENG-77",
 		CommandKind:      string(VerbCreate),
@@ -117,7 +134,7 @@ func TestWebhookIngestorIngestIssueCreateDuplicateWhenEveryTriggerSourceExists(t
 		{VerbCreate, "label-create"},
 		{VerbPlan, "label-plan"},
 	} {
-		queued, err := h.store.EnqueueLinearTrigger("proj", taskstore.LinearTriggerEntry{
+		_, queued, err := h.store.EnqueueLinearTrigger("proj", taskstore.LinearTriggerEntry{
 			LinearIssueID:    "issue-delivery-all-duplicate",
 			LinearIdentifier: "ENG-77",
 			CommandKind:      string(verbLabel.verb),
@@ -165,6 +182,21 @@ func newWebhookIngestorHarness(t *testing.T) *webhookIngestorHarness {
 	return &webhookIngestorHarness{store: store, linear: linearClient, ingestor: ingestor, now: now}
 }
 
+type processingAfterEnqueueStore struct {
+	taskstore.Store
+}
+
+func (s *processingAfterEnqueueStore) EnqueueLinearTrigger(project string, e taskstore.LinearTriggerEntry) (int64, bool, error) {
+	id, queued, err := s.Store.EnqueueLinearTrigger(project, e)
+	if err != nil || !queued {
+		return id, queued, err
+	}
+	if err := s.Store.MarkLinearTriggerIgnored(project, id, "processed_by_drain"); err != nil {
+		return 0, false, err
+	}
+	return id, queued, nil
+}
+
 func (h *webhookIngestorHarness) requireDelivery(t *testing.T, deliveryID, status, reason string) {
 	t.Helper()
 	delivery, err := h.store.LinearWebhookDeliveryByID("proj", deliveryID)
@@ -175,10 +207,8 @@ func (h *webhookIngestorHarness) requireDelivery(t *testing.T, deliveryID, statu
 
 func webhookHeaders(deliveryID, event string) WebhookHeaders {
 	return WebhookHeaders{
-		Delivery:    deliveryID,
-		Event:       event,
-		DeliveryID:  deliveryID,
-		LinearEvent: event,
+		Delivery: deliveryID,
+		Event:    event,
 	}
 }
 

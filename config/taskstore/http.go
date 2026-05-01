@@ -1051,31 +1051,32 @@ func (s *HTTPStore) ListPendingReviews(project, filename string) ([]PRReviewEntr
 }
 
 // EnqueueLinearTrigger records an inbound Linear trigger in the remote store.
-func (s *HTTPStore) EnqueueLinearTrigger(project string, e LinearTriggerEntry) (bool, error) {
+func (s *HTTPStore) EnqueueLinearTrigger(project string, e LinearTriggerEntry) (int64, bool, error) {
 	body, err := json.Marshal(e)
 	if err != nil {
-		return false, fmt.Errorf("task store: marshal linear trigger: %w", err)
+		return 0, false, fmt.Errorf("task store: marshal linear trigger: %w", err)
 	}
 	req, err := http.NewRequest(http.MethodPost, s.linearTriggersURL(project), bytes.NewReader(body))
 	if err != nil {
-		return false, fmt.Errorf("task store: build request: %w", err)
+		return 0, false, fmt.Errorf("task store: build request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := s.do(req)
 	if err != nil {
-		return false, err
+		return 0, false, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusCreated {
-		return false, decodeError(resp)
+		return 0, false, decodeError(resp)
 	}
 	var payload struct {
-		Queued bool `json:"queued"`
+		ID     int64 `json:"id"`
+		Queued bool  `json:"queued"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
-		return false, fmt.Errorf("task store: decode linear trigger enqueue: %w", err)
+		return 0, false, fmt.Errorf("task store: decode linear trigger enqueue: %w", err)
 	}
-	return payload.Queued, nil
+	return payload.ID, payload.Queued, nil
 }
 
 // MarkLinearTriggerDispatched marks a trigger as dispatched in the remote store.

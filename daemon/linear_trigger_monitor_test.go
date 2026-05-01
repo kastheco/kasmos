@@ -250,7 +250,7 @@ func TestLinearTriggerMonitor_PollOnceDrainsWebhookQueuedRows(t *testing.T) {
 		LinearTriggerPoller: poller,
 		LinearTriggerConfig: cfg,
 	}}
-	queued, err := store.EnqueueLinearTrigger("proj", taskstore.LinearTriggerEntry{
+	_, queued, err := store.EnqueueLinearTrigger("proj", taskstore.LinearTriggerEntry{
 		LinearIssueID:    "issue-1",
 		LinearIdentifier: "LIN-123",
 		CommandKind:      string(lineartrigger.VerbPlan),

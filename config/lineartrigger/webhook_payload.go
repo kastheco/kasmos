@@ -55,11 +55,9 @@ type webhookIssueRef struct {
 
 // WebhookHeaders carries Linear webhook header metadata used for audit and dedup.
 type WebhookHeaders struct {
-	Signature   string // raw value of the "Linear-Signature" header
-	Delivery    string // raw value of the "Linear-Delivery" header
-	Event       string // raw value of the "Linear-Event" header
-	DeliveryID  string
-	LinearEvent string
+	Signature string // raw value of the "Linear-Signature" header
+	Delivery  string // raw value of the "Linear-Delivery" header
+	Event     string // raw value of the "Linear-Event" header
 }
 
 // WebhookNormalizedKind names the normalized webhook outcome.
@@ -143,8 +141,8 @@ func normalizeCommentWebhook(env WebhookEnvelope, headers WebhookHeaders) ([]Web
 
 	return []WebhookNormalized{{
 		Kind:          WebhookNormalizedComment,
-		DeliveryID:    headers.DeliveryID,
-		LinearEvent:   headers.LinearEvent,
+		DeliveryID:    headers.Delivery,
+		LinearEvent:   headers.Event,
 		DetectedAt:    detectedAt,
 		LinearIssueID: data.IssueID,
 		Intent: ParsedIntent{
@@ -195,8 +193,8 @@ func normalizeIssueWebhook(cfg Config, env WebhookEnvelope, headers WebhookHeade
 		intent := IntentFromLabel(verb, labelID, data.ID, data.Identifier)
 		normalized = append(normalized, WebhookNormalized{
 			Kind:             WebhookNormalizedLabelCandidate,
-			DeliveryID:       headers.DeliveryID,
-			LinearEvent:      headers.LinearEvent,
+			DeliveryID:       headers.Delivery,
+			LinearEvent:      headers.Event,
 			DetectedAt:       detectedAt,
 			LinearIssueID:    data.ID,
 			LinearIdentifier: data.Identifier,
@@ -233,8 +231,8 @@ func ignoredWebhook(env WebhookEnvelope, headers WebhookHeaders, reason, issueID
 	return WebhookNormalized{
 		Kind:             WebhookNormalizedIgnored,
 		IgnoredReason:    reason,
-		DeliveryID:       headers.DeliveryID,
-		LinearEvent:      headers.LinearEvent,
+		DeliveryID:       headers.Delivery,
+		LinearEvent:      headers.Event,
 		DetectedAt:       webhookDetectedAt(env),
 		LinearIssueID:    issueID,
 		LinearIdentifier: identifier,

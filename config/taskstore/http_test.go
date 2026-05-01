@@ -337,12 +337,14 @@ func TestHTTPStore_LinearTriggers_RoundTrip(t *testing.T) {
 		DetectedAt:       detectedAt,
 	}
 
-	queued, err := client.EnqueueLinearTrigger("proj", entry)
+	id, queued, err := client.EnqueueLinearTrigger("proj", entry)
 	require.NoError(t, err)
 	assert.True(t, queued)
-	queued, err = client.EnqueueLinearTrigger("proj", entry)
+	assert.NotZero(t, id)
+	id, queued, err = client.EnqueueLinearTrigger("proj", entry)
 	require.NoError(t, err)
 	assert.False(t, queued)
+	assert.Zero(t, id)
 
 	triggers, err := client.ListUnprocessedLinearTriggers("proj", 10)
 	require.NoError(t, err)
@@ -367,9 +369,10 @@ func TestHTTPStore_LinearTriggers_RoundTrip(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			e := entry
 			e.SourceID = tc.name
-			queued, err := client.EnqueueLinearTrigger("proj", e)
+			enqueuedID, queued, err := client.EnqueueLinearTrigger("proj", e)
 			require.NoError(t, err)
 			require.True(t, queued)
+			require.NotZero(t, enqueuedID)
 			pending, err := client.ListUnprocessedLinearTriggers("proj", 10)
 			require.NoError(t, err)
 			var id int64

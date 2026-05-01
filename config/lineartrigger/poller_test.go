@@ -107,7 +107,7 @@ func TestPollerPollOnceUnlinkedCommentPlanWithTaskArgCreatesAndPlansOnce(t *test
 		URL:         "https://linear.local/ENG-10",
 		Team:        &linear.Team{ID: "team-1", Key: "ENG"},
 	}
-	queued, err := h.store.EnqueueLinearTrigger("proj", taskstore.LinearTriggerEntry{
+	_, queued, err := h.store.EnqueueLinearTrigger("proj", taskstore.LinearTriggerEntry{
 		LinearIssueID:    "lin-comment-plan",
 		LinearIdentifier: "ENG-10",
 		CommandKind:      string(VerbPlan),
@@ -444,7 +444,7 @@ func TestPollerDrainQueuedProcessesExistingTriggerRows(t *testing.T) {
 			DetectedAt:       h.now.Add(2 * time.Second),
 		},
 	} {
-		queued, err := h.store.EnqueueLinearTrigger("proj", trigger)
+		_, queued, err := h.store.EnqueueLinearTrigger("proj", trigger)
 		require.NoError(t, err)
 		require.True(t, queued)
 	}

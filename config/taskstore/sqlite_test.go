@@ -997,13 +997,15 @@ func TestSQLiteStore_LinearTriggers_EnqueueIdempotentAndDispatch(t *testing.T) {
 		DetectedAt:       detectedAt,
 	}
 
-	queued, err := store.EnqueueLinearTrigger("proj", entry)
+	id, queued, err := store.EnqueueLinearTrigger("proj", entry)
 	require.NoError(t, err)
 	assert.True(t, queued)
+	assert.NotZero(t, id)
 
-	queued, err = store.EnqueueLinearTrigger("proj", entry)
+	id, queued, err = store.EnqueueLinearTrigger("proj", entry)
 	require.NoError(t, err)
 	assert.False(t, queued)
+	assert.Zero(t, id)
 
 	triggers, err := store.ListUnprocessedLinearTriggers("proj", 10)
 	require.NoError(t, err)
@@ -1034,9 +1036,10 @@ func TestSQLiteStore_LinearTriggers_EnqueueIdempotentAndDispatch(t *testing.T) {
 	assert.Equal(t, "task-a", targetFilename)
 	assert.Equal(t, "acked", ackState)
 
-	queued, err = store.EnqueueLinearTrigger("proj", entry)
+	id, queued, err = store.EnqueueLinearTrigger("proj", entry)
 	require.NoError(t, err)
 	assert.False(t, queued)
+	assert.Zero(t, id)
 }
 
 func TestSQLiteStore_LinearWebhookDeliveries_RoundTripAndStats(t *testing.T) {

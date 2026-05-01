@@ -189,9 +189,9 @@ type ExecutionStateWriter interface {
 // LinearTriggerStore persists inbound Linear trigger events.
 type LinearTriggerStore interface {
 	// EnqueueLinearTrigger inserts a row using INSERT ... ON CONFLICT DO NOTHING.
-	// Returns queued=true when a new row landed; false when the unique key was
-	// already present (replay-safe).
-	EnqueueLinearTrigger(project string, e LinearTriggerEntry) (queued bool, err error)
+	// Returns queued=true with the inserted row ID when a new row landed; false
+	// with id=0 when the unique key was already present (replay-safe).
+	EnqueueLinearTrigger(project string, e LinearTriggerEntry) (id int64, queued bool, err error)
 	// MarkLinearTriggerDispatched marks an enqueued row as successfully dispatched.
 	// targetFilename is the resulting kasmos task file (empty for help/status).
 	MarkLinearTriggerDispatched(project string, id int64, targetFilename string) error

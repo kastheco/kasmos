@@ -658,12 +658,12 @@ func NewHandler(store Store) http.Handler {
 			writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
 			return
 		}
-		queued, err := store.EnqueueLinearTrigger(project, entry)
+		id, queued, err := store.EnqueueLinearTrigger(project, entry)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
-		writeJSON(w, http.StatusCreated, map[string]bool{"queued": queued})
+		writeJSON(w, http.StatusCreated, map[string]any{"id": id, "queued": queued})
 	})
 
 	mux.HandleFunc("GET /v1/projects/{project}/linear-triggers", func(w http.ResponseWriter, r *http.Request) {

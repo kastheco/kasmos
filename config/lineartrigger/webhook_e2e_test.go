@@ -152,11 +152,9 @@ func newWebhookE2EHarness(t *testing.T) *webhookE2EHarness {
 
 func (h *webhookE2EHarness) postWebhook(ctx context.Context, deliveryID, event string, body []byte, signingSecret string, drain bool) webhookHTTPResponse {
 	headers := WebhookHeaders{
-		Signature:   webhookE2ESignature(body, signingSecret),
-		Delivery:    deliveryID,
-		Event:       event,
-		DeliveryID:  deliveryID,
-		LinearEvent: event,
+		Signature: webhookE2ESignature(body, signingSecret),
+		Delivery:  deliveryID,
+		Event:     event,
 	}
 	ts, rejection := ParseWebhookTimestamp(body)
 	if rejection == RejectNone {

@@ -93,7 +93,7 @@ func TestExecuteStatus_LinearTriggersEnabledCounts(t *testing.T) {
 	project := "linear-status-project"
 	now := time.Date(2026, 4, 30, 12, 0, 0, 0, time.UTC)
 	for i, outcome := range []string{"dispatched", "dispatched", "dispatched", "rejected", "failed"} {
-		queued, err := store.EnqueueLinearTrigger(project, taskstore.LinearTriggerEntry{
+		_, queued, err := store.EnqueueLinearTrigger(project, taskstore.LinearTriggerEntry{
 			LinearIssueID:    "issue",
 			LinearIdentifier: "ENG-1",
 			CommandKind:      outcome,
