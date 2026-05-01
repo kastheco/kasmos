@@ -4,7 +4,7 @@ title: "linear linking"
 
 # linear linking
 
-linear linking lets operators keep Linear as the human planning surface while kasmos remains the execution source of truth. a link is explicit task metadata: kasmos stores the Linear issue coordinates, shows them in task surfaces, and records audit events. it does not scrape plan content or let Linear drive kasmos lifecycle state.
+linear linking lets operators keep Linear as the human planning surface while kasmos remains the execution source of truth. a link is explicit task metadata: kasmos stores the Linear issue coordinates, shows them in task surfaces, and records audit events. kasmos does not scrape plan content from Linear, and lifecycle changes still move only through the kasmos FSM.
 
 ## setup
 
@@ -84,13 +84,21 @@ the http task store does not call Linear. use the cli or mcp linker when you nee
 
 ## what kasmos does and does not do with Linear
 
-kasmos is the lifecycle source of truth. moving, assigning, labelling, renaming, or commenting on a Linear issue never transitions a kasmos task.
+kasmos is the lifecycle source of truth. ordinary Linear edits still do not transition a kasmos task: moving, assigning, renaming, or casual comments are ignored by the kasmos lifecycle.
 
-when configured, kasmos can write one-way receipts back to the linked Linear issue. the linker command can post the explicit backlink comment requested with `--comment`; the optional [linear receipts](./linear-receipts.mdx) feature can post deterministic lifecycle, pull request, merge, and cancellation comments; and `[linear.receipts.state_map]` can map kasmos task statuses to Linear workflow state ids. these writes are outbound only and never let Linear drive kasmos.
+when configured, kasmos can write one-way receipts back to the linked Linear issue. the linker command can post the explicit backlink comment requested with `--comment`; the optional [linear receipts](./linear-receipts.mdx) feature can post deterministic lifecycle, pull request, merge, and cancellation comments; and `[linear.receipts.state_map]` can map kasmos task statuses to Linear workflow state ids.
+
+phase-4 [linear triggers](./linear-triggers.mdx) add the guarded inbound path: strict `/kasmos <verb>` comments and configured trigger labels can ask kasmos to link, create, plan, or start work when routes and actor allowlists pass. those triggers still emit normal FSM events instead of mutating task state directly.
 
 kasmos does not update Linear assignee, labels, title, description, priority, estimate, cycle, or project fields.
 
 kasmos also does not derive links from markdown content. link state lives in the task store columns and changes only through explicit link or unlink operations.
+
+if a Linear comment or label appears to do nothing, inspect the trigger audit path before assuming it was missed:
+
+```sh
+curl "http://localhost:7433/v1/projects/kasmos/audit-events?kind=task_linear_trigger_rejected"
+```
 
 ## audit lookup
 

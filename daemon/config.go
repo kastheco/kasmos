@@ -24,6 +24,12 @@ type PRMonitorConfig struct {
 	Reactions []string
 }
 
+// LinearTriggerMonitorConfig holds configuration for Linear trigger polling.
+type LinearTriggerMonitorConfig struct {
+	// PollInterval is the daemon-level default. Per-repo [linear.triggers] can override it.
+	PollInterval time.Duration
+}
+
 // DaemonConfig holds the configuration for the background daemon.
 type DaemonConfig struct {
 	// PollInterval is how often the daemon scans for signals. Default: 2s.
@@ -63,6 +69,9 @@ type DaemonConfig struct {
 
 	// PRMonitor holds configuration for the PR monitoring subsystem.
 	PRMonitor PRMonitorConfig `toml:"pr_monitor"`
+
+	// LinearTriggerMonitor holds daemon defaults for Linear trigger polling.
+	LinearTriggerMonitor LinearTriggerMonitorConfig `toml:"linear_trigger_monitor"`
 }
 
 // tomlPRMonitorConfig is the raw TOML representation of PRMonitorConfig.
@@ -72,20 +81,26 @@ type tomlPRMonitorConfig struct {
 	Reactions       []string `toml:"reactions"`
 }
 
+// tomlLinearTriggerMonitorConfig is the raw TOML representation of LinearTriggerMonitorConfig.
+type tomlLinearTriggerMonitorConfig struct {
+	PollIntervalSec float64 `toml:"poll_interval_sec"`
+}
+
 // tomlDaemonConfig is the raw TOML representation, using seconds for duration
 // fields so the config file stays human-readable.
 type tomlDaemonConfig struct {
-	PollIntervalSec          float64             `toml:"poll_interval_sec"`
-	Repos                    []string            `toml:"repos"`
-	AutoAdvance              *bool               `toml:"auto_advance"`
-	AutoAdvanceWaves         *bool               `toml:"auto_advance_waves"`
-	AutoReviewFix            *bool               `toml:"auto_review_fix"`
-	MaxReviewFixCycles       int                 `toml:"max_review_fix_cycles"`
-	AutoReadinessReview      *bool               `toml:"auto_readiness_review"`
-	ReadinessSelfFixMaxLines *int                `toml:"readiness_self_fix_max_lines"`
-	ReadinessMaxVerifyCycles *int                `toml:"readiness_max_verify_cycles"`
-	SocketPath               string              `toml:"socket_path"`
-	PRMonitor                tomlPRMonitorConfig `toml:"pr_monitor"`
+	PollIntervalSec          float64                        `toml:"poll_interval_sec"`
+	Repos                    []string                       `toml:"repos"`
+	AutoAdvance              *bool                          `toml:"auto_advance"`
+	AutoAdvanceWaves         *bool                          `toml:"auto_advance_waves"`
+	AutoReviewFix            *bool                          `toml:"auto_review_fix"`
+	MaxReviewFixCycles       int                            `toml:"max_review_fix_cycles"`
+	AutoReadinessReview      *bool                          `toml:"auto_readiness_review"`
+	ReadinessSelfFixMaxLines *int                           `toml:"readiness_self_fix_max_lines"`
+	ReadinessMaxVerifyCycles *int                           `toml:"readiness_max_verify_cycles"`
+	SocketPath               string                         `toml:"socket_path"`
+	PRMonitor                tomlPRMonitorConfig            `toml:"pr_monitor"`
+	LinearTriggerMonitor     tomlLinearTriggerMonitorConfig `toml:"linear_trigger_monitor"`
 }
 
 // defaultDaemonConfig returns a DaemonConfig populated with sensible defaults.
@@ -102,6 +117,9 @@ func defaultDaemonConfig() *DaemonConfig {
 			Enabled:      false,
 			PollInterval: 60 * time.Second,
 			Reactions:    []string{"eyes"},
+		},
+		LinearTriggerMonitor: LinearTriggerMonitorConfig{
+			PollInterval: 60 * time.Second,
 		},
 	}
 }
@@ -186,6 +204,9 @@ func LoadDaemonConfig(path string) (*DaemonConfig, error) {
 			reactions = []string{"eyes"}
 		}
 		cfg.PRMonitor.Reactions = reactions
+	}
+	if tc.LinearTriggerMonitor.PollIntervalSec > 0 {
+		cfg.LinearTriggerMonitor.PollInterval = time.Duration(tc.LinearTriggerMonitor.PollIntervalSec * float64(time.Second))
 	}
 
 	return cfg, nil

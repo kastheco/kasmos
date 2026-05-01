@@ -69,7 +69,7 @@ kas daemon stop
 
 ### status
 
-Show the current daemon status: registered repos, active plans per repo.
+Show the current daemon status: registered repos, active plans per repo, and the current repo's Linear trigger monitor summary when the command is run inside a kasmos repo.
 
 ```
 kas daemon status [--socket <path>]
@@ -80,6 +80,18 @@ kas daemon status
 ```
 
 Connects to the daemon control socket and calls `GET /v1/status`. Prints `daemon not running` if the socket is unreachable.
+
+When the current repo has `[linear.triggers]` enabled, `kas daemon status` also reads the local task store and prints a 24-hour Linear trigger summary:
+
+```text
+linear triggers: enabled (last poll 12s ago, 3 dispatched, 1 rejected, 0 errors)
+```
+
+Without repo-local Linear triggers config, the extra line is:
+
+```text
+linear triggers: disabled
+```
 
 The daemon also serves instance metadata to the tui and live-preview bridge on `GET /v1/repos/{project}/instances`. Daemon-spawned rows include `execution_mode`, `sdk_speed_tier`, `skip_permissions`, and `resource_profile` so clients can resume or display sdk/tmux sessions using the same resolved profile defaults and resource-control profile the daemon used when spawning them. `resource_profile` is omitted for the normal/no-op resource profile. Older daemons omit `skip_permissions`; newer clients treat that omission as the legacy daemon default (`true`, bypass permissions).
 
@@ -174,6 +186,11 @@ enabled = false
 poll_interval_sec = 60.0
 # GitHub reactions to add to unprocessed review comments
 reactions = ["eyes"]
+
+[linear_trigger_monitor]
+# daemon-level default for Linear trigger polling (seconds)
+# repo-local [linear.triggers].poll_interval overrides this value
+poll_interval_sec = 60.0
 ```
 
 ## systemd service example

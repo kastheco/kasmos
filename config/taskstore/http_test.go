@@ -316,6 +316,86 @@ func TestHTTPStore_PRReviews_MarkNotFound(t *testing.T) {
 	assert.Contains(t, err.Error(), "not found")
 }
 
+func TestHTTPStore_LinearTriggers_RoundTrip(t *testing.T) {
+	backend, err := taskstore.NewSQLiteStore(":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, backend.Close()) })
+	srv := httptest.NewServer(taskstore.NewHandler(backend))
+	t.Cleanup(srv.Close)
+
+	client := taskstore.NewHTTPStore(srv.URL, "proj")
+	detectedAt := time.Date(2026, 4, 30, 10, 0, 0, 0, time.UTC)
+	entry := taskstore.LinearTriggerEntry{
+		LinearIssueID:    "lin-1",
+		LinearIdentifier: "KAS-1",
+		CommandKind:      "plan",
+		SourceKind:       "comment",
+		SourceID:         "comment-1",
+		ActorID:          "actor-1",
+		ActorEmail:       "agent@example.com",
+		TaskArg:          "task-a",
+		DetectedAt:       detectedAt,
+	}
+
+	queued, err := client.EnqueueLinearTrigger("proj", entry)
+	require.NoError(t, err)
+	assert.True(t, queued)
+	queued, err = client.EnqueueLinearTrigger("proj", entry)
+	require.NoError(t, err)
+	assert.False(t, queued)
+
+	triggers, err := client.ListUnprocessedLinearTriggers("proj", 10)
+	require.NoError(t, err)
+	require.Len(t, triggers, 1)
+	assert.Equal(t, "lin-1", triggers[0].LinearIssueID)
+	assert.Equal(t, detectedAt, triggers[0].DetectedAt)
+
+	require.NoError(t, client.MarkLinearTriggerAck("proj", triggers[0].ID, "ack_failed"))
+	require.NoError(t, client.MarkLinearTriggerRejected("proj", triggers[0].ID, "not allowed"))
+	triggers, err = client.ListUnprocessedLinearTriggers("proj", 10)
+	require.NoError(t, err)
+	assert.Empty(t, triggers)
+
+	for _, tc := range []struct {
+		name string
+		mark func(int64) error
+	}{
+		{name: "dispatched", mark: func(id int64) error { return client.MarkLinearTriggerDispatched("proj", id, "task-a") }},
+		{name: "ignored", mark: func(id int64) error { return client.MarkLinearTriggerIgnored("proj", id, "duplicate") }},
+		{name: "failed", mark: func(id int64) error { return client.MarkLinearTriggerFailed("proj", id, "boom") }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e := entry
+			e.SourceID = tc.name
+			queued, err := client.EnqueueLinearTrigger("proj", e)
+			require.NoError(t, err)
+			require.True(t, queued)
+			pending, err := client.ListUnprocessedLinearTriggers("proj", 10)
+			require.NoError(t, err)
+			var id int64
+			for _, candidate := range pending {
+				if candidate.SourceID == tc.name {
+					id = candidate.ID
+				}
+			}
+			require.NotZero(t, id)
+			require.NoError(t, tc.mark(id))
+		})
+	}
+
+	unknown, err := client.LastSeenCommentAt("proj", "lin-1")
+	require.NoError(t, err)
+	assert.True(t, unknown.IsZero())
+
+	first := detectedAt
+	second := first.Add(time.Hour)
+	require.NoError(t, client.SetLastSeenCommentAt("proj", "lin-1", second))
+	require.NoError(t, client.SetLastSeenCommentAt("proj", "lin-1", first))
+	got, err := client.LastSeenCommentAt("proj", "lin-1")
+	require.NoError(t, err)
+	assert.Equal(t, second, got)
+}
+
 func TestHTTPStore_VerifyingAtRoundTrip(t *testing.T) {
 	backend := newTestStore(t)
 	srv := httptest.NewServer(taskstore.NewHandler(backend))

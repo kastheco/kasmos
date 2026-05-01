@@ -21,7 +21,9 @@ func NewHandler(logger Logger) http.Handler {
 
 		q := r.URL.Query()
 
-		// Collect repeated ?kind= values.
+		// Collect repeated ?kind= values. Event kinds are open-ended so newly
+		// added audit events, including Linear trigger lifecycle events, do not
+		// need handler allowlist changes.
 		for _, kind := range q["kind"] {
 			filter.Kinds = append(filter.Kinds, EventKind(kind))
 		}

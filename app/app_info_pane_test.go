@@ -475,6 +475,33 @@ func (f *failingSubtaskStore) MarkReviewFixerDispatched(project, filename string
 func (f *failingSubtaskStore) ListPendingReviews(project, filename string) ([]taskstore.PRReviewEntry, error) {
 	return f.inner.ListPendingReviews(project, filename)
 }
+func (f *failingSubtaskStore) EnqueueLinearTrigger(project string, e taskstore.LinearTriggerEntry) (bool, error) {
+	return f.inner.EnqueueLinearTrigger(project, e)
+}
+func (f *failingSubtaskStore) MarkLinearTriggerDispatched(project string, id int64, targetFilename string) error {
+	return f.inner.MarkLinearTriggerDispatched(project, id, targetFilename)
+}
+func (f *failingSubtaskStore) MarkLinearTriggerRejected(project string, id int64, reason string) error {
+	return f.inner.MarkLinearTriggerRejected(project, id, reason)
+}
+func (f *failingSubtaskStore) MarkLinearTriggerIgnored(project string, id int64, reason string) error {
+	return f.inner.MarkLinearTriggerIgnored(project, id, reason)
+}
+func (f *failingSubtaskStore) MarkLinearTriggerFailed(project string, id int64, reason string) error {
+	return f.inner.MarkLinearTriggerFailed(project, id, reason)
+}
+func (f *failingSubtaskStore) MarkLinearTriggerAck(project string, id int64, ackState string) error {
+	return f.inner.MarkLinearTriggerAck(project, id, ackState)
+}
+func (f *failingSubtaskStore) ListUnprocessedLinearTriggers(project string, limit int) ([]taskstore.LinearTriggerEntry, error) {
+	return f.inner.ListUnprocessedLinearTriggers(project, limit)
+}
+func (f *failingSubtaskStore) LastSeenCommentAt(project, linearIssueID string) (time.Time, error) {
+	return f.inner.LastSeenCommentAt(project, linearIssueID)
+}
+func (f *failingSubtaskStore) SetLastSeenCommentAt(project, linearIssueID string, at time.Time) error {
+	return f.inner.SetLastSeenCommentAt(project, linearIssueID, at)
+}
 func (f *failingSubtaskStore) Ping() error  { return f.inner.Ping() }
 func (f *failingSubtaskStore) Close() error { return f.inner.Close() }
 

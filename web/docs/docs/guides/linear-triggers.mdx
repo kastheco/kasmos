@@ -1,0 +1,145 @@
+---
+title: "linear triggers"
+---
+
+# linear triggers
+
+linear triggers are the inbound counterpart to [linear receipts](./linear-receipts.mdx). receipts publish kasmos progress out to Linear; triggers let explicit Linear comments and configured labels ask kasmos to create, link, plan, or start tasks through the normal kasmos FSM.
+
+## prerequisites
+
+linear triggers require:
+
+- the phase-1 [linear linking](./linear-linking.mdx) setup for explicit task-to-issue links.
+- `KASMOS_LINEAR_API_KEY` or `LINEAR_API_KEY` with permission to read issues and comments, write comments, and manage the configured trigger labels.
+- the daemon running under systemd so the Linear trigger monitor can poll continuously.
+
+use `kas linear discover labels` to list canonical Linear label UUIDs before writing trigger config. paste the UUID, not the display name.
+
+## safety model
+
+triggers are disabled by default. enabling `[linear.triggers]` still requires at least one route, and route matching is based on the Linear team, optional project, and optional required label UUIDs.
+
+mutating verbs require an actor allowlist. `/kasmos status` and `/kasmos help` are read-only and can be made public with `allow_public_status = true`; `link`, `create`, `plan`, and `start` always require an allowed actor when enabled.
+
+kasmos remains the lifecycle source of truth. accepted `plan` and `start` triggers emit the same gateway FSM events as other kasmos surfaces, so receipts, audit entries, and task state all follow the normal path.
+
+## comment commands
+
+comment commands must use the strict canonical form. the command must start at the beginning of the first non-empty comment line after leading whitespace is trimmed; ordinary comments and vague mentions are ignored.
+
+```text
+/kasmos help
+/kasmos status
+/kasmos link task-file
+/kasmos create
+/kasmos create task-file
+/kasmos plan
+/kasmos plan task-file
+/kasmos start
+```
+
+recognised verbs are `help`, `status`, `link`, `create`, `plan`, and `start`.
+
+## label triggers
+
+labels are opt-in and use canonical UUIDs from `kas linear discover labels`:
+
+| label purpose | suggested label name | behavior |
+|---------------|----------------------|----------|
+| `create` | `kasmos-ready` | create a routed kasmos task from the Linear issue. |
+| `plan` | `kasmos-plan` | create the task when needed, then request planning. |
+| `start` | `agent-ready` | allow `/kasmos start` when `require_start_label = true`; label-only start also requires `allow_label_start = true`. |
+| `ack` | any operator label | optional label applied after a successful create or plan label trigger. |
+
+operators must configure the Linear label UUIDs, not `kasmos-ready`, `kasmos-plan`, or `agent-ready` by name.
+
+## minimal config
+
+```toml
+[linear.triggers]
+enabled = true
+poll_interval = "1m"
+lookback = "15m"
+max_issues_per_poll = 100
+verbs = ["help", "status", "link", "create", "plan", "start"]
+ack_comment_body = "kasmos trigger ack"
+
+[[linear.triggers.routes]]
+team_id = "6f24259a-1f9f-4c5b-9f14-9dff1f6b2b21"
+project_id = "a82f4c97-3e15-47ef-9a7a-2b04f4e2a3dd"
+require_labels = ["4d1a5ec7-3e1d-4f2a-9a66-8a5e64f0d721"]
+topic = "linear"
+branch_prefix = "linear/"
+
+[linear.triggers.labels]
+create = "0a5bf2d7-b581-4183-9e28-3fef63d47a18"
+plan = "c9170d93-68cf-4370-a7ea-6503a1dd30be"
+start = "89c8c2bf-d118-42e0-8f3d-85eeb7d775db"
+ack = "a8a63a51-5042-4697-a5dd-6a3e342fffd7"
+
+[linear.triggers.actor]
+allowed_user_ids = ["a7c74ca9-8a18-4f62-a784-76ec43a5cb87"]
+allowed_user_emails = ["ops@example.com"]
+allow_public_status = true
+
+[linear.triggers.start_guard]
+require_start_label = true
+allow_label_start = false
+```
+
+## actor allowlist
+
+Linear `User.id` is the canonical actor identity. `allowed_user_ids` is the stable allowlist.
+
+`allowed_user_emails` is an operator-friendly alias. when a matching email is seen, kasmos resolves it to the current `User.id` and caches that identity for later authorization. use email aliases for readability, but prefer ids for long-lived production config.
+
+## create, plan, and start
+
+`create` creates and links a kasmos task from the Linear issue. use `/kasmos create task-file` to force the task filename; omit the argument to let kasmos derive one from the issue.
+
+`plan` creates the linked task when needed, then emits `plan_start`. it is for issues that are ready to become kasmos planning work.
+
+`start` does not create or plan. it requires an already linked task whose plan content is present, parseable, and ready for implementation. when `require_start_label = true`, the linked issue must also carry the configured `labels.start` UUID, usually the `agent-ready` label.
+
+## duplicate protection
+
+every detected trigger is normalized into a `linear_triggers` row with a unique key on `(project, linear_issue_id, command_kind, source_id)`. replayed polls, daemon restarts, and repeated delivery of the same comment or label source therefore enqueue the trigger at most once.
+
+the per-issue `last_seen_comment_at` cursor bounds comment reads after the first lookback window, so polling cost stays tied to new comments rather than the full issue history.
+
+## audit lookup
+
+linear triggers write audit rows for received, dispatched, rejected, ignored, and acknowledgement-failure paths:
+
+- `task_linear_trigger_received`
+- `task_linear_trigger_dispatched`
+- `task_linear_trigger_rejected`
+- `task_linear_trigger_ignored`
+- `task_linear_trigger_comment_failed`
+
+to inspect rejected triggers:
+
+```sh
+curl "http://localhost:7433/v1/projects/kasmos/audit-events?kind=task_linear_trigger_rejected"
+```
+
+use the rejection audit path when a Linear comment appears to have done nothing. the formatter includes the parsed issue, command, reason, and operator hint when kasmos can safely explain the rejection.
+
+## receipts versus triggers
+
+[linear receipts](./linear-receipts.mdx) are outbound: kasmos posts comments and optional workflow-state updates after kasmos lifecycle events.
+
+linear triggers are inbound: Linear comments or configured labels ask kasmos to perform guarded work. a Linear-driven `/kasmos start` still emits `implement_start` through the FSM, so the standard receipt comment is posted when receipts are enabled.
+
+## troubleshooting
+
+| symptom | likely cause | what to check |
+|---------|--------------|---------------|
+| no trigger is processed | missing `KASMOS_LINEAR_API_KEY` or `LINEAR_API_KEY`, or the daemon is not running | confirm the systemd unit environment and daemon status. |
+| trigger is rejected with `route_missing` | no `[[linear.triggers.routes]]` entry matched the issue team, project, and required labels | compare the issue's Linear UUIDs with the configured route. |
+| trigger is rejected with `route_ambiguous` | more than one route matched | make one route more specific with `project_id` or `require_labels`. |
+| trigger is rejected as unauthorized | the actor is not in `allowed_user_ids` or `allowed_user_emails` | add the canonical `User.id` or resolvable email alias. |
+| link or create fails with `duplicate_link` | another active task already links the same Linear issue id | inspect existing linked tasks before forcing a different workflow. |
+| `/kasmos start` fails with `missing_start_label` | `require_start_label = true` and the issue lacks the configured start label | add the `agent-ready` label UUID configured as `labels.start`. |
+| `/kasmos start` fails with `missing_plan_content` or `unparseable_plan` | the linked task has no parseable kasmos wave/task markdown | fix the task content, then retry the strict command. |

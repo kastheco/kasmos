@@ -651,6 +651,172 @@ func NewHandler(store Store) http.Handler {
 		w.WriteHeader(http.StatusOK)
 	})
 
+	mux.HandleFunc("POST /v1/projects/{project}/linear-triggers", func(w http.ResponseWriter, r *http.Request) {
+		project := r.PathValue("project")
+		var entry LinearTriggerEntry
+		if err := json.NewDecoder(r.Body).Decode(&entry); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+			return
+		}
+		queued, err := store.EnqueueLinearTrigger(project, entry)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusCreated, map[string]bool{"queued": queued})
+	})
+
+	mux.HandleFunc("GET /v1/projects/{project}/linear-triggers", func(w http.ResponseWriter, r *http.Request) {
+		project := r.PathValue("project")
+		if r.URL.Query().Get("status") != "unprocessed" {
+			writeError(w, http.StatusBadRequest, "status must be unprocessed")
+			return
+		}
+		limit := 100
+		if raw := r.URL.Query().Get("limit"); raw != "" {
+			parsed, err := strconv.Atoi(raw)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, "invalid limit: "+err.Error())
+				return
+			}
+			limit = parsed
+		}
+		entries, err := store.ListUnprocessedLinearTriggers(project, limit)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, entries)
+	})
+
+	mux.HandleFunc("POST /v1/projects/{project}/linear-triggers/{id}/dispatched", func(w http.ResponseWriter, r *http.Request) {
+		project := r.PathValue("project")
+		id, ok := parseLinearTriggerID(w, r)
+		if !ok {
+			return
+		}
+		var req struct {
+			TargetFilename string `json:"target_filename"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+			return
+		}
+		if err := store.MarkLinearTriggerDispatched(project, id, req.TargetFilename); err != nil {
+			writeLinearTriggerActionError(w, err)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+
+	mux.HandleFunc("POST /v1/projects/{project}/linear-triggers/{id}/rejected", func(w http.ResponseWriter, r *http.Request) {
+		project := r.PathValue("project")
+		id, ok := parseLinearTriggerID(w, r)
+		if !ok {
+			return
+		}
+		var req struct {
+			Reason string `json:"reason"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+			return
+		}
+		if err := store.MarkLinearTriggerRejected(project, id, req.Reason); err != nil {
+			writeLinearTriggerActionError(w, err)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+
+	mux.HandleFunc("POST /v1/projects/{project}/linear-triggers/{id}/ignored", func(w http.ResponseWriter, r *http.Request) {
+		project := r.PathValue("project")
+		id, ok := parseLinearTriggerID(w, r)
+		if !ok {
+			return
+		}
+		var req struct {
+			Reason string `json:"reason"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+			return
+		}
+		if err := store.MarkLinearTriggerIgnored(project, id, req.Reason); err != nil {
+			writeLinearTriggerActionError(w, err)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+
+	mux.HandleFunc("POST /v1/projects/{project}/linear-triggers/{id}/failed", func(w http.ResponseWriter, r *http.Request) {
+		project := r.PathValue("project")
+		id, ok := parseLinearTriggerID(w, r)
+		if !ok {
+			return
+		}
+		var req struct {
+			Reason string `json:"reason"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+			return
+		}
+		if err := store.MarkLinearTriggerFailed(project, id, req.Reason); err != nil {
+			writeLinearTriggerActionError(w, err)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+
+	mux.HandleFunc("POST /v1/projects/{project}/linear-triggers/{id}/ack", func(w http.ResponseWriter, r *http.Request) {
+		project := r.PathValue("project")
+		id, ok := parseLinearTriggerID(w, r)
+		if !ok {
+			return
+		}
+		var req struct {
+			AckState string `json:"ack_state"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+			return
+		}
+		if err := store.MarkLinearTriggerAck(project, id, req.AckState); err != nil {
+			writeLinearTriggerActionError(w, err)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+
+	mux.HandleFunc("GET /v1/projects/{project}/linear-comment-cursor/{issueID}", func(w http.ResponseWriter, r *http.Request) {
+		project := r.PathValue("project")
+		issueID := r.PathValue("issueID")
+		lastSeenAt, err := store.LastSeenCommentAt(project, issueID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]time.Time{"last_seen_at": lastSeenAt})
+	})
+
+	mux.HandleFunc("PUT /v1/projects/{project}/linear-comment-cursor/{issueID}", func(w http.ResponseWriter, r *http.Request) {
+		project := r.PathValue("project")
+		issueID := r.PathValue("issueID")
+		var req struct {
+			LastSeenAt time.Time `json:"last_seen_at"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+			return
+		}
+		if err := store.SetLastSeenCommentAt(project, issueID, req.LastSeenAt); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+
 	// List topics
 	mux.HandleFunc("GET /v1/projects/{project}/topics", func(w http.ResponseWriter, r *http.Request) {
 		project := r.PathValue("project")
@@ -693,6 +859,23 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 // writeError writes a JSON error response with the given status code and message.
 func writeError(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, map[string]string{"error": msg})
+}
+
+func parseLinearTriggerID(w http.ResponseWriter, r *http.Request) (int64, bool) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid linear trigger ID: "+err.Error())
+		return 0, false
+	}
+	return id, true
+}
+
+func writeLinearTriggerActionError(w http.ResponseWriter, err error) {
+	if isNotFound(err) {
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	writeError(w, http.StatusInternalServerError, err.Error())
 }
 
 // isNotFound returns true if the error indicates a missing resource.

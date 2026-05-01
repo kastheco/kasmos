@@ -2,7 +2,9 @@ package linear
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 )
 
@@ -34,11 +36,19 @@ const (
 	}`
 
 	mutationCommentCreate = `mutation CommentCreate($input: CommentCreateInput!) {
-		commentCreate(input: $input) {
-			success
-			comment { id url body }
-		}
-	}`
+			commentCreate(input: $input) {
+				success
+				comment { id url body }
+			}
+		}`
+
+	mutationCommentReactionCreate = `mutation CommentReactionCreate($input: ReactionCreateInput!) {
+			reactionCreate(input: $input) {
+				success
+				reaction { id emoji }
+				userErrors { code message }
+			}
+		}`
 )
 
 // CreateIssue creates a Linear issue. Title and TeamID are required.
@@ -131,6 +141,15 @@ func (c *Client) UpdateIssue(ctx context.Context, issueID string, in UpdateIssue
 	return data.IssueUpdate.Issue, nil
 }
 
+// RemoveLabelFromIssue removes labelID from issueID by issuing an IssueUpdate
+// with the surviving label list. surviveLabels is the caller-computed set of
+// remaining UUIDs; an empty list is permitted (Linear accepts a label clear).
+func (c *Client) RemoveLabelFromIssue(ctx context.Context, issueID string, surviveLabels []string) error {
+	in := UpdateIssueInput{LabelIDs: &surviveLabels}
+	_, err := c.UpdateIssue(ctx, issueID, in)
+	return err
+}
+
 // CreateComment appends a comment to an issue. issueID may be a UUID or identifier.
 func (c *Client) CreateComment(ctx context.Context, issueID, body string) (*Comment, error) {
 	if strings.TrimSpace(issueID) == "" {
@@ -153,4 +172,57 @@ func (c *Client) CreateComment(ctx context.Context, issueID, body string) (*Comm
 		return nil, &MutationFailedError{OperationName: "commentCreate"}
 	}
 	return data.CommentCreate.Comment, nil
+}
+
+// CreateCommentReaction adds emoji as a reaction to commentID. It returns a
+// *ReactionsUnsupportedError when Linear reports FEATURE_NOT_ACCESSIBLE or HTTP
+// 403 so callers can fall back to a reply comment.
+func (c *Client) CreateCommentReaction(ctx context.Context, commentID, emoji string) error {
+	if strings.TrimSpace(commentID) == "" {
+		return fmt.Errorf("linear: CreateCommentReaction: commentID required")
+	}
+	if strings.TrimSpace(emoji) == "" {
+		return fmt.Errorf("linear: CreateCommentReaction: emoji required")
+	}
+	input := map[string]interface{}{"commentId": commentID, "emoji": emoji}
+	var data struct {
+		ReactionCreate struct {
+			Success    bool `json:"success"`
+			UserErrors []struct {
+				Code    string `json:"code"`
+				Message string `json:"message"`
+			} `json:"userErrors"`
+		} `json:"reactionCreate"`
+	}
+	if err := c.Do(ctx, mutationCommentReactionCreate, map[string]interface{}{"input": input}, &data); err != nil {
+		if unsupportedReactionError(err) {
+			return &ReactionsUnsupportedError{Message: err.Error()}
+		}
+		return err
+	}
+	for _, userErr := range data.ReactionCreate.UserErrors {
+		if userErr.Code == "FEATURE_NOT_ACCESSIBLE" {
+			return &ReactionsUnsupportedError{Message: userErr.Message}
+		}
+	}
+	if !data.ReactionCreate.Success {
+		return &MutationFailedError{OperationName: "reactionCreate"}
+	}
+	return nil
+}
+
+func unsupportedReactionError(err error) bool {
+	var httpErr *HTTPError
+	if errors.As(err, &httpErr) && httpErr.StatusCode == http.StatusForbidden {
+		return true
+	}
+	var gqlErrs *GraphQLErrors
+	if errors.As(err, &gqlErrs) {
+		for _, gqlErr := range gqlErrs.Errors {
+			if gqlErr.Code == "FEATURE_NOT_ACCESSIBLE" {
+				return true
+			}
+		}
+	}
+	return false
 }

@@ -41,25 +41,26 @@ import (
 // repositories for signal files and executes the resulting actions via the
 // configured AgentSpawner.
 type Daemon struct {
-	cfg             *DaemonConfig
-	repos           *RepoManager
-	spawner         *TmuxSpawner
-	logger          *slog.Logger
-	pidLock         *PIDLock
-	broadcaster     *api.EventBroadcaster
-	prMonitor       *PRMonitor
-	pushBranch      func(*session.Instance) error
-	killAgent       func(repoPath, planFile, agentType string) error
-	spawnPlanner    func(context.Context, loop.SpawnOpts) error
-	spawnReviewer   func(context.Context, loop.SpawnOpts) error
-	spawnCoder      func(context.Context, loop.SpawnOpts) error
-	spawnElaborator func(context.Context, loop.SpawnOpts) error
-	spawnFixer      func(context.Context, loop.SpawnOpts) error
-	spawnMaster     func(context.Context, loop.SpawnOpts) error
-	spawnWaveTask   func(context.Context, loop.SpawnOpts, taskparser.Task, string, int, int) error
-	killWaveAgents  func(repoPath, planFile string, wave int) error
-	reapSDKOrphan   func(project, instanceTitle, program string) error
-	createPR        func(RepoEntry, string, string) error
+	cfg                  *DaemonConfig
+	repos                *RepoManager
+	spawner              *TmuxSpawner
+	logger               *slog.Logger
+	pidLock              *PIDLock
+	broadcaster          *api.EventBroadcaster
+	prMonitor            *PRMonitor
+	linearTriggerMonitor *LinearTriggerMonitor
+	pushBranch           func(*session.Instance) error
+	killAgent            func(repoPath, planFile, agentType string) error
+	spawnPlanner         func(context.Context, loop.SpawnOpts) error
+	spawnReviewer        func(context.Context, loop.SpawnOpts) error
+	spawnCoder           func(context.Context, loop.SpawnOpts) error
+	spawnElaborator      func(context.Context, loop.SpawnOpts) error
+	spawnFixer           func(context.Context, loop.SpawnOpts) error
+	spawnMaster          func(context.Context, loop.SpawnOpts) error
+	spawnWaveTask        func(context.Context, loop.SpawnOpts, taskparser.Task, string, int, int) error
+	killWaveAgents       func(repoPath, planFile string, wave int) error
+	reapSDKOrphan        func(project, instanceTitle, program string) error
+	createPR             func(RepoEntry, string, string) error
 	// spawnSolo is an injectable seam for tests to override standalone spawn behaviour
 	// without needing a real agent process.
 	spawnSolo               func(context.Context, SpawnSoloOpts) error
@@ -601,6 +602,12 @@ func NewDaemon(cfg *DaemonConfig) (*Daemon, error) {
 	if cfg.PRMonitor.Enabled {
 		d.prMonitor = NewPRMonitor(cfg.PRMonitor, cfg.MaxReviewFixCycles, repos, d.broadcaster, logger, d.executeAction)
 	}
+	for _, repo := range repos.List() {
+		if repo.LinearTriggerConfig.Enabled {
+			d.linearTriggerMonitor = NewLinearTriggerMonitor(cfg.LinearTriggerMonitor, repos, d.broadcaster, logger)
+			break
+		}
+	}
 
 	return d, nil
 }
@@ -975,6 +982,17 @@ func (d *Daemon) Run(ctx context.Context) error {
 				if ctx.Err() == nil {
 					// Monitor exited while context is still live — log as a warning.
 					d.logger.Warn("pr monitor exited unexpectedly", "err", err)
+				}
+			}
+		}()
+	}
+	if d.linearTriggerMonitor != nil {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := d.linearTriggerMonitor.Run(ctx); err != nil {
+				if ctx.Err() == nil {
+					d.logger.Warn("linear trigger monitor exited unexpectedly", "err", err)
 				}
 			}
 		}()

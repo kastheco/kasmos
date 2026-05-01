@@ -31,6 +31,7 @@ func NewRootCmd() *cobra.Command {
 		Short: "kas - Manage multiple AI agents",
 	}
 	root.AddCommand(NewTaskCmd())
+	root.AddCommand(NewLinearCmd())
 	root.AddCommand(NewServeCmd())
 	root.AddCommand(NewMCPCmd())
 	root.AddCommand(NewBrowserCmd())

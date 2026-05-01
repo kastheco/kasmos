@@ -2,6 +2,7 @@ package config
 
 import (
 	"github.com/kastheco/kasmos/config/linearreceipt"
+	"github.com/kastheco/kasmos/config/lineartrigger"
 	"github.com/kastheco/kasmos/config/taskfsm"
 	"github.com/kastheco/kasmos/log"
 	"os"
@@ -743,6 +744,31 @@ func TestConfigFromTOML_LinearReceipts(t *testing.T) {
 
 	cfg := configFromTOML(result)
 	assert.Equal(t, result.LinearReceipts, cfg.LinearReceipts)
+}
+
+func TestConfigFromTOML_LinearTriggers(t *testing.T) {
+	result := &TOMLConfigResult{
+		Profiles:   map[string]AgentProfile{},
+		PhaseRoles: map[string]string{},
+		LinearTriggers: lineartrigger.Config{
+			Enabled:      true,
+			PollInterval: 30 * time.Second,
+			Routes: []lineartrigger.Route{{
+				TeamID: "team-1",
+				Topic:  "eng",
+			}},
+			Verbs: map[lineartrigger.Verb]bool{
+				lineartrigger.VerbStatus: true,
+			},
+			Actor: lineartrigger.ActorPolicy{AllowPublicStatus: true},
+		},
+	}
+
+	cfg := configFromTOML(result)
+	assert.Equal(t, result.LinearTriggers, cfg.LinearTriggers)
+
+	tc := configToTOML(cfg)
+	assert.Equal(t, lineartrigger.ToTOML(result.LinearTriggers), tc.Linear.Triggers)
 }
 
 func intPtr(i int) *int { return &i }

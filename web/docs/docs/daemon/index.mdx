@@ -15,6 +15,8 @@ at its core the daemon is a poll loop with four concerns, executed in this order
 3. **action dispatch** — each claimed signal is fed through a per-repo `loop.Processor` which produces typed `Action` values (spawn coder, spawn reviewer, advance wave, etc.), then executes those actions via the `TmuxSpawner`.
 4. **lifecycle advance** — the daemon monitors running tmux sessions for completion, automatically pushes branches, transitions the fsm, and spawns the next agent role.
 
+optional daemon goroutines run beside that core loop. the pr monitor polls github review state when `[pr_monitor].enabled = true`; the linear trigger monitor polls configured Linear labels and `/kasmos ...` comments only for repos whose `.kasmos/config.toml` enables `[linear.triggers]`.
+
 for agents, the primary way to emit signals is mcp `signal_create`, which writes directly to the shared gateway. `kas signal emit` is the operator and cli fallback. the filesystem bridge (step 1) exists for backward compatibility — do not rely on manually writing sentinel files in new workflows.
 
 the daemon exposes a unix domain socket control api so `kas daemon status`, `add`, and `remove` can reach it without restart.
@@ -31,6 +33,8 @@ when the daemon spawns an agent, it resolves that role's `[agents.<role>].permis
 
 **pr review automation** — the optional pr monitor goroutine polls open pull requests for reviewer feedback and dispatches fixer agents automatically.
 
+**Linear trigger automation** — the optional linear trigger monitor lets allowlisted Linear users drive guarded `create`, `plan`, and `start` requests from configured labels or strict `/kasmos ...` comments. see [linear triggers](../guides/linear-triggers.mdx) for the repo-local safety model.
+
 ## edge cases
 
 - **no daemon** — signals emitted into the db (via `kas signal emit`) remain `pending` indefinitely. nothing processes them until the daemon starts.
@@ -45,3 +49,4 @@ when the daemon spawns an agent, it resolves that role's `[agents.<role>].permis
 - [signals](./signals.mdx) — filesystem and db-backed signal paths
 - [multi-repo](./multi-repo.mdx) — repo registration rules
 - [pr monitor](./pr-monitor.mdx) — automated pr review handling
+- [linear triggers](../guides/linear-triggers.mdx) — guarded Linear-to-kasmos task starts

@@ -154,6 +154,21 @@ func (s *HTTPStore) prReviewFixerDispatchedURL(project, filename string, reviewI
 	return fmt.Sprintf("%s/v1/projects/%s/tasks/%s/pr-reviews/%d/fixer-dispatched", s.baseURL, url.PathEscape(project), url.PathEscape(filename), reviewID)
 }
 
+func (s *HTTPStore) linearTriggersURL(project string) string {
+	project = s.resolveProject(project)
+	return fmt.Sprintf("%s/v1/projects/%s/linear-triggers", s.baseURL, url.PathEscape(project))
+}
+
+func (s *HTTPStore) linearTriggerActionURL(project string, id int64, action string) string {
+	project = s.resolveProject(project)
+	return fmt.Sprintf("%s/v1/projects/%s/linear-triggers/%d/%s", s.baseURL, url.PathEscape(project), id, action)
+}
+
+func (s *HTTPStore) linearCommentCursorURL(project, issueID string) string {
+	project = s.resolveProject(project)
+	return fmt.Sprintf("%s/v1/projects/%s/linear-comment-cursor/%s", s.baseURL, url.PathEscape(project), url.PathEscape(issueID))
+}
+
 // topicURL builds the base URL for a project's topics endpoint.
 func (s *HTTPStore) topicURL(project string) string {
 	project = s.resolveProject(project)
@@ -1023,6 +1038,161 @@ func (s *HTTPStore) ListPendingReviews(project, filename string) ([]PRReviewEntr
 		return nil, fmt.Errorf("task store: decode pr reviews: %w", err)
 	}
 	return entries, nil
+}
+
+// EnqueueLinearTrigger records an inbound Linear trigger in the remote store.
+func (s *HTTPStore) EnqueueLinearTrigger(project string, e LinearTriggerEntry) (bool, error) {
+	body, err := json.Marshal(e)
+	if err != nil {
+		return false, fmt.Errorf("task store: marshal linear trigger: %w", err)
+	}
+	req, err := http.NewRequest(http.MethodPost, s.linearTriggersURL(project), bytes.NewReader(body))
+	if err != nil {
+		return false, fmt.Errorf("task store: build request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := s.do(req)
+	if err != nil {
+		return false, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		return false, decodeError(resp)
+	}
+	var payload struct {
+		Queued bool `json:"queued"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return false, fmt.Errorf("task store: decode linear trigger enqueue: %w", err)
+	}
+	return payload.Queued, nil
+}
+
+// MarkLinearTriggerDispatched marks a trigger as dispatched in the remote store.
+func (s *HTTPStore) MarkLinearTriggerDispatched(project string, id int64, targetFilename string) error {
+	return s.markLinearTrigger(project, id, "dispatched", map[string]string{"target_filename": targetFilename})
+}
+
+// MarkLinearTriggerRejected marks a trigger as rejected in the remote store.
+func (s *HTTPStore) MarkLinearTriggerRejected(project string, id int64, reason string) error {
+	return s.markLinearTrigger(project, id, "rejected", map[string]string{"reason": reason})
+}
+
+// MarkLinearTriggerIgnored marks a trigger as ignored in the remote store.
+func (s *HTTPStore) MarkLinearTriggerIgnored(project string, id int64, reason string) error {
+	return s.markLinearTrigger(project, id, "ignored", map[string]string{"reason": reason})
+}
+
+// MarkLinearTriggerFailed marks a trigger as failed in the remote store.
+func (s *HTTPStore) MarkLinearTriggerFailed(project string, id int64, reason string) error {
+	return s.markLinearTrigger(project, id, "failed", map[string]string{"reason": reason})
+}
+
+// MarkLinearTriggerAck records trigger acknowledgement state in the remote store.
+func (s *HTTPStore) MarkLinearTriggerAck(project string, id int64, ackState string) error {
+	return s.markLinearTrigger(project, id, "ack", map[string]string{"ack_state": ackState})
+}
+
+func (s *HTTPStore) markLinearTrigger(project string, id int64, action string, payload map[string]string) error {
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("task store: marshal linear trigger %s: %w", action, err)
+	}
+	req, err := http.NewRequest(http.MethodPost, s.linearTriggerActionURL(project, id, action), bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("task store: build request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := s.do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return newNotFoundError("task store: linear trigger not found: %d", id)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return decodeError(resp)
+	}
+	return nil
+}
+
+// ListUnprocessedLinearTriggers returns queued Linear triggers from the remote store.
+func (s *HTTPStore) ListUnprocessedLinearTriggers(project string, limit int) ([]LinearTriggerEntry, error) {
+	u, err := url.Parse(s.linearTriggersURL(project))
+	if err != nil {
+		return nil, fmt.Errorf("task store: build URL: %w", err)
+	}
+	q := u.Query()
+	q.Set("status", "unprocessed")
+	if limit > 0 {
+		q.Set("limit", fmt.Sprintf("%d", limit))
+	}
+	u.RawQuery = q.Encode()
+	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("task store: build request: %w", err)
+	}
+	resp, err := s.do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, decodeError(resp)
+	}
+	var entries []LinearTriggerEntry
+	if err := json.NewDecoder(resp.Body).Decode(&entries); err != nil {
+		return nil, fmt.Errorf("task store: decode linear triggers: %w", err)
+	}
+	return entries, nil
+}
+
+// LastSeenCommentAt returns the Linear comment cursor from the remote store.
+func (s *HTTPStore) LastSeenCommentAt(project, linearIssueID string) (time.Time, error) {
+	req, err := http.NewRequest(http.MethodGet, s.linearCommentCursorURL(project, linearIssueID), nil)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("task store: build request: %w", err)
+	}
+	resp, err := s.do(req)
+	if err != nil {
+		return time.Time{}, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return time.Time{}, decodeError(resp)
+	}
+	var payload struct {
+		LastSeenAt time.Time `json:"last_seen_at"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return time.Time{}, fmt.Errorf("task store: decode linear comment cursor: %w", err)
+	}
+	return payload.LastSeenAt, nil
+}
+
+// SetLastSeenCommentAt updates the Linear comment cursor in the remote store.
+func (s *HTTPStore) SetLastSeenCommentAt(project, linearIssueID string, at time.Time) error {
+	body, err := json.Marshal(struct {
+		LastSeenAt time.Time `json:"last_seen_at"`
+	}{LastSeenAt: at})
+	if err != nil {
+		return fmt.Errorf("task store: marshal linear comment cursor: %w", err)
+	}
+	req, err := http.NewRequest(http.MethodPut, s.linearCommentCursorURL(project, linearIssueID), bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("task store: build request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := s.do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return decodeError(resp)
+	}
+	return nil
 }
 
 // Close is a no-op for HTTPStore — the HTTP client has no persistent connection

@@ -978,6 +978,84 @@ func TestSQLiteStore_PRReviews_OrderedByReviewID(t *testing.T) {
 	assert.Equal(t, 300, pending[2].ReviewID)
 }
 
+func TestSQLiteStore_LinearTriggers_EnqueueIdempotentAndDispatch(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "taskstore.db")
+	store, err := taskstore.NewSQLiteStore(dbPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, store.Close()) })
+
+	detectedAt := time.Date(2026, 4, 30, 10, 0, 0, 0, time.UTC)
+	entry := taskstore.LinearTriggerEntry{
+		LinearIssueID:    "lin-1",
+		LinearIdentifier: "KAS-1",
+		CommandKind:      "plan",
+		SourceKind:       "comment",
+		SourceID:         "comment-1",
+		ActorID:          "actor-1",
+		ActorEmail:       "agent@example.com",
+		TaskArg:          "task-a",
+		DetectedAt:       detectedAt,
+	}
+
+	queued, err := store.EnqueueLinearTrigger("proj", entry)
+	require.NoError(t, err)
+	assert.True(t, queued)
+
+	queued, err = store.EnqueueLinearTrigger("proj", entry)
+	require.NoError(t, err)
+	assert.False(t, queued)
+
+	triggers, err := store.ListUnprocessedLinearTriggers("proj", 10)
+	require.NoError(t, err)
+	require.Len(t, triggers, 1)
+	assert.Equal(t, "KAS-1", triggers[0].LinearIdentifier)
+	assert.Equal(t, detectedAt, triggers[0].DetectedAt)
+
+	require.NoError(t, store.MarkLinearTriggerDispatched("proj", triggers[0].ID, "task-a"))
+	require.NoError(t, store.MarkLinearTriggerAck("proj", triggers[0].ID, "acked"))
+
+	triggers, err = store.ListUnprocessedLinearTriggers("proj", 10)
+	require.NoError(t, err)
+	assert.Empty(t, triggers)
+
+	db, err := sql.Open("sqlite", dbPath)
+	require.NoError(t, err)
+	defer db.Close()
+	var count, processed int
+	var outcome, targetFilename, ackState string
+	require.NoError(t, db.QueryRow(`
+		SELECT count(*), max(processed), max(outcome), max(target_filename), max(ack_state)
+		FROM linear_triggers
+		WHERE project = ? AND linear_issue_id = ? AND command_kind = ? AND source_id = ?
+	`, "proj", "lin-1", "plan", "comment-1").Scan(&count, &processed, &outcome, &targetFilename, &ackState))
+	assert.Equal(t, 1, count)
+	assert.Equal(t, 1, processed)
+	assert.Equal(t, "dispatched", outcome)
+	assert.Equal(t, "task-a", targetFilename)
+	assert.Equal(t, "acked", ackState)
+
+	queued, err = store.EnqueueLinearTrigger("proj", entry)
+	require.NoError(t, err)
+	assert.False(t, queued)
+}
+
+func TestSQLiteStore_LinearCommentCursor_Monotonic(t *testing.T) {
+	store := newTestStore(t)
+
+	unknown, err := store.LastSeenCommentAt("proj", "lin-1")
+	require.NoError(t, err)
+	assert.True(t, unknown.IsZero())
+
+	first := time.Date(2026, 4, 30, 10, 0, 0, 0, time.UTC)
+	second := first.Add(time.Hour)
+	require.NoError(t, store.SetLastSeenCommentAt("proj", "lin-1", second))
+	require.NoError(t, store.SetLastSeenCommentAt("proj", "lin-1", first))
+
+	got, err := store.LastSeenCommentAt("proj", "lin-1")
+	require.NoError(t, err)
+	assert.Equal(t, second, got)
+}
+
 func TestSQLiteStore_EmptySlices(t *testing.T) {
 	store := newTestStore(t)
 

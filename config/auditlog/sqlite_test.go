@@ -100,6 +100,67 @@ func TestSQLite_LinearReceiptEventKinds(t *testing.T) {
 	assert.Equal(t, auditlog.EventTaskLinearReceiptFailed.String(), byKind[auditlog.EventTaskLinearReceiptFailed].Message)
 }
 
+func TestSQLite_LinearTriggerEventKinds(t *testing.T) {
+	logger, err := auditlog.NewSQLiteLogger(":memory:")
+	require.NoError(t, err)
+	defer logger.Close()
+
+	kinds := []auditlog.EventKind{
+		auditlog.EventTaskLinearTriggerReceived,
+		auditlog.EventTaskLinearTriggerDispatched,
+		auditlog.EventTaskLinearTriggerRejected,
+		auditlog.EventTaskLinearTriggerIgnored,
+		auditlog.EventTaskLinearTriggerCommentFailed,
+	}
+	for _, kind := range kinds {
+		detail := linearTriggerDetail(t, kind)
+		logger.Emit(auditlog.Event{
+			Kind:    kind,
+			Project: "p",
+			Message: kind.String(),
+			Detail:  detail,
+		})
+	}
+
+	events, err := logger.Query(auditlog.QueryFilter{
+		Project: "p",
+		Kinds:   kinds,
+		Limit:   10,
+	})
+	require.NoError(t, err)
+	require.Len(t, events, len(kinds))
+
+	byKind := make(map[auditlog.EventKind]auditlog.Event, len(events))
+	for _, event := range events {
+		byKind[event.Kind] = event
+	}
+	for _, kind := range kinds {
+		event, ok := byKind[kind]
+		require.True(t, ok, "missing event kind %s", kind)
+		assert.Equal(t, kind.String(), event.Message)
+
+		var detail map[string]any
+		require.NoError(t, json.Unmarshal([]byte(event.Detail), &detail))
+		assert.Equal(t, "plan", detail["command_kind"])
+		assert.Equal(t, "comment", detail["source_kind"])
+		assert.Equal(t, "comment-uuid", detail["source_id"])
+		assert.Equal(t, "ENG-123", detail["linear_identifier"])
+		assert.Equal(t, "https://linear.app/acme/issue/ENG-123/title", detail["linear_url"])
+		assert.Equal(t, "actor-uuid", detail["actor_id"])
+		assert.Equal(t, "operator@example.com", detail["actor_email"])
+		if kind == auditlog.EventTaskLinearTriggerRejected {
+			assert.Equal(t, "actor_not_allowed", detail["reason"])
+		} else {
+			assert.NotContains(t, detail, "reason")
+		}
+		if kind == auditlog.EventTaskLinearTriggerCommentFailed {
+			assert.Equal(t, "reaction unsupported", detail["error"])
+		} else {
+			assert.NotContains(t, detail, "error")
+		}
+	}
+}
+
 func TestSQLite_LinearLinkEventKinds(t *testing.T) {
 	logger, err := auditlog.NewSQLiteLogger(":memory:")
 	require.NoError(t, err)
@@ -279,4 +340,28 @@ func TestSQLiteLoggerFromDB_SharedPoolWithStore(t *testing.T) {
 	events, err := logger.Query(auditlog.QueryFilter{Project: "proj", Limit: 10})
 	require.NoError(t, err)
 	assert.Len(t, events, 2)
+}
+
+func linearTriggerDetail(t *testing.T, kind auditlog.EventKind) string {
+	t.Helper()
+
+	detail := map[string]string{
+		"command_kind":      "plan",
+		"source_kind":       "comment",
+		"source_id":         "comment-uuid",
+		"linear_identifier": "ENG-123",
+		"linear_url":        "https://linear.app/acme/issue/ENG-123/title",
+		"actor_id":          "actor-uuid",
+		"actor_email":       "operator@example.com",
+	}
+	switch kind {
+	case auditlog.EventTaskLinearTriggerRejected:
+		detail["reason"] = "actor_not_allowed"
+	case auditlog.EventTaskLinearTriggerCommentFailed:
+		detail["error"] = "reaction unsupported"
+	}
+
+	encoded, err := json.Marshal(detail)
+	require.NoError(t, err)
+	return string(encoded)
 }

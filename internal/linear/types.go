@@ -67,10 +67,12 @@ type PageOptions struct {
 
 // IssueQuery is the input shape for Issues(). Empty IDs disable that filter.
 type IssueQuery struct {
-	Page    PageOptions
-	TeamID  string
-	StateID string
-	OrderBy string // "updatedAt" (default) or "createdAt"
+	Page         PageOptions
+	TeamID       string
+	StateID      string
+	LabelID      string
+	UpdatedSince *time.Time
+	OrderBy      string // "updatedAt" (default) or "createdAt"
 }
 
 // CreateIssueInput is the input shape for CreateIssue. Title and TeamID are
@@ -99,9 +101,13 @@ type UpdateIssueInput struct {
 	LabelIDs    *[]string
 }
 
-// Comment is the minimal Linear comment shape returned from CreateComment.
+// Comment is the Linear comment shape used for trigger polling and writes.
 type Comment struct {
-	ID   string `json:"id"`
-	URL  string `json:"url"`
-	Body string `json:"body"`
+	ID        string    `json:"id"`
+	URL       string    `json:"url"`
+	Body      string    `json:"body"`
+	IssueID   string    `json:"-"` // populated by Comments() from query context
+	User      *User     `json:"user,omitempty"`
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
 }

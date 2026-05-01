@@ -63,6 +63,38 @@ const prReviewsTableMigration = `
 	)
 `
 
+const linearTriggersTableMigration = `
+	CREATE TABLE IF NOT EXISTS linear_triggers (
+		id                INTEGER PRIMARY KEY,
+		project           TEXT    NOT NULL,
+		linear_issue_id   TEXT    NOT NULL,
+		linear_identifier TEXT    NOT NULL DEFAULT '',
+		command_kind      TEXT    NOT NULL,
+		source_kind       TEXT    NOT NULL,
+		source_id         TEXT    NOT NULL,
+		actor_id          TEXT    NOT NULL DEFAULT '',
+		actor_email       TEXT    NOT NULL DEFAULT '',
+		task_arg          TEXT    NOT NULL DEFAULT '',
+		detected_at       TEXT    NOT NULL,
+		processed         INTEGER NOT NULL DEFAULT 0,
+		processed_at      TEXT    NOT NULL DEFAULT '',
+		outcome           TEXT    NOT NULL DEFAULT '',
+		rejection_reason  TEXT    NOT NULL DEFAULT '',
+		target_filename   TEXT    NOT NULL DEFAULT '',
+		ack_state         TEXT    NOT NULL DEFAULT '',
+		UNIQUE (project, linear_issue_id, command_kind, source_id)
+	)`
+
+const linearTriggersUnprocessedIndex = `CREATE INDEX IF NOT EXISTS idx_linear_triggers_unprocessed ON linear_triggers(processed, detected_at)`
+
+const linearCommentCursorTableMigration = `
+	CREATE TABLE IF NOT EXISTS linear_comment_cursor (
+		project         TEXT NOT NULL,
+		linear_issue_id TEXT NOT NULL,
+		last_seen_at    TEXT NOT NULL,
+		PRIMARY KEY (project, linear_issue_id)
+	)`
+
 // subtasksTableMigration creates the subtasks table for persisted plan subtasks.
 const subtasksTableMigration = `
 	CREATE TABLE IF NOT EXISTS subtasks (
@@ -157,6 +189,7 @@ func NewSQLiteStore(dbPath string) (*SQLiteStore, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite db: %w", err)
 	}
+	limitMemorySQLitePool(db, dbPath)
 
 	if err := runStoreMigrations(db); err != nil {
 		db.Close()
@@ -268,6 +301,15 @@ func runStoreMigrations(db *sql.DB) error {
 	}
 	if _, err := db.Exec(prReviewsTableMigration); err != nil {
 		return fmt.Errorf("create pr_reviews table: %w", err)
+	}
+	if _, err := db.Exec(linearTriggersTableMigration); err != nil {
+		return fmt.Errorf("create linear_triggers table: %w", err)
+	}
+	if _, err := db.Exec(linearTriggersUnprocessedIndex); err != nil {
+		return fmt.Errorf("create linear_triggers unprocessed index: %w", err)
+	}
+	if _, err := db.Exec(linearCommentCursorTableMigration); err != nil {
+		return fmt.Errorf("create linear_comment_cursor table: %w", err)
 	}
 	// Strip .md suffix so stored filenames are normalized. Called here so that
 	// NewSQLiteStoreFromDB also benefits when operating on a shared connection.
@@ -1212,6 +1254,218 @@ func (s *SQLiteStore) ListPendingReviews(project, filename string) ([]PRReviewEn
 		return nil, fmt.Errorf("list pending pr reviews: %w", err)
 	}
 	return entries, nil
+}
+
+// EnqueueLinearTrigger records an inbound Linear trigger if it has not already been seen.
+func (s *SQLiteStore) EnqueueLinearTrigger(project string, e LinearTriggerEntry) (bool, error) {
+	const q = `
+		INSERT INTO linear_triggers
+			(project, linear_issue_id, linear_identifier, command_kind, source_kind, source_id,
+			 actor_id, actor_email, task_arg, detected_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT (project, linear_issue_id, command_kind, source_id) DO NOTHING
+	`
+	result, err := s.db.Exec(q, project, e.LinearIssueID, e.LinearIdentifier, e.CommandKind, e.SourceKind, e.SourceID, e.ActorID, e.ActorEmail, e.TaskArg, formatTime(e.DetectedAt))
+	if err != nil {
+		return false, fmt.Errorf("enqueue linear trigger: %w", err)
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("enqueue linear trigger rows affected: %w", err)
+	}
+	return n > 0, nil
+}
+
+// MarkLinearTriggerDispatched marks an enqueued Linear trigger as dispatched.
+func (s *SQLiteStore) MarkLinearTriggerDispatched(project string, id int64, targetFilename string) error {
+	return s.markLinearTriggerProcessed(project, id, "dispatched", "", targetFilename)
+}
+
+// MarkLinearTriggerRejected marks an enqueued Linear trigger as rejected.
+func (s *SQLiteStore) MarkLinearTriggerRejected(project string, id int64, reason string) error {
+	return s.markLinearTriggerProcessed(project, id, "rejected", reason, "")
+}
+
+// MarkLinearTriggerIgnored marks an enqueued Linear trigger as ignored.
+func (s *SQLiteStore) MarkLinearTriggerIgnored(project string, id int64, reason string) error {
+	return s.markLinearTriggerProcessed(project, id, "ignored", reason, "")
+}
+
+// MarkLinearTriggerFailed marks an enqueued Linear trigger as failed.
+func (s *SQLiteStore) MarkLinearTriggerFailed(project string, id int64, reason string) error {
+	return s.markLinearTriggerProcessed(project, id, "failed", reason, "")
+}
+
+func (s *SQLiteStore) markLinearTriggerProcessed(project string, id int64, outcome, reason, targetFilename string) error {
+	const q = `
+		UPDATE linear_triggers
+		SET processed = 1, processed_at = ?, outcome = ?, rejection_reason = ?, target_filename = ?
+		WHERE project = ? AND id = ?
+	`
+	result, err := s.db.Exec(q, formatTime(time.Now().UTC()), outcome, reason, targetFilename, project, id)
+	if err != nil {
+		return fmt.Errorf("mark linear trigger %s: %w", outcome, err)
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("mark linear trigger %s rows affected: %w", outcome, err)
+	}
+	if n == 0 {
+		return newNotFoundError("linear trigger not found: %s/%d", project, id)
+	}
+	return nil
+}
+
+// MarkLinearTriggerAck records whether the source was acknowledged.
+func (s *SQLiteStore) MarkLinearTriggerAck(project string, id int64, ackState string) error {
+	const q = `UPDATE linear_triggers SET ack_state = ? WHERE project = ? AND id = ?`
+	result, err := s.db.Exec(q, ackState, project, id)
+	if err != nil {
+		return fmt.Errorf("mark linear trigger ack: %w", err)
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("mark linear trigger ack rows affected: %w", err)
+	}
+	if n == 0 {
+		return newNotFoundError("linear trigger not found: %s/%d", project, id)
+	}
+	return nil
+}
+
+// ListUnprocessedLinearTriggers returns queued Linear triggers in detection order.
+func (s *SQLiteStore) ListUnprocessedLinearTriggers(project string, limit int) ([]LinearTriggerEntry, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	const q = `
+		SELECT id, linear_issue_id, linear_identifier, command_kind, source_kind, source_id,
+		       actor_id, actor_email, task_arg, detected_at, processed, processed_at,
+		       outcome, rejection_reason, target_filename, ack_state
+		FROM linear_triggers
+		WHERE project = ? AND processed = 0
+		ORDER BY detected_at ASC, id ASC
+		LIMIT ?
+	`
+	rows, err := s.db.Query(q, project, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list unprocessed linear triggers: %w", err)
+	}
+	defer rows.Close()
+
+	entries := []LinearTriggerEntry{}
+	for rows.Next() {
+		entry, err := scanLinearTriggerEntry(rows)
+		if err != nil {
+			return nil, fmt.Errorf("list unprocessed linear triggers: %w", err)
+		}
+		entries = append(entries, entry)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list unprocessed linear triggers: %w", err)
+	}
+	return entries, nil
+}
+
+// LinearTriggerStats returns recent Linear trigger outcome counts for a project.
+func (s *SQLiteStore) LinearTriggerStats(project string, since time.Time) (LinearTriggerStats, error) {
+	const q = `
+		SELECT detected_at, processed_at, outcome
+		FROM linear_triggers
+		WHERE project = ? AND detected_at >= ?
+	`
+	rows, err := s.db.Query(q, project, formatTime(since))
+	if err != nil {
+		return LinearTriggerStats{}, fmt.Errorf("linear trigger stats: %w", err)
+	}
+	defer rows.Close()
+
+	var stats LinearTriggerStats
+	for rows.Next() {
+		var detectedAt, processedAt, outcome string
+		if err := rows.Scan(&detectedAt, &processedAt, &outcome); err != nil {
+			return LinearTriggerStats{}, fmt.Errorf("linear trigger stats: %w", err)
+		}
+		for _, at := range []time.Time{parseTime(detectedAt), parseTime(processedAt)} {
+			if at.After(stats.LastSeenAt) {
+				stats.LastSeenAt = at
+			}
+		}
+		switch outcome {
+		case "dispatched":
+			stats.Dispatched++
+		case "rejected":
+			stats.Rejected++
+		case "failed":
+			stats.Failed++
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return LinearTriggerStats{}, fmt.Errorf("linear trigger stats: %w", err)
+	}
+	return stats, nil
+}
+
+// LastSeenCommentAt returns the last Linear comment cursor for an issue.
+func (s *SQLiteStore) LastSeenCommentAt(project, linearIssueID string) (time.Time, error) {
+	const q = `SELECT last_seen_at FROM linear_comment_cursor WHERE project = ? AND linear_issue_id = ?`
+	var lastSeenAt string
+	err := s.db.QueryRow(q, project, linearIssueID).Scan(&lastSeenAt)
+	if err == sql.ErrNoRows {
+		return time.Time{}, nil
+	}
+	if err != nil {
+		return time.Time{}, fmt.Errorf("last seen linear comment cursor: %w", err)
+	}
+	return parseTime(lastSeenAt), nil
+}
+
+// SetLastSeenCommentAt updates the Linear comment cursor monotonically.
+func (s *SQLiteStore) SetLastSeenCommentAt(project, linearIssueID string, at time.Time) error {
+	const q = `
+		INSERT INTO linear_comment_cursor (project, linear_issue_id, last_seen_at)
+		VALUES (?, ?, ?)
+		ON CONFLICT (project, linear_issue_id) DO UPDATE SET
+			last_seen_at = excluded.last_seen_at
+		WHERE excluded.last_seen_at > linear_comment_cursor.last_seen_at
+	`
+	if _, err := s.db.Exec(q, project, linearIssueID, formatTime(at)); err != nil {
+		return fmt.Errorf("set last seen linear comment cursor: %w", err)
+	}
+	return nil
+}
+
+func scanLinearTriggerEntry(scanner interface {
+	Scan(dest ...any) error
+}) (LinearTriggerEntry, error) {
+	var e LinearTriggerEntry
+	var detectedAt, processedAt string
+	var processed int
+	err := scanner.Scan(
+		&e.ID,
+		&e.LinearIssueID,
+		&e.LinearIdentifier,
+		&e.CommandKind,
+		&e.SourceKind,
+		&e.SourceID,
+		&e.ActorID,
+		&e.ActorEmail,
+		&e.TaskArg,
+		&detectedAt,
+		&processed,
+		&processedAt,
+		&e.Outcome,
+		&e.RejectionReason,
+		&e.TargetFilename,
+		&e.AckState,
+	)
+	if err != nil {
+		return LinearTriggerEntry{}, err
+	}
+	e.DetectedAt = parseTime(detectedAt)
+	e.Processed = processed != 0
+	e.ProcessedAt = parseTime(processedAt)
+	return e, nil
 }
 
 // scanTaskEntry scans a single row into a TaskEntry.

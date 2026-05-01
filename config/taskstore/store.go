@@ -48,6 +48,34 @@ type PRReviewEntry struct {
 	CreatedAt       time.Time `json:"created_at,omitempty"`
 }
 
+// LinearTriggerEntry is one persisted inbound Linear trigger.
+type LinearTriggerEntry struct {
+	ID               int64     `json:"id"`
+	LinearIssueID    string    `json:"linear_issue_id"`
+	LinearIdentifier string    `json:"linear_identifier"`
+	CommandKind      string    `json:"command_kind"`
+	SourceKind       string    `json:"source_kind"`
+	SourceID         string    `json:"source_id"`
+	ActorID          string    `json:"actor_id"`
+	ActorEmail       string    `json:"actor_email"`
+	TaskArg          string    `json:"task_arg"`
+	DetectedAt       time.Time `json:"detected_at"`
+	Processed        bool      `json:"processed"`
+	ProcessedAt      time.Time `json:"processed_at"`
+	Outcome          string    `json:"outcome"`
+	RejectionReason  string    `json:"rejection_reason"`
+	TargetFilename   string    `json:"target_filename"`
+	AckState         string    `json:"ack_state"`
+}
+
+// LinearTriggerStats summarizes processed Linear trigger outcomes for status.
+type LinearTriggerStats struct {
+	LastSeenAt time.Time
+	Dispatched int
+	Rejected   int
+	Failed     int
+}
+
 // Status represents the lifecycle state of a plan.
 // These constants mirror taskstate.Status to keep taskstore self-contained
 // and avoid circular imports.
@@ -132,6 +160,31 @@ type ExecutionStateWriter interface {
 	SetExecutionState(project, filename string, state ExecutionState) error
 }
 
+// LinearTriggerStore persists inbound Linear trigger events.
+type LinearTriggerStore interface {
+	// EnqueueLinearTrigger inserts a row using INSERT ... ON CONFLICT DO NOTHING.
+	// Returns queued=true when a new row landed; false when the unique key was
+	// already present (replay-safe).
+	EnqueueLinearTrigger(project string, e LinearTriggerEntry) (queued bool, err error)
+	// MarkLinearTriggerDispatched marks an enqueued row as successfully dispatched.
+	// targetFilename is the resulting kasmos task file (empty for help/status).
+	MarkLinearTriggerDispatched(project string, id int64, targetFilename string) error
+	// MarkLinearTriggerRejected records why dispatch was refused.
+	MarkLinearTriggerRejected(project string, id int64, reason string) error
+	// MarkLinearTriggerIgnored records that a recognised event did not produce a dispatch.
+	MarkLinearTriggerIgnored(project string, id int64, reason string) error
+	// MarkLinearTriggerFailed records a non-rejection error (e.g. mid-dispatch crash).
+	MarkLinearTriggerFailed(project string, id int64, reason string) error
+	// MarkLinearTriggerAck records ack outcome ("acked" or "ack_failed").
+	MarkLinearTriggerAck(project string, id int64, ackState string) error
+	// ListUnprocessedLinearTriggers returns rows with processed=0 in detected_at ASC order, capped at limit.
+	ListUnprocessedLinearTriggers(project string, limit int) ([]LinearTriggerEntry, error)
+	// LastSeenCommentAt returns the cursor for an issue, or zero time when unknown.
+	LastSeenCommentAt(project, linearIssueID string) (time.Time, error)
+	// SetLastSeenCommentAt updates the cursor monotonically; SET only when at > current.
+	SetLastSeenCommentAt(project, linearIssueID string, at time.Time) error
+}
+
 // SubtaskStatus represents the lifecycle state of a subtask.
 type SubtaskStatus string
 
@@ -207,6 +260,9 @@ type Store interface {
 	MarkReviewReacted(project, filename string, reviewID int) error
 	MarkReviewFixerDispatched(project, filename string, reviewID int) error
 	ListPendingReviews(project, filename string) ([]PRReviewEntry, error)
+
+	// Linear triggers
+	LinearTriggerStore
 
 	// Queries
 	List(project string) ([]TaskEntry, error)

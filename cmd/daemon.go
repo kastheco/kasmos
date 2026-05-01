@@ -242,6 +242,9 @@ func newDaemonStatusCmd(socketPath *string) *cobra.Command {
 					fmt.Fprintf(out, "  - %s (%s) [%d active plans]\n", r.Project, r.Path, r.ActivePlans)
 				}
 			}
+			if line, err := currentRepoLinearTriggerStatusLine(time.Now()); err == nil {
+				fmt.Fprint(out, line)
+			}
 			return nil
 		},
 	}

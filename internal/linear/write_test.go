@@ -136,6 +136,43 @@ func TestWrite_UpdateIssue_LabelsCleared(t *testing.T) {
 	assert.Equal(t, []interface{}{}, input["labelIds"])
 }
 
+func TestWrite_RemoveLabelFromIssue(t *testing.T) {
+	var got writeGraphQLRequest
+	requests := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&got))
+		_, _ = w.Write([]byte(`{"data":{"issueUpdate":{"success":true,"issue":{"id":"issue-1","identifier":"ENG-7","title":"X","url":"https://linear.app/acme/issue/ENG-7/x","priority":0,"updatedAt":"2026-04-30T12:01:00Z"}}}}`))
+	}))
+	defer srv.Close()
+
+	client := linear.NewClient(srv.URL, "test-key", srv.Client())
+	err := client.RemoveLabelFromIssue(context.Background(), "issue-1", []string{"label-keep"})
+	require.NoError(t, err)
+
+	assert.Equal(t, 1, requests)
+	assert.Contains(t, got.Query, "mutation IssueUpdate")
+	assert.Equal(t, "issue-1", got.Variables["id"])
+	input := got.Variables["input"].(map[string]interface{})
+	assert.Equal(t, []interface{}{"label-keep"}, input["labelIds"])
+}
+
+func TestWrite_RemoveLabelFromIssueAllowsEmptySurvivors(t *testing.T) {
+	var got writeGraphQLRequest
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&got))
+		_, _ = w.Write([]byte(`{"data":{"issueUpdate":{"success":true,"issue":{"id":"issue-1","identifier":"ENG-7","title":"X","url":"https://linear.app/acme/issue/ENG-7/x","priority":0,"updatedAt":"2026-04-30T12:01:00Z"}}}}`))
+	}))
+	defer srv.Close()
+
+	client := linear.NewClient(srv.URL, "test-key", srv.Client())
+	err := client.RemoveLabelFromIssue(context.Background(), "issue-1", []string{})
+	require.NoError(t, err)
+
+	input := got.Variables["input"].(map[string]interface{})
+	assert.Equal(t, []interface{}{}, input["labelIds"])
+}
+
 func TestWrite_UpdateIssue_NoFieldsError(t *testing.T) {
 	requests := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -258,4 +295,100 @@ func TestWrite_RateLimitPropagated(t *testing.T) {
 	var rateLimitErr *linear.RateLimitError
 	require.True(t, errors.As(err, &rateLimitErr))
 	assert.Equal(t, http.StatusTooManyRequests, rateLimitErr.StatusCode)
+}
+
+func TestWrite_CreateCommentReactionSuccess(t *testing.T) {
+	var got writeGraphQLRequest
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&got))
+		_, _ = w.Write([]byte(`{"data":{"reactionCreate":{"success":true,"reaction":{"id":"reaction-1","emoji":"eyes"}}}}`))
+	}))
+	defer srv.Close()
+
+	client := linear.NewClient(srv.URL, "test-key", srv.Client())
+	err := client.CreateCommentReaction(context.Background(), "comment-1", "eyes")
+	require.NoError(t, err)
+
+	assert.Contains(t, got.Query, "mutation CommentReactionCreate")
+	require.Equal(t, map[string]interface{}{"commentId": "comment-1", "emoji": "eyes"}, got.Variables["input"])
+}
+
+func TestWrite_CreateCommentReactionFeatureNotAccessibleGraphQL(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"errors":[{"message":"feature unavailable","extensions":{"code":"FEATURE_NOT_ACCESSIBLE"}}]}`))
+	}))
+	defer srv.Close()
+
+	client := linear.NewClient(srv.URL, "test-key", srv.Client())
+	err := client.CreateCommentReaction(context.Background(), "comment-1", "eyes")
+	require.Error(t, err)
+
+	var unsupported *linear.ReactionsUnsupportedError
+	require.True(t, errors.As(err, &unsupported))
+}
+
+func TestWrite_CreateCommentReactionFeatureNotAccessibleUserError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"data":{"reactionCreate":{"success":false,"reaction":null,"userErrors":[{"code":"FEATURE_NOT_ACCESSIBLE","message":"upgrade required"}]}}}`))
+	}))
+	defer srv.Close()
+
+	client := linear.NewClient(srv.URL, "test-key", srv.Client())
+	err := client.CreateCommentReaction(context.Background(), "comment-1", "eyes")
+	require.Error(t, err)
+
+	var unsupported *linear.ReactionsUnsupportedError
+	require.True(t, errors.As(err, &unsupported))
+	assert.Contains(t, unsupported.Error(), "upgrade required")
+}
+
+func TestWrite_CreateCommentReactionHTTP403Unsupported(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`forbidden`))
+	}))
+	defer srv.Close()
+
+	client := linear.NewClient(srv.URL, "test-key", srv.Client())
+	err := client.CreateCommentReaction(context.Background(), "comment-1", "eyes")
+	require.Error(t, err)
+
+	var unsupported *linear.ReactionsUnsupportedError
+	require.True(t, errors.As(err, &unsupported))
+}
+
+func TestWrite_CreateCommentReactionRateLimitPropagated(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = w.Write([]byte(`rate limited`))
+	}))
+	defer srv.Close()
+
+	client := linear.NewClient(srv.URL, "test-key", srv.Client())
+	err := client.CreateCommentReaction(context.Background(), "comment-1", "eyes")
+	require.Error(t, err)
+
+	var rateLimitErr *linear.RateLimitError
+	require.True(t, errors.As(err, &rateLimitErr))
+	assert.Equal(t, http.StatusTooManyRequests, rateLimitErr.StatusCode)
+	var unsupported *linear.ReactionsUnsupportedError
+	assert.False(t, errors.As(err, &unsupported))
+}
+
+func TestWrite_CreateCommentReactionHTTPErrorPropagated(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = w.Write([]byte(`bad gateway`))
+	}))
+	defer srv.Close()
+
+	client := linear.NewClient(srv.URL, "test-key", srv.Client())
+	err := client.CreateCommentReaction(context.Background(), "comment-1", "eyes")
+	require.Error(t, err)
+
+	var httpErr *linear.HTTPError
+	require.True(t, errors.As(err, &httpErr))
+	assert.Equal(t, http.StatusBadGateway, httpErr.StatusCode)
+	var unsupported *linear.ReactionsUnsupportedError
+	assert.False(t, errors.As(err, &unsupported))
 }
