@@ -18,7 +18,7 @@ The hook iterates every line. Special cases:
 
 - `<local sha>` is the all-zero sha → ref deletion, allow.
 - `<remote ref>` matches `refs/tags/*` → tag push, allow.
-- `<remote sha>` is the all-zero sha → new branch, compare against `origin/${KASMOS_DEFAULT_BRANCH:-main}`.
+- `<remote sha>` is the all-zero sha → new branch, compare against the pushed remote's default branch, or `${KASMOS_DEFAULT_BRANCH}` when set.
 
 ### bypass
 

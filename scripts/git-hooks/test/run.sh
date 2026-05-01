@@ -11,6 +11,7 @@ SCENARIO_TMP=""
 SCENARIO_STDERR=""
 SCENARIO_STATUS=0
 SCENARIO_PATH=""
+SCENARIO_REMOTE_NAME="origin"
 
 fail() {
   printf '%s\n' "$1"
@@ -56,12 +57,32 @@ set -euo pipefail
 
 if [ "${1:-}" = "e" ] && [ "${2:-}" = "-o=json" ] && [ "${3:-}" = "-I=0" ] && [ "${4:-}" = ".[]" ]; then
   python3 - "$5" <<'PY'
+import ast
 import json
 import sys
-import yaml
 
+data = []
+current = None
 with open(sys.argv[1], "r", encoding="utf-8") as fh:
-    data = yaml.safe_load(fh)
+    for raw in fh:
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("- "):
+            if current is not None:
+                data.append(current)
+            current = {}
+            line = line[2:].strip()
+        if ":" not in line:
+            continue
+        key, value = line.split(":", 1)
+        key = key.strip()
+        value = value.strip()
+        if current is None:
+            current = {}
+        current[key] = ast.literal_eval(value) if value else []
+if current is not None:
+    data.append(current)
 for entry in data:
     print(json.dumps(entry, separators=(",", ":")))
 PY
@@ -84,12 +105,13 @@ run_hook() {
   local stdin_line="$2"
   shift 2
   local hook_path="${SCENARIO_PATH:-$repo/test-bin:$PATH}"
+  local remote_name="${SCENARIO_REMOTE_NAME:-origin}"
 
   SCENARIO_STDERR="$repo/stderr.txt"
   SCENARIO_STATUS=0
   (
     cd "$repo"
-    "$@" PATH="$hook_path" bash scripts/git-hooks/pre-push >/dev/null 2>"$SCENARIO_STDERR" <<<"$stdin_line"
+    "$@" PATH="$hook_path" bash scripts/git-hooks/pre-push "$remote_name" "git@example.test:$remote_name/repo.git" >/dev/null 2>"$SCENARIO_STDERR" <<<"$stdin_line"
   ) || SCENARIO_STATUS=$?
 }
 
@@ -201,6 +223,21 @@ scenario_new_branch() {
   assert_stderr_contains "web/docs/docs/cli-reference/task.mdx"
 }
 
+scenario_new_branch_uses_push_remote() {
+  local repo base local_sha
+  repo="$(seed_repo)" || return 1
+  SCENARIO_TMP="$repo"
+  base="$(git -C "$repo" rev-parse HEAD)"
+  git -C "$repo" update-ref refs/remotes/upstream/main "$base"
+  SCENARIO_REMOTE_NAME="upstream"
+  with_feature_branch "$repo"
+  make_drift_commit "$repo"
+  local_sha="$(git -C "$repo" rev-parse HEAD)"
+  run_hook "$repo" "refs/heads/feature $local_sha refs/heads/feature $ZERO_SHA" env
+  assert_status 1 || return 1
+  assert_stderr_contains "web/docs/docs/cli-reference/task.mdx"
+}
+
 scenario_non_head_push_ref() {
   local repo remote feature_sha
   repo="$(seed_repo)" || return 1
@@ -278,6 +315,7 @@ run_scenario() {
   SCENARIO_STDERR=""
   SCENARIO_STATUS=0
   SCENARIO_PATH=""
+  SCENARIO_REMOTE_NAME="origin"
 
   local message
   if message="$($fn 2>&1)"; then
@@ -293,7 +331,7 @@ run_scenario() {
 
 main() {
   local passed=0
-  local total=9
+  local total=10
 
   local scenarios=(
     "drift_detected:scenario_drift_detected"
@@ -301,6 +339,7 @@ main() {
     "deletion_ref:scenario_deletion_ref"
     "tag_push:scenario_tag_push"
     "new_branch:scenario_new_branch"
+    "new_branch_uses_push_remote:scenario_new_branch_uses_push_remote"
     "non_head_push_ref:scenario_non_head_push_ref"
     "bypass_env:scenario_bypass_env"
     "bypass_trailer:scenario_bypass_trailer"

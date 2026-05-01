@@ -2,6 +2,7 @@
 set -euo pipefail
 
 ZERO_SHA="0000000000000000000000000000000000000000"
+remote_name="${1:-origin}"
 
 repo_root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
 if [ -z "$repo_root" ]; then
@@ -52,6 +53,25 @@ print_docs_drift_rejection() {
 	} >&2
 }
 
+remote_default_ref() {
+	local remote="$1"
+	local configured_default="${KASMOS_DEFAULT_BRANCH:-}"
+	local remote_head
+
+	if [ -n "$configured_default" ]; then
+		printf '%s/%s\n' "$remote" "$configured_default"
+		return
+	fi
+
+	remote_head="$(git symbolic-ref --quiet --short "refs/remotes/$remote/HEAD" 2>/dev/null || true)"
+	if [ -n "$remote_head" ]; then
+		printf '%s\n' "$remote_head"
+		return
+	fi
+
+	printf '%s/main\n' "$remote"
+}
+
 while read -r local_ref local_sha remote_ref remote_sha; do
 	if [ -z "${local_ref:-}" ]; then
 		continue
@@ -73,7 +93,7 @@ while read -r local_ref local_sha remote_ref remote_sha; do
 	fi
 
 	if [ "$remote_sha" = "$ZERO_SHA" ]; then
-		default_branch="origin/${KASMOS_DEFAULT_BRANCH:-main}"
+		default_branch="$(remote_default_ref "$remote_name")"
 		base="$(git merge-base "$local_sha" "$default_branch" 2>/dev/null || true)"
 		if [ -z "$base" ]; then
 			echo "docs-drift: warning: unable to find merge-base for $local_ref and $default_branch; skipping docs drift check" >&2

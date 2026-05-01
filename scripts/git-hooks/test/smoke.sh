@@ -29,12 +29,32 @@ set -euo pipefail
 
 if [ "${1:-}" = "e" ] && [ "${2:-}" = "-o=json" ] && [ "${3:-}" = "-I=0" ] && [ "${4:-}" = ".[]" ]; then
   python3 - "$5" <<'PY'
+import ast
 import json
 import sys
-import yaml
 
+data = []
+current = None
 with open(sys.argv[1], "r", encoding="utf-8") as fh:
-    data = yaml.safe_load(fh)
+    for raw in fh:
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("- "):
+            if current is not None:
+                data.append(current)
+            current = {}
+            line = line[2:].strip()
+        if ":" not in line:
+            continue
+        key, value = line.split(":", 1)
+        key = key.strip()
+        value = value.strip()
+        if current is None:
+            current = {}
+        current[key] = ast.literal_eval(value) if value else []
+if current is not None:
+    data.append(current)
 for entry in data:
     print(json.dumps(entry, separators=(",", ":")))
 PY
@@ -59,7 +79,7 @@ ensure_detector_yq
 hook_status=0
 (
   cd "$ROOT"
-  bash "$HOOK" >/dev/null 2>"$stderr_file" <<<"$stdin_line"
+  bash "$HOOK" origin git@example.test:kastheco/kasmos.git >/dev/null 2>"$stderr_file" <<<"$stdin_line"
 ) || hook_status=$?
 
 drift_count="$(
