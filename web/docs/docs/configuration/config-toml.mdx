@@ -315,6 +315,12 @@ allow_public_status = true
 [linear.triggers.start_guard]
 require_start_label = true
 allow_label_start = false
+
+[linear.triggers.webhook]
+enabled = true
+secret_env = "KASMOS_LINEAR_WEBHOOK_SECRET"
+timestamp_tolerance = "5m"
+max_body_bytes = 1048576
 ```
 
 | field | type | default | validation |
@@ -343,6 +349,11 @@ allow_label_start = false
 | `[linear.triggers.start_guard]` | table | both false | optional guard settings for start triggers |
 | `require_start_label` | bool | `false` | when true, `/kasmos start` requires the issue to carry `labels.start` |
 | `allow_label_start` | bool | `false` | when true, label-only start is allowed; validation requires `labels.start` |
+| `[linear.triggers.webhook]` | table | disabled | optional inbound linear webhook ingestion settings |
+| `enabled` | bool | `false` | when true, `kas serve` accepts signed linear webhook deliveries for the project endpoint |
+| `secret_env` | string | `KASMOS_LINEAR_WEBHOOK_SECRET` | environment variable that contains the linear webhook signing secret |
+| `timestamp_tolerance` | duration | `"5m"` | accepted delivery timestamp skew; clamped from `"1m"` to `"15m"` |
+| `max_body_bytes` | int64 | `1048576` | maximum raw request body size before the webhook returns `body_too_large` |
 
 ## `[[hooks]]` — FSM transition hooks
 

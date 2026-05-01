@@ -207,6 +207,76 @@ func TestLinearTriggerMonitor_PollOnceProducesGuardedTriggerAuditRows(t *testing
 	assert.Equal(t, "plan_start", signals[0].SignalType)
 }
 
+func TestLinearTriggerMonitor_PollOnceDrainsWebhookQueuedRows(t *testing.T) {
+	ctx := context.Background()
+	db, err := sql.Open("sqlite", "file:daemon-linear-webhook-drain?mode=memory&cache=shared&_pragma=busy_timeout(30000)&_pragma=foreign_keys(on)")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+	store, err := taskstore.NewSQLiteStoreFromDB(db)
+	require.NoError(t, err)
+	gateway, err := taskstore.NewSQLiteSignalGatewayFromDB(db)
+	require.NoError(t, err)
+	audit, err := auditlog.NewSQLiteLoggerFromDB(db)
+	require.NoError(t, err)
+
+	cfg := monitorTriggerConfig()
+	cfg.Labels = lineartrigger.LabelMap{}
+	cfg.Actor = lineartrigger.ActorPolicy{AllowedUserIDs: []string{"allowed-user"}}
+	now := time.Date(2026, 4, 30, 12, 0, 0, 0, time.UTC)
+	client := &linearTriggerMonitorLinearClient{
+		issue:    monitorIssue(),
+		comments: map[string][]linear.Comment{},
+	}
+	client.issue.Labels = nil
+	linker := linearlink.New(store, client, audit, "proj")
+	poller := lineartrigger.NewPoller(lineartrigger.PollerDeps{
+		Project: "proj",
+		Config:  cfg,
+		Store:   store,
+		Linker:  linker,
+		Linear:  client,
+		Gateway: gateway,
+		Audit:   audit,
+		Service: lineartrigger.NewService("proj", cfg, store, nil, nil, nil),
+		Now:     func() time.Time { return now },
+		Logger:  slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	repos := NewRepoManager()
+	repos.repos = []RepoEntry{{
+		Path:                "/tmp/proj",
+		Project:             "proj",
+		Store:               store,
+		SignalGateway:       gateway,
+		LinearTriggerPoller: poller,
+		LinearTriggerConfig: cfg,
+	}}
+	queued, err := store.EnqueueLinearTrigger("proj", taskstore.LinearTriggerEntry{
+		LinearIssueID:    "issue-1",
+		LinearIdentifier: "LIN-123",
+		CommandKind:      string(lineartrigger.VerbPlan),
+		SourceKind:       string(lineartrigger.SourceComment),
+		SourceID:         "webhook-comment-plan",
+		ActorID:          "allowed-user",
+		TaskArg:          "webhook-plan",
+		DetectedAt:       now,
+	})
+	require.NoError(t, err)
+	require.True(t, queued)
+	monitor := NewLinearTriggerMonitor(LinearTriggerMonitorConfig{PollInterval: time.Minute}, repos, api.NewEventBroadcaster(), slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	monitor.pollOnce(ctx)
+
+	remaining, err := store.ListUnprocessedLinearTriggers("proj", 10)
+	require.NoError(t, err)
+	assert.Empty(t, remaining)
+	requireMonitorAuditCount(t, audit, auditlog.EventTaskLinearTriggerDispatched, "plan", 1)
+	signals, err := gateway.List("proj", taskstore.SignalPending)
+	require.NoError(t, err)
+	require.Len(t, signals, 1)
+	assert.Equal(t, "plan_start", signals[0].SignalType)
+	assert.Equal(t, "webhook-plan", signals[0].PlanFile)
+}
+
 func newLinearTriggerMonitorStore(t *testing.T) *taskstore.SQLiteStore {
 	t.Helper()
 	store, err := taskstore.NewSQLiteStore(filepath.Join(t.TempDir(), "taskstore.db"))
