@@ -3,6 +3,7 @@ package lineartrigger
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
@@ -64,6 +65,31 @@ func TestWebhookIngestorIngestDuplicateDeliveryDoesNotReenqueue(t *testing.T) {
 	triggers, err := h.store.ListUnprocessedLinearTriggers("proj", 10)
 	require.NoError(t, err)
 	require.Len(t, triggers, 1)
+}
+
+func TestWebhookIngestorRetriesFailedDelivery(t *testing.T) {
+	ctx := context.Background()
+	h := newWebhookIngestorHarness(t)
+	failOnce := &failOnceWebhookEnqueueStore{Store: h.store}
+	h.ingestor.Store = failOnce
+	env := commentWebhook("delivery-retry", "/kasmos plan")
+	headers := webhookHeaders("delivery-retry", "Comment")
+
+	first, err := h.ingestor.Ingest(ctx, env, headers, nil)
+	require.Error(t, err)
+	assert.Equal(t, webhookDeliveryFailed, first.DeliveryStatus)
+	assert.Equal(t, "enqueue_failed", first.Reason)
+	h.requireDelivery(t, "delivery-retry", webhookDeliveryFailed, "enqueue_failed")
+
+	second, err := h.ingestor.Ingest(ctx, env, headers, nil)
+	require.NoError(t, err)
+	assert.Equal(t, webhookDeliveryAccepted, second.DeliveryStatus)
+	require.Len(t, second.EnqueuedRowIDs, 1)
+	triggers, err := h.store.ListUnprocessedLinearTriggers("proj", 10)
+	require.NoError(t, err)
+	require.Len(t, triggers, 1)
+	assert.Equal(t, "comment-delivery-retry", triggers[0].SourceID)
+	h.requireDelivery(t, "delivery-retry", webhookDeliveryAccepted, "")
 }
 
 func TestWebhookIngestorRejectsMissingDeliveryBeforeRecording(t *testing.T) {
@@ -212,6 +238,19 @@ func (s *processingAfterEnqueueStore) EnqueueLinearTrigger(project string, e tas
 		return 0, false, err
 	}
 	return id, queued, nil
+}
+
+type failOnceWebhookEnqueueStore struct {
+	taskstore.Store
+	failed bool
+}
+
+func (s *failOnceWebhookEnqueueStore) EnqueueLinearTrigger(project string, e taskstore.LinearTriggerEntry) (int64, bool, error) {
+	if !s.failed {
+		s.failed = true
+		return 0, false, errors.New("temporary enqueue failure")
+	}
+	return s.Store.EnqueueLinearTrigger(project, e)
 }
 
 func (h *webhookIngestorHarness) requireDelivery(t *testing.T, deliveryID, status, reason string) {

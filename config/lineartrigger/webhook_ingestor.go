@@ -79,13 +79,26 @@ func (w *WebhookIngestor) Ingest(ctx context.Context, env WebhookEnvelope, heade
 		Headers:    headers,
 	})
 	if !recorded {
-		w.emitDelivery(webhookAuditDelivery{
-			Kind:       auditlog.EventTaskLinearWebhookDuplicate,
-			DeliveryID: deliveryID,
-			Env:        env,
-			Headers:    headers,
-		})
-		return IngestResult{DeliveryStatus: webhookDeliveryDuplicate}, nil
+		existing, err := w.Store.LinearWebhookDeliveryByID(w.Project, deliveryID)
+		if err != nil {
+			w.emitDelivery(webhookAuditDelivery{
+				Kind:       auditlog.EventTaskLinearWebhookFailed,
+				DeliveryID: deliveryID,
+				Env:        env,
+				Headers:    headers,
+				Reason:     "delivery_lookup_failed",
+			})
+			return IngestResult{DeliveryStatus: webhookDeliveryFailed, Reason: "delivery_lookup_failed"}, err
+		}
+		if !webhookDeliveryShouldRetry(existing.Status) {
+			w.emitDelivery(webhookAuditDelivery{
+				Kind:       auditlog.EventTaskLinearWebhookDuplicate,
+				DeliveryID: deliveryID,
+				Env:        env,
+				Headers:    headers,
+			})
+			return IngestResult{DeliveryStatus: webhookDeliveryDuplicate}, nil
+		}
 	}
 
 	normalized, err := NormalizeWebhook(w.Config, env, headers)
@@ -190,6 +203,15 @@ func (w *WebhookIngestor) Ingest(ctx context.Context, env WebhookEnvelope, heade
 		EnqueuedCount: len(result.EnqueuedRowIDs),
 	})
 	return result, nil
+}
+
+func webhookDeliveryShouldRetry(status string) bool {
+	switch status {
+	case "received", webhookDeliveryFailed:
+		return true
+	default:
+		return false
+	}
 }
 
 func (w *WebhookIngestor) now() time.Time {

@@ -355,7 +355,7 @@ max_body_bytes = 1048576
 | `timestamp_tolerance` | duration | `"5m"` | accepted delivery timestamp skew; clamped from `"1m"` to `"15m"` |
 | `max_body_bytes` | int64 | `1048576` | maximum raw request body size before the webhook returns `body_too_large` |
 
-linear webhook delivery ids are part of the ingestion contract, not optional metadata. requests missing `Linear-Delivery` are rejected with `missing_delivery` before kasmos records a delivery row or evaluates duplicate state, so a proxy/header issue cannot collapse unrelated deliveries onto an empty dedupe key. after accepted deliveries enqueue trigger rows, `kas serve` drains the queue until no rows remain or a retryable error stops the pass.
+linear webhook delivery ids are part of the ingestion contract, not optional metadata. requests missing `Linear-Delivery` are rejected with `missing_delivery` before kasmos records a delivery row or evaluates duplicate state, so a proxy/header issue cannot collapse unrelated deliveries onto an empty dedupe key. if a delivery was recorded but processing stopped in `received` or `failed`, a retry with the same delivery id resumes normalization and enqueue instead of being treated as a terminal duplicate. after accepted deliveries enqueue trigger rows, `kas serve` drains the queue until no rows remain or a retryable error stops the pass.
 
 ## `[[hooks]]` — FSM transition hooks
 
