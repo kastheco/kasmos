@@ -131,6 +131,10 @@ db-service-enable: db-service-install
 # Install and start both user services
 services-enable: kasmosd-enable db-service-enable
 
+# Install the docs-drift pre-push git hook
+hooks *args:
+    bash scripts/git-hooks/install.sh {{args}}
+
 # run with no args
 bin:
     kas
