@@ -522,6 +522,18 @@ func TestMigrateRepoLocalToGlobal_LinearTriggers(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, queued)
 	require.NoError(t, local.SetLastSeenCommentAt("proj", "lin-1", detectedAt))
+	recorded, err := local.RecordLinearWebhookDelivery("proj", LinearWebhookDelivery{
+		DeliveryID:    "delivery-1",
+		LinearEvent:   "Comment",
+		Action:        "create",
+		LinearIssueID: "lin-1",
+		SourceKind:    "comment",
+		SourceID:      "comment-1",
+		Status:        "received",
+		ReceivedAt:    detectedAt,
+	})
+	require.NoError(t, err)
+	require.True(t, recorded)
 	local.Close()
 
 	globalDir := t.TempDir()
@@ -544,6 +556,12 @@ func TestMigrateRepoLocalToGlobal_LinearTriggers(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, detectedAt, cursor)
 
+	deliveries, err := globalStore.ListRecentLinearWebhookDeliveries("proj", 10)
+	require.NoError(t, err)
+	require.Len(t, deliveries, 1)
+	assert.Equal(t, "delivery-1", deliveries[0].DeliveryID)
+	assert.Equal(t, detectedAt, deliveries[0].ReceivedAt)
+
 	_, err = MigrateRepoLocalToGlobal(globalStore, "proj", repoKasmosDir)
 	require.NoError(t, err)
 
@@ -554,6 +572,31 @@ func TestMigrateRepoLocalToGlobal_LinearTriggers(t *testing.T) {
 	).Scan(&count)
 	require.NoError(t, err)
 	assert.Equal(t, 1, count)
+
+	err = globalStore.db.QueryRow(
+		`SELECT count(*) FROM linear_webhook_deliveries WHERE project = ? AND delivery_id = ?`,
+		"proj", "delivery-1",
+	).Scan(&count)
+	require.NoError(t, err)
+	assert.Equal(t, 1, count)
+}
+
+func TestMigrateRepoLocalToGlobal_LinearWebhookDeliveriesNoRows(t *testing.T) {
+	repoKasmosDir := t.TempDir()
+	local := createLocalRepoStore(t, repoKasmosDir)
+	local.Close()
+
+	globalStore, err := NewSQLiteStore(filepath.Join(t.TempDir(), "taskstore.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { globalStore.Close() })
+
+	migrated, err := MigrateRepoLocalToGlobal(globalStore, "proj", repoKasmosDir)
+	require.NoError(t, err)
+	assert.Equal(t, 0, migrated)
+
+	deliveries, err := globalStore.ListRecentLinearWebhookDeliveries("proj", 10)
+	require.NoError(t, err)
+	assert.Empty(t, deliveries)
 }
 
 func TestMigrateRepoLocalToGlobal_Signals(t *testing.T) {

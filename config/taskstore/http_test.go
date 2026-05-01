@@ -396,6 +396,69 @@ func TestHTTPStore_LinearTriggers_RoundTrip(t *testing.T) {
 	assert.Equal(t, second, got)
 }
 
+func TestHTTPStore_LinearWebhookDeliveries_RoundTrip(t *testing.T) {
+	backend, err := taskstore.NewSQLiteStore(":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, backend.Close()) })
+	srv := httptest.NewServer(taskstore.NewHandler(backend))
+	t.Cleanup(srv.Close)
+
+	client := taskstore.NewHTTPStore(srv.URL, "proj")
+	receivedAt := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
+	delivery := taskstore.LinearWebhookDelivery{
+		DeliveryID:    "delivery/1",
+		LinearEvent:   "Comment",
+		Action:        "create",
+		LinearIssueID: "lin-1",
+		SourceKind:    "comment",
+		SourceID:      "comment-1",
+		Status:        "received",
+		ReceivedAt:    receivedAt,
+	}
+
+	recorded, err := client.RecordLinearWebhookDelivery("proj", delivery)
+	require.NoError(t, err)
+	assert.True(t, recorded)
+	recorded, err = client.RecordLinearWebhookDelivery("proj", delivery)
+	require.NoError(t, err)
+	assert.False(t, recorded)
+
+	got, err := client.LinearWebhookDeliveryByID("proj", "delivery/1")
+	require.NoError(t, err)
+	assert.Equal(t, "received", got.Status)
+	assert.Equal(t, receivedAt, got.ReceivedAt)
+
+	require.NoError(t, client.UpdateLinearWebhookDelivery("proj", "delivery/1", "accepted", "queued"))
+	got, err = client.LinearWebhookDeliveryByID("proj", "delivery/1")
+	require.NoError(t, err)
+	assert.Equal(t, "accepted", got.Status)
+	assert.Equal(t, "queued", got.Reason)
+
+	delivery.DeliveryID = "delivery-2"
+	delivery.Status = "failed"
+	delivery.ReceivedAt = receivedAt.Add(time.Minute)
+	recorded, err = client.RecordLinearWebhookDelivery("proj", delivery)
+	require.NoError(t, err)
+	assert.True(t, recorded)
+
+	recent, err := client.ListRecentLinearWebhookDeliveries("proj", 1)
+	require.NoError(t, err)
+	require.Len(t, recent, 1)
+	assert.Equal(t, "delivery-2", recent[0].DeliveryID)
+
+	stats, err := client.LinearWebhookStats("proj", receivedAt.Add(-time.Hour))
+	require.NoError(t, err)
+	assert.Equal(t, 1, stats.Accepted)
+	assert.Equal(t, 1, stats.Failed)
+
+	_, err = client.LinearWebhookDeliveryByID("proj", "missing")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not found")
+	err = client.UpdateLinearWebhookDelivery("proj", "missing", "failed", "missing")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not found")
+}
+
 func TestHTTPStore_VerifyingAtRoundTrip(t *testing.T) {
 	backend := newTestStore(t)
 	srv := httptest.NewServer(taskstore.NewHandler(backend))

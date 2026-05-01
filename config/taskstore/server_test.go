@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/stretchr/testify/assert"
@@ -635,6 +636,85 @@ func TestServer_LinearTriggers_BadRequests(t *testing.T) {
 	require.NoError(t, err)
 	defer resp.Body.Close()
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+}
+
+func TestServer_LinearWebhookDeliveries_Routes(t *testing.T) {
+	store := newTestStore(t)
+	srv := httptest.NewServer(taskstore.NewHandler(store))
+	defer srv.Close()
+
+	receivedAt := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
+	body := `{"delivery_id":"delivery-1","linear_event":"Comment","action":"create","linear_issue_id":"lin-1","source_kind":"comment","source_id":"comment-1","status":"received","received_at":"` + receivedAt.Format(time.RFC3339) + `"}`
+	resp, err := http.Post(srv.URL+"/v1/projects/proj/linear-webhook-deliveries", "application/json", strings.NewReader(body))
+	require.NoError(t, err)
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
+	var recordResp map[string]bool
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&recordResp))
+	resp.Body.Close()
+	assert.True(t, recordResp["recorded"])
+
+	resp, err = http.Post(srv.URL+"/v1/projects/proj/linear-webhook-deliveries", "application/json", strings.NewReader(body))
+	require.NoError(t, err)
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&recordResp))
+	resp.Body.Close()
+	assert.False(t, recordResp["recorded"])
+
+	resp, err = http.Get(srv.URL + "/v1/projects/proj/linear-webhook-deliveries/delivery-1")
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	var got taskstore.LinearWebhookDelivery
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&got))
+	resp.Body.Close()
+	assert.Equal(t, "received", got.Status)
+
+	resp, err = http.Post(srv.URL+"/v1/projects/proj/linear-webhook-deliveries/delivery-1/status", "application/json", strings.NewReader(`{"status":"accepted","reason":"queued"}`))
+	require.NoError(t, err)
+	resp.Body.Close()
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+
+	resp, err = http.Get(srv.URL + "/v1/projects/proj/linear-webhook-deliveries?limit=1")
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	var deliveries []taskstore.LinearWebhookDelivery
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&deliveries))
+	resp.Body.Close()
+	require.Len(t, deliveries, 1)
+	assert.Equal(t, "accepted", deliveries[0].Status)
+
+	resp, err = http.Get(srv.URL + "/v1/projects/proj/linear-webhook-deliveries/stats?since=" + receivedAt.Add(-time.Hour).Format(time.RFC3339))
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	var stats taskstore.LinearWebhookStats
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&stats))
+	resp.Body.Close()
+	assert.Equal(t, 1, stats.Accepted)
+}
+
+func TestServer_LinearWebhookDeliveries_BadRequests(t *testing.T) {
+	store := newTestStore(t)
+	srv := httptest.NewServer(taskstore.NewHandler(store))
+	defer srv.Close()
+
+	resp, err := http.Post(srv.URL+"/v1/projects/proj/linear-webhook-deliveries", "application/json", strings.NewReader(`{`))
+	require.NoError(t, err)
+	resp.Body.Close()
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+
+	resp, err = http.Get(srv.URL + "/v1/projects/proj/linear-webhook-deliveries?limit=bad")
+	require.NoError(t, err)
+	resp.Body.Close()
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+
+	resp, err = http.Get(srv.URL + "/v1/projects/proj/linear-webhook-deliveries/stats")
+	require.NoError(t, err)
+	resp.Body.Close()
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+
+	resp, err = http.Post(srv.URL+"/v1/projects/proj/linear-webhook-deliveries/missing/status", "application/json", strings.NewReader(`{"status":"failed"}`))
+	require.NoError(t, err)
+	resp.Body.Close()
+	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
 }
 
 // TestServer_NormalizeFilename verifies that .md-suffixed names and bare slugs

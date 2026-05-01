@@ -102,6 +102,9 @@ func MigrateRepoLocalToGlobal(globalStore Store, project, repoKasmosDir string) 
 			if err := migrateRepoLocalLinearTriggers(globalSQLite.db, localDBPath, sourceProject, targetProject); err != nil {
 				return migrated, err
 			}
+			if err := migrateRepoLocalLinearWebhookDeliveries(globalSQLite.db, localDBPath, sourceProject, targetProject); err != nil {
+				return migrated, err
+			}
 			if err := migrateRepoLocalLinearCommentCursors(globalSQLite.db, localDBPath, sourceProject, targetProject); err != nil {
 				return migrated, err
 			}
@@ -149,7 +152,7 @@ func listMigratedProjects(localStore *SQLiteStore, fallbackProject string) ([]st
 		return rows.Err()
 	}
 
-	for _, table := range []string{"tasks", "topics", "pr_reviews", "linear_triggers", "linear_comment_cursor", "signals"} {
+	for _, table := range []string{"tasks", "topics", "pr_reviews", "linear_triggers", "linear_webhook_deliveries", "linear_comment_cursor", "signals"} {
 		if err := collect(table); err != nil {
 			return nil, err
 		}
@@ -256,6 +259,45 @@ func migrateRepoLocalLinearTriggers(globalDB *sql.DB, localDBPath, sourceProject
 		WHERE project = ?
 	`, alias), targetProject, sourceProject); err != nil {
 		return fmt.Errorf("copy linear_triggers: %w", err)
+	}
+	return nil
+}
+
+func migrateRepoLocalLinearWebhookDeliveries(globalDB *sql.DB, localDBPath, sourceProject, targetProject string) error {
+	ctx := context.Background()
+	const alias = "local_linear_webhook_deliveries"
+
+	conn, err := globalDB.Conn(ctx)
+	if err != nil {
+		return fmt.Errorf("acquire conn for linear_webhook_deliveries migration: %w", err)
+	}
+	defer conn.Close()
+
+	if _, err := conn.ExecContext(ctx, fmt.Sprintf("ATTACH DATABASE %q AS %s", localDBPath, alias)); err != nil {
+		return fmt.Errorf("attach local DB for linear_webhook_deliveries: %w", err)
+	}
+	defer conn.ExecContext(ctx, fmt.Sprintf("DETACH DATABASE %s", alias)) //nolint:errcheck
+
+	var hasTable int
+	if err := conn.QueryRowContext(ctx,
+		fmt.Sprintf("SELECT count(*) FROM %s.sqlite_master WHERE type='table' AND name='linear_webhook_deliveries'", alias),
+	).Scan(&hasTable); err != nil {
+		return fmt.Errorf("check linear_webhook_deliveries table in local DB: %w", err)
+	}
+	if hasTable == 0 {
+		return nil
+	}
+
+	if _, err := conn.ExecContext(ctx, fmt.Sprintf(`
+		INSERT OR IGNORE INTO linear_webhook_deliveries
+			(project, delivery_id, linear_event, action, linear_issue_id, source_kind,
+			 source_id, status, reason, received_at, processed_at)
+		SELECT ?, delivery_id, linear_event, action, linear_issue_id, source_kind,
+		       source_id, status, reason, received_at, processed_at
+		FROM %s.linear_webhook_deliveries
+		WHERE project = ?
+	`, alias), targetProject, sourceProject); err != nil {
+		return fmt.Errorf("copy linear_webhook_deliveries: %w", err)
 	}
 	return nil
 }

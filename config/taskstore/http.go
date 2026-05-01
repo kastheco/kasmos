@@ -164,6 +164,16 @@ func (s *HTTPStore) linearTriggerActionURL(project string, id int64, action stri
 	return fmt.Sprintf("%s/v1/projects/%s/linear-triggers/%d/%s", s.baseURL, url.PathEscape(project), id, action)
 }
 
+func (s *HTTPStore) linearWebhookDeliveriesURL(project string) string {
+	project = s.resolveProject(project)
+	return fmt.Sprintf("%s/v1/projects/%s/linear-webhook-deliveries", s.baseURL, url.PathEscape(project))
+}
+
+func (s *HTTPStore) linearWebhookDeliveryURL(project, deliveryID string) string {
+	project = s.resolveProject(project)
+	return fmt.Sprintf("%s/v1/projects/%s/linear-webhook-deliveries/%s", s.baseURL, url.PathEscape(project), url.PathEscape(deliveryID))
+}
+
 func (s *HTTPStore) linearCommentCursorURL(project, issueID string) string {
 	project = s.resolveProject(project)
 	return fmt.Sprintf("%s/v1/projects/%s/linear-comment-cursor/%s", s.baseURL, url.PathEscape(project), url.PathEscape(issueID))
@@ -1146,6 +1156,141 @@ func (s *HTTPStore) ListUnprocessedLinearTriggers(project string, limit int) ([]
 		return nil, fmt.Errorf("task store: decode linear triggers: %w", err)
 	}
 	return entries, nil
+}
+
+// RecordLinearWebhookDelivery records a Linear webhook delivery in the remote store.
+func (s *HTTPStore) RecordLinearWebhookDelivery(project string, d LinearWebhookDelivery) (bool, error) {
+	body, err := json.Marshal(d)
+	if err != nil {
+		return false, fmt.Errorf("task store: marshal linear webhook delivery: %w", err)
+	}
+	req, err := http.NewRequest(http.MethodPost, s.linearWebhookDeliveriesURL(project), bytes.NewReader(body))
+	if err != nil {
+		return false, fmt.Errorf("task store: build request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := s.do(req)
+	if err != nil {
+		return false, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		return false, decodeError(resp)
+	}
+	var payload struct {
+		Recorded bool `json:"recorded"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return false, fmt.Errorf("task store: decode linear webhook delivery record: %w", err)
+	}
+	return payload.Recorded, nil
+}
+
+// UpdateLinearWebhookDelivery updates a Linear webhook delivery in the remote store.
+func (s *HTTPStore) UpdateLinearWebhookDelivery(project, deliveryID, status, reason string) error {
+	body, err := json.Marshal(map[string]string{"status": status, "reason": reason})
+	if err != nil {
+		return fmt.Errorf("task store: marshal linear webhook delivery status: %w", err)
+	}
+	req, err := http.NewRequest(http.MethodPost, s.linearWebhookDeliveryURL(project, deliveryID)+"/status", bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("task store: build request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := s.do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return newNotFoundError("task store: linear webhook delivery not found: %s", deliveryID)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return decodeError(resp)
+	}
+	return nil
+}
+
+// LinearWebhookDeliveryByID returns one Linear webhook delivery from the remote store.
+func (s *HTTPStore) LinearWebhookDeliveryByID(project, deliveryID string) (LinearWebhookDelivery, error) {
+	req, err := http.NewRequest(http.MethodGet, s.linearWebhookDeliveryURL(project, deliveryID), nil)
+	if err != nil {
+		return LinearWebhookDelivery{}, fmt.Errorf("task store: build request: %w", err)
+	}
+	resp, err := s.do(req)
+	if err != nil {
+		return LinearWebhookDelivery{}, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return LinearWebhookDelivery{}, newNotFoundError("task store: linear webhook delivery not found: %s", deliveryID)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return LinearWebhookDelivery{}, decodeError(resp)
+	}
+	var delivery LinearWebhookDelivery
+	if err := json.NewDecoder(resp.Body).Decode(&delivery); err != nil {
+		return LinearWebhookDelivery{}, fmt.Errorf("task store: decode linear webhook delivery: %w", err)
+	}
+	return delivery, nil
+}
+
+// ListRecentLinearWebhookDeliveries returns recent Linear webhook deliveries from the remote store.
+func (s *HTTPStore) ListRecentLinearWebhookDeliveries(project string, limit int) ([]LinearWebhookDelivery, error) {
+	u, err := url.Parse(s.linearWebhookDeliveriesURL(project))
+	if err != nil {
+		return nil, fmt.Errorf("task store: build URL: %w", err)
+	}
+	if limit > 0 {
+		q := u.Query()
+		q.Set("limit", fmt.Sprintf("%d", limit))
+		u.RawQuery = q.Encode()
+	}
+	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("task store: build request: %w", err)
+	}
+	resp, err := s.do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, decodeError(resp)
+	}
+	var deliveries []LinearWebhookDelivery
+	if err := json.NewDecoder(resp.Body).Decode(&deliveries); err != nil {
+		return nil, fmt.Errorf("task store: decode linear webhook deliveries: %w", err)
+	}
+	return deliveries, nil
+}
+
+// LinearWebhookStats returns Linear webhook delivery status counts from the remote store.
+func (s *HTTPStore) LinearWebhookStats(project string, since time.Time) (LinearWebhookStats, error) {
+	u, err := url.Parse(s.linearWebhookDeliveriesURL(project) + "/stats")
+	if err != nil {
+		return LinearWebhookStats{}, fmt.Errorf("task store: build URL: %w", err)
+	}
+	q := u.Query()
+	q.Set("since", since.Format(time.RFC3339Nano))
+	u.RawQuery = q.Encode()
+	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
+	if err != nil {
+		return LinearWebhookStats{}, fmt.Errorf("task store: build request: %w", err)
+	}
+	resp, err := s.do(req)
+	if err != nil {
+		return LinearWebhookStats{}, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return LinearWebhookStats{}, decodeError(resp)
+	}
+	var stats LinearWebhookStats
+	if err := json.NewDecoder(resp.Body).Decode(&stats); err != nil {
+		return LinearWebhookStats{}, fmt.Errorf("task store: decode linear webhook stats: %w", err)
+	}
+	return stats, nil
 }
 
 // LastSeenCommentAt returns the Linear comment cursor from the remote store.

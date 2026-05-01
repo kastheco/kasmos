@@ -87,6 +87,25 @@ const linearTriggersTableMigration = `
 
 const linearTriggersUnprocessedIndex = `CREATE INDEX IF NOT EXISTS idx_linear_triggers_unprocessed ON linear_triggers(processed, detected_at)`
 
+const linearWebhookDeliveriesTableMigration = `
+	CREATE TABLE IF NOT EXISTS linear_webhook_deliveries (
+		id              INTEGER PRIMARY KEY,
+		project         TEXT NOT NULL,
+		delivery_id     TEXT NOT NULL,
+		linear_event    TEXT NOT NULL DEFAULT '',
+		action          TEXT NOT NULL DEFAULT '',
+		linear_issue_id TEXT NOT NULL DEFAULT '',
+		source_kind     TEXT NOT NULL DEFAULT '',
+		source_id       TEXT NOT NULL DEFAULT '',
+		status          TEXT NOT NULL,
+		reason          TEXT NOT NULL DEFAULT '',
+		received_at     TEXT NOT NULL,
+		processed_at    TEXT NOT NULL DEFAULT '',
+		UNIQUE (project, delivery_id)
+	)`
+
+const linearWebhookDeliveriesReceivedIndex = `CREATE INDEX IF NOT EXISTS idx_linear_webhook_deliveries_received ON linear_webhook_deliveries(project, received_at DESC)`
+
 const linearCommentCursorTableMigration = `
 	CREATE TABLE IF NOT EXISTS linear_comment_cursor (
 		project         TEXT NOT NULL,
@@ -307,6 +326,12 @@ func runStoreMigrations(db *sql.DB) error {
 	}
 	if _, err := db.Exec(linearTriggersUnprocessedIndex); err != nil {
 		return fmt.Errorf("create linear_triggers unprocessed index: %w", err)
+	}
+	if _, err := db.Exec(linearWebhookDeliveriesTableMigration); err != nil {
+		return fmt.Errorf("create linear_webhook_deliveries table: %w", err)
+	}
+	if _, err := db.Exec(linearWebhookDeliveriesReceivedIndex); err != nil {
+		return fmt.Errorf("create linear_webhook_deliveries received index: %w", err)
 	}
 	if _, err := db.Exec(linearCommentCursorTableMigration); err != nil {
 		return fmt.Errorf("create linear_comment_cursor table: %w", err)
@@ -1406,6 +1431,141 @@ func (s *SQLiteStore) LinearTriggerStats(project string, since time.Time) (Linea
 	return stats, nil
 }
 
+// RecordLinearWebhookDelivery records a Linear webhook delivery if it has not already been seen.
+func (s *SQLiteStore) RecordLinearWebhookDelivery(project string, d LinearWebhookDelivery) (bool, error) {
+	const q = `
+		INSERT INTO linear_webhook_deliveries
+			(project, delivery_id, linear_event, action, linear_issue_id, source_kind,
+			 source_id, status, reason, received_at, processed_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT (project, delivery_id) DO NOTHING
+	`
+	result, err := s.db.Exec(q, project, d.DeliveryID, d.LinearEvent, d.Action, d.LinearIssueID, d.SourceKind, d.SourceID, d.Status, d.Reason, formatTime(d.ReceivedAt), formatTime(d.ProcessedAt))
+	if err != nil {
+		return false, fmt.Errorf("record linear webhook delivery: %w", err)
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("record linear webhook delivery rows affected: %w", err)
+	}
+	return n > 0, nil
+}
+
+// UpdateLinearWebhookDelivery updates the status for a recorded Linear webhook delivery.
+func (s *SQLiteStore) UpdateLinearWebhookDelivery(project, deliveryID, status, reason string) error {
+	const q = `
+		UPDATE linear_webhook_deliveries
+		SET status = ?, reason = ?, processed_at = ?
+		WHERE project = ? AND delivery_id = ?
+	`
+	result, err := s.db.Exec(q, status, reason, formatTime(time.Now().UTC()), project, deliveryID)
+	if err != nil {
+		return fmt.Errorf("update linear webhook delivery: %w", err)
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("update linear webhook delivery rows affected: %w", err)
+	}
+	if n == 0 {
+		return newNotFoundError("linear webhook delivery not found: %s/%s", project, deliveryID)
+	}
+	return nil
+}
+
+// LinearWebhookDeliveryByID returns one recorded Linear webhook delivery.
+func (s *SQLiteStore) LinearWebhookDeliveryByID(project, deliveryID string) (LinearWebhookDelivery, error) {
+	const q = `
+		SELECT id, delivery_id, linear_event, action, linear_issue_id, source_kind,
+		       source_id, status, reason, received_at, processed_at
+		FROM linear_webhook_deliveries
+		WHERE project = ? AND delivery_id = ?
+	`
+	delivery, err := scanLinearWebhookDelivery(s.db.QueryRow(q, project, deliveryID))
+	if err == sql.ErrNoRows {
+		return LinearWebhookDelivery{}, newNotFoundError("linear webhook delivery not found: %s/%s", project, deliveryID)
+	}
+	if err != nil {
+		return LinearWebhookDelivery{}, fmt.Errorf("linear webhook delivery by ID: %w", err)
+	}
+	return delivery, nil
+}
+
+// ListRecentLinearWebhookDeliveries returns recent Linear webhook deliveries newest-first.
+func (s *SQLiteStore) ListRecentLinearWebhookDeliveries(project string, limit int) ([]LinearWebhookDelivery, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	const q = `
+		SELECT id, delivery_id, linear_event, action, linear_issue_id, source_kind,
+		       source_id, status, reason, received_at, processed_at
+		FROM linear_webhook_deliveries
+		WHERE project = ?
+		ORDER BY received_at DESC, id DESC
+		LIMIT ?
+	`
+	rows, err := s.db.Query(q, project, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list recent linear webhook deliveries: %w", err)
+	}
+	defer rows.Close()
+
+	deliveries := []LinearWebhookDelivery{}
+	for rows.Next() {
+		delivery, err := scanLinearWebhookDelivery(rows)
+		if err != nil {
+			return nil, fmt.Errorf("list recent linear webhook deliveries: %w", err)
+		}
+		deliveries = append(deliveries, delivery)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list recent linear webhook deliveries: %w", err)
+	}
+	return deliveries, nil
+}
+
+// LinearWebhookStats returns recent Linear webhook delivery status counts for a project.
+func (s *SQLiteStore) LinearWebhookStats(project string, since time.Time) (LinearWebhookStats, error) {
+	const q = `
+		SELECT received_at, processed_at, status
+		FROM linear_webhook_deliveries
+		WHERE project = ? AND received_at >= ?
+	`
+	rows, err := s.db.Query(q, project, formatTime(since))
+	if err != nil {
+		return LinearWebhookStats{}, fmt.Errorf("linear webhook stats: %w", err)
+	}
+	defer rows.Close()
+
+	var stats LinearWebhookStats
+	for rows.Next() {
+		var receivedAt, processedAt, status string
+		if err := rows.Scan(&receivedAt, &processedAt, &status); err != nil {
+			return LinearWebhookStats{}, fmt.Errorf("linear webhook stats: %w", err)
+		}
+		for _, at := range []time.Time{parseTime(receivedAt), parseTime(processedAt)} {
+			if at.After(stats.LastDeliveryAt) {
+				stats.LastDeliveryAt = at
+			}
+		}
+		switch status {
+		case "accepted":
+			stats.Accepted++
+		case "duplicate":
+			stats.Duplicate++
+		case "ignored":
+			stats.Ignored++
+		case "rejected":
+			stats.Rejected++
+		case "failed":
+			stats.Failed++
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return LinearWebhookStats{}, fmt.Errorf("linear webhook stats: %w", err)
+	}
+	return stats, nil
+}
+
 // LastSeenCommentAt returns the last Linear comment cursor for an issue.
 func (s *SQLiteStore) LastSeenCommentAt(project, linearIssueID string) (time.Time, error) {
 	const q = `SELECT last_seen_at FROM linear_comment_cursor WHERE project = ? AND linear_issue_id = ?`
@@ -1466,6 +1626,32 @@ func scanLinearTriggerEntry(scanner interface {
 	e.Processed = processed != 0
 	e.ProcessedAt = parseTime(processedAt)
 	return e, nil
+}
+
+func scanLinearWebhookDelivery(scanner interface {
+	Scan(dest ...any) error
+}) (LinearWebhookDelivery, error) {
+	var d LinearWebhookDelivery
+	var receivedAt, processedAt string
+	err := scanner.Scan(
+		&d.ID,
+		&d.DeliveryID,
+		&d.LinearEvent,
+		&d.Action,
+		&d.LinearIssueID,
+		&d.SourceKind,
+		&d.SourceID,
+		&d.Status,
+		&d.Reason,
+		&receivedAt,
+		&processedAt,
+	)
+	if err != nil {
+		return LinearWebhookDelivery{}, err
+	}
+	d.ReceivedAt = parseTime(receivedAt)
+	d.ProcessedAt = parseTime(processedAt)
+	return d, nil
 }
 
 // scanTaskEntry scans a single row into a TaskEntry.

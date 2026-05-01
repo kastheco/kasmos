@@ -1039,6 +1039,75 @@ func TestSQLiteStore_LinearTriggers_EnqueueIdempotentAndDispatch(t *testing.T) {
 	assert.False(t, queued)
 }
 
+func TestSQLiteStore_LinearWebhookDeliveries_RoundTripAndStats(t *testing.T) {
+	store := newTestStore(t)
+	receivedAt := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
+	delivery := taskstore.LinearWebhookDelivery{
+		DeliveryID:    "delivery-1",
+		LinearEvent:   "Issue",
+		Action:        "update",
+		LinearIssueID: "lin-1",
+		SourceKind:    "label",
+		SourceID:      "label-1",
+		Status:        "received",
+		ReceivedAt:    receivedAt,
+	}
+
+	recorded, err := store.RecordLinearWebhookDelivery("proj", delivery)
+	require.NoError(t, err)
+	assert.True(t, recorded)
+	recorded, err = store.RecordLinearWebhookDelivery("proj", delivery)
+	require.NoError(t, err)
+	assert.False(t, recorded)
+
+	got, err := store.LinearWebhookDeliveryByID("proj", "delivery-1")
+	require.NoError(t, err)
+	assert.Equal(t, "received", got.Status)
+	assert.Equal(t, receivedAt, got.ReceivedAt)
+
+	require.NoError(t, store.UpdateLinearWebhookDelivery("proj", "delivery-1", "accepted", "queued"))
+	got, err = store.LinearWebhookDeliveryByID("proj", "delivery-1")
+	require.NoError(t, err)
+	assert.Equal(t, "accepted", got.Status)
+	assert.Equal(t, "queued", got.Reason)
+	assert.False(t, got.ProcessedAt.IsZero())
+
+	for _, tc := range []struct {
+		id     string
+		status string
+	}{
+		{id: "delivery-2", status: "duplicate"},
+		{id: "delivery-3", status: "ignored"},
+		{id: "delivery-4", status: "rejected"},
+		{id: "delivery-5", status: "failed"},
+	} {
+		d := delivery
+		d.DeliveryID = tc.id
+		d.Status = tc.status
+		d.ReceivedAt = receivedAt.Add(time.Minute)
+		recorded, err := store.RecordLinearWebhookDelivery("proj", d)
+		require.NoError(t, err)
+		require.True(t, recorded)
+	}
+
+	recent, err := store.ListRecentLinearWebhookDeliveries("proj", 2)
+	require.NoError(t, err)
+	require.Len(t, recent, 2)
+
+	stats, err := store.LinearWebhookStats("proj", receivedAt.Add(-time.Hour))
+	require.NoError(t, err)
+	assert.Equal(t, 1, stats.Accepted)
+	assert.Equal(t, 1, stats.Duplicate)
+	assert.Equal(t, 1, stats.Ignored)
+	assert.Equal(t, 1, stats.Rejected)
+	assert.Equal(t, 1, stats.Failed)
+	assert.False(t, stats.LastDeliveryAt.Before(receivedAt.Add(time.Minute)))
+
+	err = store.UpdateLinearWebhookDelivery("proj", "missing", "failed", "missing")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not found")
+}
+
 func TestSQLiteStore_LinearCommentCursor_Monotonic(t *testing.T) {
 	store := newTestStore(t)
 
