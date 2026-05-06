@@ -401,6 +401,12 @@ func (t *TmuxSession) Start(workDir string) error {
 		}
 		program = "CLAUDE_CODE_NO_FLICKER=" + flickerVal + " " + program
 	}
+	if isCodexProgram(t.program) {
+		// Quiet codex's tracing — INFO-level traces flood ~/.codex/log/codex-tui.log
+		// and the shared ~/.codex/logs_2.sqlite, producing multi-MB/s write
+		// amplification across concurrent agents.
+		program = "RUST_LOG=warn OTEL_SDK_DISABLED=true " + program
+	}
 
 	// Redirect stderr to a per-session log file so kasmos-spawned agents
 	// always have debug logs available for crash diagnosis.
