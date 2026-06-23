@@ -70,6 +70,34 @@ func TestMigrateStripMdSuffix_CollisionSafe(t *testing.T) {
 	assert.Equal(t, []string{"other:renamed", "task:bare", "task.md:suffixed"}, subtaskRefs)
 }
 
+func TestMigrateStripMdSuffix_ReadOnlyDBIsNonFatal(t *testing.T) {
+	db, err := sql.Open("sqlite", ":memory:")
+	require.NoError(t, err)
+	db.SetMaxOpenConns(1)
+	t.Cleanup(func() { _ = db.Close() })
+
+	require.NoError(t, runStoreMigrations(db))
+	_, err = db.Exec("INSERT INTO tasks (project, filename, status) VALUES (?, ?, ?)", "proj", "readonly.md", StatusReady)
+	require.NoError(t, err)
+	_, err = db.Exec(
+		"INSERT INTO subtasks (project, plan_filename, task_number, title, status) VALUES (?, ?, ?, ?, ?)",
+		"proj",
+		"readonly.md",
+		1,
+		"task one",
+		SubtaskStatusPending,
+	)
+	require.NoError(t, err)
+
+	_, err = db.Exec("PRAGMA query_only = ON")
+	require.NoError(t, err)
+	require.NoError(t, migrateStripMdSuffix(db))
+
+	var filename string
+	require.NoError(t, db.QueryRow("SELECT filename FROM tasks WHERE project = ?", "proj").Scan(&filename))
+	assert.Equal(t, "readonly.md", filename, "readonly migrations should defer normalization instead of failing reads")
+}
+
 func TestSQLiteStore_MigratesExecutionStateColumnsFromOldSchema(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "taskstore.db")

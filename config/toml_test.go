@@ -41,14 +41,14 @@ master_review = "master"
 	enabled = true
 	program = "claude"
 	tier = "FAST"
-	model = "claude-opus-4-6"
+	model = "claude-opus-4-8"
 	effort = "high"
 	flags = ["--agent", "reviewer"]
 
 [agents.planner]
 enabled = false
 program = "codex"
-model = "gpt-5.3-codex"
+model = "gpt-5.5"
 flags = []
 `
 		err := os.WriteFile(tomlPath, []byte(content), 0o644)

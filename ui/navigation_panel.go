@@ -1301,11 +1301,11 @@ func (n *NavigationPanel) Clear() {
 func (n *NavigationPanel) SetSessionPreviewSize(width, height int) error {
 	var firstErr error
 	for _, inst := range n.instances {
-		if !inst.Started() || inst.Paused() {
+		if !inst.Started() || inst.Paused() || inst.Exited {
 			continue
 		}
 		if err := inst.SetPreviewSize(width, height); err != nil && firstErr == nil {
-			firstErr = err
+			firstErr = fmt.Errorf("%s: %w", inst.DisplayName(), err)
 		}
 	}
 	return firstErr

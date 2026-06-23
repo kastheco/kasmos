@@ -181,7 +181,7 @@ Wave-processing outcomes are also emitted to the audit log and daemon event stre
 kas signal emit implement_task_finished my-plan --payload '{"wave_number":2,"task_number":3}'
 ```
 
-this calls `gateway.Create(project, entry)` which inserts a row with `status = 'pending'`. in agent workflows, use mcp `signal_create` for the same gateway-backed result without shelling out to the cli. draft-mode planners should use `planner_draft_finished` with a payload such as `{"planner_id":"planner_x"}`; that signal is gateway-only and is not bridged through filesystem sentinels.
+this calls `gateway.Create(project, entry)` which inserts a row with `status = 'pending'`. in agent workflows, use mcp `signal_create` for the same gateway-backed result without shelling out to the cli. draft-mode planners should use `planner_draft_finished` with a payload such as `{"planner_id":"planner_gpt"}`; that signal is gateway-only and is not bridged through filesystem sentinels.
 
 ### stuck signal reaper
 

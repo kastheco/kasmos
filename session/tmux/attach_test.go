@@ -2,8 +2,10 @@ package tmux
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"os/exec"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -75,11 +77,33 @@ func TestSetDetachedSize_UsesResizeWindowWhenNoActivePTY(t *testing.T) {
 	require.Nil(t, s.ptmx)
 	err := s.SetDetachedSize(120, 40)
 	require.NoError(t, err)
+	require.Len(t, ranCmds, 2)
+	assert.Contains(t, ranCmds[0], "has-session")
+	assert.Contains(t, ranCmds[1], "resize-window")
+	assert.Contains(t, ranCmds[1], "-x 120")
+	assert.Contains(t, ranCmds[1], "-y 40")
+	assert.Contains(t, ranCmds[1], "kas_test-detached-size")
+}
+
+func TestSetDetachedSize_MissingSessionIsNoOp(t *testing.T) {
+	t.Parallel()
+	var ranCmds []string
+	cmdExec := cmd_test.MockCmdExec{
+		RunFunc: func(cmd *exec.Cmd) error {
+			ranCmds = append(ranCmds, commandString(cmd))
+			if strings.Contains(cmd.String(), "has-session") {
+				return fmt.Errorf("no server running")
+			}
+			return nil
+		},
+		OutputFunc: func(cmd *exec.Cmd) ([]byte, error) { return nil, nil },
+	}
+	s := NewTmuxSessionWithDeps("test-missing-size", "opencode", false, NewMockPtyFactory(t), cmdExec)
+
+	err := s.SetDetachedSize(120, 40)
+	require.NoError(t, err)
 	require.Len(t, ranCmds, 1)
-	assert.Contains(t, ranCmds[0], "resize-window")
-	assert.Contains(t, ranCmds[0], "-x 120")
-	assert.Contains(t, ranCmds[0], "-y 40")
-	assert.Contains(t, ranCmds[0], "kas_test-detached-size")
+	assert.Contains(t, ranCmds[0], "has-session")
 }
 
 func TestSetDetachedSize_ZeroDimensionsAreNoOp(t *testing.T) {

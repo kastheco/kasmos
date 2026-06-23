@@ -266,6 +266,26 @@ func TestCheckCmd_BinaryPathHealthyNoMismatch(t *testing.T) {
 	assert.NotContains(t, out, "/nonexistent/stale/kas")
 }
 
+func TestCheckCmd_AgentCommandFailureRendered(t *testing.T) {
+	prev := check.SetResolveAgentCommandPathForTest(func(name string) (string, error) {
+		return "", fmt.Errorf("%s missing", name)
+	})
+	t.Cleanup(func() { check.SetResolveAgentCommandPathForTest(prev) })
+
+	out := captureCheckOutput(t, func(home, project string) {
+		require.NoError(t, os.MkdirAll(filepath.Join(project, ".kasmos"), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(project, ".kasmos", "config.toml"), []byte(`
+[agents.coder]
+enabled = true
+program = "missing-agent"
+`), 0o644))
+	})
+
+	assert.Contains(t, out, "agent commands:")
+	assert.Contains(t, out, "missing-agent")
+	assert.Contains(t, out, "install missing agent CLIs")
+}
+
 func TestCheckCmd_PrePushHookHealthy(t *testing.T) {
 	prev := check.SetGitConfigFnForTest(func(string) (string, error) { return "scripts/git-hooks", nil })
 	t.Cleanup(func() { check.SetGitConfigFnForTest(prev) })

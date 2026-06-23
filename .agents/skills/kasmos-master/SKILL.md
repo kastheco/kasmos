@@ -18,7 +18,7 @@ Prompt-caching guidance for high-cost review model:
 
 ## Cost Guidance
 
-Use this pass as a high-cost `openai/gpt-5.4` review sweep: be exhaustive but efficient.
+Use this pass as a high-cost `openai/gpt-5.5` review sweep: be exhaustive but efficient.
 
 - do not narrate obvious pass-throughs (e.g., "file read," "command executed")
 - avoid duplicate observations across files

@@ -38,7 +38,7 @@ type agentStepModel struct {
 }
 
 func initAgentsFromExisting(harnesses []string, existing *config.TOMLConfigResult) []AgentState {
-	roles := DefaultAgentRoles()
+	roles := mergeExistingAgentRoles(DefaultAgentRoles(), existing)
 	defaults := RoleDefaults()
 	agents := make([]AgentState, 0, len(roles))
 
@@ -54,6 +54,9 @@ func initAgentsFromExisting(harnesses []string, existing *config.TOMLConfigResul
 				as.Harness = profile.Program
 				as.Model = profile.Model
 				as.Effort = profile.Effort
+				as.ExecutionMode = profile.ExecutionMode
+				as.Tier = profile.Tier
+				as.Flags = append([]string(nil), profile.Flags...)
 				as.Enabled = profile.Enabled
 				as.PermissionDefault = profile.PermissionDefault
 				as.Temperature = ""

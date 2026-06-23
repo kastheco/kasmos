@@ -42,9 +42,9 @@ Select which harnesses you want to configure. You can select multiple to assign 
 
 ### step 2 — agents
 
-For each selected harness, configure the agent roles:
+For each selected harness, configure the agent profiles. New configs use the same profile set as this repo: `coder`, `architect`, `reviewer`, `planner_opus`, `planner_gpt`, `chat`, `fixer`, and `master`.
 
-- **model** — the model string passed to the CLI (e.g. `claude-opus-4-5`, `o3`)
+- **model** — the model string passed to the CLI (e.g. `gpt-5.5`, `claude-opus-4-8`)
 - **temperature** — sampling temperature, if the harness supports it
 - **effort** — reasoning effort level, if the harness supports it (e.g. `high`, `medium`, `low`)
 - **execution mode** — `tmux` (attachable) or `sdk` (app-server protocol; claude and codex only)
@@ -69,7 +69,7 @@ fixer            = "fixer"
 readiness_review = "master"
 ```
 
-These map each lifecycle phase to an agent role. The role name determines which `[agents.*]` block kasmos uses when spawning an agent for that phase.
+These map each lifecycle phase to an agent role. `planning = "planner"` is retained for legacy single-planner mode; generated configs also write `[orchestration].planners = ["planner_opus", "planner_gpt"]`, which is the active default for `plan_start`.
 
 ## scaffold output
 
@@ -109,34 +109,38 @@ readiness_review = "master"   # canonical key; master_review accepted as backwar
 # per-role agent configuration
 [agents.coder]
 enabled        = true
-program        = "opencode"      # CLI command or full program string
-model          = "o3"            # model name passed to the CLI
-temperature    = 0.2             # omit to use harness default
-effort         = "high"          # omit if harness does not support effort levels
+program        = "codex"         # CLI command or full program string
+model          = "gpt-5.5"       # model name passed to the CLI
+temperature    = 0.1             # omit to use harness default
+effort         = "low"           # omit if harness does not support effort levels
 execution_mode = "tmux"           # "tmux" or "sdk" ("headless" accepted as legacy alias for "sdk")
 # permission_default omitted means inherit; set manually to "prompt" or "bypass" if needed
 
-[agents.planner]
+[agents.planner_opus]
 enabled        = true
 program        = "claude"
-model          = "claude-opus-4-5"
+model          = "claude-opus-4-8"
 execution_mode = "tmux"
+effort         = "xhigh"
 
 [agents.reviewer]
 enabled        = true
 program        = "claude"
-model          = "claude-sonnet-4-5"
-execution_mode = "sdk"
+model          = "claude-sonnet-4-6"
+execution_mode = "tmux"
+
+[orchestration]
+planners = ["planner_opus", "planner_gpt"]
 ```
 
 Additional top-level fields:
 
 ```toml
 database_url         = "http://your-server:7433"  # remote task store (optional)
-default_program      = "opencode"                  # fallback program for ad-hoc instances
-auto_yes             = false                        # auto-accept all agent prompts
+default_program      = "codex"                     # fallback program for ad-hoc instances
+auto_yes             = true                         # auto-accept all agent prompts
 branch_prefix        = "kas/"                       # prefix for worktree branch names
-daemon_poll_interval = 5                            # daemon poll interval in seconds
+daemon_poll_interval = 1000                         # daemon poll interval in milliseconds
 notifications_enabled = true
 ```
 
@@ -152,4 +156,4 @@ kas setup --clean   # re-run with factory defaults, ignoring current config
 
 > **Permission defaults:** freshly generated configs omit `permission_default`, which means inherit the current spawn-source default. If you manually add `permission_default = "prompt"` or `permission_default = "bypass"` to an agent profile, later wizard re-runs preserve that value and show it in the review step; edit `config.toml` directly to change it.
 
-After setup, run `kas check -v` to audit skill sync across all harness directories.
+After setup, run `kas check -v` to audit skill sync, configured binary paths, and enabled `[agents.*].program` executables.

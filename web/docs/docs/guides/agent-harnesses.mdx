@@ -41,10 +41,10 @@ The enforcement hook is a bash script invoked as a Claude `PreToolUse` hook. It 
 Available models (as of the current release):
 
 ```
+claude-opus-4-8
 claude-sonnet-4-6
-claude-opus-4-6
-claude-sonnet-4-5
-claude-haiku-4-5
+claude-haiku-4-5-20251001
+claude-fable-5
 ```
 
 ### codex
@@ -56,7 +56,7 @@ kasmos scaffolds:
 
 Codex reads `.agents/skills/` **natively** — no symlink sync is needed. Personal skills at `~/.agents/skills/` are also read directly. No enforcement hook is installed for Codex.
 
-Model names are free-text (e.g. `gpt-5.3-codex`). Effort levels follow the Codex scale: `low`, `medium`, `high`, `xhigh`. Temperature is also configurable.
+Model names are free-text (e.g. `gpt-5.5`). The wizard suggests `gpt-5.5`, `gpt-5.4`, `gpt-5.4-mini`, and `gpt-5.3-codex-spark`. Effort levels follow the Codex scale: `low`, `medium`, `high`, `xhigh`. Temperature is also configurable.
 
 ## runtime-supported CLI workflows
 
@@ -205,7 +205,7 @@ kas check
 kas check -v
 ```
 
-Reports skill sync status across all detected harnesses at both the global (`~/.agents/skills/`) and project (`.agents/skills/`) layers. See [skills](./skills.mdx) for details.
+Reports skill sync status across all detected harnesses at both the global (`~/.agents/skills/`) and project (`.agents/skills/`) layers, validates configured kasmos binary paths, and checks enabled `[agents.*].program` executables from `.kasmos/config.toml`. See [skills](./skills.mdx) for details.
 
 ## related
 

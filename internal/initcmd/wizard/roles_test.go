@@ -58,7 +58,9 @@ func TestDefaultAgentRoles_IncludesFixer(t *testing.T) {
 	roles := DefaultAgentRoles()
 	assert.Contains(t, roles, "fixer")
 	assert.Contains(t, roles, "chat")
-	assert.Len(t, roles, 7)
+	assert.Contains(t, roles, "planner_opus")
+	assert.Contains(t, roles, "planner_gpt")
+	assert.Len(t, roles, 8)
 }
 
 func TestRoleDefaults_HasAllRoles(t *testing.T) {

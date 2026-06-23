@@ -441,7 +441,7 @@ func TestSpawnPlannersForTask_LegacyModeSpawnsOnlyPlanner(t *testing.T) {
 	assert.Equal(t, "plan prompt", instances[0].QueuedPrompt)
 }
 
-func TestSpawnPlannersForTask_DefaultConfigUsesLegacyPlanner(t *testing.T) {
+func TestSpawnPlannersForTask_DefaultConfigUsesParallelPlanners(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	plansDir := filepath.Join(dir, "docs", "plans")
@@ -470,9 +470,11 @@ func TestSpawnPlannersForTask_DefaultConfigUsesLegacyPlanner(t *testing.T) {
 	updated := model.(*home)
 
 	instances := updated.nav.GetInstances()
-	require.Len(t, instances, 1)
+	require.Len(t, instances, 2)
 	assert.Equal(t, session.AgentTypePlanner, instances[0].AgentType)
-	assert.Empty(t, instances[0].PlannerProfile)
+	assert.Equal(t, session.AgentTypePlanner, instances[1].AgentType)
+	assert.Equal(t, "planner_opus", instances[0].PlannerProfile)
+	assert.Equal(t, "planner_gpt", instances[1].PlannerProfile)
 }
 
 func TestSpawnPlannersForTask_DraftModeSpawnsConfiguredProfiles(t *testing.T) {

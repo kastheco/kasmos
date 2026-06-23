@@ -77,6 +77,9 @@ func runCheck(cmd *cobra.Command, args []string) error {
 	if result.BinaryPath != nil {
 		renderBinaryPath(cmd, result.BinaryPath)
 	}
+	if result.AgentCommands != nil {
+		renderAgentCommands(cmd, result.AgentCommands)
+	}
 
 	// Probe the shared HTTP MCP endpoint. A reachable endpoint is required for
 	// managed harness launches; a failure here is always unhealthy.
@@ -183,6 +186,18 @@ func collectRemediationHints(result *check.AuditResult, mcpProcs []check.MCPProc
 	if result.GitHooks != nil && !result.GitHooks.Configured {
 		add("run 'just hooks' to install the docs-drift pre-push hook")
 	}
+	if result.AgentCommands != nil {
+		if result.AgentCommands.LoadError != "" {
+			add("fix .kasmos/config.toml so agent command checks can read it")
+		} else {
+			for _, entry := range result.AgentCommands.Entries {
+				if !entry.Healthy {
+					add("install missing agent CLIs or update [agents.*].program in .kasmos/config.toml")
+					break
+				}
+			}
+		}
+	}
 
 	// Long-lived stdio mcp process hint.
 	if len(mcpProcs) > 0 {
@@ -277,6 +292,33 @@ func renderBinaryPath(cmd *cobra.Command, bp *check.BinaryPathResult) {
 				annotation,
 			)
 		}
+	}
+}
+
+func renderAgentCommands(cmd *cobra.Command, result *check.AgentCommandResult) {
+	out := cmd.OutOrStdout()
+	fmt.Fprintf(out, "\nagent commands:\n")
+	if result.LoadError != "" {
+		fmt.Fprintf(out, "  ✗ %s (%s)\n", result.ConfigPath, result.LoadError)
+		return
+	}
+	if len(result.Entries) == 0 {
+		fmt.Fprintf(out, "  – no enabled agents in %s\n", result.ConfigPath)
+		return
+	}
+	for _, entry := range result.Entries {
+		glyph := "✓"
+		detail := entry.Resolved
+		if !entry.Healthy {
+			glyph = "✗"
+			if entry.Detail != "" {
+				detail = entry.Detail
+			}
+			if entry.Resolved != "" && entry.Detail != "" {
+				detail = entry.Resolved + " (" + entry.Detail + ")"
+			}
+		}
+		fmt.Fprintf(out, "  %s %-14s %-12s %s\n", glyph, entry.Role, entry.Program, detail)
 	}
 }
 

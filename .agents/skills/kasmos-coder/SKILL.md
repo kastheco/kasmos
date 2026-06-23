@@ -80,7 +80,7 @@ kasmos spawned you to implement **one specific task** identified by `KASMOS_TASK
     your prompt. Do not make creative architectural decisions or rewrite abstractions
     when explicit instructions already define what to change.
 3. Prefer exact instructions over exploration: with coder profile defaults
-    (`openai/gpt-5.3-codex-spark`, `temperature=0.1`, `effort=low`), choose the
+    (`openai/gpt-5.5`, `temperature=0.1`, `effort=low`), choose the
     narrowest implementation that satisfies the failing test.
 4. Implement that single task following TDD discipline below.
 5. Commit your work with task number in the commit message.

@@ -180,8 +180,8 @@ func TestAgentStepPrePopulatesFromExisting(t *testing.T) {
 
 	// architect gets defaults when not present in existing config
 	arch := agentByRole(t, agents, "architect")
-	assert.Equal(t, "opencode", arch.Harness)
-	assert.Equal(t, "openai/gpt-5.4", arch.Model)
+	assert.Equal(t, "claude", arch.Harness)
+	assert.Equal(t, "claude-opus-4-8", arch.Model)
 	assert.Equal(t, "xhigh", arch.Effort)
 	assert.Equal(t, "0.2", arch.Temperature)
 
@@ -212,34 +212,34 @@ func TestInitAgentsFromExisting_PreservesPermissionDefault(t *testing.T) {
 }
 
 func TestInitAgentsFromExisting_UsesPreferredHarnessWhenSelected(t *testing.T) {
-	agents := initAgentsFromExisting([]string{"claude", "opencode"}, nil)
+	agents := initAgentsFromExisting([]string{"codex", "claude", "opencode"}, nil)
 
-	// coder prefers "claude" — available, so it should be selected
+	// coder prefers "codex" — available, so it should be selected
 	coder := agentByRole(t, agents, "coder")
-	assert.Equal(t, "claude", coder.Harness)
+	assert.Equal(t, "codex", coder.Harness)
 
-	// architect prefers "opencode" — available, so it should be selected
+	// architect prefers "claude" — available, so it should be selected
 	arch := agentByRole(t, agents, "architect")
-	assert.Equal(t, "opencode", arch.Harness)
+	assert.Equal(t, "claude", arch.Harness)
 }
 
 func TestInitAgentsFromExisting_FallsBackWhenPreferredHarnessUnavailable(t *testing.T) {
-	// Only "opencode" is available; claude-preferring roles must fall back to it
+	// Only "opencode" is available; codex/claude-preferring roles must fall back to it
 	agents := initAgentsFromExisting([]string{"opencode"}, nil)
 
 	coder := agentByRole(t, agents, "coder")
-	assert.Equal(t, "opencode", coder.Harness, "coder should fall back to opencode when claude unavailable")
+	assert.Equal(t, "opencode", coder.Harness, "coder should fall back to opencode when codex unavailable")
 
 	reviewer := agentByRole(t, agents, "reviewer")
 	assert.Equal(t, "opencode", reviewer.Harness, "reviewer should fall back to opencode when claude unavailable")
 
-	// architect already prefers opencode, so no fallback needed
+	// architect also prefers claude, so it falls back too.
 	arch := agentByRole(t, agents, "architect")
 	assert.Equal(t, "opencode", arch.Harness)
 }
 
-func TestInitAgentsFromExisting_FallsBackToClaudeWhenOpenCodeUnavailable(t *testing.T) {
-	// Only "claude" is available; opencode-preferring roles must fall back to it
+func TestInitAgentsFromExisting_FallsBackToClaudeWhenCodexUnavailable(t *testing.T) {
+	// Only "claude" is available; codex-preferring roles must fall back to it
 	agents := initAgentsFromExisting([]string{"claude"}, nil)
 
 	arch := agentByRole(t, agents, "architect")
@@ -279,8 +279,8 @@ func TestAgentStep_IgnoresLegacyElaboratorProfile(t *testing.T) {
 		}
 	}
 	require.Equal(t, "architect", arch.Role, "architect role must be present")
-	assert.Equal(t, "opencode", arch.Harness, "architect should keep the default harness")
-	assert.Equal(t, "openai/gpt-5.4", arch.Model)
+	assert.Equal(t, "opencode", arch.Harness, "architect should fall back to the selected harness")
+	assert.Equal(t, "claude-opus-4-8", arch.Model)
 	assert.Equal(t, "xhigh", arch.Effort)
 	assert.Equal(t, "0.2", arch.Temperature)
 	assert.True(t, arch.Enabled)

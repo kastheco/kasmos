@@ -128,10 +128,25 @@ func (i *Instance) SetPreviewSize(width, height int) error {
 		return fmt.Errorf("cannot set preview size for instance that has not been started or " +
 			"is paused")
 	}
+	if i.Exited {
+		return nil
+	}
 	if NormalizeExecutionMode(i.ExecutionMode) == ExecutionModeSDK {
 		return nil
 	}
-	return i.executionSession.SetDetachedSize(width, height)
+	if i.executionSession == nil {
+		return fmt.Errorf("cannot set preview size for instance %q: execution session is nil", i.DisplayName())
+	}
+	if !i.executionSession.DoesSessionExist() {
+		i.Exited = true
+		i.Status = Ready
+		i.Notified = true
+		return nil
+	}
+	if err := i.executionSession.SetDetachedSize(width, height); err != nil {
+		return fmt.Errorf("resize preview for %q (%s, %s): %w", i.DisplayName(), i.executionSession.GetSanitizedName(), i.Program, err)
+	}
+	return nil
 }
 
 // GetGitWorktree returns the git worktree associated with this instance.

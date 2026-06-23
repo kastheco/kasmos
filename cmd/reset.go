@@ -619,7 +619,7 @@ func profilesToAgentConfigs(profiles map[string]config.AgentProfile) []initcmdha
 			continue
 		}
 		cfg := initcmdharness.AgentConfig{
-			Role:       role,
+			Role:       config.ScaffoldRoleForProfile(role),
 			Harness:    p.Program,
 			Model:      p.Model,
 			Effort:     p.Effort,

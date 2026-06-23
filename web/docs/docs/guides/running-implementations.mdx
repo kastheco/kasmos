@@ -48,7 +48,7 @@ To run multiple planners, set:
 
 ```toml
 [orchestration]
-planners = ["planner", "planner_x"]
+planners = ["planner_opus", "planner_gpt"]
 ```
 
 Each draft-mode planner emits gateway-only `planner_draft_finished` with `{"planner_id":"<profile>"}`. The processor aggregates those draft signals and internally advances planning when all expected profiles are done. The final architect pass reads the task-store plan plus planner draft caches, derives its own baseline inline, writes the final task-store plan, and records consumed drafts in `decision_audit.planner_drafts`. If the planner draft is small enough for blueprint skip, kasmos may skip the final architect pass, leaving produced draft caches unused.

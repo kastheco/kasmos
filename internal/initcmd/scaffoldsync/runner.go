@@ -230,7 +230,7 @@ func profilesToAgentConfigs(profiles map[string]config.AgentProfile) []harness.A
 			continue
 		}
 		configs = append(configs, harness.AgentConfig{
-			Role:        role,
+			Role:        config.ScaffoldRoleForProfile(role),
 			Harness:     p.Program,
 			Model:       p.Model,
 			Temperature: p.Temperature,

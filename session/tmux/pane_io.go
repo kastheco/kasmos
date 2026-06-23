@@ -156,6 +156,9 @@ func (t *TmuxSession) HasUpdated() (updated bool, hasPrompt bool) {
 func (t *TmuxSession) HasUpdatedWithContent() (updated bool, hasPrompt bool, content string, captured bool) {
 	c, err := t.CapturePaneContent()
 	if err != nil {
+		if !t.DoesSessionExist() {
+			return false, false, "", false
+		}
 		if t.monitor != nil && t.monitor.RecordFailure() {
 			log.ErrorLog.Printf("error capturing pane content in status monitor: %v", err)
 		}

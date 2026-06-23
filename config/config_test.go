@@ -138,13 +138,17 @@ func TestDefaultConfig(t *testing.T) {
 
 		assert.NotNil(t, config)
 		assert.NotEmpty(t, config.DefaultProgram)
-		assert.False(t, config.AutoYes)
+		assert.True(t, config.AutoYes)
 		assert.True(t, config.AutoAdvanceWaves)
 		assert.True(t, config.AutoAdvance)
 		assert.True(t, config.AutoReviewFix)
 		assert.Equal(t, 1000, config.DaemonPollInterval)
 		assert.NotEmpty(t, config.BranchPrefix)
 		assert.True(t, strings.HasSuffix(config.BranchPrefix, "/"))
+		assert.Equal(t, []string{"planner_opus", "planner_gpt"}, config.Planners)
+		assert.Equal(t, "codex", config.Profiles["coder"].Program)
+		assert.Equal(t, "gpt-5.5", config.Profiles["coder"].Model)
+		assert.Equal(t, map[string]bool{"codex": false}, config.Enforcement)
 		assert.Empty(t, config.ThemeSource)
 		assert.Empty(t, config.SystemThemeProvider)
 		assert.Empty(t, config.ThemePaletteFile)
@@ -396,7 +400,7 @@ func TestLoadConfig(t *testing.T) {
 
 		assert.NotNil(t, config)
 		assert.NotEmpty(t, config.DefaultProgram)
-		assert.False(t, config.AutoYes)
+		assert.True(t, config.AutoYes)
 		assert.True(t, config.AutoAdvanceWaves)
 		assert.True(t, config.AutoAdvance)
 		assert.True(t, config.AutoReviewFix)
@@ -450,7 +454,7 @@ branch_prefix = "test/"
 
 		assert.NotNil(t, config)
 		assert.NotEmpty(t, config.DefaultProgram)
-		assert.False(t, config.AutoYes)
+		assert.True(t, config.AutoYes)
 		assert.True(t, config.AutoAdvanceWaves)
 		assert.True(t, config.AutoAdvance)
 		assert.True(t, config.AutoReviewFix)
@@ -996,8 +1000,8 @@ func TestPlannerProfileNames(t *testing.T) {
 		assert.Equal(t, []string{"planner-a", "planner-b"}, cfg.PlannerProfileNames())
 	})
 
-	t.Run("DefaultConfig has nil Planners (legacy mode)", func(t *testing.T) {
-		assert.Nil(t, DefaultConfig().Planners)
+	t.Run("DefaultConfig has canonical parallel planners", func(t *testing.T) {
+		assert.Equal(t, []string{"planner_opus", "planner_gpt"}, DefaultConfig().Planners)
 	})
 
 	t.Run("absent planners in configFromTOML leaves Planners nil", func(t *testing.T) {

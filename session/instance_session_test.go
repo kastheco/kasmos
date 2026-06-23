@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"charm.land/lipgloss/v2"
@@ -381,6 +382,52 @@ func TestCollectMetadata_TmuxSession_NoRendererStats(t *testing.T) {
 
 	m := inst.CollectMetadata()
 	assert.Equal(t, sdk.RendererStats{}, m.RendererStats)
+}
+
+type resizeErrorSession struct {
+	deadExecutionSession
+	err error
+}
+
+func (s resizeErrorSession) DoesSessionExist() bool   { return true }
+func (s resizeErrorSession) GetSanitizedName() string { return "kas_resize-error" }
+func (s resizeErrorSession) SetDetachedSize(int, int) error {
+	return s.err
+}
+
+func TestInstance_SetPreviewSize_MarksMissingTmuxSessionExited(t *testing.T) {
+	inst := &Instance{
+		Title:         "missing-tmux",
+		Program:       "codex",
+		Status:        Running,
+		ExecutionMode: ExecutionModeTmux,
+		started:       true,
+	}
+	inst.SetExecutionSessionForTest(deadExecutionSession{})
+
+	err := inst.SetPreviewSize(120, 40)
+	require.NoError(t, err)
+	assert.True(t, inst.Exited)
+	assert.Equal(t, Ready, inst.Status)
+	assert.True(t, inst.Notified)
+}
+
+func TestInstance_SetPreviewSize_WrapsResizeErrorWithContext(t *testing.T) {
+	inst := &Instance{
+		Title:         "resize-fails",
+		Program:       "codex -m gpt-5.5",
+		Status:        Running,
+		ExecutionMode: ExecutionModeTmux,
+		started:       true,
+	}
+	inst.SetExecutionSessionForTest(resizeErrorSession{err: fmt.Errorf("resize failed")})
+
+	err := inst.SetPreviewSize(120, 40)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "resize-fails")
+	assert.Contains(t, err.Error(), "kas_resize-error")
+	assert.Contains(t, err.Error(), "codex -m gpt-5.5")
+	assert.Contains(t, err.Error(), "resize failed")
 }
 
 // TestInstance_SetCachedRendererStats_IsValueCopy verifies that

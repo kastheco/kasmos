@@ -21,9 +21,10 @@ func (c *Codex) Detect() (string, bool) {
 // ListModels returns curated suggestions. Codex accepts free-text model names.
 func (c *Codex) ListModels() ([]string, error) {
 	return []string{
-		"gpt-5-codex",
+		"gpt-5.5",
 		"gpt-5.4",
-		"gpt-5.3-codex",
+		"gpt-5.4-mini",
+		"gpt-5.3-codex-spark",
 	}, nil
 }
 

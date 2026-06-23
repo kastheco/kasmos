@@ -59,7 +59,7 @@ func TestResolveCheckoutRoot_Worktree(t *testing.T) {
 }
 
 func TestResolveCheckoutRoot_NotARepo(t *testing.T) {
-	dir := t.TempDir()
+	dir := filepath.Join(string(os.PathSeparator), "kasmos-definitely-not-a-repo", "nested")
 	_, err := resolveCheckoutRoot(dir)
 	assert.Error(t, err)
 }

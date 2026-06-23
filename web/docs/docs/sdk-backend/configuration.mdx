@@ -84,18 +84,19 @@ func ResolveExecutionMode(requested ExecutionMode, program string) ExecutionMode
 ```toml
 [agents.coder]
 enabled         = true
-program         = "claude"
-model           = "claude-opus-4-5"
-flags           = ["--permission-mode bypassPermissions"]
+program         = "codex"
+model           = "gpt-5.5"
 execution_mode  = "sdk"
+tier            = "fast"
 
 [agents.reviewer]
 enabled         = true
 program         = "claude"
+model           = "claude-sonnet-4-6"
 execution_mode  = "tmux"
 ```
 
-this configuration runs the coder agent via the claude app-server protocol while keeping the reviewer in tmux for interactive attach capability.
+this configuration runs the coder agent via the codex app-server protocol while keeping the reviewer in tmux for interactive attach capability.
 
 ## permission defaults
 

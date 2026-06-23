@@ -1,6 +1,7 @@
 package check
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -107,6 +108,66 @@ func TestAudit_PopulatesBinaryPath(t *testing.T) {
 	result := Audit(home, projectDir, registry)
 
 	assert.NotNil(t, result.BinaryPath, "BinaryPath should always be populated")
+}
+
+func TestAuditAgentCommands_ValidatesEnabledProfiles(t *testing.T) {
+	projectDir := t.TempDir()
+	configDir := filepath.Join(projectDir, ".kasmos")
+	require.NoError(t, os.MkdirAll(configDir, 0o755))
+
+	codexPath := filepath.Join(t.TempDir(), "codex")
+	require.NoError(t, os.WriteFile(codexPath, []byte("#!/bin/sh\n"), 0o755))
+	brokenPath := filepath.Join(t.TempDir(), "broken")
+	require.NoError(t, os.WriteFile(brokenPath, []byte("#!/bin/sh\n"), 0o644))
+
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(fmt.Sprintf(`
+[agents.coder]
+enabled = true
+program = "codex"
+
+[agents.reviewer]
+enabled = true
+program = %q
+
+[agents.disabled]
+enabled = false
+program = "missing"
+`, brokenPath)), 0o644))
+
+	prev := SetResolveAgentCommandPathForTest(func(name string) (string, error) {
+		if name == "codex" {
+			return codexPath, nil
+		}
+		return "", fmt.Errorf("%s missing", name)
+	})
+	t.Cleanup(func() { SetResolveAgentCommandPathForTest(prev) })
+
+	result := AuditAgentCommands(projectDir)
+	require.NotNil(t, result)
+	require.Empty(t, result.LoadError)
+	require.Len(t, result.Entries, 2)
+
+	assert.Equal(t, "coder", result.Entries[0].Role)
+	assert.True(t, result.Entries[0].Healthy)
+	assert.Equal(t, codexPath, result.Entries[0].Resolved)
+
+	assert.Equal(t, "reviewer", result.Entries[1].Role)
+	assert.False(t, result.Entries[1].Healthy)
+	assert.Contains(t, result.Entries[1].Detail, "not executable")
+}
+
+func TestSummary_AgentCommandFailureCountsAsUnhealthy(t *testing.T) {
+	result := &AuditResult{
+		AgentCommands: &AgentCommandResult{
+			Entries: []AgentCommandStatus{
+				{Role: "coder", Healthy: true},
+				{Role: "reviewer", Healthy: false},
+			},
+		},
+	}
+	ok, total := result.Summary()
+	assert.Equal(t, 1, ok)
+	assert.Equal(t, 2, total)
 }
 
 func TestSummary_BinaryPathMismatchCountsAsUnhealthy(t *testing.T) {

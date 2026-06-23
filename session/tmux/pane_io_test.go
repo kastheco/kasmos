@@ -1,6 +1,7 @@
 package tmux
 
 import (
+	"fmt"
 	"os/exec"
 	"strings"
 	"testing"
@@ -250,4 +251,31 @@ func TestHasUpdatedWithContent_NoPromptWhileRunning(t *testing.T) {
 
 	_, hasPrompt, _, _ := s.HasUpdatedWithContent()
 	assert.False(t, hasPrompt, "opencode running pane should not have prompt detected")
+}
+
+func TestHasUpdatedWithContent_MissingSessionSuppressesCaptureFailure(t *testing.T) {
+	t.Parallel()
+	cmdExec := cmd_test.MockCmdExec{
+		RunFunc: func(cmd *exec.Cmd) error {
+			if strings.Contains(cmd.String(), "has-session") {
+				return fmt.Errorf("no server running")
+			}
+			return nil
+		},
+		OutputFunc: func(cmd *exec.Cmd) ([]byte, error) {
+			if strings.Contains(cmd.String(), "capture-pane") {
+				return nil, fmt.Errorf("capture-pane failed")
+			}
+			return nil, nil
+		},
+	}
+	s := NewTmuxSessionWithDeps("missing-capture", "opencode", false, &MockPtyFactory{}, cmdExec)
+	s.monitor = NewStatusMonitor()
+
+	updated, hasPrompt, content, captured := s.HasUpdatedWithContent()
+	assert.False(t, updated)
+	assert.False(t, hasPrompt)
+	assert.Empty(t, content)
+	assert.False(t, captured)
+	assert.Equal(t, 0, s.monitor.captureFailures)
 }

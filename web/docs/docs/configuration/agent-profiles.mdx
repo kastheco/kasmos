@@ -13,7 +13,7 @@ An **agent profile** (`config.AgentProfile` in `config/profile.go`) defines how 
 | `enabled` | bool | `false` | the role is active and can be dispatched; disabled profiles fall back to `default_program` |
 | `program` | string | — | executable name or path (e.g. `claude`, `opencode`, `/usr/local/bin/codex`) |
 | `flags` | []string | `[]` | extra CLI flags appended after the prompt argument |
-| `model` | string | — | model identifier passed to the agent (e.g. `claude-sonnet-4-5`) |
+| `model` | string | — | model identifier passed to the agent (e.g. `gpt-5.5`, `claude-sonnet-4-6`) |
 | `temperature` | float? | — | sampling temperature, if the agent supports it |
 | `effort` | string | — | effort level (e.g. `low`, `medium`, `high`), if the agent supports it |
 | `tier` | string | `""` | Codex SDK only: session speed tier (accepts `"fast"`, `"flex"`, or `"default"`). Claude SDK and tmux sessions ignore this field. |
@@ -84,9 +84,9 @@ Sets the profile-level default for whether kasmos should prompt for permission a
 ```toml
 [agents.coder]
 enabled            = true
-program            = "claude"
-model              = "claude-sonnet-4-5"
-execution_mode     = "sdk"
+program            = "codex"
+model              = "gpt-5.5"
+execution_mode     = "tmux"
 permission_default = "bypass"
 ```
 
@@ -98,8 +98,8 @@ This makes orchestration-spawned coder sessions use bypass permissions for unatt
 [agents.reviewer]
 enabled            = true
 program            = "claude"
-model              = "claude-opus-4-5"
-execution_mode     = "sdk"
+model              = "claude-sonnet-4-6"
+execution_mode     = "tmux"
 permission_default = "prompt"
 ```
 
@@ -132,7 +132,7 @@ kasmos resolves a profile for a given lifecycle phase via `config.Config.Resolve
 
 This means you can disable a role without removing it from the config — just set `enabled = false`.
 
-`[orchestration].planners` resolves profile names directly from `[agents.<profile>]`, not through `[phases].planning`. For example, `planners = ["planner", "planner_x"]` requires both `[agents.planner]` and `[agents.planner_x]` to exist and be enabled. If the list is unset or empty, kasmos uses the legacy single-planner resolution through `[phases].planning`.
+`[orchestration].planners` resolves profile names directly from `[agents.<profile>]`, not through `[phases].planning`. For example, `planners = ["planner_opus", "planner_gpt"]` requires both `[agents.planner_opus]` and `[agents.planner_gpt]` to exist and be enabled. If the list is unset or empty, kasmos uses the legacy single-planner resolution through `[phases].planning`.
 
 ## examples
 
@@ -141,39 +141,41 @@ This means you can disable a role without removing it from the config — just s
 ```toml
 [agents.coder]
 enabled        = true
-program        = "claude"
-model          = "claude-sonnet-4-5"
+program        = "codex"
+model          = "gpt-5.5"
 execution_mode = "tmux"
-flags          = ["--permission-mode bypassPermissions"]
+tier           = "fast"
 ```
 
 Launches `claude --permission-mode bypassPermissions` in a new tmux window. The `-p <prompt>` and `--model` flags are injected by kasmos before appending `flags`.
 
-### opencode (tmux, high-effort planner)
+### claude opus (tmux, parallel planner)
 
 ```toml
-[agents.planner]
+[agents.planner_opus]
 enabled        = true
-program        = "opencode"
+program        = "claude"
+model          = "claude-opus-4-8"
 execution_mode = "tmux"
-effort         = "high"
+effort         = "xhigh"
+flags          = ["--permission-mode bypassPermissions"]
 ```
 
-Runs `opencode` in a tmux window with `effort = "high"`. opencode interprets the `effort` field to choose model tiers and thinking budgets. Note: `execution_mode = "sdk"` has no effect for opencode — there is no sdk transport for it; kasmos would fall back to tmux silently.
+Runs Claude Opus in a tmux window as one lane of the default parallel planner set.
 
-### codex (sdk with custom model)
+### codex (tmux with current default model)
 
 ```toml
-[agents.reviewer]
+[agents.planner_gpt]
 enabled        = true
 program        = "codex"
-model          = "o3"
-execution_mode = "sdk"
-tier           = "fast"   # forwarded as serviceTier: "fast" on thread/start
-flags          = ["--approval-mode", "full-auto"]
+model          = "gpt-5.5"
+execution_mode = "tmux"
+tier           = "fast"
+effort         = "xhigh"
 ```
 
-Drives `codex --approval-mode full-auto` via the Codex App Server protocol with `model = "o3"`. Setting `tier = "fast"` requests the fast Codex speed tier for every orchestration-spawned session into this role.
+Runs Codex as the second lane of the default parallel planner set. Codex model names remain free text; the wizard offers curated suggestions.
 
 ### mixed setup (different agents per role)
 
@@ -184,39 +186,48 @@ elaborating    = "architect"
 implementing   = "coder"
 quality_review = "reviewer"
 
-[agents.planner]
+[agents.planner_opus]
 enabled        = true
-program        = "opencode"
+program        = "claude"
+model          = "claude-opus-4-8"
 execution_mode = "tmux"
-effort         = "high"
+effort         = "xhigh"
+flags          = ["--permission-mode bypassPermissions"]
 
-[agents.planner_x]
+[agents.planner_gpt]
 enabled        = true
 program        = "codex"
-execution_mode = "sdk"
-effort         = "high"
+model          = "gpt-5.5"
+execution_mode = "tmux"
+effort         = "xhigh"
+tier           = "fast"
 
 [agents.architect]
 enabled        = true
 program        = "claude"
-model          = "claude-sonnet-4-5"
-execution_mode = "sdk"
+model          = "claude-opus-4-8"
+execution_mode = "tmux"
+effort         = "xhigh"
+flags          = ["--permission-mode bypassPermissions"]
 
 [agents.coder]
 enabled        = true
-program        = "claude"
-model          = "claude-sonnet-4-5"
+program        = "codex"
+model          = "gpt-5.5"
 execution_mode = "tmux"
-flags          = ["--permission-mode bypassPermissions"]
+effort         = "low"
+tier           = "fast"
 
 [agents.reviewer]
 enabled        = true
 program        = "claude"
-model          = "claude-opus-4-5"
-execution_mode = "sdk"
+model          = "claude-sonnet-4-6"
+execution_mode = "tmux"
+effort         = "medium"
+flags          = ["--permission-mode bypassPermissions"]
 
 [orchestration]
-planners = ["planner", "planner_x"]
+planners = ["planner_opus", "planner_gpt"]
 ```
 
 ## disabling a role
@@ -233,7 +244,8 @@ When `enabled = false`, kasmos falls back to `default_program` for that phase. T
 
 When `default_program` is not set in `config.toml`, kasmos calls `config.GetDefaultCommand()` which tries executables in order:
 
-1. `opencode` (preferred)
-2. `claude`
+1. `codex` (preferred)
+2. `opencode`
+3. `claude`
 
-It sources your shell's rc file (`~/.zshrc` or `~/.bashrc`) so shell aliases are visible. If neither is found via the shell, `exec.LookPath` is used as a fallback.
+It sources your shell's rc file (`~/.zshrc` or `~/.bashrc`) so shell aliases are visible. If none is found via the shell, `exec.LookPath` is used as a fallback.

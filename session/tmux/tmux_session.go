@@ -411,8 +411,8 @@ func (t *TmuxSession) Start(workDir string) error {
 	// Redirect stderr to a per-session log file so kasmos-spawned agents
 	// always have debug logs available for crash diagnosis.
 	logDir := filepath.Join(workDir, promptDir, "logs")
+	logFile := filepath.Join(logDir, t.sanitizedName+".log")
 	if err := os.MkdirAll(logDir, 0o755); err == nil {
-		logFile := filepath.Join(logDir, t.sanitizedName+".log")
 		if isOpenCodeProgram(t.program) {
 			program = program + " --print-logs 2>>" + shellEscapeSingleQuote(logFile)
 		} else {
@@ -594,7 +594,7 @@ func (t *TmuxSession) Start(workDir string) error {
 					if cleanupErr := t.Close(); cleanupErr != nil {
 						log.ErrorLog.Printf("cleanup after dead session %s: %v", t.sanitizedName, cleanupErr)
 					}
-					return fmt.Errorf("session %s died during startup (program exited immediately — check %s/logs/%s.log for details)", t.sanitizedName, promptDir, t.sanitizedName)
+					return t.startupExitError(workDir, logFile)
 				}
 			}
 
@@ -635,6 +635,32 @@ func (t *TmuxSession) Start(workDir string) error {
 		}
 	}
 	return nil
+}
+
+func (t *TmuxSession) startupExitError(workDir, logFile string) error {
+	if logFile == "" {
+		logFile = filepath.Join(workDir, promptDir, "logs", t.sanitizedName+".log")
+	}
+	msg := fmt.Sprintf("session %s died during startup (program %q exited immediately; tmux target %s; log %s)",
+		t.sanitizedName, programBase(t.program), t.sanitizedName, logFile)
+	if tail := readStartupLogTail(logFile, 2048); tail != "" {
+		msg += "\nlast log output:\n" + tail
+	}
+	return errors.New(msg)
+}
+
+func readStartupLogTail(path string, maxBytes int) string {
+	if maxBytes <= 0 {
+		return ""
+	}
+	data, err := os.ReadFile(path)
+	if err != nil || len(data) == 0 {
+		return ""
+	}
+	if len(data) > maxBytes {
+		data = data[len(data)-maxBytes:]
+	}
+	return strings.TrimSpace(string(data))
 }
 
 // Restore reattaches monitoring to an existing tmux session without spawning a

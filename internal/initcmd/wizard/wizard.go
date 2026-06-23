@@ -2,6 +2,7 @@ package wizard
 
 import (
 	"fmt"
+	"sort"
 	"strconv"
 
 	tea "charm.land/bubbletea/v2"
@@ -33,76 +34,46 @@ type AgentState struct {
 	Model             string
 	Temperature       string // "" means default; parsed to *float64 on save
 	Effort            string // "" means default
+	ExecutionMode     string
+	Tier              string
+	Flags             []string
 	Enabled           bool
 	PermissionDefault string // "", "prompt", or "bypass"; empty means inherit
 }
 
 // DefaultAgentRoles returns the built-in agent role names.
 func DefaultAgentRoles() []string {
-	return []string{"coder", "architect", "reviewer", "planner", "chat", "fixer", "master"}
+	return []string{"coder", "architect", "reviewer", "planner_opus", "planner_gpt", "chat", "fixer", "master"}
 }
 
 // RoleDefaults returns proven per-role defaults for fresh inits.
 // Each entry includes a preferred Harness; resolveAgentHarness selects
 // the actual harness based on what the user has installed.
 func RoleDefaults() map[string]AgentState {
-	return map[string]AgentState{
-		"coder": {
-			Role:        "coder",
-			Harness:     "claude",
-			Model:       "claude-sonnet-4-6",
-			Effort:      "medium",
-			Temperature: "0.1",
-			Enabled:     true,
-		},
-		"architect": {
-			Role:        "architect",
-			Harness:     "opencode",
-			Model:       "openai/gpt-5.4",
-			Effort:      "xhigh",
-			Temperature: "0.2",
-			Enabled:     true,
-		},
-		"planner": {
-			Role:        "planner",
-			Harness:     "claude",
-			Model:       "claude-opus-4-6",
-			Effort:      "high",
-			Temperature: "0.3",
-			Enabled:     true,
-		},
-		"reviewer": {
-			Role:        "reviewer",
-			Harness:     "claude",
-			Model:       "claude-sonnet-4-6",
-			Effort:      "medium",
-			Temperature: "0.2",
-			Enabled:     true,
-		},
-		"chat": {
-			Role:        "chat",
-			Harness:     "opencode",
-			Model:       "openai/gpt-5.4",
-			Effort:      "medium",
-			Temperature: "0.3",
-			Enabled:     true,
-		},
-		"fixer": {
-			Role:        "fixer",
-			Harness:     "claude",
-			Model:       "claude-opus-4-6",
-			Effort:      "high",
-			Temperature: "0.1",
-			Enabled:     true,
-		},
-		"master": {
-			Role:        "master",
-			Harness:     "opencode",
-			Model:       "openai/gpt-5.4",
-			Effort:      "high",
-			Temperature: "0.2",
-			Enabled:     true,
-		},
+	profiles := config.DefaultAgentProfiles()
+	defaults := make(map[string]AgentState, len(profiles))
+	for role, profile := range profiles {
+		defaults[role] = agentStateFromProfile(role, profile)
+	}
+	return defaults
+}
+
+func agentStateFromProfile(role string, profile config.AgentProfile) AgentState {
+	temp := ""
+	if profile.Temperature != nil {
+		temp = fmt.Sprintf("%g", *profile.Temperature)
+	}
+	return AgentState{
+		Role:              role,
+		Harness:           profile.Program,
+		Model:             profile.Model,
+		Temperature:       temp,
+		Effort:            profile.Effort,
+		ExecutionMode:     profile.ExecutionMode,
+		Tier:              profile.Tier,
+		Flags:             append([]string(nil), profile.Flags...),
+		Enabled:           profile.Enabled,
+		PermissionDefault: profile.PermissionDefault,
 	}
 }
 
@@ -137,6 +108,8 @@ func IsCustomized(a AgentState, harnesses []string) bool {
 		a.Model != defaults.Model ||
 		a.Effort != defaults.Effort ||
 		a.Temperature != defaults.Temperature ||
+		a.ExecutionMode != defaults.ExecutionMode ||
+		a.Tier != defaults.Tier ||
 		a.Enabled != defaults.Enabled
 }
 
@@ -178,8 +151,13 @@ func parseTemperature(s string) *float64 {
 func (s *State) ToTOMLConfig() *config.TOMLConfig {
 	trueVal := true
 	tc := &config.TOMLConfig{
-		Phases: s.PhaseMapping,
-		Agents: make(map[string]config.TOMLAgent),
+		Phases:             s.PhaseMapping,
+		Agents:             make(map[string]config.TOMLAgent),
+		DefaultProgram:     "codex",
+		AutoYes:            true,
+		Enforcement:        map[string]bool{"codex": false},
+		Orchestration:      config.TOMLOrchestrationConfig{},
+		DaemonPollInterval: 1000,
 		UI: config.TOMLUIConfig{
 			AutoAdvanceWaves:    &trueVal,
 			AutoAdvance:         &trueVal,
@@ -200,7 +178,19 @@ func (s *State) ToTOMLConfig() *config.TOMLConfig {
 		if a.PermissionDefault != "" {
 			agent.PermissionDefault = a.PermissionDefault
 		}
+		if a.ExecutionMode != "" {
+			agent.ExecutionMode = a.ExecutionMode
+		}
+		if a.Tier != "" {
+			agent.Tier = a.Tier
+		}
+		if len(a.Flags) > 0 {
+			agent.Flags = append([]string(nil), a.Flags...)
+		}
 		tc.Agents[a.Role] = agent
+		if a.Enabled && config.IsPlannerProfileName(a.Role) {
+			tc.Orchestration.Planners = append(tc.Orchestration.Planners, a.Role)
+		}
 	}
 
 	return tc
@@ -228,18 +218,38 @@ func (s *State) ToAgentConfigs() []harness.AgentConfig {
 					Effort:      a.Effort,
 					Enabled:     a.Enabled,
 					Temperature: parseTemperature(a.Temperature),
+					ExtraFlags:  append([]string(nil), a.Flags...),
 				})
 			}
 			continue
 		}
 		configs = append(configs, harness.AgentConfig{
-			Role:        a.Role,
+			Role:        config.ScaffoldRoleForProfile(a.Role),
 			Harness:     a.Harness,
 			Model:       a.Model,
 			Effort:      a.Effort,
 			Enabled:     a.Enabled,
 			Temperature: parseTemperature(a.Temperature),
+			ExtraFlags:  append([]string(nil), a.Flags...),
 		})
 	}
 	return configs
+}
+
+func mergeExistingAgentRoles(roles []string, existing *config.TOMLConfigResult) []string {
+	if existing == nil || len(existing.Profiles) == 0 {
+		return roles
+	}
+	seen := make(map[string]bool, len(roles)+len(existing.Profiles))
+	for _, role := range roles {
+		seen[role] = true
+	}
+	var extra []string
+	for role := range existing.Profiles {
+		if !seen[role] {
+			extra = append(extra, role)
+		}
+	}
+	sort.Strings(extra)
+	return append(append([]string(nil), roles...), extra...)
 }

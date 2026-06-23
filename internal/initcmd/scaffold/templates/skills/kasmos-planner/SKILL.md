@@ -83,7 +83,7 @@ the planner produces a **product-spec-style plan**, not coder execution instruct
 - downstream elaboration may enrich task bodies later, but the planner owns the initial wave and task structure.
 - coder agents should be able to parse the stored plan immediately after planning completes.
 
-planner context from `.kasmos/config.toml`: `agents.planner.model = "anthropic/claude-opus-4-6"` and `effort = "high"`.
+planner context from `.kasmos/config.toml`: default parallel planners use `agents.planner_opus.model = "claude-opus-4-8"` and `agents.planner_gpt.model = "gpt-5.5"` with `effort = "xhigh"`.
 use this context to do deeper requirement trade-off analysis and crisp stakeholder communication, not step-by-step patch plans.
 
 ---

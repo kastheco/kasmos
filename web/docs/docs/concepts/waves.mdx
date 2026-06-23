@@ -78,7 +78,7 @@ When elaboration completes, `UpdatePlan()` replaces the plan and resets the orch
 Planning can either use the legacy single-planner path or a configured planner list:
 
 1. when `[orchestration].planners` is unset or empty, the planner writes the task store and emits `planner_finished`
-2. when `[orchestration].planners = ["planner", "planner_x"]` is set, plan start clears stale `.kasmos/cache/<planSlug>-planner-<profile>.md` caches, spawns each listed profile in draft mode, and lets the first listed planner update the task store as a preview
+2. when `[orchestration].planners = ["planner_opus", "planner_gpt"]` is set, plan start clears stale `.kasmos/cache/<planSlug>-planner-<profile>.md` caches, spawns each listed profile in draft mode, and lets the first listed planner update the task store as a preview
 3. draft-mode planners emit gateway-only `planner_draft_finished` signals with `{"planner_id":"<profile>"}` payloads
 4. the processor aggregates those draft signals and internally advances planning once every expected profile has reported
 5. the final architect reads the task-store plan plus planner draft caches, derives its own baseline inline, writes the final task-store plan, and records consumed drafts in `decision_audit.planner_drafts`

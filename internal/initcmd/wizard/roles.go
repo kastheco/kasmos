@@ -3,13 +3,15 @@ package wizard
 // RoleDescription returns a human-readable description for a known agent role.
 func RoleDescription(role string) string {
 	descs := map[string]string{
-		"coder":     "Handles implementation tasks. Receives code-level instructions,\nwrites and edits files, runs tests.",
-		"architect": "Decomposes plans into coder-ready tasks with metadata.\nProduces architect metadata JSON and enriched task bodies for parallel execution.",
-		"reviewer":  "Reviews code for correctness, style, and architecture.\nProvides structured feedback before merge.",
-		"planner":   "Breaks features into implementation plans.\nDecomposes specs into ordered tasks with file paths and tests.",
-		"chat":      "General-purpose assistant for questions and exploration.\nAuto-configured for all selected harnesses.",
-		"fixer":     "debugger, investigator, and operational troubleshooter.\nInvestigates failures, fixes stuck states, cleans worktrees and branches.",
-		"master":    "final holistic reviewer before merge.\nChecks the full implementation against plan spec and acceptance criteria.",
+		"coder":        "Handles implementation tasks. Receives code-level instructions,\nwrites and edits files, runs tests.",
+		"architect":    "Decomposes plans into coder-ready tasks with metadata.\nProduces architect metadata JSON and enriched task bodies for parallel execution.",
+		"reviewer":     "Reviews code for correctness, style, and architecture.\nProvides structured feedback before merge.",
+		"planner":      "Breaks features into implementation plans.\nDecomposes specs into ordered tasks with file paths and tests.",
+		"planner_opus": "deep planning profile for the parallel planner set.\nuses claude opus for broad design coverage.",
+		"planner_gpt":  "second planning profile for the parallel planner set.\nuses codex for independent implementation structure.",
+		"chat":         "General-purpose assistant for questions and exploration.\nAuto-configured for all selected harnesses.",
+		"fixer":        "debugger, investigator, and operational troubleshooter.\nInvestigates failures, fixes stuck states, cleans worktrees and branches.",
+		"master":       "final holistic reviewer before merge.\nChecks the full implementation against plan spec and acceptance criteria.",
 	}
 	return descs[role]
 }
@@ -17,13 +19,15 @@ func RoleDescription(role string) string {
 // RolePhaseText returns which workflow phases map to this role.
 func RolePhaseText(role string) string {
 	phases := map[string]string{
-		"coder":     "Default for phases: implementing",
-		"architect": "Default for phases: elaborating",
-		"reviewer":  "Default for phases: spec_review, quality_review",
-		"planner":   "Default for phases: planning",
-		"chat":      "Available in all phases (ad-hoc)",
-		"fixer":     "Default for phases: fixer",
-		"master":    "Default for phases: readiness_review",
+		"coder":        "Default for phases: implementing",
+		"architect":    "Default for phases: elaborating",
+		"reviewer":     "Default for phases: spec_review, quality_review",
+		"planner":      "Default for phases: planning",
+		"planner_opus": "Default parallel planner: first draft lane",
+		"planner_gpt":  "Default parallel planner: second draft lane",
+		"chat":         "Available in all phases (ad-hoc)",
+		"fixer":        "Default for phases: fixer",
+		"master":       "Default for phases: readiness_review",
 	}
 	return phases[role]
 }

@@ -184,7 +184,7 @@ Each task must include a JSON contract section like:
     {
       "number": 1,
       "title": "rewrite kasmos-planner skill",
-      "preferred_model": "openai/gpt-5.3-codex-spark",
+      "preferred_model": "openai/gpt-5.5",
       "fallback_model": "openai/gpt-5.4",
       "escalation_policy": "escalate when required context exceeds task body or when files overlap another task",
       "estimated_tokens": 6000,
@@ -244,7 +244,7 @@ Prefer this shape:
 
 ### token budget for coders
 
-Tasks should be tuned for `openai/gpt-5.3-codex-spark` and low effort in `.kasmos/config.toml`:
+Tasks should be tuned for `openai/gpt-5.5` and low effort in `.kasmos/config.toml`:
 - each task body should stay well below 128k prompt budget
 - avoid generic guidance like "explore the codebase"; provide exact commands and references
 - prefer concrete snippets, file signatures, and explicit steps over prose
@@ -259,7 +259,7 @@ If uncertain, classify as serial.
 
 ### decomposition effort guidance
 
-Use `openai/gpt-5.4` cost logic as follows:
+Use `openai/gpt-5.5` cost logic as follows:
 - one decomposition pass per plan
 - medium effort for straightforward plans
 - high effort only for large or ambiguous planner specs

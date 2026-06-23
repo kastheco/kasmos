@@ -20,6 +20,21 @@ const (
 	// defaultProgram is the fallback program name when command detection fails.
 	defaultProgram = "codex"
 
+	// DefaultCodexModel is the current preferred model for Codex-backed roles.
+	DefaultCodexModel = "gpt-5.5"
+
+	// DefaultClaudeOpusModel is the current preferred Claude model for deep planning.
+	DefaultClaudeOpusModel = "claude-opus-4-8"
+
+	// DefaultClaudeSonnetModel is the current preferred Claude model for review.
+	DefaultClaudeSonnetModel = "claude-sonnet-4-6"
+
+	// DefaultClaudeHaikuModel is kept in the model picker for cheaper Claude runs.
+	DefaultClaudeHaikuModel = "claude-haiku-4-5-20251001"
+
+	// DefaultClaudeFableModel is kept in the model picker for Claude Fable runs.
+	DefaultClaudeFableModel = "claude-fable-5"
+
 	// defaultDoubleTapThresholdMS is the default timing window (ms) for double-tap
 	// key detection. Two taps within this window register as ctrl+<key>.
 	defaultDoubleTapThresholdMS = 300
@@ -36,6 +51,109 @@ const (
 // aliasRegex matches shell alias output to extract the real command path.
 // Handles formats: "aliased to <path>", "-> <path>", "= <path>".
 var aliasRegex = regexp.MustCompile(`(?:aliased to|->|=)\s*([^\s]+)`)
+
+func defaultTemp(v float64) *float64 {
+	return &v
+}
+
+// DefaultPlannerProfiles returns the ordered parallel planner profile names.
+func DefaultPlannerProfiles() []string {
+	return []string{"planner_opus", "planner_gpt"}
+}
+
+// DefaultPhaseRoles returns the de facto lifecycle phase map used by new projects.
+func DefaultPhaseRoles() map[string]string {
+	return map[string]string{
+		"planning":         "planner",
+		"elaborating":      "architect",
+		"implementing":     "coder",
+		"spec_review":      "reviewer",
+		"quality_review":   "reviewer",
+		"fixer":            "fixer",
+		"readiness_review": "master",
+	}
+}
+
+// DefaultAgentProfiles returns the current de facto agent profile set for new projects.
+func DefaultAgentProfiles() map[string]AgentProfile {
+	return map[string]AgentProfile{
+		"architect": {
+			Program:       "claude",
+			Model:         DefaultClaudeOpusModel,
+			Temperature:   defaultTemp(0.2),
+			Effort:        "xhigh",
+			ExecutionMode: ExecutionModeTmux,
+			Tier:          "fast",
+			Flags:         []string{"--permission-mode bypassPermissions"},
+			Enabled:       true,
+		},
+		"chat": {
+			Program:       "codex",
+			Model:         DefaultCodexModel,
+			Temperature:   defaultTemp(0.3),
+			Effort:        "medium",
+			ExecutionMode: ExecutionModeTmux,
+			Tier:          "fast",
+			Enabled:       true,
+		},
+		"coder": {
+			Program:       "codex",
+			Model:         DefaultCodexModel,
+			Temperature:   defaultTemp(0.1),
+			Effort:        "low",
+			ExecutionMode: ExecutionModeTmux,
+			Tier:          "fast",
+			Enabled:       true,
+		},
+		"fixer": {
+			Program:       "codex",
+			Model:         DefaultCodexModel,
+			Temperature:   defaultTemp(0.1),
+			Effort:        "high",
+			ExecutionMode: ExecutionModeTmux,
+			Tier:          "fast",
+			Enabled:       true,
+		},
+		"master": {
+			Program:       "codex",
+			Model:         DefaultCodexModel,
+			Temperature:   defaultTemp(0.2),
+			Effort:        "xhigh",
+			ExecutionMode: ExecutionModeTmux,
+			Tier:          "fast",
+			Enabled:       true,
+		},
+		"planner_gpt": {
+			Program:       "codex",
+			Model:         DefaultCodexModel,
+			Temperature:   defaultTemp(0.3),
+			Effort:        "xhigh",
+			ExecutionMode: ExecutionModeTmux,
+			Tier:          "fast",
+			Enabled:       true,
+		},
+		"planner_opus": {
+			Program:       "claude",
+			Model:         DefaultClaudeOpusModel,
+			Temperature:   defaultTemp(0.3),
+			Effort:        "xhigh",
+			ExecutionMode: ExecutionModeTmux,
+			Tier:          "fast",
+			Flags:         []string{"--permission-mode bypassPermissions"},
+			Enabled:       true,
+		},
+		"reviewer": {
+			Program:       "claude",
+			Model:         DefaultClaudeSonnetModel,
+			Temperature:   defaultTemp(0.2),
+			Effort:        "medium",
+			ExecutionMode: ExecutionModeTmux,
+			Tier:          "fast",
+			Flags:         []string{"--permission-mode bypassPermissions"},
+			Enabled:       true,
+		},
+	}
+}
 
 // GetConfigDir returns the project-local config directory (<repo-root>/.kasmos/).
 //
@@ -321,7 +439,8 @@ func DefaultConfig() *Config {
 	trueVal := true
 	dtThreshold := defaultDoubleTapThresholdMS
 	cfg := &Config{
-		AutoYes:                  false,
+		DefaultProgram:           defaultProgram,
+		AutoYes:                  true,
 		AutoAdvanceWaves:         true,
 		AutoAdvance:              true,
 		AutoReviewFix:            true,
@@ -330,6 +449,10 @@ func DefaultConfig() *Config {
 		ReadinessMaxVerifyCycles: 2,
 		NotificationsEnabled:     &trueVal,
 		DoubleTapThresholdMS:     &dtThreshold,
+		Profiles:                 DefaultAgentProfiles(),
+		PhaseRoles:               DefaultPhaseRoles(),
+		Planners:                 DefaultPlannerProfiles(),
+		Enforcement:              map[string]bool{"codex": false},
 		SDK: SDKConfig{
 			TranscriptMaxBytes: defaultSDKTranscriptMaxBytes,
 			TranscriptMaxTurns: defaultSDKTranscriptMaxTurns,

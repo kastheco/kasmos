@@ -68,7 +68,9 @@ type AuditResult struct {
 	Project    []ProjectSkillEntry
 	InProject  bool              // whether cwd is a kas project
 	BinaryPath *BinaryPathResult // always populated
-	GitHooks   *HookStatus
+	// AgentCommands reports executable health for project config profiles.
+	AgentCommands *AgentCommandResult
+	GitHooks      *HookStatus
 }
 
 // Audit runs all three audit layers and returns a complete result.
@@ -94,6 +96,7 @@ func Audit(home, projectDir string, registry *harness.Registry) *AuditResult {
 	if result.InProject {
 		result.Project = AuditProject(projectDir, harnessNames)
 	}
+	result.AgentCommands = AuditAgentCommands(projectDir)
 
 	// Binary path audit — always populated regardless of project detection.
 	result.BinaryPath = AuditBinaryPaths(home, projectDir, runtime.GOOS)
@@ -142,6 +145,18 @@ func (r *AuditResult) Summary() (int, int) {
 		bpOK, bpTotal := r.BinaryPath.summary()
 		ok += bpOK
 		total += bpTotal
+	}
+	if r.AgentCommands != nil {
+		if r.AgentCommands.LoadError != "" {
+			total++
+		} else {
+			for _, entry := range r.AgentCommands.Entries {
+				total++
+				if entry.Healthy {
+					ok++
+				}
+			}
+		}
 	}
 	if r.GitHooks != nil {
 		total++

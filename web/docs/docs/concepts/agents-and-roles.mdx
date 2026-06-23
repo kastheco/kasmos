@@ -8,11 +8,11 @@ An **agent** in kasmos is a running AI assistant process (claude, opencode, code
 
 ## default roles
 
-`wizard.DefaultAgentRoles()` in `internal/initcmd/wizard/wizard.go` returns the seven built-in roles in order:
+`wizard.DefaultAgentRoles()` in `internal/initcmd/wizard/wizard.go` returns the built-in profile names in order:
 
 ```go
 func DefaultAgentRoles() []string {
-    return []string{"coder", "architect", "reviewer", "planner", "chat", "fixer", "master"}
+    return []string{"coder", "architect", "reviewer", "planner_opus", "planner_gpt", "chat", "fixer", "master"}
 }
 ```
 
@@ -21,7 +21,8 @@ func DefaultAgentRoles() []string {
 | `coder` | `implementing` | implements tasks; writes and edits code, runs tests |
 | `architect` | `elaborating` | decomposes plans into coder-ready task bodies with metadata |
 | `reviewer` | `spec_review`, `quality_review` | checks correctness, style, and architecture |
-| `planner` | `planning` | breaks features into structured implementation plans |
+| `planner_opus` | `plan_start` draft lane | default Claude Opus planner profile for broad design coverage |
+| `planner_gpt` | `plan_start` draft lane | default Codex planner profile for independent implementation structure |
 | `chat` | (ad-hoc) | general-purpose assistant; available in all phases |
 | `fixer` | `fixer` | debugger and investigator; fixes stuck states and failures |
 | `master` | `verifying` | holistic readiness reviewer; spawned when the task enters the `verifying` status after reviewer approval (enabled by default; disable with `auto_readiness_review = false`). The master agent applies a **materiality triage** — trivial findings (typos, format fixes, missing doc comments, total ≤ `readiness_self_fix_max_lines` net lines) are self-fixed directly in the worktree and approved; only material issues escalate via `verify_failed`. Every self-fix attempt passes a reviewer-parity static-check gate (`gofmt`, `go vet`, `go test`, `typos`) before approval. Config alias `master_review` is accepted for backward compatibility. |
@@ -34,7 +35,7 @@ Each role is configured as an `AgentProfile` (defined in `config/profile.go`):
 type AgentProfile struct {
     Program       string   // CLI program: "claude", "opencode", "codex", etc.
     Flags         []string // extra CLI flags
-    Model         string   // model identifier, e.g. "anthropic/claude-opus-4-6"
+    Model         string   // model identifier, e.g. "gpt-5.5" or "claude-opus-4-8"
     Temperature   *float64 // optional temperature (0.0–1.0)
     Effort        string   // "low", "medium", "high" (passed as --effort)
     ExecutionMode string   // "tmux" or "sdk" ("headless" accepted as legacy alias for "sdk")
@@ -76,18 +77,28 @@ fixer          = "fixer"
 readiness_review = "master"   # drives the verifying status; master_review is accepted as a backward-compat alias
 
 [agents.coder]
-program = "claude"
-model = "anthropic/claude-sonnet-4-6"
+program = "codex"
+model = "gpt-5.5"
 effort = "low"
-execution_mode = "sdk"
-enabled = true
-
-[agents.planner]
-program = "claude"
-model = "anthropic/claude-opus-4-6"
-effort = "high"
 execution_mode = "tmux"
 enabled = true
+
+[agents.planner_opus]
+program = "claude"
+model = "claude-opus-4-8"
+effort = "xhigh"
+execution_mode = "tmux"
+enabled = true
+
+[agents.planner_gpt]
+program = "codex"
+model = "gpt-5.5"
+effort = "xhigh"
+execution_mode = "tmux"
+enabled = true
+
+[orchestration]
+planners = ["planner_opus", "planner_gpt"]
 ```
 
 `config.ResolveProfile(phase, defaultProgram)` looks up the role for a phase and returns the corresponding profile, falling back to `defaultProgram` if any link in the chain is missing or disabled.

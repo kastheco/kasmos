@@ -106,6 +106,26 @@ func NormalizeTier(tier string) string {
 	}
 }
 
+// IsPlannerProfileName reports whether name is one of the parallel planner profiles.
+func IsPlannerProfileName(name string) bool {
+	trimmed := strings.TrimSpace(name)
+	for _, planner := range DefaultPlannerProfiles() {
+		if trimmed == planner {
+			return true
+		}
+	}
+	return strings.HasPrefix(trimmed, "planner_")
+}
+
+// ScaffoldRoleForProfile maps profile names to scaffold role filenames.
+// Parallel planner profiles share the planner prompt/skill files.
+func ScaffoldRoleForProfile(name string) string {
+	if IsPlannerProfileName(name) {
+		return "planner"
+	}
+	return name
+}
+
 // ResolveProfile looks up the agent profile for a given lifecycle phase.
 // Falls back to defaultProgram if any link is missing, empty, or disabled.
 //

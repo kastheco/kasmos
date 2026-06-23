@@ -391,17 +391,20 @@ func (t *TmuxSession) DetachSafely() error {
 // When detached, it uses tmux resize-window so the pane stays correctly sized
 // for capture-pane previews without needing a background attached client.
 func (t *TmuxSession) SetDetachedSize(width, height int) error {
+	if width <= 0 || height <= 0 {
+		return nil
+	}
 	if t.ptmx != nil {
 		return t.updateWindowSize(uint16(width), uint16(height))
 	}
-	if width > 0 && height > 0 {
-		cmd := exec.Command("tmux", "resize-window",
-			"-x", fmt.Sprintf("%d", width),
-			"-y", fmt.Sprintf("%d", height),
-			"-t", t.sanitizedName)
-		return t.cmdExec.Run(cmd)
+	if !t.DoesSessionExist() {
+		return nil
 	}
-	return nil
+	cmd := exec.Command("tmux", "resize-window",
+		"-x", fmt.Sprintf("%d", width),
+		"-y", fmt.Sprintf("%d", height),
+		"-t", t.sanitizedName)
+	return t.cmdExec.Run(cmd)
 }
 
 // updateWindowSize calls pty.Setsize to resize the PTY file descriptor.

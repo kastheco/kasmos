@@ -2,6 +2,7 @@ package tmux
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"testing"
@@ -22,6 +23,24 @@ func TestNewTmuxSession_SanitizesName(t *testing.T) {
 	t.Parallel()
 	s := NewTmuxSession("my.session", "claude", false)
 	assert.Equal(t, "kas_my_session", s.GetSanitizedName())
+}
+
+func TestStartupExitErrorIncludesProgramTargetAndLogTail(t *testing.T) {
+	t.Parallel()
+
+	logFile := t.TempDir() + "/kas_dead_start.log"
+	require.NoError(t, os.WriteFile(logFile, []byte(strings.Repeat("x", 2200)+"\nstartup failed\n"), 0o644))
+
+	s := NewTmuxSessionWithDeps("dead.start", "claude --model bad", false, NewMockPtyFactory(t), cmd_test.NewMockExecutor())
+	err := s.startupExitError(t.TempDir(), logFile)
+	require.Error(t, err)
+
+	msg := err.Error()
+	assert.Contains(t, msg, `program "claude"`)
+	assert.Contains(t, msg, "tmux target kas_dead_start")
+	assert.Contains(t, msg, logFile)
+	assert.Contains(t, msg, "last log output:")
+	assert.Contains(t, msg, "startup failed")
 }
 
 func TestSetAgentType(t *testing.T) {
