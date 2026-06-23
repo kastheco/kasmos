@@ -1,0 +1,45 @@
+---
+title: "linear"
+---
+
+# kas linear
+
+linear integration helpers for discovery, trigger polling, and webhook inspection.
+
+```
+kas linear <subcommand>
+```
+
+## poll-once
+
+run one guarded linear trigger poll for the current repo.
+
+```
+kas linear poll-once
+```
+
+## discover
+
+list canonical linear ids needed for `[linear.triggers]` config.
+
+```
+kas linear discover [labels|users|workflow-states|teams|projects]
+```
+
+## webhook status
+
+show recent inbound webhook delivery counts for the current project.
+
+```
+kas linear webhook status
+```
+
+## webhook deliveries
+
+list recent inbound linear webhook deliveries, including status, reason, received time, and linear issue id.
+
+```
+kas linear webhook deliveries [--limit <n>]
+```
+
+use this with the [linear triggers guide](../guides/linear-triggers.mdx#webhook-ingestion) when checking signature failures, duplicates, ignored events, or queue catch-up after a worker restart.

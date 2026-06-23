@@ -1,0 +1,183 @@
+---
+title: "logs and output"
+---
+
+# logs and output
+
+sdk sessions accumulate agent output from structured transport events in two places simultaneously: an in-process `Renderer` for real-time polling, and a log file (stderr of the agent subprocess) for persistence.
+
+## the renderer
+
+the `Renderer` in `session/sdk/renderer.go` converts the transport's `Event` stream into a line buffer that callers read via the standard `CapturePaneContent` / `CapturePaneContentWithOptions` surface.
+
+events are rendered as follows:
+
+| event kind | text representation |
+|-----------|-------------------|
+| `EventTextDelta` | raw text appended inline; newlines split into completed lines |
+| `EventToolCall` | `[tool: <name> <input>]` |
+| `EventToolResult` | `[result: <result>]` |
+| `EventPermission` | `[permission: <description>]` |
+| `EventSystem` | `[system: <text>]` |
+| `EventTurnCompleted` | flushes any pending partial line |
+| `EventTurnInterrupted` | flushes partial line, appends `[interrupted]` |
+| `EventTurnStarted` | no visible marker |
+
+the buffer is bounded by configurable limits (see [transcript retention](#transcript-retention)) and concurrent reads are safe — all mutations are serialized under the renderer's `sync.Mutex`.
+
+## transcript retention
+
+the renderer enforces two independent limits on the in-process transcript to prevent long-running agent sessions from growing without bound:
+
+| limit | default | config key |
+|-------|---------|------------|
+| bytes retained | **4 MiB** (`4194304`) | `[sdk] transcript_max_bytes` |
+| completed turns retained | **2000** | `[sdk] transcript_max_turns` |
+
+both limits apply to the in-process renderer only. the log file on disk (`<workDir>/.kasmos/logs/<name>.log`) and tmux scrollback (for tmux sessions) are **not** affected.
+
+### three-phase eviction
+
+when a limit is exceeded after each event, the renderer runs three phases in order:
+
+1. **completed-turn eviction (FIFO):** the oldest completed, non-active structured turns are removed one at a time until the turn count and turn byte total are back within budget. the active (in-progress) turn is never evicted.
+
+2. **flat-line trimming:** if the flat `lines` buffer still exceeds the byte limit after turn eviction, the oldest flat lines are removed from the front of the buffer until byte usage is within budget.
+
+3. **active-turn row truncation:** if the current in-progress turn alone exceeds the byte limit (e.g. a single tool result is extremely large), the oldest rows *within* that turn are removed one by one. this is a last-resort cap; it never removes the currently open text row.
+
+### eviction markers
+
+each eviction phase inserts or updates a visible marker so operators can tell how much history was dropped:
+
+| marker | where it appears | meaning |
+|--------|-----------------|---------|
+| `earlier turns evicted: N` | first entry in the structured presentation | N completed turns were evicted from the front of the structured history |
+| `[earlier lines evicted: N]` | first line in the flat `CapturePaneContent` output | N flat lines were removed from the oldest part of the buffer |
+| `(N evicted)` | web admin structured preview header | cumulative evicted-turn count shown beside the instance name |
+
+the counters are cumulative: they reflect the total since the session started, not just the most recent batch.
+
+### zero and negative values
+
+| config value | meaning |
+|-------------|---------|
+| key omitted | use the default (4 MiB bytes, 2000 turns) |
+| `0` | disable the corresponding limit (unlimited) |
+| negative | normalized to `0` (unlimited) |
+
+setting both limits to `0` disables all eviction. the renderer will grow without bound — only do this for short-lived sessions or when an external process manages memory.
+
+### viewing retention stats
+
+retention diagnostics are visible in two places:
+
+- **info pane (TUI):** with an sdk instance selected, the info pane shows a `transcript` row with byte usage and line count. when evicted turns or truncated rows are non-zero a suffix is appended, e.g. `1.2M · 348 lines (7 evicted)` or `1.2M · 348 lines (7 evicted, 2 truncated)`.
+- **web admin structured preview:** a compact transcript status line appears above the turn timeline when retention is active, e.g. `transcript 1.2M · 348 lines · 7 evicted`. the line is hidden when bytes, evictions, and truncations are all zero.
+
+the underlying stats are the `RendererStats` snapshot: `bytes`, `lines`, `turns`, `max_bytes`, `max_turns`, `evicted_turns`, `evicted_lines`, `evicted_bytes`, `truncated_rows`.
+
+## reading output
+
+four methods expose the renderer to callers:
+
+### CapturePaneContent
+
+```go
+func (s *Session) CapturePaneContent() (string, error)
+```
+
+returns all accumulated events joined by newlines. this is the method the TUI preview pane calls for sdk instances.
+
+### CapturePaneContentWithOptions
+
+```go
+func (s *Session) CapturePaneContentWithOptions(start, end string) (string, error)
+```
+
+returns a slice of the line buffer using tmux-compatible range semantics via `Renderer.CaptureRange(start, end)`:
+
+- `""` or `"-"` → beginning (for start) or end (for end) of buffer
+- non-negative integer → 0-based line index from the top
+- negative integer → offset from the last line (`-1` = last line, `-2` = second-to-last)
+
+```go
+// Renderer.CaptureRange resolves start/end and returns the joined slice
+func (r *Renderer) CaptureRange(start, end string) string
+```
+
+**note:** the old `session/headless` backend ignored the `start`/`end` arguments and always returned the full buffer. sdk sessions pass them through to `CaptureRange` and honor the range.
+
+### HasUpdated
+
+```go
+func (s *Session) HasUpdated() (updated bool, hasPrompt bool)
+```
+
+reports whether the renderer produced new content since the last call. `hasPrompt` reflects whether the agent is currently waiting for input — set on `EventPermission`, cleared on `EventTurnStarted`.
+
+### HasUpdatedWithContent
+
+```go
+func (s *Session) HasUpdatedWithContent() (updated bool, hasPrompt bool, content string, captured bool)
+```
+
+the full poll variant used by `CollectMetadata`. returns:
+
+- `updated` — whether content changed since the last call
+- `hasPrompt` — whether the agent is awaiting input
+- `content` — the full renderer output
+- `captured` — always `true` for sdk sessions
+
+## the log file
+
+the agent's stderr is redirected to a log file at:
+
+```
+<workDir>/.kasmos/logs/<sanitizedName>.log
+```
+
+the file is opened in append mode at `Start()` time and closed when the child process exits. you can follow it live:
+
+```bash
+tail -f .kasmos/logs/<sanitized-name>.log
+```
+
+### log file naming
+
+`sanitizedName` is derived from the session `name` via `common.SanitizeSessionName`:
+- whitespace is removed
+- dots are replaced with underscores
+
+examples:
+```
+"coder agent 1"   → "coderagent1.log"
+"task 3.coder"    → "task3_coder.log"
+"my-agent"        → "my-agent.log"
+```
+
+### reading logs after a run
+
+```bash
+# follow a running sdk session
+tail -f .kasmos/logs/<sanitized-name>.log
+
+# list all session logs
+ls -lh .kasmos/logs/
+
+# search across all logs
+rg "error" .kasmos/logs/
+```
+
+### log rotation
+
+kasmos does not rotate log files. each `Start()` call appends to the existing file if it already exists from a prior run. for long-running automated pipelines, manage rotation externally with `logrotate` or similar tools.
+
+## what does not work
+
+interactive operations require a live PTY and are not available in sdk mode:
+
+- `Attach()` → `ErrInteractiveOnly` — you cannot attach to an sdk session
+- `NewEmbeddedTerminalForInstance()` → `ErrInteractiveOnly` — embedded terminal requires a tmux PTY
+
+the preview pane and audit log work normally for sdk instances — `CapturePaneContent` returns rendered output from the structured event stream just as tmux's pane capture would.

@@ -1,0 +1,171 @@
+---
+title: "managing instances"
+---
+
+# managing instances
+
+an **instance** is a running (or paused) ai agent session. it has a title, an isolated git branch, an execution mode (tmux or sdk), and a lifecycle status. the sidebar lists all instances grouped by their associated plan.
+
+## starting an instance
+
+kasmos starts instances automatically when you trigger a lifecycle stage (plan, implement, review). you can also start a standalone instance:
+
+- press `n` for a new plan, then `s` to spawn an agent for it
+- or open the command launcher and choose **new instance** or **spawn agent**
+
+each instance gets a fresh git worktree on a new branch named after the instance title. the worktree is isolated from main and from other instances, so concurrent agents cannot conflict at the git level.
+
+## attaching to a tmux session
+
+tmux instances are **attachable**. press `↵` or `o` with the instance selected to attach fullscreen:
+
+```
+tui  ──► enter  ──►  tmux session (fullscreen)
+          │
+          ▼
+    ctrl+space or ctrl-q  ──►  detach  ──►  back to tui
+```
+
+a one-time help overlay reminds you of the detach keys when you first attach. press any key to dismiss it and proceed to the session.
+
+sdk instances are **not attachable** — they run as in-process backends without a PTY. their output is already shown in the preview pane; select the instance in the sidebar to watch it live.
+
+## interactive mode
+
+press `i` to enter interactive mode without going fullscreen. in this mode your keystrokes are forwarded to the agent's pane, letting you type commands or reply to prompts without leaving the tui layout. exit with `ctrl+space` (or send the current input with `ctrl+enter`).
+
+press `!` as a shortcut that enters interactive mode and immediately sends `!` to the agent, activating the harness's shell mode in one keystroke.
+
+## stopping and killing
+
+| key | effect |
+|-----|--------|
+| `k` | **kill** — terminates the tmux session; the instance entry stays in the list with status `ready` |
+| `K` | **stop** — pauses the instance and preserves the branch; use `r` to resume |
+
+kill is reversible: the branch survives. stop is also reversible: `r` resumes from where the agent left off.
+
+both actions are also available in the instance context menu (`↵` on an instance row).
+
+## pausing, resuming, and checkout
+
+**pause** (`K`) stops the tmux session and records the instance status as `paused`. the worktree and branch are untouched.
+
+**checkout** (`c`) pauses the session and copies the branch name to your clipboard so you can check it out locally:
+
+```
+c
+ └─► session paused
+ └─► branch name copied to clipboard
+ └─► help overlay shows the git commands
+
+git checkout <branch-name>   # inspect the worktree locally
+```
+
+**important:** `checkout` requires a clean worktree on main. commit or stash any local changes on main before pausing, then `r` to resume when you're done. resume continues the agent exactly where it stopped.
+
+**resume** (`r`) restarts a paused tmux session. the agent reconnects to the existing worktree and continues from its last state.
+
+## sdk instance output
+
+not all sdk instances are equal. kasmos distinguishes two classes:
+
+**solo pill.** instance rows in the web admin ui that were spawned as ad-hoc solo agents (via `start_solo` task variant or the tui `N`/`s`/`S` spawn paths) display a `solo` pill badge next to the instance title. the pill is purely informational — it signals that the row is a standalone agent rather than part of a wave execution plan.
+
+**daemon-managed sdk agents** are instances whose lifecycle is owned by the kasmos daemon. this covers two cases:
+
+1. **wave execution agents** started by the orchestrator and registered with the daemon automatically.
+2. **TUI-spawned standalone agents** (`N`, `s`, or `S`) when the daemon is running and owns the repo — the TUI routes these through `POST /v1/repos/{project}/instances/solo` so the daemon tracks them.
+
+in both cases the daemon exposes dedicated capture, send, and lifecycle routes. the web admin ui can pause, resume, restart, kill, send input to, and capture output from these instances — they show up in `/admin/instances` with the full three-dot action menu. the `ManagedByDaemon` field on the `livepreview.Record` (`internal/livepreview/records.go`) distinguishes them from legacy standalone records.
+
+**legacy standalone sdk agents** are `state.json` records not routed through the daemon — for example, sessions created before the daemon-managed solo spawn path existed or in development environments without a running daemon. these rows appear in the list but the web admin ui has no daemon to delegate to.
+
+all sdk instances (daemon-managed or legacy standalone) appear in the sidebar with the same controls as tmux instances except:
+
+- attach (`↵`) is disabled — a toast informs you that the instance is in sdk mode
+- interactive mode (`i`) is disabled for the same reason
+- all output is visible in the **preview pane** and the **audit log**
+
+the compact info header above the preview pane shows the instance's current status, wave number, and task number. for instances spawned as `sdk-fast`, the info header also shows a **speed tier: fast** row beneath the execution mode row.
+
+**sdk-fast sessions.** when you choose `sdk-fast` in the `S` spawn picker (codex only), the session runs as an ordinary sdk session with `SDKSpeedTier = "fast"`. it uses the same daemon-managed path as `sdk` when the daemon owns the repo — attach and interactive mode are disabled, but the web admin ui shows the full action menu. the fast tier is forwarded once at session start (`serviceTier: "fast"` on `thread/start`); it is not re-negotiated during the session. if the daemon is not running, `sdk-fast` falls back to legacy standalone behavior with no web-ui actions.
+
+**typing `/fast` inside a running codex sdk pane.** keystrokes typed in interactive mode are forwarded verbatim to the codex process. if you send `/fast` manually, codex may switch its internal rate-limit lane, but kasmos does not intercept that command: the stored `SDKSpeedTier` field on the instance record is not updated, and previously written audit-log events are not revised. the info pane will continue to display whatever tier was set at spawn time (`sdk-fast` or blank).
+
+**web admin ui — daemon-managed sdk agents.** rows where the daemon owns the session use structured preview and a live composer in the browser preview panel. the daemon exposes dedicated capture and send routes, so the preview refreshes in near-real-time and you can send input directly from the browser without a tmux pane. these rows display the full three-dot action menu.
+
+**web admin ui limitation — legacy standalone sdk agents only.** `livepreview.ValidateAction` (`internal/livepreview/records.go`) rejects every lifecycle and i/o action for legacy standalone (non-daemon-managed) sdk instances: send, capture, pause, resume, restart, and kill all return an error. as a result, `/admin/instances` shows these instances in the list but the three-dot overflow menu is empty — no actions are available. the browser preview panel's composer is also disabled. this is a known limitation: the web path has no tmux pane and no daemon to delegate to for these legacy rows.
+
+**daemon restart limitation.** daemon-managed standalone sdk sessions are not recovered when the daemon restarts. if the daemon stops and restarts while an sdk agent is running, the agent process continues but the daemon loses its registration — the web admin ui loses access until the session completes and the row transitions to state.json. this is a known limitation; the plan intentionally does not add recovery for daemon-managed standalone sdk sessions.
+
+## orphaned tmux session browser
+
+if a tmux session exists but has no corresponding kasmos instance (e.g. it was started manually or kasmos crashed while a session was running), the session is **orphaned**.
+
+press `T` to open the tmux browser overlay. it lists all tmux sessions. from there you can:
+
+| action | effect |
+|--------|--------|
+| `↵` | adopt the session — creates a kasmos instance for it and adds it to the list |
+| `a` | attach to the session directly without adopting |
+| `k` | kill the orphaned session |
+
+adopted sessions appear in the sidebar like any other instance. you can then attach, pause, or manage them normally.
+
+## instance context menu
+
+press `↵` on an instance row (not a plan header) to open the instance context menu:
+
+| item | effect |
+|------|--------|
+| open | attach fullscreen |
+| kill | kill tmux session |
+| restart | kill and restart the agent |
+| pause / resume | pause or resume the session |
+| focus agent | enter interactive mode |
+| rename | rename the instance |
+| push branch | push the instance's branch to origin |
+| create pr | open the pr title input for this instance |
+| open in browser | open the associated plan in the plan browser |
+| mark complete | manually mark this task complete in the wave orchestrator |
+
+## managing instances from the web admin ui
+
+open `/admin/instances` in your browser while `kas serve` is running to see the same grouped agent list as the tui. each row has a three-dot (`⋯`) overflow button that opens a small action menu.
+
+| action | effect |
+|--------|--------|
+| pause | suspends the agent session; the row stays visible with status `paused` |
+| resume | restarts a paused session from where it left off |
+| restart | kills and immediately restarts the agent |
+| kill | terminates the agent session; the row disappears from the list on the next refresh |
+
+actions are enabled or disabled based on the agent's current state — the menu reflects what the backend permits, so you never need to guess whether an action is valid.
+
+**kill requires confirmation.** a dialog appears before the session is terminated. dismiss it with `escape` or click cancel to abort.
+
+the browser preview panel includes a composer for writable instances. you can send input from the web ui when the selected instance supports it; paused or unsupported instances keep the composer disabled with an explanatory message.
+
+**solo pill.** rows spawned as ad-hoc solo agents display a `solo` pill badge next to the instance title. the pill appears for both tmux and daemon-managed sdk solo rows.
+
+**preview routing by execution mode:**
+
+- **daemon-managed sdk rows** (including solo sdk agents spawned through the daemon): the browser preview panel uses the daemon's structured capture route and renders a live `agent preview` view with a usable composer. the preview updates continuously while the agent runs.
+- **legacy standalone sdk rows** (not daemon-managed): the preview panel and composer are unavailable — a placeholder message explains that pane output is not available for these rows. this is a known limitation; no action menu items are shown.
+- **tmux rows**: the preview panel captures output from the tmux pane. if the pane exits or the tmux session is killed, the panel transitions to a `session ended` label and the composer is disabled. this state clears when the session is restarted or resumed.
+
+## filtering and sorting
+
+| key | effect |
+|-----|--------|
+| `1` | show all instances (default) |
+| `2` | show active instances only (running, loading) |
+| `3` | cycle sort mode (by status, by name, by creation time) |
+| `/` | activate search — type to filter by instance title or plan name |
+
+## related concepts
+
+- [agents and roles](../concepts/agents-and-roles.mdx) — execution modes, sdk vs tmux
+- [worktrees](../concepts/worktrees.mdx) — how isolated branches are managed
+- [tui overview](./tui-overview.mdx) — full keymap reference

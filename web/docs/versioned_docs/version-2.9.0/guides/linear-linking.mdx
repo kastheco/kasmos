@@ -1,0 +1,117 @@
+---
+title: "linear linking"
+---
+
+# linear linking
+
+linear linking lets operators keep Linear as the human planning surface while kasmos remains the execution source of truth. a link is explicit task metadata: kasmos stores the Linear issue coordinates, shows them in task surfaces, and records audit events. kasmos does not scrape plan content from Linear, and lifecycle changes still move only through the kasmos FSM.
+
+## setup
+
+set a Linear API key before using the linker service through the cli or mcp tools:
+
+```sh
+export KASMOS_LINEAR_API_KEY=lin_api_...
+# or:
+export LINEAR_API_KEY=lin_api_...
+```
+
+kas also loads `<repo-root>/.env` on startup without overriding already-exported variables, so project-local credentials can live there instead:
+
+```sh
+KASMOS_LINEAR_API_KEY=lin_api_...
+```
+
+`KASMOS_LINEAR_API_URL` is optional and defaults to Linear's GraphQL API. set it only for a compatible alternate endpoint.
+
+## link a task
+
+```sh
+kas task link-linear my-feature KAS-123
+```
+
+the issue argument can be a Linear issue identifier such as `KAS-123` or a Linear issue id. kasmos fetches the issue, stores `linear_issue_id`, `linear_identifier`, `linear_url`, `linear_team_key`, and `linear_project_id`, then emits a `task_linear_linked` audit event.
+
+to post a backlink comment in Linear, opt in explicitly:
+
+```sh
+kas task link-linear my-feature KAS-123 --comment
+kas task link-linear my-feature KAS-123 --comment --message "kasmos is executing this task"
+```
+
+## replace a link
+
+a task that already has a Linear link must be replaced explicitly:
+
+```sh
+kas task link-linear my-feature KAS-456 --force --reason "replanned scope"
+```
+
+`--force` only replaces the link on the named task. it does not override another active task's link.
+
+## duplicate behavior
+
+kasmos prevents two active tasks in the same project from pointing at the same canonical Linear issue id. the duplicate check covers `planning`, `implementing`, `reviewing`, and `verifying` tasks. links on `ready`, `done`, and `cancelled` tasks do not block a new link.
+
+duplicate checks compare the Linear issue id returned by Linear, not just the typed identifier. this means aliases or changed issue identifiers still resolve to the same stored issue id before kasmos decides whether a duplicate exists.
+
+## unlink a task
+
+```sh
+kas task unlink-linear my-feature --reason "issue moved back to planning"
+```
+
+unlinking clears the five stored `linear_*` fields and emits `task_linear_unlinked`. it is idempotent for tasks that have no link.
+
+## mcp and http flows
+
+agents can call the same linker service through mcp:
+
+```json
+{
+  "filename": "my-feature",
+  "issue": "KAS-123",
+  "comment": false,
+  "reason": "operator requested"
+}
+```
+
+use `task_link_linear` to link and `task_unlink_linear` to clear a link. both tools accept `project` when the mcp server is running in multi-project mode.
+
+the task store also exposes raw metadata endpoints:
+
+```http
+PUT /v1/projects/{project}/tasks/{filename}/linear-link
+DELETE /v1/projects/{project}/tasks/{filename}/linear-link
+GET /v1/projects/{project}/tasks/_/linear-link/lookup?issue={linear_issue_id}&status=implementing
+```
+
+the http task store does not call Linear. use the cli or mcp linker when you need Linear fetch, duplicate checking, audit events, and optional backlink comments in one operator flow. use the raw http endpoints only when you already have canonical Linear fields.
+
+## what kasmos does and does not do with Linear
+
+kasmos is the lifecycle source of truth. ordinary Linear edits still do not transition a kasmos task: moving, assigning, renaming, or casual comments are ignored by the kasmos lifecycle.
+
+when configured, kasmos can write one-way receipts back to the linked Linear issue. the linker command can post the explicit backlink comment requested with `--comment`; the optional [linear receipts](./linear-receipts.mdx) feature can post deterministic lifecycle, pull request, merge, and cancellation comments; and `[linear.receipts.state_map]` can map kasmos task statuses to Linear workflow state ids.
+
+phase-4 [linear triggers](./linear-triggers.mdx) add the guarded inbound path: strict `/kasmos <verb>` comments and configured trigger labels can ask kasmos to link, create, plan, or start work when routes and actor allowlists pass. those triggers still emit normal FSM events instead of mutating task state directly.
+
+kasmos does not update Linear assignee, labels, title, description, priority, estimate, cycle, or project fields.
+
+kasmos also does not derive links from markdown content. link state lives in the task store columns and changes only through explicit link or unlink operations.
+
+if a Linear comment or label appears to do nothing, inspect the trigger audit path before assuming it was missed:
+
+```sh
+curl "http://localhost:7433/v1/projects/kasmos/audit-events?kind=task_linear_trigger_rejected"
+```
+
+## audit lookup
+
+to identify a previous link, query the audit log for link events:
+
+```sh
+curl "http://localhost:7433/v1/projects/kasmos/audit-events?kind=task_linear_linked&kind=task_linear_unlinked&task=my-feature"
+```
+
+the event detail records the previous identifier, the new identifier, and any operator `reason`, so operators can see whether a link was created, replaced, or cleared.

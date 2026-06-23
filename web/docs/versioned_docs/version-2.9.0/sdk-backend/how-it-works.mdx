@@ -1,0 +1,228 @@
+---
+title: "how the sdk backend works"
+---
+
+# how the sdk backend works
+
+this page covers the internal mechanics of `session/sdk/` — transport selection, process lifecycle, the renderer, environment variable injection, and the session event loop.
+
+## constructing a session
+
+```go
+// session/sdk/session.go
+func New(name, program string, skipPermissions bool) *Session
+```
+
+`New` returns an unstarted `*Session`. `name` is the human-readable label; `program` is the full command string (e.g. `"claude --model sonnet"`). before calling `Start`, configure the session with builder methods:
+
+| method | purpose |
+|--------|---------|
+| `SetAgentType(string)` | appended as `--agent <type>` for programs that support it |
+| `SetInitialPrompt(string)` | delivered via `SendPrompt` after startup handshake |
+| `SetTaskEnv(task, wave, peers int)` | wave task identity injected as `KASMOS_TASK/WAVE/PEERS` |
+| `SetProject(string)` | injected as `KASMOS_PROJECT` |
+| `SetNoFlicker(bool)` | sets `CLAUDE_CODE_NO_FLICKER` for claude |
+| `SetSessionTitle(string)` | stored; used for log file naming |
+
+## transport selection
+
+`Start` calls `sdk.NewTransport(program)` which uses `common.DetectProgramKind` to map the program string to a transport:
+
+```go
+// session/sdk/registry.go
+func SupportsProgram(program string) bool {
+    switch common.DetectProgramKind(program) {
+    case common.ProgramClaude, common.ProgramCodex:
+        return true
+    default:
+        return false
+    }
+}
+```
+
+if no transport is registered for the program, `Start` returns an error and the instance layer falls back to tmux. in normal operation `session.ResolveExecutionMode` prevents this from happening — it downgraded the mode to tmux before `NewExecutionSession` was called.
+
+## the transport interface
+
+```go
+// session/sdk/transport.go
+type Transport interface {
+    Start(ctx context.Context, cfg LaunchConfig) error
+    SendPrompt(ctx context.Context, prompt string) error
+    Interrupt(ctx context.Context) error
+    RespondPermission(ctx context.Context, choice tmux.PermissionChoice) error
+    Events() <-chan Event
+    PID() int
+    Close() error
+}
+```
+
+`LaunchConfig` carries everything the transport needs:
+
+```go
+type LaunchConfig struct {
+    Name            string
+    Program         string
+    WorkDir         string
+    SkipPermissions bool
+    AgentType       string
+    InitialPrompt   string
+    Project         string
+    TaskNumber      int
+    WaveNumber      int
+    PeerCount       int
+    NoFlicker       bool
+    ExtraEnv        []string
+}
+```
+
+`ExtraEnv` is used by transports for program-specific variables (e.g. `CLAUDE_CODE_NO_FLICKER`) without modifying the shared `buildEnv` helper.
+
+## process management
+
+`Process` in `session/sdk/process.go` handles the raw subprocess:
+
+1. resolves the executable via `common.ResolveExecutable`
+2. creates `<workDir>/.kasmos/logs/<sanitizedName>.log` in append mode
+3. redirects stderr to the log file
+4. injects kasmos environment variables (see below)
+5. exposes stdin/stdout pipes to the transport for JSON-RPC I/O
+6. spawns a reaper goroutine that calls `cmd.Wait()` and closes the log file on exit
+
+```go
+// session/sdk/process.go — log path
+logPath := filepath.Join(cfg.WorkDir, ".kasmos", "logs", sanitized+".log")
+```
+
+## environment variables
+
+the child process inherits the parent's environment plus:
+
+| variable | set when | value |
+|----------|---------|-------|
+| `KASMOS_MANAGED` | always | `"1"` |
+| `KASMOS_PROJECT` | `Project != ""` | repository base name |
+| `KASMOS_TASK` | `TaskNumber > 0` | task number as decimal string |
+| `KASMOS_WAVE` | `TaskNumber > 0` | wave number as decimal string |
+| `KASMOS_PEERS` | `TaskNumber > 0` | peer count as decimal string |
+| `CLAUDE_CODE_NO_FLICKER` | claude transport, always | `"1"` or `"0"` based on `NoFlicker` |
+
+`ExtraEnv` entries (from `LaunchConfig`) are appended after these standard vars.
+
+## claude transport
+
+`ClaudeTransport` drives claude in `--app-server` mode via JSON-RPC 2.0 over stdio.
+
+**startup:**
+1. appends `--app-server` to `cfg.Program`
+2. appends `--permission-mode bypassPermissions` when `cfg.SkipPermissions` is true
+3. injects `CLAUDE_CODE_NO_FLICKER` via `ExtraEnv`
+4. sends `claude/initialize` and waits up to 10 seconds for the response
+5. if `InitialPrompt` is non-empty, delivers it via `claude/sendMessage` after the handshake
+
+**notifications dispatched to the `Events()` channel:**
+
+| method | event kind |
+|--------|-----------|
+| `claude/turnStarted` | `EventTurnStarted` |
+| `claude/streamText` | `EventTextDelta` |
+| `claude/toolUse` | `EventToolCall` |
+| `claude/toolResult` | `EventToolResult` |
+| `claude/permissionRequest` | `EventPermission` |
+| `claude/turnComplete` | `EventTurnCompleted` |
+| `claude/turnInterrupted` | `EventTurnInterrupted` |
+
+**permission handling:** only the most recent unanswered permission request is tracked. calling `RespondPermission` when no request is pending returns nil without sending a wire message.
+
+## codex transport
+
+`CodexTransport` speaks the Codex App Server protocol over stdio.
+
+**startup sequence:**
+1. sends `initialize` with client info
+2. sends `initialized`
+3. sends `thread/start` with the working directory
+4. delivers `InitialPrompt` as the first `turn/start` if non-empty
+
+**turn lifecycle:**
+- `SendPrompt` sends `turn/start` with `{"type":"text","text":"..."}` input
+- `Interrupt` sends `turn/interrupt`
+- permission approvals are tracked per-item and responded via the appropriate `requestApproval` response
+
+## the session event loop
+
+after `Start` succeeds, `Session` launches `consumeEvents()`:
+
+```go
+func (s *Session) consumeEvents() {
+    for e := range s.transport.Events() {
+        s.renderer.AddEvent(e)
+        if e.HasPrompt {
+            s.mu.Lock()
+            s.hasPrompt = true
+            s.mu.Unlock()
+        }
+        if e.Kind == EventTurnStarted {
+            s.mu.Lock()
+            s.hasPrompt = false
+            s.mu.Unlock()
+        }
+    }
+    // events channel closed — subprocess exited
+    s.mu.Lock()
+    s.alive = false
+    s.mu.Unlock()
+}
+```
+
+`s.alive` flips to false when the events channel closes. `DoesSessionExist()` reads this flag under the mutex.
+
+## i/o methods
+
+### SendKeys
+
+```go
+func (s *Session) SendKeys(keys string) error
+```
+
+buffers the input text for later submission via `TapEnter`. the special sequence `"\x03"` (ctrl-C) bypasses the buffer and calls `transport.Interrupt` with a 10-second timeout instead.
+
+**note:** `SendKeys` and `TapEnter` are _not_ `ErrInteractiveOnly` on sdk sessions. text entry is buffered in-process and submitted via `SendPrompt` when `TapEnter` is called.
+
+### TapEnter
+
+```go
+func (s *Session) TapEnter() error
+```
+
+drains the prompt buffer and calls `transport.SendPrompt(ctx, prompt)` with a 10-second timeout.
+
+### SendPermissionResponse
+
+```go
+func (s *Session) SendPermissionResponse(choice tmux.PermissionChoice) error
+```
+
+forwards a permission dialog choice to `transport.RespondPermission`. returns `ErrInteractiveOnly` only if called before `Start` (no transport available yet).
+
+## the renderer
+
+`Renderer` accumulates structured events into a line buffer:
+
+| event kind | rendered as |
+|-----------|------------|
+| `EventTextDelta` | appended as raw text (newlines split lines) |
+| `EventToolCall` | `[tool: <name> <input>]` |
+| `EventToolResult` | `[result: <result>]` |
+| `EventPermission` | `[permission: <description>]` |
+| `EventSystem` | `[system: <text>]` |
+| `EventTurnCompleted` | flushes partial line |
+| `EventTurnInterrupted` | flushes partial line, appends `[interrupted]` |
+
+`CaptureRange(start, end string)` slices the line buffer with tmux-compatible range semantics:
+
+- `""` or `"-"` → beginning (for start) or end (for end)
+- non-negative integer → 0-based line index from the top
+- negative integer → offset from the last line (`-1` = last)
+
+this is the same range syntax as `tmux capture-pane -S/-E`, so existing callers need no changes.
