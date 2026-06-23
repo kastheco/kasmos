@@ -658,12 +658,12 @@ func NewHandler(store Store) http.Handler {
 			writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
 			return
 		}
-		queued, err := store.EnqueueLinearTrigger(project, entry)
+		id, queued, err := store.EnqueueLinearTrigger(project, entry)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
-		writeJSON(w, http.StatusCreated, map[string]bool{"queued": queued})
+		writeJSON(w, http.StatusCreated, map[string]any{"id": id, "queued": queued})
 	})
 
 	mux.HandleFunc("GET /v1/projects/{project}/linear-triggers", func(w http.ResponseWriter, r *http.Request) {
@@ -687,6 +687,98 @@ func NewHandler(store Store) http.Handler {
 			return
 		}
 		writeJSON(w, http.StatusOK, entries)
+	})
+
+	mux.HandleFunc("POST /v1/projects/{project}/linear-webhook-deliveries", func(w http.ResponseWriter, r *http.Request) {
+		project := r.PathValue("project")
+		var delivery LinearWebhookDelivery
+		if err := json.NewDecoder(r.Body).Decode(&delivery); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+			return
+		}
+		recorded, err := store.RecordLinearWebhookDelivery(project, delivery)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusCreated, map[string]bool{"recorded": recorded})
+	})
+
+	mux.HandleFunc("GET /v1/projects/{project}/linear-webhook-deliveries", func(w http.ResponseWriter, r *http.Request) {
+		project := r.PathValue("project")
+		limit := 100
+		if raw := r.URL.Query().Get("limit"); raw != "" {
+			parsed, err := strconv.Atoi(raw)
+			if err != nil || parsed <= 0 {
+				writeError(w, http.StatusBadRequest, "limit must be a positive integer")
+				return
+			}
+			limit = parsed
+		}
+		deliveries, err := store.ListRecentLinearWebhookDeliveries(project, limit)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, deliveries)
+	})
+
+	mux.HandleFunc("GET /v1/projects/{project}/linear-webhook-deliveries/stats", func(w http.ResponseWriter, r *http.Request) {
+		project := r.PathValue("project")
+		rawSince := r.URL.Query().Get("since")
+		if rawSince == "" {
+			writeError(w, http.StatusBadRequest, "since is required")
+			return
+		}
+		since, err := time.Parse(time.RFC3339, rawSince)
+		if err != nil {
+			since, err = time.Parse(time.RFC3339Nano, rawSince)
+		}
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "since must be RFC3339")
+			return
+		}
+		stats, err := store.LinearWebhookStats(project, since)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, stats)
+	})
+
+	mux.HandleFunc("POST /v1/projects/{project}/linear-webhook-deliveries/{deliveryId}/status", func(w http.ResponseWriter, r *http.Request) {
+		project := r.PathValue("project")
+		deliveryID, ok := parseLinearWebhookDeliveryID(w, r)
+		if !ok {
+			return
+		}
+		var req struct {
+			Status string `json:"status"`
+			Reason string `json:"reason"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+			return
+		}
+		if err := store.UpdateLinearWebhookDelivery(project, deliveryID, req.Status, req.Reason); err != nil {
+			writeLinearTriggerActionError(w, err)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+
+	mux.HandleFunc("GET /v1/projects/{project}/linear-webhook-deliveries/{deliveryId}", func(w http.ResponseWriter, r *http.Request) {
+		project := r.PathValue("project")
+		deliveryID, ok := parseLinearWebhookDeliveryID(w, r)
+		if !ok {
+			return
+		}
+		delivery, err := store.LinearWebhookDeliveryByID(project, deliveryID)
+		if err != nil {
+			writeLinearTriggerActionError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, delivery)
 	})
 
 	mux.HandleFunc("POST /v1/projects/{project}/linear-triggers/{id}/dispatched", func(w http.ResponseWriter, r *http.Request) {
@@ -868,6 +960,15 @@ func parseLinearTriggerID(w http.ResponseWriter, r *http.Request) (int64, bool) 
 		return 0, false
 	}
 	return id, true
+}
+
+func parseLinearWebhookDeliveryID(w http.ResponseWriter, r *http.Request) (string, bool) {
+	deliveryID := strings.TrimSpace(r.PathValue("deliveryId"))
+	if deliveryID == "" {
+		writeError(w, http.StatusBadRequest, "delivery ID is required")
+		return "", false
+	}
+	return deliveryID, true
 }
 
 func writeLinearTriggerActionError(w http.ResponseWriter, err error) {

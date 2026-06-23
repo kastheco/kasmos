@@ -107,7 +107,7 @@ func TestPollerPollOnceUnlinkedCommentPlanWithTaskArgCreatesAndPlansOnce(t *test
 		URL:         "https://linear.local/ENG-10",
 		Team:        &linear.Team{ID: "team-1", Key: "ENG"},
 	}
-	queued, err := h.store.EnqueueLinearTrigger("proj", taskstore.LinearTriggerEntry{
+	_, queued, err := h.store.EnqueueLinearTrigger("proj", taskstore.LinearTriggerEntry{
 		LinearIssueID:    "lin-comment-plan",
 		LinearIdentifier: "ENG-10",
 		CommandKind:      string(VerbPlan),
@@ -394,6 +394,81 @@ func TestPollerAuditDetailsUseStableTriggerFields(t *testing.T) {
 		assert.NotContains(t, detail, "verb")
 		assert.NotContains(t, detail, "identifier")
 	}
+}
+
+func TestPollerDrainQueuedProcessesExistingTriggerRows(t *testing.T) {
+	ctx := context.Background()
+	h := newPollerHarness(t)
+	h.poller.deps.Config.Verbs[VerbStart] = false
+	require.NoError(t, h.store.Create("proj", taskstore.TaskEntry{
+		Filename:         "eng-1",
+		Status:           taskstore.StatusReady,
+		Content:          "# plan\n\n## Wave 1\n\n### Task 1: test\n",
+		LinearIssueID:    "lin-drain",
+		LinearIdentifier: "ENG-1",
+	}))
+	h.linear.byID["lin-drain"] = linear.Issue{
+		ID:         "lin-drain",
+		Identifier: "ENG-1",
+		Title:      "Drain queued",
+		URL:        "https://linear.local/ENG-1",
+		Team:       &linear.Team{ID: "team-1", Key: "ENG"},
+		Labels:     []linear.Label{{ID: "label-start", Name: "start"}},
+	}
+	for _, trigger := range []taskstore.LinearTriggerEntry{
+		{
+			LinearIssueID:    "lin-drain",
+			LinearIdentifier: "ENG-1",
+			CommandKind:      string(VerbStatus),
+			SourceKind:       string(SourceComment),
+			SourceID:         "comment-status",
+			ActorID:          "other",
+			DetectedAt:       h.now,
+		},
+		{
+			LinearIssueID:    "lin-drain",
+			LinearIdentifier: "ENG-1",
+			CommandKind:      string(VerbPlan),
+			SourceKind:       string(SourceComment),
+			SourceID:         "comment-rejected",
+			ActorID:          "not-allowed",
+			DetectedAt:       h.now.Add(time.Second),
+		},
+		{
+			LinearIssueID:    "lin-drain",
+			LinearIdentifier: "ENG-1",
+			CommandKind:      string(VerbStart),
+			SourceKind:       string(SourceLabel),
+			SourceID:         "label-start",
+			ActorID:          "actor",
+			DetectedAt:       h.now.Add(2 * time.Second),
+		},
+	} {
+		_, queued, err := h.store.EnqueueLinearTrigger("proj", trigger)
+		require.NoError(t, err)
+		require.True(t, queued)
+	}
+
+	stats := h.poller.DrainQueued(ctx, 10)
+
+	require.False(t, stats.Aborted, "unexpected drain error: %v", stats.Err)
+	assert.Equal(t, 1, stats.Dispatched)
+	assert.Equal(t, 1, stats.Rejected)
+	assert.Equal(t, 1, stats.Ignored)
+	assert.Equal(t, 0, stats.AckFailed)
+	require.Len(t, h.linear.reactions, 2)
+	assert.Equal(t, "comment-status", h.linear.reactions[0].commentID)
+	assert.Equal(t, "eyes", h.linear.reactions[0].emoji)
+	assert.Equal(t, "comment-rejected", h.linear.reactions[1].commentID)
+	assert.Equal(t, "x", h.linear.reactions[1].emoji)
+	require.Len(t, h.linear.createdComments, 1)
+	assert.Contains(t, h.linear.createdComments[0].body, "status: ready")
+	require.Len(t, h.linear.removedLabels, 1)
+	assert.Equal(t, "lin-drain", h.linear.removedLabels[0].issueID)
+	assert.Contains(t, h.linear.removedLabels[0].labels, "label-ack")
+	remaining, err := h.store.ListUnprocessedLinearTriggers("proj", 10)
+	require.NoError(t, err)
+	assert.Empty(t, remaining)
 }
 
 type pollerHarness struct {

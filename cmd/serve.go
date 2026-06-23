@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	stdlog "log"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -23,6 +24,7 @@ import (
 	"github.com/kastheco/kasmos/config/configactions"
 	"github.com/kastheco/kasmos/config/taskactions"
 	"github.com/kastheco/kasmos/config/taskstore"
+	"github.com/kastheco/kasmos/internal/linearruntime"
 	"github.com/kastheco/kasmos/internal/livepreview"
 	"github.com/kastheco/kasmos/internal/mcpserver"
 	kaslog "github.com/kastheco/kasmos/log"
@@ -298,7 +300,7 @@ func newProjectListHandler(sharedDB *sql.DB, validProjects map[string]struct{}) 
 // previewAPI serves live-preview instance routes, configAPI serves project
 // config and scaffold-sync routes, and architectAuditAPI serves cached architect
 // decisions; all are registered before the generic taskstore prefix.
-func newServeAPIRootMux(sharedDB *sql.DB, repoRegs serveRepoRegistration, taskAPI, auditAPI, actionsAPI, previewAPI, configAPI, architectAuditAPI http.Handler) *http.ServeMux {
+func newServeAPIRootMux(sharedDB *sql.DB, repoRegs serveRepoRegistration, taskAPI, auditAPI, actionsAPI, previewAPI, configAPI, architectAuditAPI http.Handler, linearWebhookAPI ...http.Handler) *http.ServeMux {
 	rootMux := http.NewServeMux()
 	rootMux.Handle("/v1/ping", taskAPI)
 	rootMux.Handle("GET /v1/projects", newProjectListHandler(sharedDB, repoRegs.valid))
@@ -335,9 +337,33 @@ func newServeAPIRootMux(sharedDB *sql.DB, repoRegs serveRepoRegistration, taskAP
 
 	// Exact audit route, then generic taskstore prefix.
 	rootMux.Handle("GET /v1/projects/{project}/audit-events", auditAPI)
+	if len(linearWebhookAPI) > 0 && linearWebhookAPI[0] != nil {
+		rootMux.Handle("POST /v1/projects/{project}/linear/webhook", linearWebhookAPI[0])
+	}
 	rootMux.Handle("/v1/projects/", taskAPI)
 
 	return rootMux
+}
+
+func buildLinearWebhookRuntimes(ctx context.Context, repoRegs serveRepoRegistration, store taskstore.Store, gw taskstore.SignalGateway, logger auditlog.Logger) (map[string]*linearruntime.Resolved, error) {
+	runtimes := make(map[string]*linearruntime.Resolved)
+	for project, repoPath := range repoRegs.rootsByProject {
+		runtime, err := linearruntime.Resolve(ctx, repoPath, project, linearruntime.Options{
+			Store:   store,
+			Gateway: gw,
+			Audit:   logger,
+			Now:     time.Now,
+			Logger:  slog.Default().With("monitor", "linear_webhook", "project", project),
+		})
+		if err != nil {
+			return nil, fmt.Errorf("resolve linear webhook runtime for %s: %w", project, err)
+		}
+		if runtime == nil || runtime.Ingestor == nil {
+			continue
+		}
+		runtimes[project] = runtime
+	}
+	return runtimes, nil
 }
 
 const nonLoopbackWarningText = "kas serve: admin API has no built-in auth; front it with tailscale, ssh tunnel, or a reverse proxy. built-in bearer-token auth is tracked in the serve-bearer-auth plan."
@@ -490,7 +516,19 @@ func NewServeCmd() *cobra.Command {
 				actionsAPI = projectValidationMiddleware(repoRegs.valid, actionsAPI)
 			}
 
-			rootMux := newServeAPIRootMux(sharedDB, repoRegs, taskAPI, auditAPI, actionsAPI, previewAPI, configAPI, architectAuditAPI)
+			runtimeByProject, err := buildLinearWebhookRuntimes(cmd.Context(), repoRegs, store, gw, logger)
+			if err != nil {
+				return err
+			}
+			drainCh := make(chan string, 64)
+			var linearWebhookAPI http.Handler
+			if len(repoPaths) > 0 {
+				linearWebhookAPI = projectValidationMiddleware(repoRegs.valid, newLinearWebhookProjectHandler(runtimeByProject, drainCh, time.Now))
+			} else {
+				linearWebhookAPI = newLinearWebhookUnavailableHandler()
+			}
+
+			rootMux := newServeAPIRootMux(sharedDB, repoRegs, taskAPI, auditAPI, actionsAPI, previewAPI, configAPI, architectAuditAPI, linearWebhookAPI)
 
 			// Resolve the admin filesystem: --admin-dir flag overrides embedded assets.
 			// Require the directory to contain index.html so users aren't accidentally
@@ -537,8 +575,11 @@ func NewServeCmd() *cobra.Command {
 			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
 
-			// errCh has capacity 2 so neither goroutine blocks on send when both fail.
-			errCh := make(chan error, 2)
+			// errCh has capacity 3 so server goroutines and the drain worker never
+			// block on send when multiple failures happen at once.
+			errCh := make(chan error, 3)
+
+			go runLinearWebhookDrainer(ctx, runtimeByProject, drainCh, errCh)
 
 			go func() {
 				if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {

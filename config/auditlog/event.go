@@ -56,6 +56,16 @@ const (
 	EventTaskLinearTriggerCommentFailed EventKind = "task_linear_trigger_comment_failed"
 )
 
+// Linear webhook events (Phase 5 inbound HTTP).
+const (
+	EventTaskLinearWebhookReceived  EventKind = "task_linear_webhook_received"
+	EventTaskLinearWebhookAccepted  EventKind = "task_linear_webhook_accepted"
+	EventTaskLinearWebhookDuplicate EventKind = "task_linear_webhook_duplicate"
+	EventTaskLinearWebhookIgnored   EventKind = "task_linear_webhook_ignored"
+	EventTaskLinearWebhookRejected  EventKind = "task_linear_webhook_rejected"
+	EventTaskLinearWebhookFailed    EventKind = "task_linear_webhook_failed"
+)
+
 // Operational events.
 const (
 	EventPromptSent         EventKind = "prompt_sent"

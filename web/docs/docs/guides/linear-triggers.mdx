@@ -90,6 +90,48 @@ require_start_label = true
 allow_label_start = false
 ```
 
+## webhook ingestion
+
+webhook ingestion lets linear push new comments and label changes to `kas serve` instead of waiting for the next daemon poll. the endpoint must be reachable over https; put `kas serve` behind your normal reverse proxy, or use a trusted tunnel while testing. set the signing secret in `KASMOS_LINEAR_WEBHOOK_SECRET`, either in the service environment or the repo `.env`.
+
+```toml
+[linear.triggers.webhook]
+enabled = true
+secret_env = "KASMOS_LINEAR_WEBHOOK_SECRET"
+timestamp_tolerance = "5m"
+max_body_bytes = 1048576
+```
+
+`secret_env` defaults to `KASMOS_LINEAR_WEBHOOK_SECRET`. `timestamp_tolerance` defaults to `5m` and is clamped from `1m` to `15m`. `max_body_bytes` defaults to `1048576`.
+
+in linear, create a webhook that subscribes to `Comment` and `Issue` data-change events. use this url:
+
+```text
+https://<host>/v1/projects/<project>/linear/webhook
+```
+
+the webhook response contract is stable for retries and operator debugging:
+
+| condition | http | body |
+|-----------|------|------|
+| accepted | 200 | `{"status":"accepted"}` |
+| duplicate `Linear-Delivery` | 200 | `{"status":"duplicate"}` |
+| ignored event (no command, unsupported type, label-less issue) | 200 | `{"status":"ignored","reason":<lowercase>}` |
+| missing or invalid signature, stale timestamp | 401 | `{"status":"rejected","reason":<lowercase>}` |
+| missing `Linear-Delivery` | 400 | `{"status":"rejected","reason":"missing_delivery"}` |
+| oversized body | 413 | `{"status":"rejected","reason":"body_too_large"}` |
+| malformed json | 400 | `{"status":"rejected","reason":"malformed_body"}` |
+| missing secret or disabled | 503 | `{"status":"unavailable","reason":<lowercase>}` |
+| store or queue failure | 503 | `{"status":"failed","reason":<lowercase>}` |
+
+for troubleshooting, start with `kas linear webhook status` and then inspect recent attempts with `kas linear webhook deliveries`. `kas status` also includes the webhook line, for example:
+
+```text
+linear webhooks: enabled (last delivery 5m ago, 12 accepted, 2 duplicate, 4 ignored, 1 rejected, 0 errors)
+```
+
+webhooks accelerate the trigger path; they do not replace the daemon poller. after a delivery queues work, the serve worker drains queued rows until the queue is empty or a retryable error stops the pass. if the webhook worker crashes after a row is queued, the next daemon poll catches up because `Poller.DrainQueued` runs the same dispatch, audit, acknowledgement, and fsm signal path.
+
 ## actor allowlist
 
 Linear `User.id` is the canonical actor identity. `allowed_user_ids` is the stable allowlist.

@@ -55,6 +55,16 @@ type statusLinearTriggers struct {
 	Errors     int    `json:"errors,omitempty"`
 }
 
+type statusLinearWebhooks struct {
+	Enabled      bool   `json:"enabled"`
+	LastDelivery string `json:"last_delivery,omitempty"`
+	Accepted     int    `json:"accepted,omitempty"`
+	Duplicate    int    `json:"duplicate,omitempty"`
+	Ignored      int    `json:"ignored,omitempty"`
+	Rejected     int    `json:"rejected,omitempty"`
+	Errors       int    `json:"errors,omitempty"`
+}
+
 // statusData is the top-level JSON structure returned by executeStatus when
 // format == "json".
 type statusData struct {
@@ -62,6 +72,7 @@ type statusData struct {
 	Instances      []statusInstance     `json:"instances"`
 	OrphanSessions []statusOrphan       `json:"orphan_sessions"`
 	LinearTriggers statusLinearTriggers `json:"linear_triggers"`
+	LinearWebhooks statusLinearWebhooks `json:"linear_webhooks"`
 }
 
 func statusAgentLabel(agent string) string {
@@ -187,6 +198,10 @@ type linearTriggerStatsReader interface {
 	LinearTriggerStats(project string, since time.Time) (taskstore.LinearTriggerStats, error)
 }
 
+type webhookStatsReader interface {
+	LinearWebhookStats(project string, since time.Time) (taskstore.LinearWebhookStats, error)
+}
+
 func statusLinearTriggerSummary(store taskstore.Store, project string, cfg lineartrigger.Config, now time.Time) statusLinearTriggers {
 	if !cfg.Enabled {
 		return statusLinearTriggers{}
@@ -209,6 +224,30 @@ func statusLinearTriggerSummary(store taskstore.Store, project string, cfg linea
 	return summary
 }
 
+func statusLinearWebhookSummary(store taskstore.Store, project string, cfg lineartrigger.Config, now time.Time) statusLinearWebhooks {
+	if !cfg.Webhook.Enabled {
+		return statusLinearWebhooks{}
+	}
+	summary := statusLinearWebhooks{Enabled: true}
+	reader, ok := store.(webhookStatsReader)
+	if !ok || reader == nil {
+		return summary
+	}
+	stats, err := reader.LinearWebhookStats(project, now.Add(-24*time.Hour))
+	if err != nil {
+		return summary
+	}
+	if !stats.LastDeliveryAt.IsZero() {
+		summary.LastDelivery = relativeAge(now, stats.LastDeliveryAt)
+	}
+	summary.Accepted = stats.Accepted
+	summary.Duplicate = stats.Duplicate
+	summary.Ignored = stats.Ignored
+	summary.Rejected = stats.Rejected
+	summary.Errors = stats.Failed
+	return summary
+}
+
 func renderStatusLinearTriggers(summary statusLinearTriggers) string {
 	if !summary.Enabled {
 		return "linear triggers: disabled\n"
@@ -219,6 +258,18 @@ func renderStatusLinearTriggers(summary statusLinearTriggers) string {
 	}
 	return fmt.Sprintf("linear triggers: enabled (last poll %s, %d dispatched, %d rejected, %d errors)\n",
 		lastPoll, summary.Dispatched, summary.Rejected, summary.Errors)
+}
+
+func renderStatusLinearWebhooks(summary statusLinearWebhooks) string {
+	if !summary.Enabled {
+		return "linear webhooks: disabled\n"
+	}
+	lastDelivery := "never"
+	if summary.LastDelivery != "" {
+		lastDelivery = summary.LastDelivery + " ago"
+	}
+	return fmt.Sprintf("linear webhooks: enabled (last delivery %s, %d accepted, %d duplicate, %d ignored, %d rejected, %d errors)\n",
+		lastDelivery, summary.Accepted, summary.Duplicate, summary.Ignored, summary.Rejected, summary.Errors)
 }
 
 func currentRepoLinearTriggerStatusLine(now time.Time) (string, error) {
@@ -334,6 +385,7 @@ func executeStatusWithLinearTriggers(state config.StateManager, store taskstore.
 		Instances:      instances,
 		OrphanSessions: orphans,
 		LinearTriggers: statusLinearTriggerSummary(store, project, triggerCfg, now),
+		LinearWebhooks: statusLinearWebhookSummary(store, project, triggerCfg, now),
 	}
 
 	// 4. JSON format.
@@ -401,6 +453,7 @@ func executeStatusWithLinearTriggers(state config.StateManager, store taskstore.
 
 	sb.WriteString("\n")
 	sb.WriteString(renderStatusLinearTriggers(data.LinearTriggers))
+	sb.WriteString(renderStatusLinearWebhooks(data.LinearWebhooks))
 
 	// Hints section — only shown when at least one condition applies.
 	hints := statusRecoveryHints(tasks)

@@ -17,6 +17,7 @@ kas serve [flags]
 | `--port` | `7433` | port for the REST API |
 | `--bind` | `0.0.0.0` | address to bind to |
 | `--db` | `~/.config/kasmos/taskstore.db` | path to the SQLite database file |
+| `--repo` | none | repo root to serve; repeat for multiple project-scoped repos |
 | `--mcp` | `true` | enable the MCP server (Streamable HTTP) |
 | `--mcp-port` | `7434` | port for the MCP server |
 | `--admin-dir` | embedded | path to the built admin SPA `dist/` directory |
@@ -29,6 +30,9 @@ kas serve
 
 # use a custom port and database
 kas serve --port 8080 --db /data/kasmos/tasks.db
+
+# serve one or more repo-scoped projects
+kas serve --repo /srv/kasmos/repos/app --repo /srv/kasmos/repos/docs
 
 # bind to localhost only, disable MCP
 kas serve --bind 127.0.0.1 --mcp=false
@@ -107,6 +111,16 @@ The endpoint reads `.kasmos/cache/<task>-architect.json` from the resolved repo 
 | `GET` | `/v1/projects/{project}/audit-events` | query audit log entries |
 
 Query parameters: repeated `kind=` values, `task`, `instance`, `after`, `before`, and `limit`. `after` and `before` accept RFC3339 timestamps with optional fractional seconds; `limit` defaults to 100 and is capped at 500. Responses include stable `id` values for idempotent pollers. Because `after` is a strict timestamp filter, pollers should overlap windows and de-duplicate by `id` instead of relying on timestamp-only checkpoints.
+
+### linear webhooks
+
+| method | path | description |
+|--------|------|-------------|
+| `POST` | `/v1/projects/{project}/linear/webhook` | ingest a signed Linear webhook delivery for the project |
+
+the webhook endpoint is active only in repo-scoped serve mode (`--repo`, or daemon repo auto-detection when `--db` is not set). bare `--db` mode returns `503` for this route because kasmos cannot load the repo-local `.env` and `[linear.triggers]` configuration needed to verify and route Linear deliveries.
+
+webhook requests must include Linear's signature and delivery headers and use the secret configured by `[linear.triggers.webhook]`. accepted deliveries are recorded quickly, queued, and drained asynchronously through the same guarded Linear trigger path as the poller. see [linear triggers](../guides/linear-triggers.mdx#webhook-ingestion) for setup and response details.
 
 ### instances
 

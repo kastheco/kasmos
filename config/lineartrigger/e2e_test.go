@@ -119,7 +119,7 @@ func TestPollerEndToEndUnlinkedPlanTriggersCreateAndPlanOnce(t *testing.T) {
 	h.requireAuditCount(t, auditlog.EventTaskLinearTriggerDispatched, "plan", 1)
 
 	h.linear.issues["lin-comment-plan"] = e2eIssue("lin-comment-plan", "ENG-203", "Plan from comment", nil)
-	queued, err := h.store.EnqueueLinearTrigger("proj", taskstore.LinearTriggerEntry{
+	_, queued, err := h.store.EnqueueLinearTrigger("proj", taskstore.LinearTriggerEntry{
 		LinearIssueID:    "lin-comment-plan",
 		LinearIdentifier: "ENG-203",
 		CommandKind:      string(VerbPlan),

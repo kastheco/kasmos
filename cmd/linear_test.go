@@ -3,8 +3,11 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"testing"
+	"time"
 
+	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/kastheco/kasmos/internal/linear"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -64,6 +67,59 @@ func TestRootCommandRegistersLinearGroup(t *testing.T) {
 	cmd, _, err := NewRootCmd().Find([]string{"linear", "discover"})
 	require.NoError(t, err)
 	assert.Equal(t, "discover [labels|users|workflow-states|teams|projects]", cmd.Use)
+}
+
+func TestLinearWebhookStatusTextAndJSON(t *testing.T) {
+	summary := statusLinearWebhooks{
+		Enabled:      true,
+		LastDelivery: "5m",
+		Accepted:     3,
+		Duplicate:    1,
+		Rejected:     1,
+	}
+
+	cmd := NewLinearCmd()
+	webhookStatus, _, err := cmd.Find([]string{"webhook", "status"})
+	require.NoError(t, err)
+	var out bytes.Buffer
+	webhookStatus.SetOut(&out)
+
+	assert.Equal(t, "linear webhooks: enabled (last delivery 5m ago, 3 accepted, 1 duplicate, 0 ignored, 1 rejected, 0 errors)\n", renderStatusLinearWebhooks(summary))
+	require.NoError(t, writeLinearWebhookStatusJSON(webhookStatus, summary))
+
+	var parsed statusLinearWebhooks
+	require.NoError(t, json.Unmarshal(bytes.TrimSpace(out.Bytes()), &parsed))
+	assert.True(t, parsed.Enabled)
+	assert.Equal(t, 3, parsed.Accepted)
+	assert.Equal(t, 1, parsed.Duplicate)
+}
+
+func TestLinearWebhookStatusDisabledLine(t *testing.T) {
+	assert.Equal(t, "linear webhooks: disabled\n", renderStatusLinearWebhooks(statusLinearWebhooks{}))
+}
+
+func TestLinearWebhookDeliveriesFormattingAndLimit(t *testing.T) {
+	store := taskstore.NewTestSQLiteStore(t)
+	project := "linear-webhook-cli-project"
+	receivedAt := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
+	for i, delivery := range []taskstore.LinearWebhookDelivery{
+		{DeliveryID: "delivery-1", Status: "accepted", Reason: "", LinearIssueID: "issue-1"},
+		{DeliveryID: "delivery-2", Status: "rejected", Reason: "invalid_signature", LinearIssueID: "issue-2"},
+	} {
+		delivery.ReceivedAt = receivedAt.Add(time.Duration(i) * time.Minute)
+		recorded, err := store.RecordLinearWebhookDelivery(project, delivery)
+		require.NoError(t, err)
+		require.True(t, recorded)
+	}
+
+	cmd := NewLinearCmd()
+	deliveries, _, err := cmd.Find([]string{"webhook", "deliveries"})
+	require.NoError(t, err)
+	var out bytes.Buffer
+	deliveries.SetOut(&out)
+
+	require.NoError(t, writeLinearWebhookDeliveries(deliveries, store, project, 500))
+	assert.Equal(t, "delivery-2\trejected\tinvalid_signature\t2026-05-01T10:01:00Z\tissue-2\ndelivery-1\taccepted\t\t2026-05-01T10:00:00Z\tissue-1\n", out.String())
 }
 
 func sortedLinearRows(rows []linearDiscoverRow) []linearDiscoverRow {

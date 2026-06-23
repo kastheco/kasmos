@@ -68,12 +68,38 @@ type LinearTriggerEntry struct {
 	AckState         string    `json:"ack_state"`
 }
 
+// LinearWebhookDelivery is one persisted Linear webhook delivery attempt.
+// Status starts as "received" and transitions to "accepted" | "duplicate" |
+// "ignored" | "rejected" | "failed" via store mutators in this interface.
+type LinearWebhookDelivery struct {
+	ID            int64     `json:"id"`
+	DeliveryID    string    `json:"delivery_id"`
+	LinearEvent   string    `json:"linear_event"`
+	Action        string    `json:"action"`
+	LinearIssueID string    `json:"linear_issue_id"`
+	SourceKind    string    `json:"source_kind"`
+	SourceID      string    `json:"source_id"`
+	Status        string    `json:"status"`
+	Reason        string    `json:"reason"`
+	ReceivedAt    time.Time `json:"received_at"`
+	ProcessedAt   time.Time `json:"processed_at,omitempty"`
+}
+
 // LinearTriggerStats summarizes processed Linear trigger outcomes for status.
 type LinearTriggerStats struct {
 	LastSeenAt time.Time
 	Dispatched int
 	Rejected   int
 	Failed     int
+}
+
+type LinearWebhookStats struct {
+	LastDeliveryAt time.Time
+	Accepted       int
+	Duplicate      int
+	Ignored        int
+	Rejected       int
+	Failed         int
 }
 
 // Status represents the lifecycle state of a plan.
@@ -163,9 +189,9 @@ type ExecutionStateWriter interface {
 // LinearTriggerStore persists inbound Linear trigger events.
 type LinearTriggerStore interface {
 	// EnqueueLinearTrigger inserts a row using INSERT ... ON CONFLICT DO NOTHING.
-	// Returns queued=true when a new row landed; false when the unique key was
-	// already present (replay-safe).
-	EnqueueLinearTrigger(project string, e LinearTriggerEntry) (queued bool, err error)
+	// Returns queued=true with the inserted row ID when a new row landed; false
+	// with id=0 when the unique key was already present (replay-safe).
+	EnqueueLinearTrigger(project string, e LinearTriggerEntry) (id int64, queued bool, err error)
 	// MarkLinearTriggerDispatched marks an enqueued row as successfully dispatched.
 	// targetFilename is the resulting kasmos task file (empty for help/status).
 	MarkLinearTriggerDispatched(project string, id int64, targetFilename string) error
@@ -179,6 +205,11 @@ type LinearTriggerStore interface {
 	MarkLinearTriggerAck(project string, id int64, ackState string) error
 	// ListUnprocessedLinearTriggers returns rows with processed=0 in detected_at ASC order, capped at limit.
 	ListUnprocessedLinearTriggers(project string, limit int) ([]LinearTriggerEntry, error)
+	RecordLinearWebhookDelivery(project string, d LinearWebhookDelivery) (recorded bool, err error)
+	UpdateLinearWebhookDelivery(project, deliveryID, status, reason string) error
+	LinearWebhookDeliveryByID(project, deliveryID string) (LinearWebhookDelivery, error)
+	ListRecentLinearWebhookDeliveries(project string, limit int) ([]LinearWebhookDelivery, error)
+	LinearWebhookStats(project string, since time.Time) (LinearWebhookStats, error)
 	// LastSeenCommentAt returns the cursor for an issue, or zero time when unknown.
 	LastSeenCommentAt(project, linearIssueID string) (time.Time, error)
 	// SetLastSeenCommentAt updates the cursor monotonically; SET only when at > current.

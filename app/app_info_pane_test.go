@@ -475,7 +475,7 @@ func (f *failingSubtaskStore) MarkReviewFixerDispatched(project, filename string
 func (f *failingSubtaskStore) ListPendingReviews(project, filename string) ([]taskstore.PRReviewEntry, error) {
 	return f.inner.ListPendingReviews(project, filename)
 }
-func (f *failingSubtaskStore) EnqueueLinearTrigger(project string, e taskstore.LinearTriggerEntry) (bool, error) {
+func (f *failingSubtaskStore) EnqueueLinearTrigger(project string, e taskstore.LinearTriggerEntry) (int64, bool, error) {
 	return f.inner.EnqueueLinearTrigger(project, e)
 }
 func (f *failingSubtaskStore) MarkLinearTriggerDispatched(project string, id int64, targetFilename string) error {
@@ -495,6 +495,21 @@ func (f *failingSubtaskStore) MarkLinearTriggerAck(project string, id int64, ack
 }
 func (f *failingSubtaskStore) ListUnprocessedLinearTriggers(project string, limit int) ([]taskstore.LinearTriggerEntry, error) {
 	return f.inner.ListUnprocessedLinearTriggers(project, limit)
+}
+func (f *failingSubtaskStore) RecordLinearWebhookDelivery(project string, d taskstore.LinearWebhookDelivery) (bool, error) {
+	return f.inner.RecordLinearWebhookDelivery(project, d)
+}
+func (f *failingSubtaskStore) UpdateLinearWebhookDelivery(project, deliveryID, status, reason string) error {
+	return f.inner.UpdateLinearWebhookDelivery(project, deliveryID, status, reason)
+}
+func (f *failingSubtaskStore) LinearWebhookDeliveryByID(project, deliveryID string) (taskstore.LinearWebhookDelivery, error) {
+	return f.inner.LinearWebhookDeliveryByID(project, deliveryID)
+}
+func (f *failingSubtaskStore) ListRecentLinearWebhookDeliveries(project string, limit int) ([]taskstore.LinearWebhookDelivery, error) {
+	return f.inner.ListRecentLinearWebhookDeliveries(project, limit)
+}
+func (f *failingSubtaskStore) LinearWebhookStats(project string, since time.Time) (taskstore.LinearWebhookStats, error) {
+	return f.inner.LinearWebhookStats(project, since)
 }
 func (f *failingSubtaskStore) LastSeenCommentAt(project, linearIssueID string) (time.Time, error) {
 	return f.inner.LastSeenCommentAt(project, linearIssueID)
