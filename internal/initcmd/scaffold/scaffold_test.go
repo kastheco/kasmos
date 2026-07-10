@@ -354,6 +354,32 @@ func TestScaffoldOpenCodeProject(t *testing.T) {
 	assert.FileExists(t, filepath.Join(dir, ".opencode", "agents", "chat.md"))
 }
 
+func TestScaffoldArchitectRole(t *testing.T) {
+	dir := t.TempDir()
+	agents := []harness.AgentConfig{
+		{Role: "architect", Harness: "claude", Model: "claude-opus-4-8", Enabled: true},
+	}
+
+	_, err := WriteClaudeProject(dir, agents, allTools, false)
+	require.NoError(t, err)
+	claudeAgent := filepath.Join(dir, ".claude", "agents", "architect.md")
+	assert.FileExists(t, claudeAgent)
+	claudeContent, err := os.ReadFile(claudeAgent)
+	require.NoError(t, err)
+	assert.Contains(t, string(claudeContent), "kasmos-architect")
+
+	opencodeAgents := []harness.AgentConfig{
+		{Role: "architect", Harness: "opencode", Model: "anthropic/claude-opus-4-8", Enabled: true},
+	}
+	_, err = WriteOpenCodeProject(dir, opencodeAgents, allTools, false)
+	require.NoError(t, err)
+	opencodeAgent := filepath.Join(dir, ".opencode", "agents", "architect.md")
+	assert.FileExists(t, opencodeAgent)
+	opencodeContent, err := os.ReadFile(opencodeAgent)
+	require.NoError(t, err)
+	assert.Contains(t, string(opencodeContent), "kasmos-architect")
+}
+
 func TestScaffoldCodexProject(t *testing.T) {
 	dir := t.TempDir()
 	agents := []harness.AgentConfig{
