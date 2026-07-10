@@ -101,6 +101,33 @@ func TestInstanceList_Empty(t *testing.T) {
 	assert.Empty(t, entries)
 }
 
+func TestInstanceList_PrefersLiveDaemonInstances(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	loadDaemon := func(context.Context, string) ([]instanceListEntry, error) {
+		return []instanceListEntry{{
+			Title:     "live-sdk-planner",
+			TaskFile:  "jobs-search",
+			AgentType: "planner",
+			Program:   "codex",
+			Status:    "running",
+			CreatedAt: now.Format(time.RFC3339),
+		}}, nil
+	}
+
+	handler := makeInstanceListHandlerWithDaemon(seedInstances(instanceRecord{Title: "stale-disk-instance", Status: instanceRunning}), loadDaemon, "kas.sock")
+	result, err := handler(context.Background(), mockReq(map[string]any{}))
+	require.NoError(t, err)
+	assert.False(t, result.IsError)
+
+	var wrapper instanceListResult
+	require.NoError(t, json.Unmarshal([]byte(textResult(t, result)), &wrapper))
+	require.Len(t, wrapper.Instances, 1)
+	assert.Equal(t, "live-sdk-planner", wrapper.Instances[0].Title)
+	assert.Equal(t, "running", wrapper.Instances[0].Status)
+	assert.Equal(t, "jobs-search", wrapper.Instances[0].TaskFile)
+	assert.Equal(t, "planner", wrapper.Instances[0].AgentType)
+}
+
 // TestInstanceList_WithTimestamp verifies that a non-zero CreatedAt value is
 // formatted as RFC3339, matching cmd/instance.go:212.
 func TestInstanceList_WithTimestamp(t *testing.T) {
