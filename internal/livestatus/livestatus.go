@@ -9,6 +9,7 @@ import (
 	"github.com/kastheco/kasmos/config/taskstore"
 )
 
+// SchemaVersion identifies the current live-status wire contract.
 const SchemaVersion = 1
 
 const (
@@ -17,11 +18,15 @@ const (
 )
 
 const (
-	KindNeedsDecision  = "needs_decision"
+	// KindNeedsDecision identifies a task waiting for operator input.
+	KindNeedsDecision = "needs_decision"
+	// KindReviewFeedback identifies a task with unresolved review feedback.
 	KindReviewFeedback = "review_feedback"
-	KindStaleInstance  = "stale_instance"
+	// KindStaleInstance identifies an agent with a reported health problem.
+	KindStaleInstance = "stale_instance"
 )
 
+// LiveStatus is the canonical compact orchestration snapshot.
 type LiveStatus struct {
 	SchemaVersion int             `json:"schema_version"`
 	GeneratedAt   time.Time       `json:"generated_at"`
@@ -35,6 +40,7 @@ type LiveStatus struct {
 	Truncated     Truncation      `json:"truncated"`
 }
 
+// LifecycleCounts summarizes active tasks by lifecycle status.
 type LifecycleCounts struct {
 	Planning     int `json:"planning"`
 	Ready        int `json:"ready"`
@@ -44,6 +50,7 @@ type LifecycleCounts struct {
 	Total        int `json:"total"`
 }
 
+// ActiveAgent describes an agent currently associated with a task.
 type ActiveAgent struct {
 	Task   string `json:"task"`
 	Role   string `json:"role"`
@@ -53,17 +60,20 @@ type ActiveAgent struct {
 	Active bool   `json:"active,omitempty"`
 }
 
+// AttentionItem describes state that may require operator attention.
 type AttentionItem struct {
 	Task   string `json:"task"`
 	Kind   string `json:"kind"`
 	Detail string `json:"detail,omitempty"`
 }
 
+// Truncation reports omitted items from bounded lists.
 type Truncation struct {
 	ActiveAgents int `json:"active_agents,omitempty"`
 	Attention    int `json:"attention,omitempty"`
 }
 
+// Input contains the surface-neutral state used to assemble a snapshot.
 type Input struct {
 	Project string
 	Now     time.Time
@@ -73,12 +83,14 @@ type Input struct {
 	Agents  []AgentInput
 }
 
+// DaemonHeartbeat contains best-effort daemon health context.
 type DaemonHeartbeat struct {
 	Running   bool
 	Uptime    string
 	RepoCount int
 }
 
+// TaskInput contains the task fields needed by the assembler.
 type TaskInput struct {
 	Filename       string
 	Status         taskstore.Status
@@ -86,6 +98,7 @@ type TaskInput struct {
 	ReviewFeedback bool
 }
 
+// AgentInput contains the agent fields needed by the assembler.
 type AgentInput struct {
 	Task         string
 	Role         string
@@ -96,6 +109,7 @@ type AgentInput struct {
 	HealthReason string
 }
 
+// Assemble builds a deterministic live-status snapshot from the supplied state.
 func Assemble(in Input) LiveStatus {
 	now := in.Now.UTC()
 	cap := in.Cap

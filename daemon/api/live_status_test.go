@@ -76,3 +76,46 @@ func TestLiveStatusUnknownProject(t *testing.T) {
 	NewHandler(state).ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/v1/repos/missing/live-status", nil))
 	assert.Equal(t, http.StatusNotFound, recorder.Code)
 }
+
+func TestLiveStatusCapQuery(t *testing.T) {
+	tests := []struct {
+		name        string
+		cap         string
+		agentCount  int
+		wantCount   int
+		wantOmitted int
+	}{
+		{name: "explicit cap", cap: "2", agentCount: 5, wantCount: 2, wantOmitted: 3},
+		{name: "hard maximum", cap: "1000", agentCount: 105, wantCount: 100, wantOmitted: 5},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			instances := make([]InstanceStatus, tt.agentCount)
+			for i := range instances {
+				instances[i] = InstanceStatus{Project: "kasmos", Plan: fmt.Sprintf("task-%d", i), Active: true}
+			}
+			state := &liveStatusState{
+				DaemonState: &DaemonState{Instances: instances},
+				plans:       map[string][]taskstore.TaskEntry{"kasmos": {}},
+			}
+
+			recorder := httptest.NewRecorder()
+			request := httptest.NewRequest(http.MethodGet, "/v1/repos/kasmos/live-status?cap="+tt.cap, nil)
+			NewHandler(state).ServeHTTP(recorder, request)
+			require.Equal(t, http.StatusOK, recorder.Code)
+
+			var got livestatus.LiveStatus
+			require.NoError(t, json.NewDecoder(recorder.Body).Decode(&got))
+			assert.Len(t, got.ActiveAgents, tt.wantCount)
+			assert.Equal(t, tt.wantOmitted, got.Truncated.ActiveAgents)
+		})
+	}
+}
+
+func TestLiveStatusRejectsInvalidCap(t *testing.T) {
+	state := &liveStatusState{DaemonState: &DaemonState{}, plans: map[string][]taskstore.TaskEntry{"kasmos": {}}}
+	recorder := httptest.NewRecorder()
+	NewHandler(state).ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/v1/repos/kasmos/live-status?cap=invalid", nil))
+	assert.Equal(t, http.StatusBadRequest, recorder.Code)
+}

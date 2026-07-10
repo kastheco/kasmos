@@ -3,6 +3,7 @@ package api
 import (
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -12,6 +13,11 @@ import (
 
 func (h *Handler) handleLiveStatus(w http.ResponseWriter, r *http.Request) {
 	project := r.PathValue("project")
+	cap, err := parseLiveStatusCap(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	plans, err := h.state.ListPlans(project)
 	if err != nil {
 		if errors.Is(err, ErrProjectNotFound) {
@@ -24,10 +30,22 @@ func (h *Handler) handleLiveStatus(w http.ResponseWriter, r *http.Request) {
 
 	instances := h.state.ListInstances(project)
 	status := h.state.Status()
-	writeJSON(w, http.StatusOK, livestatus.Assemble(buildLiveStatusInput(project, plans, instances, status)))
+	writeJSON(w, http.StatusOK, livestatus.Assemble(buildLiveStatusInput(project, plans, instances, status, cap)))
 }
 
-func buildLiveStatusInput(project string, plans []taskstore.TaskEntry, instances []InstanceStatus, status StatusResponse) livestatus.Input {
+func parseLiveStatusCap(r *http.Request) (int, error) {
+	value := r.URL.Query().Get("cap")
+	if value == "" {
+		return 0, nil
+	}
+	cap, err := strconv.Atoi(value)
+	if err != nil || cap <= 0 {
+		return 0, errors.New("cap must be a positive integer")
+	}
+	return cap, nil
+}
+
+func buildLiveStatusInput(project string, plans []taskstore.TaskEntry, instances []InstanceStatus, status StatusResponse, cap int) livestatus.Input {
 	tasks := make([]livestatus.TaskInput, 0, len(plans))
 	for _, entry := range plans {
 		tasks = append(tasks, livestatus.TaskInput{
@@ -54,6 +72,7 @@ func buildLiveStatusInput(project string, plans []taskstore.TaskEntry, instances
 	return livestatus.Input{
 		Project: project,
 		Now:     time.Now(),
+		Cap:     cap,
 		Daemon: livestatus.DaemonHeartbeat{
 			Running:   status.Running,
 			Uptime:    status.Uptime,
