@@ -31,7 +31,7 @@ func resolveToolGateway(project string, gateway taskstore.SignalGateway) (taskst
 
 func makeSignalCreateHandler(rc routing.RegisterConfig, gateway taskstore.SignalGateway) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		project, err := routing.ResolveProjectArg(req, rc.FixedProject, rc.Projects)
+		project, err := rc.ResolveProjectArg(ctx, req)
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("signal_create: %v", err)), nil
 		}
@@ -73,11 +73,14 @@ func makeSignalCreateHandler(rc routing.RegisterConfig, gateway taskstore.Signal
 // accepts an optional "project" argument. When projects has zero or one entry,
 // project is used as the fixed binding and the "project" argument is optional.
 func RegisterTools(srv *server.MCPServer, project string, projects []string, gateway taskstore.SignalGateway) {
+	RegisterToolsWithRouting(srv, routing.NewRegisterConfig(project, projects), gateway)
+}
+
+// RegisterToolsWithRouting wires signal tools with request-time project routing.
+func RegisterToolsWithRouting(srv *server.MCPServer, rc routing.RegisterConfig, gateway taskstore.SignalGateway) {
 	if srv == nil {
 		return
 	}
-
-	rc := routing.NewRegisterConfig(project, projects)
 
 	srv.AddTool(mcp.NewTool("signal_create",
 		mcp.WithDescription("create a pending lifecycle signal in the signal gateway"),

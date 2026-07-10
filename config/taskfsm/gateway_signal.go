@@ -13,6 +13,12 @@ import (
 // The persisted gateway signal retains the legacy elaborator_finished wire name.
 const ArchitectFinished Event = "architect_finished"
 
+// PreAppliedGatewayPayload marks a gateway signal whose originator already
+// applied the corresponding FSM transition. The daemon must still execute the
+// downstream side effects, but it must not reject the signal as stale when the
+// task is already in the target state.
+const PreAppliedGatewayPayload = `{"fsm_applied":true}`
+
 var validGatewaySignalTypes = map[string]struct{}{
 	"plan_start":               {},
 	"planner_finished":         {},

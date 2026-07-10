@@ -144,7 +144,7 @@ func transitionSignalType(event taskfsm.Event) (string, bool) {
 // flag so it knows to run downstream side effects (spawn reviewer, spawn
 // master, spawn fixer, create PR, etc.) instead of dropping the signal as
 // stale. See orchestration/loop/processor.go ProcessFSMSignals.
-const httpPreAppliedPayload = `{"fsm_applied":true}`
+const httpPreAppliedPayload = taskfsm.PreAppliedGatewayPayload
 
 // ---- precondition helper ----------------------------------------------------
 
