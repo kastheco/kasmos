@@ -76,13 +76,13 @@ Update a tracking Workboard card with a short status and evidence. Do not mark t
 
 ## Documentation-drift gate
 
-Before **every commit** that changes a Kasmos repository, run the repository's documentation-drift detector against the branch merge base, before staging or committing:
+Before **every commit** that changes a Kasmos repository, stage the intended commit, then run the repository's documentation-drift detector against the staged changes:
 
 ```sh
-BASE_REF="$(git merge-base HEAD origin/main)" TARGET_REF=HEAD bash scripts/detect-docs-drift.sh
+BASE_REF="$(git merge-base HEAD origin/main)" TARGET_REF=INDEX bash scripts/detect-docs-drift.sh
 ```
 
-- If the report lists `docs_not_changed`, update each mapped document and rerun the detector until it reports an empty drift list.
+- If the report lists `docs_not_changed`, update each mapped document, stage the updates, and rerun the detector until it reports an empty drift list.
 - Treat orchestration, lifecycle, daemon, MCP, CLI, config, and scaffold changes as likely mapped code. Inspect the detector output proactively; do not wait for the pre-push hook or CI to catch it.
 - Include the clean detector command and result in the commit/PR verification summary. The pre-push hook is a backstop, not the first drift check.
 
