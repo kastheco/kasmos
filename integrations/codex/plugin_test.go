@@ -54,17 +54,15 @@ func TestPluginBundleContract(t *testing.T) {
 	})
 
 	t.Run("MCP endpoint matches canonical URL", func(t *testing.T) {
-		var config struct {
-			MCPServers map[string]struct {
-				Type string `json:"type"`
-				URL  string `json:"url"`
-			} `json:"mcpServers"`
+		var config map[string]struct {
+			Type string `json:"type"`
+			URL  string `json:"url"`
 		}
 		readJSON(t, ".mcp.json", &config)
 
-		require.Len(t, config.MCPServers, 1)
-		server, ok := config.MCPServers["kasmos"]
-		require.True(t, ok, "mcpServers must contain kasmos")
+		require.Len(t, config, 1)
+		server, ok := config["kasmos"]
+		require.True(t, ok, ".mcp.json must contain kasmos at the top level")
 		assert.Equal(t, "http", server.Type)
 		assert.Equal(t, mcpclient.SharedEndpointURL, server.URL)
 	})

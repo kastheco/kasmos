@@ -20,13 +20,13 @@ Use current task commands such as `kas task list` to inspect work managed by the
 
 ## install
 
-From the Kasmos repository root, add the local marketplace and install the plugin:
+From the Kasmos repository root, add the local marketplace and install the plugin with the Codex CLI:
 
-```text
-/plugin marketplace add ./integrations/codex
-/plugin install kasmos@kasmos
+```bash
+codex plugin marketplace add "$(pwd)/integrations/codex"
+codex plugin add kasmos@kasmos
 ```
 
-The plugin does not require credentials. It registers the bundled local MCP server, which can then be enabled in Codex.
+Start a new Codex session after installation so the plugin is loaded. The plugin does not require credentials. It registers the bundled local MCP server, which can then be enabled in Codex.
 
 See the [Codex plugin guide](../../web/docs/docs/guides/codex-plugin.mdx) for setup, verification, and troubleshooting.

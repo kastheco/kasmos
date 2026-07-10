@@ -29,15 +29,14 @@ Use `kas task list` to confirm that the registered repository and its tasks are 
 
 ## install
 
-In Codex, add the marketplace from a Kasmos checkout, install the plugin, and reload plugins:
+Add the marketplace from a Kasmos checkout and install the plugin with the Codex CLI:
 
-```text
-/plugin marketplace add <path>/integrations/codex
-/plugin install kasmos@kasmos
-/reload-plugins
+```bash
+codex plugin marketplace add <path>/integrations/codex
+codex plugin add kasmos@kasmos
 ```
 
-Replace `<path>` with the absolute or Codex-accessible path to the Kasmos repository root. Codex discovers the catalogue at `integrations/codex/.agents/plugins/marketplace.json`; pass the containing `integrations/codex` directory, not the JSON file. The plugin connects to the local MCP host and does not require separate credentials.
+Replace `<path>` with the absolute path to the Kasmos repository root. Codex discovers the catalogue at `integrations/codex/.agents/plugins/marketplace.json`; pass the containing `integrations/codex` directory, not the JSON file. Start a new Codex session after installation so the plugin is loaded. The plugin connects to the local MCP host and does not require separate credentials.
 
 ## coordinate work with kasmos
 
