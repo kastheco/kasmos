@@ -45,28 +45,34 @@ func TestPromptTemplates_UseMCPFirstSignals(t *testing.T) {
 			},
 		},
 		{
-			name: "review prompt routes review outcomes through gateway commands only",
+			name: "review prompt carries only dynamic gateway routing context",
 			path: "templates/shared/review-prompt.md",
 			contains: []string{
-				"You MUST emit exactly one signal before you finish. Prefer MCP `signal_create`",
-				"Do not write legacy `.kasmos/signals/review-*` files",
-				"kas signal emit review_approved {{PLAN_FILENAME}}",
-				"kas signal emit review_changes_requested {{PLAN_FILENAME}}",
-				"Readiness review handoff",
-				"verifying",
-				"auto_readiness_review",
-				// master triage buckets
-				"blocker",
-				"quality",
-				// self-fix ceiling knob
-				"readiness_self_fix_max_lines",
-				// shared static gate
-				"post-fix",
+				"Load the `kasmos-reviewer` skill",
+				`signal_type: "review-approved"`,
+				`signal_type: "review-changes"`,
+				"{{PREVIOUS_REVIEW_CONTEXT}}",
 			},
 			notContains: []string{
 				".kasmos/signals/review-approved-",
 				".kasmos/signals/review-changes-",
-				"readiness_reviewing",
+				"go test ./...",
+				"Readiness review handoff",
+			},
+		},
+		{
+			name: "reviewer skill does not enforce shell tool choices",
+			path: "templates/skills/kasmos-reviewer/SKILL.md",
+			contains: []string{
+				`signal_type: "review-approved"`,
+				`signal_type: "review-changes"`,
+			},
+			notContains: []string{
+				"CLI Tools Hard Gate",
+				"Banned Tools",
+				"cli-tools",
+				"GIT_EXTERNAL_DIFF=difft",
+				"anthropic/claude",
 			},
 		},
 		{
@@ -85,6 +91,11 @@ func TestPromptTemplates_UseMCPFirstSignals(t *testing.T) {
 				".kasmos/signals/",
 				"approve-merge",
 				"readiness_reviewing",
+				"CLI Tools Hard Gate",
+				"Banned Tools",
+				"cli-tools",
+				"GIT_EXTERNAL_DIFF=difft",
+				"openai/gpt",
 			},
 		},
 		{
@@ -116,6 +127,26 @@ func TestPromptTemplates_UseMCPFirstSignals(t *testing.T) {
 			for _, unexpected := range tc.notContains {
 				assert.NotContains(t, rendered, unexpected)
 			}
+		})
+	}
+}
+
+func TestReviewRoleTemplates_DoNotForceToolReferenceSkills(t *testing.T) {
+	paths := []string{
+		"templates/claude/agents/reviewer.md",
+		"templates/claude/agents/master.md",
+		"templates/opencode/agents/reviewer.md",
+		"templates/opencode/agents/master.md",
+	}
+
+	for _, path := range paths {
+		t.Run(path, func(t *testing.T) {
+			content, err := templates.ReadFile(path)
+			require.NoError(t, err)
+
+			rendered := string(content)
+			assert.NotContains(t, rendered, "CLI Tools (MANDATORY)")
+			assert.NotContains(t, rendered, "cli-tools")
 		})
 	}
 }

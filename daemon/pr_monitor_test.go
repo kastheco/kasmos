@@ -497,6 +497,41 @@ func TestPRMonitor_HandleReview_CycleLimit(t *testing.T) {
 	assert.Equal(t, maxCycles, act.Limit)
 }
 
+func TestPRMonitor_HandleReview_UsesResolvedProjectCycleLimit(t *testing.T) {
+	store := taskstore.NewTestStore(t)
+	project := "test-project"
+	repoPath := t.TempDir()
+	const prNum = 4
+
+	require.NoError(t, store.Create(project, taskstore.TaskEntry{
+		Filename:    "plan.md",
+		Status:      taskstore.StatusReviewing,
+		Branch:      "review/plan",
+		PRURL:       fmt.Sprintf("https://github.com/owner/repo/pull/%d", prNum),
+		ReviewCycle: 2,
+	}))
+
+	f := newMonitorFixture(t, project, repoPath, store, 5,
+		func(string, int) (bool, error) { return true, nil },
+		func(string, int) ([]gitpkg.PRReview, error) {
+			return []gitpkg.PRReview{{ID: 6, State: "CHANGES_REQUESTED", Body: "more nits", User: "alice"}}, nil
+		},
+		func(string, int, int) ([]gitpkg.PRReviewComment, error) { return nil, nil },
+		func(string, int, string) error { return nil },
+	)
+	f.m.repos.mu.Lock()
+	f.m.repos.repos[0].MaxReviewFixCycles = 2
+	f.m.repos.repos[0].MaxReviewFixCyclesResolved = true
+	f.m.repos.mu.Unlock()
+
+	f.m.pollOnce(context.Background())
+
+	require.Len(t, *f.actions, 1)
+	act, ok := (*f.actions)[0].(loop.ReviewCycleLimitAction)
+	require.True(t, ok, "expected ReviewCycleLimitAction, got %T", (*f.actions)[0])
+	assert.Equal(t, 2, act.Limit)
+}
+
 // ─── Reaction path ────────────────────────────────────────────────────────────
 
 func TestPRMonitor_ReactsToFirstComment(t *testing.T) {

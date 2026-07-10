@@ -25,7 +25,6 @@ func BuildTaskPrompt(planFile string, plan *taskparser.Plan, task taskparser.Tas
 	sb.WriteString("## Rules\n\n")
 	sb.WriteString("- Implement ONLY this task. Do not modify files outside your scope.\n")
 	sb.WriteString("- Do NOT load agent skills — rules are inlined here.\n")
-	sb.WriteString("- Use `rg` (not grep), `sd` (not sed), `fd` (not find), `comby`/`ast-grep` for structural changes.\n")
 	sb.WriteString("- Run scoped tests before committing: `" + verboseFailuresOnlyGoTestCmd + "`\n")
 	sb.WriteString("- Verify build: `go build ./...`\n")
 	sb.WriteString("- Commit: `git add <specific-files> && git commit -m \"feat(task-N): description\"`\n")
@@ -103,7 +102,6 @@ func BuildBlueprintSkipPrompt(planFile string, plan *taskparser.Plan, project st
 	sb.WriteString("## Rules\n\n")
 	sb.WriteString("- Implement ALL tasks in this plan sequentially.\n")
 	sb.WriteString("- Do NOT load agent skills — rules are inlined here.\n")
-	sb.WriteString("- Use `rg` (not grep), `sd` (not sed), `fd` (not find), `comby`/`ast-grep` for structural changes.\n")
 	sb.WriteString("- Run scoped tests before committing: `" + verboseFailuresOnlyGoTestCmd + "`\n")
 	sb.WriteString("- Verify build: `go build ./...`\n")
 	sb.WriteString("- Commit: `git add <specific-files> && git commit -m \"feat(task-N): description\"`\n")
@@ -147,7 +145,6 @@ func BuildFixerPrompt(planFile, project, feedback string, reviewRound int) strin
 	sb.WriteString(fmt.Sprintf("- Retrieve the full plan: prefer MCP `task_show` (filename: %q, project: %q); fall back to `kas task show %s` for context, but do NOT resume broad plan implementation.\n", planFile, project, planFile))
 	sb.WriteString("- Fix only the cited review findings with minimal, targeted changes.\n")
 	sb.WriteString("- Investigate root causes before editing code.\n")
-	sb.WriteString("- Use `rg` (not grep), `sd` (not sed), `fd` (not find), `comby`/`ast-grep` for structural changes.\n")
 	sb.WriteString("- Run targeted verification for the affected area first; run broader tests only as needed.\n")
 	sb.WriteString(fmt.Sprintf("- Before signaling, stage only the specific files you changed and commit them as `fix: address review feedback (round %d)`. Never use `git add .` or `git add -A`, and preserve unrelated worktree changes.\n", reviewRound))
 	sb.WriteString(fmt.Sprintf("- When done: signal completion with MCP `signal_create` (signal_type: \"implement-finished\", plan_file: %q, project: %q). Then stop.\n\n", planFile, project))
@@ -290,7 +287,7 @@ func BuildElaborationPromptWithOptions(planFile, project string, opts ArchitectP
 			"use your baseline where it is simpler or more correct, and add hidden integration surfaces, "+
 			"non-obvious missing work, edge cases, incorrect file references, or task splits/merges/reordering "+
 			"that the codebase requires.\n\n"+
-			"Load the `kasmos-architect` skill before starting. Also load `cli-tools`.\n\n"+
+			"Load the `kasmos-architect` skill before starting.\n\n"+
 			"## Instructions\n\n"+
 			"1. Retrieve the plan: prefer MCP `task_show` (filename: \"%[1]s\", project: \"%[2]s\"); fall back to `kas task show %[1]s`\n"+
 			"2. Read all planner draft caches for this plan:\n"+
@@ -399,7 +396,7 @@ func BuildArchitectPrompt(planFile, project string) string {
 		"You are the architect agent. Your job: analyze a plan, identify architectural dependencies, and emit compact metadata for downstream orchestration. "+
 			"Before validating the planner draft, derive an independent implementation baseline from the goal, codebase surfaces, dependencies, and existing patterns. "+
 			"Compare planner vs architect baseline, then rewrite the stored plan by merging the best path and adding hidden integration surfaces or non-obvious missing work the planner missed.\n\n"+
-			"Load the `kasmos-architect` and `cli-tools` skills before starting.\n\n"+
+			"Load the `kasmos-architect` skill before starting.\n\n"+
 			"## Instructions\n\n"+
 			"1. Retrieve the plan: prefer MCP `task_show` (filename: \"%[1]s\", project: \"%[2]s\"); fall back to `kas task show %[1]s`\n"+
 			"2. Read the relevant codebase surfaces, then create an independent architect solution baseline before judging the planner's tasks/files/waves.\n"+
@@ -436,13 +433,9 @@ func BuildWaveAnnotationPrompt(planFile, project string) string {
 	)
 }
 
-// BuildMasterReviewPrompt returns the prompt for the master agent's holistic
-// readiness review. The agent runs during the verifying FSM state and gathers
-// its own evidence (merge-base diff, verification results) in the session rather
-// than receiving pre-computed diffs, mirroring the reviewer/fixer prompt style.
-// The agent is expected to self-fix trivial findings per the kasmos-master
-// Self-Fix Protocol before signaling verify_failed; only verify_approved and
-// verify_failed are valid outcomes.
+// BuildMasterReviewPrompt returns the compact dynamic envelope for the master
+// readiness agent. Static workflow rules live in the kasmos-master skill so they
+// are not repeated in every managed session.
 func BuildMasterReviewPrompt(planFile, project string) string {
 	return BuildMasterReviewPromptWithConfig(planFile, project, 80, 2)
 }
@@ -459,26 +452,20 @@ func BuildMasterReviewPromptWithConfig(planFile, project string, selfFixMaxLines
 		maxVerifyCycles = 2
 	}
 	return fmt.Sprintf(
-		"You are the master readiness review agent. You run during the `verifying` FSM state.\n\n"+
-			"Load the `kasmos-master` skill before starting.\n\n"+
-			"## Instructions\n\n"+
-			"1. Retrieve the plan: prefer MCP `task_show` (filename: %[1]q, project: %[2]q); fall back to `kas task show %[1]s`\n"+
-			"2. Gather evidence:\n"+
-			"   - Merge-base diff: identify the actual base branch from `git branch -avv` (`main`, `master`, or the remote default), then run `MERGE_BASE=$(git merge-base HEAD \"$BASE_BRANCH\") && git diff $MERGE_BASE HEAD`\n"+
-			"   - Run verification: `go build ./... && "+compactFailuresOnlyGoTestCmd+"` (or the plan's verify_checks)\n"+
-			"3. If you find issues, classify them per the kasmos-master skill's Self-Fix Protocol. "+
-			"Trivial allow-list findings (typos, missing exported doc comments, unused imports, format-verb mistakes, "+
-			"`typos`/`gofmt` fixes, trivial `go vet` findings — total ≤ %[3]d net lines) MUST be fixed directly in the worktree, "+
-			"verified with `gofmt -l .`, `go vet ./...`, `go build ./...`, `"+compactFailuresOnlyGoTestCmd+"`, and `typos`, "+
-			"then committed as `fix: <description> (master self-fix)` and approved only after the gate passes. "+
-			"Do NOT emit `verify_failed` for findings the protocol marks as self-fixable. "+
-			"If a self-fix attempt fails any gate step, restore only the specific paths changed by that self-fix with `git restore --staged --worktree -- <paths>`; never restore `.` or unrelated worktree changes. Then emit `verify_failed` with the original finding.\n"+
-			"4. Review the implementation holistically against the plan and signal your decision:\n"+
-			"   - Approved: prefer MCP `signal_create` (signal_type: \"verify_approved\", plan_file: %[1]q, project: %[2]q); fall back to `kas signal emit verify_approved %[1]s`\n"+
-			"   - Changes requested: prefer MCP `signal_create` (signal_type: \"verify_failed\", plan_file: %[1]q, project: %[2]q); fall back to `kas signal emit verify_failed %[1]s`\n"+
-			"   - Include your review summary in the signal payload body field.\n\n"+
-			"Note: this verify loop is capped at %[4]d round(s). If the cap is reached, the daemon force-promotes to approved.\n\n"+
-			"Do not emit `review_approved` or `review_changes_requested` — use `verify_approved` or `verify_failed` above.",
+		"You are the master readiness agent running in the `verifying` FSM state.\n\n"+
+			"Load the `kasmos-master` skill before starting and treat it as the authoritative static workflow.\n\n"+
+			"## Dynamic context\n\n"+
+			"- Plan file: %[1]q\n"+
+			"- Project: %[2]q\n"+
+			"- Self-fix ceiling: %[3]d net lines\n"+
+			"- Verify-round cap: %[4]d\n\n"+
+			"Retrieve the plan with MCP `task_show` (filename: %[1]q, project: %[2]q).\n"+
+			"The reviewer already completed the full branch and specification review. Do not repeat the reviewer's full branch review. "+
+			"Apply the skill's bounded readiness pass to cross-cutting integration risk and the plan's verification evidence only.\n\n"+
+			"Emit exactly one gateway signal and stop:\n"+
+			"- `signal_create` (signal_type: \"verify_approved\", plan_file: %[1]q, project: %[2]q)\n"+
+			"- `signal_create` (signal_type: \"verify_failed\", plan_file: %[1]q, project: %[2]q)\n\n"+
+			"Keep the payload limited to the verdict, evidence, and concrete blocker actions needed by the next role.",
 		planFile, project, selfFixMaxLines, maxVerifyCycles,
 	)
 }

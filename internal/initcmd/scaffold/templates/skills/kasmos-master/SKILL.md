@@ -18,37 +18,18 @@ Prompt-caching guidance for high-cost review model:
 
 ## Cost Guidance
 
-Use this pass as a high-cost `openai/gpt-5.5` review sweep: be exhaustive but efficient.
+Use this pass as a high-cost readiness sweep: be exhaustive but efficient.
 
 - do not narrate obvious pass-throughs (e.g., "file read," "command executed")
 - avoid duplicate observations across files
 - when data is already in evidence, cite it directly and move on
 - self-fix is cheaper than a full re-review cycle; prefer it whenever the allow-list and ceiling permit.
 
-## CLI Tools Hard Gate
+## Tooling
 
-<HARD-GATE>
-
-### Banned Tools
-
-These legacy tools are NEVER permitted. Using them is a violation, not a preference.
-
-| Banned | Replacement | No Exceptions |
-|--------|-------------|---------------|
-| `grep` | `rg` (ripgrep) | Even for simple one-liners |
-| `grep -r` | `rg` | Recursive grep is still grep. |
-| `grep -E` | `rg` | Extended regex is still grep |
-| `sed` | `sd` | Even for one-liners |
-| `awk` | `yq`/`jq` (structured) or `sd` (text) | No awk for any purpose |
-| `find` | `fd` or glob tools | Even for simple file listing |
-| `diff` (standalone) | `difft` | `git diff` is fine — standalone `diff` is not |
-| `wc -l` | `scc` | Even for single files |
-
-**`git diff` is allowed** — it is a git subcommand, not standalone `diff`.
-
-**STOP.** If you are about to type `grep`, `sed`, `awk`, `find`, `diff`, or `wc` — stop and use the replacement. There are no exceptions.
-
-</HARD-GATE>
+Use the repository's available tools and conventions. No shell utility is categorically
+banned by this role. Keep command output focused and do not load unrelated tool-reference
+skills into readiness context.
 
 ## looking up kasmos behavior
 
@@ -65,26 +46,24 @@ You are the **readiness gate** — not implementing, not fixing, not re-running 
 Collect these before making a decision:
 
 - use MCP `task_show` (filename: "<plan-file>", project: "$KASMOS_PROJECT") to retrieve the stored plan, acceptance criteria, and task list.
-- implementation evidence from the merged branch: identify the actual local base branch (`main`, `master`, or remote default), then set `MERGE_BASE=$(git merge-base "$BASE_BRANCH" HEAD)` and diff from that point.
+- implementation evidence from the reviewer and changed-file summary. Inspect full file diffs only for cross-cutting boundaries or missing evidence.
 - acceptance-criteria notes from the plan file and any explicit test targets.
-- verification artifacts: scoped `go test` output, full `go test`/CI output, `go build ./...` output, and any deployment checks.
+- verification artifacts required by the plan, plus current CI/build evidence when available.
 
 ## Workflow Phases
 
 ### Phase 1 — Gather evidence
 
 - use MCP `task_show` (filename: "<plan-file>", project: "$KASMOS_PROJECT") to retrieve the stored plan, acceptance criteria, and task list before reviewing the merged diff.
-- identify files changed in the branch:
-  - `GIT_EXTERNAL_DIFF=difft git diff $MERGE_BASE..HEAD --name-only`
-- review critical integration points called out by the plan and module boundaries.
+- identify changed files and diff statistics without loading the full diff into context.
+- review only critical integration points called out by the plan and module boundaries.
 
 ### Phase 2 — Run focused verification
 
-- run verification commands now and keep output as evidence, even if tests were already run by prior agents.
-- at minimum, run:
-  - `go build ./...`
-  - scoped test: use the **verbose targeted recipe** from the `cli-tools` skill (`## Running tests without polluting context`) with `-run Test<Name>` and your package path
-  - full suite: use the **full-suite compact recipe** from the same `cli-tools` section (or reference an available CI result)
+- run the plan's verification commands and keep concise failure-focused evidence.
+- reuse current successful CI or reviewer evidence instead of rerunning identical commands.
+- run focused checks for cross-cutting boundaries that lack evidence. Repeat the full suite only
+  when evidence is missing or stale, shared surfaces changed after review, or focused checks fail.
 
 ### Phase 3 — Cross-cutting readiness audit
 
@@ -161,7 +140,7 @@ Run BEFORE creating the self-fix commit. Apply your edits to the worktree, then 
 1. `gofmt -l .` — must produce no output
 2. `go vet ./...` — must produce no output
 3. `go build ./...`
-4. Full test suite via the **compact recipe** from the `cli-tools` skill (`## Running tests without polluting context`) — or scoped to changed packages using the same wrapper with a narrowed package path if the full suite is intractable
+4. The repository's required test command, scoped to changed packages when the full suite is not required by the plan
 5. `typos` against the changed file set
 
 If every step passes, create the `fix: <description> (master self-fix)` commit and emit `verify_approved`.
@@ -243,10 +222,10 @@ Signal content should contain only what is needed for the next action, no prose-
 For the same plan and branch:
 
 - identify the actual local base branch first, then run `MERGE_BASE=$(git merge-base "$BASE_BRANCH" HEAD)`
-- `GIT_EXTERNAL_DIFF=difft git diff $MERGE_BASE..HEAD --name-only`
+- `git diff $MERGE_BASE..HEAD --name-only`
 - `go build ./...`
-- scoped test: **verbose targeted recipe** from `cli-tools` (`## Running tests without polluting context`) with `-run Test<Name>` and the relevant package path
-- full suite: **compact recipe** from the same `cli-tools` section instead of bare `go test ./...`
+- scoped test for the relevant package and behavior
+- full suite only when required by the plan or missing integration evidence
 
 ## Escalation to Fixer
 

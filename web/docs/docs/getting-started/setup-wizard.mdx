@@ -89,7 +89,7 @@ After the wizard completes, kasmos writes:
 
 Skill sync runs after the wizard: `~/.agents/skills/` (personal) and `.agents/skills/` (project) are synced into per-harness directories (`.claude/skills/`, `.opencode/skills/`, `.codex/skills/`) as symlinks. Enforcement hooks are installed for each selected harness.
 
-The project `.agents/skills/` scaffold is also where kasmos ships role-specific operating rules. For example, the planner and architect skills document optional `[orchestration].planners` fan-out, draft-mode `planner_draft_finished` signals, planner draft cache consumption, and final `.kasmos/cache/<plan-file>-architect.json` metadata with `decision_audit.planner_drafts` fields for hq display.
+The project `.agents/skills/` scaffold is also where kasmos ships role-specific operating rules. For example, the planner and architect skills document optional `[orchestration].planners` fan-out, draft-mode `planner_draft_finished` signals, planner draft cache consumption, and final `.kasmos/cache/<plan-file>-architect.json` metadata with `decision_audit.planner_drafts` fields for hq display. Reviewer and master workflow policy lives in those role skills as well, while managed prompts supply only task-specific context such as the project, review round, prior findings, and configured verification limits. Later review rounds focus on previous findings and fixer-touched surfaces unless shared integration boundaries require broader verification.
 
 ## config.toml schema
 

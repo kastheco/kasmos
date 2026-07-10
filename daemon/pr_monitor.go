@@ -275,17 +275,22 @@ func (m *PRMonitor) handleReview(ctx context.Context, repo RepoEntry, entry task
 		// (reaction support is best-effort per the task spec).
 	}
 
-	// Enforce max_review_fix_cycles exactly like processor.go:160.
-	if m.maxReviewFixCycles > 0 {
+	// Enforce max_review_fix_cycles exactly like processor.go:160, preferring
+	// the repo-resolved project override when available.
+	maxReviewFixCycles := m.maxReviewFixCycles
+	if repo.MaxReviewFixCyclesResolved {
+		maxReviewFixCycles = repo.MaxReviewFixCycles
+	}
+	if maxReviewFixCycles > 0 {
 		currentEntry, getErr := repo.Store.Get(repo.Project, entry.Filename)
 		if getErr != nil {
 			return fmt.Errorf("get task for cycle check: %w", getErr)
 		}
-		if currentEntry.ReviewCycle+1 > m.maxReviewFixCycles {
+		if currentEntry.ReviewCycle+1 > maxReviewFixCycles {
 			return m.dispatch(ctx, repo, loop.ReviewCycleLimitAction{
 				PlanFile: entry.Filename,
 				Cycle:    currentEntry.ReviewCycle + 1,
-				Limit:    m.maxReviewFixCycles,
+				Limit:    maxReviewFixCycles,
 			})
 		}
 	}
