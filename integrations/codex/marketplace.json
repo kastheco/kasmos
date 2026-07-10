@@ -1,0 +1,20 @@
+{
+  "name": "kasmos",
+  "interface": {
+    "displayName": "Kasmos"
+  },
+  "plugins": [
+    {
+      "name": "kasmos",
+      "source": {
+        "source": "local",
+        "path": "./integrations/codex/"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "developer-tools"
+    }
+  ]
+}
