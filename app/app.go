@@ -1306,6 +1306,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if signalsDir != "" && !daemonManagedRepo {
 				waveSignals = taskfsm.ScanWaveSignals(signalsDir)
 			}
+			var retryWaveSignals []taskfsm.WaveSignal
 			var plannerDraftSignals []taskfsm.PlannerDraftSignal
 			var gatewaySignalEntries []*taskstore.SignalEntry
 			if gateway != nil && project != "" && !daemonManagedRepo {
@@ -1317,6 +1318,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				signals = append(signals, scan.FSMSignals...)
 				taskSignals = append(taskSignals, scan.TaskSignals...)
 				waveSignals = append(waveSignals, scan.WaveSignals...)
+				retryWaveSignals = append(retryWaveSignals, scan.RetryWaveSignals...)
 				elaborationSignals = append(elaborationSignals, scan.ElaborationSignals...)
 				plannerDraftSignals = append(plannerDraftSignals, scan.PlannerDraftSignals...)
 			}
@@ -1384,7 +1386,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 			time.Sleep(200 * time.Millisecond)
-			return metadataResultMsg{Results: results, PlanState: ps, PlanStateLoadedAt: planStateLoadedAt, DaemonTaskState: daemonTaskStateLoaded, Signals: signals, TaskSignals: taskSignals, WaveSignals: waveSignals, ElaborationSignals: elaborationSignals, PlannerDraftSignals: plannerDraftSignals, GatewaySignalEntries: gatewaySignalEntries, DaemonManagedRepo: daemonManagedRepo, DaemonInstances: daemonInstances, DaemonTitles: daemonTitles, TmuxSessionCount: tmuxCount, PRStateUpdates: prStateUpdates}
+			return metadataResultMsg{Results: results, PlanState: ps, PlanStateLoadedAt: planStateLoadedAt, DaemonTaskState: daemonTaskStateLoaded, Signals: signals, TaskSignals: taskSignals, WaveSignals: waveSignals, RetryWaveSignals: retryWaveSignals, ElaborationSignals: elaborationSignals, PlannerDraftSignals: plannerDraftSignals, GatewaySignalEntries: gatewaySignalEntries, DaemonManagedRepo: daemonManagedRepo, DaemonInstances: daemonInstances, DaemonTitles: daemonTitles, TmuxSessionCount: tmuxCount, PRStateUpdates: prStateUpdates}
 		}
 	case metadataResultMsg:
 		// Process agent sentinel signals — feed to FSM and consume sentinel files.
@@ -1467,6 +1469,15 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						markGatewayProcessedEntry(entry)
 					}
 					actions = append(actions, sigActions...)
+				}
+				for _, sig := range msg.RetryWaveSignals {
+					entry := claimGatewayEntry(sig.GatewayEntryID, sig.TaskFile, "retry_wave")
+					sigActions := proc.ProcessRetryWaveSignals([]taskfsm.WaveSignal{sig})
+					if len(sigActions) > 0 {
+						markGatewayProcessedEntry(entry)
+					}
+					actions = append(actions, sigActions...)
+					taskfsm.ConsumeWaveSignal(sig)
 				}
 
 				draftSpawnCmds := make(map[string][]tea.Cmd)
@@ -1614,6 +1625,15 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						}
 					case loop.SpawnMasterAction:
 						if cmd := m.spawnMaster(a.PlanFile); cmd != nil {
+							signalCmds = append(signalCmds, cmd)
+						}
+					case loop.RetryWaveAction:
+						if orch := proc.WaveOrchestrator(a.PlanFile); orch != nil {
+							m.waveOrchestrators[a.PlanFile] = orch
+						}
+						mdl, cmd := m.applyRetryWaveAction(a)
+						m = mdl.(*home)
+						if cmd != nil {
 							signalCmds = append(signalCmds, cmd)
 						}
 					case loop.ReviewCycleLimitAction:
@@ -1980,7 +2000,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 
-			processedSignals := len(msg.Signals) > 0 || len(msg.TaskSignals) > 0 || len(msg.WaveSignals) > 0 || len(msg.ElaborationSignals) > 0 || len(msg.PlannerDraftSignals) > 0
+			processedSignals := len(msg.Signals) > 0 || len(msg.TaskSignals) > 0 || len(msg.WaveSignals) > 0 || len(msg.RetryWaveSignals) > 0 || len(msg.ElaborationSignals) > 0 || len(msg.PlannerDraftSignals) > 0
 			if processedSignals {
 				m.loadTaskState() // refresh after signal processing
 			}
@@ -2242,7 +2262,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Apply plan state loaded in the goroutine (replaces synchronous loadTaskState call).
 		// Skip when any signal type was processed: loadTaskState() above already gave us
 		// fresh state, and msg.PlanState was loaded before signal scanning.
-		processedSignals := len(msg.Signals) > 0 || len(msg.TaskSignals) > 0 || len(msg.WaveSignals) > 0 || len(msg.ElaborationSignals) > 0 || len(msg.PlannerDraftSignals) > 0
+		processedSignals := len(msg.Signals) > 0 || len(msg.TaskSignals) > 0 || len(msg.WaveSignals) > 0 || len(msg.RetryWaveSignals) > 0 || len(msg.ElaborationSignals) > 0 || len(msg.PlannerDraftSignals) > 0
 		if msg.PlanState != nil && (msg.DaemonTaskState || !processedSignals) {
 			if msg.PlanStateLoadedAt.IsZero() || !msg.PlanStateLoadedAt.Before(m.taskStateLoadedAt) {
 				m.taskState = msg.PlanState
@@ -3528,6 +3548,7 @@ type metadataResultMsg struct {
 	Signals              []taskfsm.Signal             // agent sentinel files found this tick
 	TaskSignals          []taskfsm.TaskSignal         // task completion sentinel files found this tick
 	WaveSignals          []taskfsm.WaveSignal         // implement-wave-N signal files found this tick
+	RetryWaveSignals     []taskfsm.WaveSignal         // retry_wave gateway rows found this tick
 	ElaborationSignals   []taskfsm.ElaborationSignal  // architect completion signal files found this tick
 	PlannerDraftSignals  []taskfsm.PlannerDraftSignal // planner_draft_finished gateway rows found this tick
 	GatewaySignalEntries []*taskstore.SignalEntry     // claimed DB-backed signal rows to classify+mark after processing

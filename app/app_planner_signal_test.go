@@ -379,6 +379,52 @@ func TestGatewayAckFailsInvalidPlannerDraftSignal(t *testing.T) {
 	assert.Contains(t, failed[0].Result, "typo_planner")
 }
 
+func TestGatewayRetryWaveSignalIsProcessedByTUI(t *testing.T) {
+	t.Parallel()
+	const planFile = "feature"
+	h, ps, _, _ := plannerSignalHome(t, planFile)
+	seedPlanStatus(t, ps, planFile, taskstate.StatusImplementing)
+	require.NoError(t, h.taskStore.SetContent("test", planFile, "# Plan\n\n**Goal:** test\n\n**Architecture:** test\n\n**Tech Stack:** go\n\n**Size:** Small\n\n---\n\n## Wave 1\n\n### Task 1: Complete\n\nDone.\n\n### Task 2: Retry\n\nRetry this."))
+	require.NoError(t, h.taskStore.SetSubtasks("test", planFile, []taskstore.SubtaskEntry{
+		{TaskNumber: 1, Title: "Complete", Status: taskstore.SubtaskStatusComplete},
+		{TaskNumber: 2, Title: "Retry", Status: taskstore.SubtaskStatusRunning},
+	}))
+	stateWriter, ok := h.taskStore.(taskstore.ExecutionStateWriter)
+	require.True(t, ok)
+	require.NoError(t, stateWriter.SetExecutionState("test", planFile, taskstore.ExecutionState{
+		Phase:      string(taskfsm.ExecutionPhaseWaveRunning),
+		ActiveWave: 1,
+	}))
+
+	gw, err := taskstore.NewSQLiteSignalGateway(":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = gw.Close() })
+	h.signalGateway = gw
+	require.NoError(t, gw.Create("test", taskstore.SignalEntry{
+		PlanFile:   planFile,
+		SignalType: "retry_wave",
+	}))
+
+	_, cmd := h.Update(tickUpdateMetadataMessage{})
+	require.NotNil(t, cmd)
+	msg, ok := cmd().(metadataResultMsg)
+	require.True(t, ok)
+	require.Len(t, msg.RetryWaveSignals, 1)
+	require.Len(t, msg.GatewaySignalEntries, 1)
+
+	model, _ := h.Update(msg)
+	updated := model.(*home)
+
+	done, err := gw.List("test", taskstore.SignalDone)
+	require.NoError(t, err)
+	require.Len(t, done, 1)
+	assert.Equal(t, "retry_wave", done[0].SignalType)
+
+	orch := updated.processor.WaveOrchestrator(planFile)
+	require.NotNil(t, orch)
+	assert.True(t, orch.IsTaskComplete(1))
+}
+
 // TestPlannerFinishedSignal_ConfirmKeepsPlannerAndTriggersImplement verifies that
 // after the user confirms (plannerCompleteMsg), the planner instance is kept,
 // plannerPrompted is set, and triggerTaskStage("implement") is called.
