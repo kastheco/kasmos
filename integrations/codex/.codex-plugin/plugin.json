@@ -1,0 +1,30 @@
+{
+  "name": "kasmos",
+  "version": "0.1.0",
+  "description": "Guarded, headless software-delivery orchestration through the Kasmos MCP server.",
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "author": {
+    "name": "kastheco",
+    "url": "https://kasmos.kasthe.co"
+  },
+  "homepage": "https://kasmos.kasthe.co",
+  "repository": "https://github.com/kastheco/kasmos",
+  "license": "BUSL-1.1",
+  "keywords": [
+    "kasmos",
+    "orchestration",
+    "mcp",
+    "codex",
+    "agents"
+  ],
+  "interface": {
+    "displayName": "Kasmos",
+    "shortDescription": "Run guarded Kasmos delivery workflows",
+    "longDescription": "Plan, implement, review, and verify code changes through guarded Kasmos workflows backed by the local Kasmos MCP server.",
+    "category": "Developer Tools",
+    "defaultPrompt": [
+      "Use coordinate-kasmos to create and coordinate a Kasmos plan for this code change."
+    ]
+  }
+}

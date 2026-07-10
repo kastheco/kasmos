@@ -46,6 +46,7 @@ const sidebars: SidebarsConfig = {
         "guides/linear-triggers",
         "guides/skills",
         "guides/agent-harnesses",
+        "guides/codex-plugin",
       ],
     },
     {

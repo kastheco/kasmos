@@ -11,3 +11,5 @@
   docs_paths: ["web/docs/docs/cli-reference/signal.mdx", "web/docs/docs/daemon/signals.mdx", "web/docs/docs/concepts/lifecycle.mdx"]
 - code_paths: ["config/**/*.go"]
   docs_paths: ["web/docs/docs/configuration/**"]
+- code_paths: ["integrations/codex/**"]
+  docs_paths: ["web/docs/docs/guides/codex-plugin.mdx"]

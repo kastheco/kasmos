@@ -1,0 +1,20 @@
+{
+  "name": "kasthedev",
+  "interface": {
+    "displayName": "Kasmos"
+  },
+  "plugins": [
+    {
+      "name": "kasmos",
+      "source": {
+        "source": "local",
+        "path": "./"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}
