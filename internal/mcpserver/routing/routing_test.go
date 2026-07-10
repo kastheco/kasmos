@@ -38,3 +38,17 @@ func TestDynamicRegisterConfigFallsBackWhenLoaderFails(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "beta", got)
 }
+
+func TestDynamicRegisterConfigPreservesFixedProjectWhenLoaderIsEmpty(t *testing.T) {
+	rc := NewDynamicRegisterConfig("alpha", nil, func(context.Context) ([]string, error) {
+		return nil, nil
+	})
+
+	got, err := rc.ResolveProjectArg(context.Background(), projectRequest(""))
+	require.NoError(t, err)
+	assert.Equal(t, "alpha", got)
+
+	got, err = rc.ResolveProjectArg(context.Background(), projectRequest("alpha"))
+	require.NoError(t, err)
+	assert.Equal(t, "alpha", got)
+}

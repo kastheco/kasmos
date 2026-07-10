@@ -43,7 +43,6 @@ func NewRegisterConfig(project string, projects []string) RegisterConfig {
 // fallback when the live loader is temporarily unavailable.
 func NewDynamicRegisterConfig(project string, projects []string, loader ProjectLoader) RegisterConfig {
 	rc := NewRegisterConfig(project, projects)
-	rc.FixedProject = ""
 	rc.LoadProjects = loader
 	return rc
 }
@@ -56,17 +55,22 @@ func (rc RegisterConfig) ResolveProjectArg(ctx context.Context, req mcp.CallTool
 	}
 
 	allowed := rc.Projects
+	fixedProject := rc.FixedProject
 	projects, err := rc.LoadProjects(ctx)
 	if err == nil {
-		allowed = make(map[string]struct{}, len(projects))
+		liveProjects := make(map[string]struct{}, len(projects))
 		for _, project := range projects {
 			project = strings.TrimSpace(project)
 			if project != "" {
-				allowed[project] = struct{}{}
+				liveProjects[project] = struct{}{}
 			}
 		}
+		if len(liveProjects) > 0 {
+			allowed = liveProjects
+			fixedProject = ""
+		}
 	}
-	return ResolveProjectArg(req, "", allowed)
+	return ResolveProjectArg(req, fixedProject, allowed)
 }
 
 // ResolveProjectArg extracts the target project from a tool request, enforcing
