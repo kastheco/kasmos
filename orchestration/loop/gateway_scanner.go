@@ -215,6 +215,12 @@ func ConvertSignalEntry(entry *taskstore.SignalEntry, result *ScanResult) error 
 			GatewayEntryID: entry.ID,
 		})
 
+	case "retry_wave":
+		result.RetryWaveSignals = append(result.RetryWaveSignals, taskfsm.WaveSignal{
+			TaskFile:       entry.PlanFile,
+			GatewayEntryID: entry.ID,
+		})
+
 	case string(taskfsm.ArchitectFinished):
 		result.ElaborationSignals = append(result.ElaborationSignals, taskfsm.ElaborationSignal{
 			TaskFile:       entry.PlanFile,
@@ -299,6 +305,8 @@ func GatewayNoopOutcome(entry *taskstore.SignalEntry) (taskstore.SignalStatus, s
 		return taskstore.SignalFailed, "no active orchestrator / wrong wave / already-finished task"
 	case "implement_wave":
 		return taskstore.SignalFailed, "processor could not start the requested wave"
+	case "retry_wave":
+		return taskstore.SignalFailed, "processor could not retry the active wave"
 	case string(taskfsm.ArchitectFinished):
 		return taskstore.SignalFailed, "no active architect pass to resume"
 	case string(taskfsm.VerifyApproved), string(taskfsm.VerifyFailed):

@@ -78,3 +78,5 @@ When `KASMOS_TASK` or `KASMOS_PEERS` is set, multiple agents are working in the 
 - Never `git stash`, `git reset`, or `git checkout -- <file>` on files you didn't create
 
 These constraints are injected into the agent's prompt by the orchestration layer.
+
+Automatic PR finalization is fail-closed: Kasmos pushes only commits already present on the task branch and refuses to create a PR while the task worktree is dirty. Fixers, reviewers, and readiness agents must stage only their task-owned paths and commit them before signaling approval. This prevents a final broad commit from capturing pre-existing user edits or another agent's unfinished work. Manual `kas task push` and explicit UI push actions retain their operator-directed commit behavior.

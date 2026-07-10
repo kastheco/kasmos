@@ -15,7 +15,7 @@ func init() {
 // makeInstanceSendHandler returns a ToolHandlerFunc that sends a prompt to a
 // running agent instance via tmux send-keys. Both "title" and "prompt"
 // arguments are required; missing either returns a tool error immediately.
-func makeInstanceSendHandler(loadState StateLoader, runner CmdRunner) server.ToolHandlerFunc {
+func makeInstanceSendHandler(loadState StateLoader, runner CmdRunner, socketPaths ...string) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		title, err := req.RequireString("title")
 		if err != nil {
@@ -25,6 +25,16 @@ func makeInstanceSendHandler(loadState StateLoader, runner CmdRunner) server.Too
 		prompt, err := req.RequireString("prompt")
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("missing required argument 'prompt': %v", err)), nil
+		}
+
+		project := req.GetString("project", "")
+		if client, instance, daemonErr := findDaemonInstance(ctx, daemonSocket(socketPaths), project, title); daemonErr == nil {
+			if sendErr := client.send(ctx, instance.Project, title, prompt); sendErr != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("instance_send: daemon send: %v", sendErr)), nil
+			}
+			return mcp.NewToolResultText(fmt.Sprintf("sent to %s", title)), nil
+		} else if daemonLookupMustFail(daemonErr, project) {
+			return mcp.NewToolResultError(fmt.Sprintf("instance_send: %v", daemonErr)), nil
 		}
 
 		records, err := loadRecords(loadState)
@@ -52,7 +62,7 @@ func makeInstanceSendHandler(loadState StateLoader, runner CmdRunner) server.Too
 }
 
 // registerInstanceSend registers the instance_send tool with the MCP server.
-func registerInstanceSend(srv *server.MCPServer, loadState StateLoader, runner CmdRunner, _ string) {
+func registerInstanceSend(srv *server.MCPServer, loadState StateLoader, runner CmdRunner, socketPath string) {
 	tool := mcp.NewTool(
 		"instance_send",
 		mcp.WithDescription("send a prompt to a running agent instance via tmux send-keys"),
@@ -60,10 +70,11 @@ func registerInstanceSend(srv *server.MCPServer, loadState StateLoader, runner C
 			mcp.Required(),
 			mcp.Description("title of the instance to send the prompt to"),
 		),
+		mcp.WithString("project", mcp.Description("target daemon project; required when titles are not unique across repositories")),
 		mcp.WithString("prompt",
 			mcp.Required(),
 			mcp.Description("prompt text to send to the instance"),
 		),
 	)
-	srv.AddTool(tool, makeInstanceSendHandler(loadState, runner))
+	srv.AddTool(tool, makeInstanceSendHandler(loadState, runner, socketPath))
 }

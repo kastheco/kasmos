@@ -4038,6 +4038,32 @@ func (m *home) applyAdvanceWaveAction(action loop.AdvanceWaveAction, preStartToa
 	return m.startNextWave(orch, entry)
 }
 
+// applyRetryWaveAction replaces every stale coder instance for the active wave
+// and spawns the unresolved tasks reconstructed by ProcessRetryWaveSignals.
+func (m *home) applyRetryWaveAction(action loop.RetryWaveAction) (tea.Model, tea.Cmd) {
+	m.killExistingPlanAgent(action.PlanFile, session.AgentTypeCoder)
+
+	orch, exists := m.waveOrchestrators[action.PlanFile]
+	if !exists {
+		return m, nil
+	}
+	entry, ok := m.taskState.Entry(action.PlanFile)
+	if !ok {
+		return m, nil
+	}
+
+	tasks := orch.ApplyParallelismLimit(m.resolvedResourceControls().MaxParallelWaveTasks)
+	if len(tasks) == 0 {
+		return m, nil
+	}
+	m.toastManager.Info(fmt.Sprintf("retrying %d unresolved task(s) in wave %d", len(tasks), action.Wave))
+	m.audit(auditlog.EventWaveStarted,
+		fmt.Sprintf("wave %d retry started: %d unresolved task(s)", action.Wave, len(tasks)),
+		auditlog.WithPlan(action.PlanFile),
+		auditlog.WithWave(action.Wave, 0))
+	return m.spawnWaveTasks(orch, tasks, entry)
+}
+
 // startNextWave advances the orchestrator to the next wave and spawns its task instances.
 // When max_parallel_wave_tasks is configured, at most that many tasks are launched;
 // the remainder stay pending and are promoted via startPendingWaveTasks as capacity opens.

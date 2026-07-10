@@ -23,19 +23,21 @@ Files may contain code from main that is outside the scope of this plan.
 
 ## Worktree awareness
 
-You are reviewing in a **git worktree**. The `main` branch may have advanced since this
-worktree was created (other PRs merged). Always use `merge-base` to find the true branch
-point — never compare against `main` directly.
+You are reviewing in a **git worktree**. The repository's base branch may be `main`,
+`master`, or another remote default, and it may have advanced since this worktree was
+created. Always use `merge-base` to find the true branch point — never assume `main`.
 
 Set the merge base once at the start of your review and use it everywhere:
 
 ```bash
-MERGE_BASE=$(git merge-base main HEAD)
+git branch -avv
+BASE_BRANCH=<actual local base branch>
+MERGE_BASE=$(git merge-base "$BASE_BRANCH" HEAD)
 echo "merge base: $MERGE_BASE"
 ```
 
-All diff and log commands below use `$MERGE_BASE` instead of `main`. This ensures you
-only review changes from this branch, regardless of how far main has diverged.
+All diff and log commands below use `$MERGE_BASE` instead of a hardcoded branch. This
+ensures you only review changes from this branch, regardless of how far the base diverged.
 
 ---
 

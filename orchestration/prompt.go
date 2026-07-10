@@ -149,6 +149,7 @@ func BuildFixerPrompt(planFile, project, feedback string, reviewRound int) strin
 	sb.WriteString("- Investigate root causes before editing code.\n")
 	sb.WriteString("- Use `rg` (not grep), `sd` (not sed), `fd` (not find), `comby`/`ast-grep` for structural changes.\n")
 	sb.WriteString("- Run targeted verification for the affected area first; run broader tests only as needed.\n")
+	sb.WriteString(fmt.Sprintf("- Before signaling, stage only the specific files you changed and commit them as `fix: address review feedback (round %d)`. Never use `git add .` or `git add -A`, and preserve unrelated worktree changes.\n", reviewRound))
 	sb.WriteString(fmt.Sprintf("- When done: signal completion with MCP `signal_create` (signal_type: \"implement-finished\", plan_file: %q, project: %q). Then stop.\n\n", planFile, project))
 
 	sb.WriteString("## Reviewer feedback\n\n")
@@ -463,7 +464,7 @@ func BuildMasterReviewPromptWithConfig(planFile, project string, selfFixMaxLines
 			"## Instructions\n\n"+
 			"1. Retrieve the plan: prefer MCP `task_show` (filename: %[1]q, project: %[2]q); fall back to `kas task show %[1]s`\n"+
 			"2. Gather evidence:\n"+
-			"   - Merge-base diff: `MERGE_BASE=$(git merge-base HEAD main) && git diff $MERGE_BASE HEAD`\n"+
+			"   - Merge-base diff: identify the actual base branch from `git branch -avv` (`main`, `master`, or the remote default), then run `MERGE_BASE=$(git merge-base HEAD \"$BASE_BRANCH\") && git diff $MERGE_BASE HEAD`\n"+
 			"   - Run verification: `go build ./... && "+compactFailuresOnlyGoTestCmd+"` (or the plan's verify_checks)\n"+
 			"3. If you find issues, classify them per the kasmos-master skill's Self-Fix Protocol. "+
 			"Trivial allow-list findings (typos, missing exported doc comments, unused imports, format-verb mistakes, "+
@@ -471,7 +472,7 @@ func BuildMasterReviewPromptWithConfig(planFile, project string, selfFixMaxLines
 			"verified with `gofmt -l .`, `go vet ./...`, `go build ./...`, `"+compactFailuresOnlyGoTestCmd+"`, and `typos`, "+
 			"then committed as `fix: <description> (master self-fix)` and approved only after the gate passes. "+
 			"Do NOT emit `verify_failed` for findings the protocol marks as self-fixable. "+
-			"If a self-fix attempt fails any gate step, run `git restore --staged --worktree .` to drop the changes and emit `verify_failed` with the original finding.\n"+
+			"If a self-fix attempt fails any gate step, restore only the specific paths changed by that self-fix with `git restore --staged --worktree -- <paths>`; never restore `.` or unrelated worktree changes. Then emit `verify_failed` with the original finding.\n"+
 			"4. Review the implementation holistically against the plan and signal your decision:\n"+
 			"   - Approved: prefer MCP `signal_create` (signal_type: \"verify_approved\", plan_file: %[1]q, project: %[2]q); fall back to `kas signal emit verify_approved %[1]s`\n"+
 			"   - Changes requested: prefer MCP `signal_create` (signal_type: \"verify_failed\", plan_file: %[1]q, project: %[2]q); fall back to `kas signal emit verify_failed %[1]s`\n"+

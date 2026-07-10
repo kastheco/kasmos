@@ -140,6 +140,8 @@ Daemon instance rows returned through status/listing APIs may include `last_acti
 
 MCP `instance_list` prefers the live daemon inventory, including daemon-owned SDK and tmux planners that are not persisted in the local state file. It falls back to the persisted state only when the daemon is unavailable.
 
+The MCP instance action tools use the same daemon inventory first. `instance_pause`, `instance_resume`, `instance_restart`, and `instance_send` therefore work for daemon-owned SDK sessions as well as tmux sessions. `capture_pane` returns the daemon's structured SDK presentation turns when available, including every retained turn, and otherwise uses the daemon's terminal capture endpoint. Each action accepts an optional `project` argument. A title-only action is allowed only when that title is unique across the daemon's registered repositories; ambiguous titles fail closed and require `project`. Pause, resume, send, and capture fall back to the legacy persisted-instance implementation only when an unqualified title is not present in the live daemon inventory; restart requires a daemon-managed instance.
+
 **permission choice values:**
 
 | value | meaning |

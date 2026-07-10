@@ -1790,6 +1790,15 @@ func (d *Daemon) executeAction(ctx context.Context, e RepoEntry, action loop.Act
 		return d.startImplementationPlan(ctx, e, a.PlanFile)
 	case loop.AdvanceWaveAction:
 		return d.startWaveTasks(ctx, e, a.PlanFile)
+	case loop.RetryWaveAction:
+		killWaveAgents := d.killWaveAgents
+		if killWaveAgents == nil {
+			killWaveAgents = d.spawner.KillWaveAgents
+		}
+		if err := killWaveAgents(e.Path, a.PlanFile, a.Wave); err != nil {
+			return fmt.Errorf("kill stale wave agents: %w", err)
+		}
+		return d.startWaveTasks(ctx, e, a.PlanFile)
 	case loop.TaskCompleteAction:
 		return d.handleWaveTaskComplete(ctx, e, a)
 	case loop.TransitionAction:

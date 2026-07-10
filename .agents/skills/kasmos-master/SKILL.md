@@ -65,7 +65,7 @@ You are the **readiness gate** — not implementing, not fixing, not re-running 
 Collect these before making a decision:
 
 - use MCP `task_show` (filename: "<plan-file>", project: "$KASMOS_PROJECT") to retrieve the stored plan, acceptance criteria, and task list.
-- implementation evidence from the merged branch: `MERGE_BASE=$(git merge-base main HEAD)` and diff from that point.
+- implementation evidence from the merged branch: identify the actual local base branch (`main`, `master`, or remote default), then set `MERGE_BASE=$(git merge-base "$BASE_BRANCH" HEAD)` and diff from that point.
 - acceptance-criteria notes from the plan file and any explicit test targets.
 - verification artifacts: scoped `go test` output, full `go test`/CI output, `go build ./...` output, and any deployment checks.
 
@@ -166,14 +166,14 @@ Run BEFORE creating the self-fix commit. Apply your edits to the worktree, then 
 
 If every step passes, create the `fix: <description> (master self-fix)` commit and emit `verify_approved`.
 
-If any gate step fails: `git restore --staged --worktree .` (drops both index and worktree changes), drop the self-fix attempt entirely, and emit `verify_failed` with the ORIGINAL finding (not the gate failure) so the fixer handles it.
+If any gate step fails: restore only the specific paths changed by the self-fix with `git restore --staged --worktree -- <paths>`; never restore `.` or unrelated worktree changes. Drop the self-fix attempt entirely, and emit `verify_failed` with the ORIGINAL finding (not the gate failure) so the fixer handles it.
 
 ### Phase 5 — Decision
 
 Apply Phase 3.5 triage results, then issue exactly one outcome:
 
 - **Zero findings, or only `note` findings:** emit `verify_approved`.
-- **Only `quality` findings (no blockers):** attempt self-fix for each finding inside the ceiling. If all self-fixes pass the reviewer-parity gate, emit `verify_approved` with `## self-fixed` and `## deferred-quality` payload blocks (deferred block covers any quality findings not self-fixed). If any gate step fails, revert that fix (`git restore --staged --worktree .`) and record the finding in `## deferred-quality` — do not emit `verify_failed` unless a deferred finding is actually a blocker in disguise.
+- **Only `quality` findings (no blockers):** attempt self-fix for each finding inside the ceiling. If all self-fixes pass the reviewer-parity gate, emit `verify_approved` with `## self-fixed` and `## deferred-quality` payload blocks (deferred block covers any quality findings not self-fixed). If any gate step fails, revert only that fix's specific paths (`git restore --staged --worktree -- <paths>`) and record the finding in `## deferred-quality` — do not emit `verify_failed` unless a deferred finding is actually a blocker in disguise.
 - **Any `blocker` finding exists:** if the blocker is on the allow-list and within the ceiling, attempt self-fix with the reviewer-parity gate. On gate success, emit `verify_approved`. On gate failure, revert and emit `verify_failed` with the original blocker finding. If the blocker is on the deny-list or would exceed the ceiling, emit `verify_failed` with numbered fixer tasks.
 
 ## Output contract
@@ -242,7 +242,7 @@ Signal content should contain only what is needed for the next action, no prose-
 
 For the same plan and branch:
 
-- `MERGE_BASE=$(git merge-base main HEAD)`
+- identify the actual local base branch first, then run `MERGE_BASE=$(git merge-base "$BASE_BRANCH" HEAD)`
 - `GIT_EXTERNAL_DIFF=difft git diff $MERGE_BASE..HEAD --name-only`
 - `go build ./...`
 - scoped test: **verbose targeted recipe** from `cli-tools` (`## Running tests without polluting context`) with `-run Test<Name>` and the relevant package path

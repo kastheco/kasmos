@@ -170,9 +170,12 @@ func (g *GitWorktree) GeneratePRBody() (string, error) {
 
 // CreatePR pushes the current branch and opens a pull request on GitHub.
 // If the PR already exists it opens the existing one in the browser instead.
-func (g *GitWorktree) CreatePR(title, body, commitMsg string) error {
-	if err := g.PushChanges(commitMsg, false); err != nil {
-		return fmt.Errorf("failed to push changes: %w", err)
+func (g *GitWorktree) CreatePR(title, body, _ string) error {
+	if err := g.requireCleanForPR(); err != nil {
+		return err
+	}
+	if err := g.Push(false); err != nil {
+		return fmt.Errorf("failed to push branch: %w", err)
 	}
 
 	prCmd := exec.Command("gh", "pr", "create", "--title", title, "--body", body, "--head", g.branchName)
@@ -191,6 +194,20 @@ func (g *GitWorktree) CreatePR(title, body, commitMsg string) error {
 	viewCmd := exec.Command("gh", "pr", "view", "--web", g.branchName)
 	viewCmd.Dir = g.worktreePath
 	_ = viewCmd.Run()
+	return nil
+}
+
+// requireCleanForPR prevents PR finalization from absorbing unrelated or
+// pre-existing worktree edits. Lifecycle agents must commit their own scoped
+// files before signaling completion; PR creation only publishes that history.
+func (g *GitWorktree) requireCleanForPR() error {
+	status, err := g.runGitCommand(g.worktreePath, "status", "--porcelain")
+	if err != nil {
+		return fmt.Errorf("failed to check worktree before PR creation: %w", err)
+	}
+	if strings.TrimSpace(status) != "" {
+		return fmt.Errorf("worktree has uncommitted changes; commit only the intended files and preserve unrelated edits before creating a PR:\n%s", strings.TrimSpace(status))
+	}
 	return nil
 }
 

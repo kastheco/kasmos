@@ -623,6 +623,49 @@ func (p *Processor) ProcessWaveSignals(signals []taskfsm.WaveSignal) []Action {
 	return actions
 }
 
+// ProcessRetryWaveSignals reconstructs the active wave from persisted state
+// and emits a retry action that replaces stale agents. Completed tasks remain
+// complete; every unresolved task is returned to running state.
+func (p *Processor) ProcessRetryWaveSignals(signals []taskfsm.WaveSignal) []Action {
+	var actions []Action
+	for _, sig := range signals {
+		entry, ok := p.taskEntry(sig.TaskFile)
+		if !ok || entry.Status != taskstore.StatusImplementing || entry.ExecutionState.ActiveWave < 1 {
+			continue
+		}
+		waveNumber := entry.ExecutionState.ActiveWave
+		content, err := p.config.Store.GetContent(p.config.Project, sig.TaskFile)
+		if err != nil {
+			continue
+		}
+		plan, err := taskparser.Parse(content)
+		if err != nil || waveNumber > len(plan.Waves) {
+			continue
+		}
+		subtasks, err := p.config.Store.GetSubtasks(p.config.Project, sig.TaskFile)
+		if err != nil {
+			continue
+		}
+		completed := make([]int, 0)
+		for _, subtask := range subtasks {
+			switch subtask.Status {
+			case taskstore.SubtaskStatusComplete, taskstore.SubtaskStatusDone, taskstore.SubtaskStatusClosed:
+				completed = append(completed, subtask.TaskNumber)
+			}
+		}
+		orch := orchestration.NewWaveOrchestrator(sig.TaskFile, plan)
+		orch.SetStore(p.config.Store, p.config.Project)
+		orch.RestoreToWave(waveNumber, completed)
+		if orch.ActiveTaskCount() == 0 {
+			continue
+		}
+		p.waveOrchestrators[sig.TaskFile] = orch
+		p.activeWaveOrchs[sig.TaskFile] = true
+		actions = append(actions, RetryWaveAction{PlanFile: sig.TaskFile, Wave: waveNumber})
+	}
+	return actions
+}
+
 // ProcessElaborationSignals converts architect-pass completion signals carried
 // over the retained elaborator_finished contract into AdvanceWaveAction values.
 // It re-reads the architect-enriched plan from the store, updates the
