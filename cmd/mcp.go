@@ -18,6 +18,7 @@ import (
 	"github.com/kastheco/kasmos/internal/mcpserver/instancetools"
 	"github.com/kastheco/kasmos/internal/mcpserver/routing"
 	"github.com/kastheco/kasmos/internal/mcpserver/signaltools"
+	"github.com/kastheco/kasmos/internal/mcpserver/statustools"
 	"github.com/kastheco/kasmos/internal/mcpserver/symbols"
 	"github.com/kastheco/kasmos/internal/mcpserver/tasktools"
 	"github.com/spf13/cobra"
@@ -223,6 +224,7 @@ func newConfiguredMCPServerSingleRoot(mcpSrv *mcpserver.Server, sharedDB *sql.DB
 		nil,
 		daemonSocketPath(),
 	)
+	statustools.RegisterToolsWithRouting(mcpSrv.MCPServer(), routingConfig, mcpSrv.Store(), daemonSocketPath())
 	return mcpSrv, nil
 }
 
@@ -325,5 +327,6 @@ func newConfiguredMCPServerMultiRoot(mcpSrv *mcpserver.Server, repoRoots []strin
 		nil,
 		daemonSocketPath(),
 	)
+	statustools.RegisterToolsWithRouting(mcpSrv.MCPServer(), routingConfig, mcpSrv.Store(), daemonSocketPath())
 	return mcpSrv, nil
 }
