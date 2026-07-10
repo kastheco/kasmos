@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"time"
 
+	"github.com/kastheco/kasmos/daemon/api"
 	"github.com/spf13/cobra"
 )
 
@@ -188,11 +190,17 @@ func humanMessage(event map[string]interface{}) string {
 // newMonitorStatusCmd returns the `kas monitor status` subcommand — a one-shot
 // snapshot of daemon state: registered repos, active plans, running agents.
 func newMonitorStatusCmd(socketPath *string) *cobra.Command {
-	return &cobra.Command{
+	var jsonOutput bool
+	var project string
+
+	cmd := &cobra.Command{
 		Use:   "status",
 		Short: "show a snapshot of daemon state (repos, plans, agents)",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			client := daemonHTTPClient(*socketPath)
+			if jsonOutput {
+				return runMonitorStatusJSON(cmd, client, project)
+			}
 
 			resp, err := client.Get("http://kas/v1/status")
 			if err != nil {
@@ -232,4 +240,46 @@ func newMonitorStatusCmd(socketPath *string) *cobra.Command {
 			return nil
 		},
 	}
+	cmd.Flags().BoolVar(&jsonOutput, "json", false, "output the canonical live-status JSON contract")
+	cmd.Flags().StringVar(&project, "project", "", "project name for live status")
+	return cmd
+}
+
+func runMonitorStatusJSON(cmd *cobra.Command, client *http.Client, project string) error {
+	if project == "" {
+		resp, err := client.Get("http://kas/v1/repos")
+		if err != nil {
+			return fmt.Errorf("daemon not running: %w", err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("unexpected status %d from daemon", resp.StatusCode)
+		}
+
+		var repos []api.RepoStatus
+		if err := json.NewDecoder(resp.Body).Decode(&repos); err != nil {
+			return fmt.Errorf("decode repos: %w", err)
+		}
+		switch len(repos) {
+		case 0:
+			return fmt.Errorf("no repos registered; specify --project")
+		case 1:
+			project = repos[0].Project
+		default:
+			return fmt.Errorf("multiple repos registered; specify --project")
+		}
+	}
+
+	resp, err := client.Get("http://kas/v1/repos/" + url.PathEscape(project) + "/live-status")
+	if err != nil {
+		return fmt.Errorf("daemon not running: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("unexpected status %d from daemon", resp.StatusCode)
+	}
+	if _, err := io.Copy(cmd.OutOrStdout(), resp.Body); err != nil {
+		return fmt.Errorf("copy live status: %w", err)
+	}
+	return nil
 }

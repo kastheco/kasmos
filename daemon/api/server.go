@@ -457,6 +457,7 @@ func (h *Handler) registerRoutes() {
 	h.mux.HandleFunc("GET /v1/repos/{project}/plans", h.handleListPlans)
 	h.mux.HandleFunc("GET /v1/repos/{project}/tasks", h.handleListTasks)
 	h.mux.HandleFunc("GET /v1/repos/{project}/instances", h.handleListInstances)
+	h.mux.HandleFunc("GET /v1/repos/{project}/live-status", h.handleLiveStatus)
 	h.mux.HandleFunc("POST /v1/repos/{project}/instances/{title}/pause", func(w http.ResponseWriter, r *http.Request) {
 		h.handleInstanceAction(w, r, "pause")
 	})
