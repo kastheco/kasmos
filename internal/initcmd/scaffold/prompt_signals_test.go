@@ -35,7 +35,8 @@ func TestPromptTemplates_UseMCPFirstSignals(t *testing.T) {
 				"writing the compatibility `elaborator-finished` signal with wrong filename",
 				"## planner draft cache mode",
 				".kasmos/cache/<plan-file>-planner-*.md",
-				"`consumed_drafts`: list the planner draft cache paths and profile ids used for the final decision",
+				"`planner_drafts`: list the planner draft cache paths, profile ids, and decisions used for the final result",
+				"kas task validate-architect-meta <plan-file>",
 				"The final architect pass remains the only final task content writer.",
 			},
 			notContains: []string{

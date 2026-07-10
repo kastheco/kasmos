@@ -93,6 +93,10 @@ func (h *handler) handleArchitectDecisions(w http.ResponseWriter, r *http.Reques
 	cacheDir := filepath.Join(root, ".kasmos", "cache")
 	meta, err := orchestration.LoadArchitectMeta(cacheDir, filename)
 	if err != nil {
+		if isInvalidArchitectMeta(err) {
+			writeJSON(w, http.StatusOK, response{Available: false, Reason: "architect_meta_invalid"})
+			return
+		}
 		writeJSONError(w, http.StatusInternalServerError, fmt.Sprintf("load architect meta: %v", err), "architect_meta_error")
 		return
 	}
@@ -105,7 +109,7 @@ func (h *handler) handleArchitectDecisions(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	if err := orchestration.ValidateArchitectDecisionAudit(meta.DecisionAudit, filename, project); err != nil {
-		writeJSONError(w, http.StatusInternalServerError, fmt.Sprintf("invalid architect decision audit: %v", err), "decision_audit_invalid")
+		writeJSON(w, http.StatusOK, response{Available: false, Reason: "architect_meta_invalid"})
 		return
 	}
 
@@ -151,6 +155,13 @@ func architectMetaModTime(cacheDir, filename string) (time.Time, error) {
 
 func isNotFound(err error) bool {
 	return errors.Is(err, taskstore.ErrNotFound)
+}
+
+func isInvalidArchitectMeta(err error) bool {
+	var syntaxErr *json.SyntaxError
+	var typeErr *json.UnmarshalTypeError
+	var timeErr *time.ParseError
+	return errors.As(err, &syntaxErr) || errors.As(err, &typeErr) || errors.As(err, &timeErr)
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
