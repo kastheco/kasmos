@@ -1,0 +1,61 @@
+---
+title: "codex plugin"
+---
+
+# codex plugin
+
+The Kasmos Codex plugin packages the `coordinate-kasmos` skill and the shared Kasmos MCP connection as an installable, host-level integration. It lets Codex plan, implement, review, and verify repository changes through Kasmos without copying the skill into each project.
+
+## prerequisites
+
+Before installing the plugin:
+
+- install Kasmos and register the repository with Kasmos
+- start the shared MCP host at `http://127.0.0.1:7434/mcp`
+
+For an installed Linux user service:
+
+```sh
+systemctl --user start kasmosdb
+```
+
+Or start it directly:
+
+```sh
+kas serve
+```
+
+Use `kas task list` to confirm that the registered repository and its tasks are available.
+
+## install
+
+In Codex, add the marketplace from a Kasmos checkout, install the plugin, and reload plugins:
+
+```text
+/plugin marketplace add <path>/integrations/codex
+/plugin install kasmos@kasmos
+/reload-plugins
+```
+
+Replace `<path>` with the absolute or Codex-accessible path to the Kasmos repository root. The plugin connects to the local MCP host and does not require separate credentials.
+
+## coordinate work with kasmos
+
+Ask Codex to use `coordinate-kasmos` for a repository change. The skill routes the work through Kasmos's guarded lifecycle: it can research the repository, create or refine a task, coordinate implementation, monitor review, and report verification results.
+
+The skill preserves Kasmos's authority boundaries. Planning and inspection do not grant permission to implement. Codex must stop at approval gates before implementation, and it must not perform destructive actions unless you explicitly request them.
+
+## plugin and per-repo setup
+
+The plugin and `kas setup` serve different scopes:
+
+- the plugin is distributable, host-level packaging for the `coordinate-kasmos` skill and shared MCP server registration
+- `kas setup` still configures each repository for Kasmos and Codex
+
+For Codex projects, `kas setup` uses `WriteCodexProject` to create the repo-scoped `.codex` files and `EnsureCodexMCPEntry` to keep `.codex/config.toml` pointed at the shared MCP endpoint. Installing the plugin does not replace that repository wiring or register the repository with Kasmos.
+
+## related
+
+- [agent harnesses](./agent-harnesses.mdx) — Codex project scaffolding and execution modes
+- [remote task store](./remote-task-store.mdx) — the shared task store and MCP endpoint
+- [service management](./systemd-services.mdx) — running `kasmosdb` as a user service
