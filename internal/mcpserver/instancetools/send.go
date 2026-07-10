@@ -27,11 +27,14 @@ func makeInstanceSendHandler(loadState StateLoader, runner CmdRunner, socketPath
 			return mcp.NewToolResultError(fmt.Sprintf("missing required argument 'prompt': %v", err)), nil
 		}
 
-		if client, instance, daemonErr := findDaemonInstance(ctx, daemonSocket(socketPaths), title); daemonErr == nil {
+		project := req.GetString("project", "")
+		if client, instance, daemonErr := findDaemonInstance(ctx, daemonSocket(socketPaths), project, title); daemonErr == nil {
 			if sendErr := client.send(ctx, instance.Project, title, prompt); sendErr != nil {
 				return mcp.NewToolResultError(fmt.Sprintf("instance_send: daemon send: %v", sendErr)), nil
 			}
 			return mcp.NewToolResultText(fmt.Sprintf("sent to %s", title)), nil
+		} else if daemonLookupMustFail(daemonErr, project) {
+			return mcp.NewToolResultError(fmt.Sprintf("instance_send: %v", daemonErr)), nil
 		}
 
 		records, err := loadRecords(loadState)
@@ -67,6 +70,7 @@ func registerInstanceSend(srv *server.MCPServer, loadState StateLoader, runner C
 			mcp.Required(),
 			mcp.Description("title of the instance to send the prompt to"),
 		),
+		mcp.WithString("project", mcp.Description("target daemon project; required when titles are not unique across repositories")),
 		mcp.WithString("prompt",
 			mcp.Required(),
 			mcp.Description("prompt text to send to the instance"),

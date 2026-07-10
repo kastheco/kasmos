@@ -10,12 +10,14 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/kastheco/kasmos/daemon/api"
 )
 
 var errDaemonInstanceNotFound = errors.New("daemon instance not found")
+var errDaemonInstanceAmbiguous = errors.New("daemon instance title is ambiguous across projects; pass the project argument")
 
 // findDaemonInstance resolves a title from the daemon inventory. MCP instance
 // tools use this before falling back to the legacy persisted-instance store so
@@ -152,7 +154,7 @@ func (c *daemonActionClient) send(ctx context.Context, project, title, prompt st
 	return nil
 }
 
-func findDaemonInstance(ctx context.Context, socketPath, title string) (*daemonActionClient, api.InstanceStatus, error) {
+func findDaemonInstance(ctx context.Context, socketPath, project, title string) (*daemonActionClient, api.InstanceStatus, error) {
 	if socketPath == "" {
 		return nil, api.InstanceStatus{}, errDaemonInstanceNotFound
 	}
@@ -161,12 +163,24 @@ func findDaemonInstance(ctx context.Context, socketPath, title string) (*daemonA
 	if err != nil {
 		return nil, api.InstanceStatus{}, err
 	}
+	project = strings.TrimSpace(project)
+	matches := make([]api.InstanceStatus, 0, 1)
 	for _, instance := range status.Instances {
-		if instance.Title == title {
-			return client, instance, nil
+		if instance.Title == title && (project == "" || instance.Project == project) {
+			matches = append(matches, instance)
 		}
 	}
+	if len(matches) == 1 {
+		return client, matches[0], nil
+	}
+	if len(matches) > 1 {
+		return nil, api.InstanceStatus{}, errDaemonInstanceAmbiguous
+	}
 	return nil, api.InstanceStatus{}, errDaemonInstanceNotFound
+}
+
+func daemonLookupMustFail(err error, project string) bool {
+	return strings.TrimSpace(project) != "" || errors.Is(err, errDaemonInstanceAmbiguous)
 }
 
 func daemonSocket(socketPaths []string) string {

@@ -22,7 +22,8 @@ func makeCapturePaneHandler(loadState StateLoader, runner CmdRunner, socketPaths
 			return mcp.NewToolResultError(fmt.Sprintf("missing required argument 'title': %v", err)), nil
 		}
 
-		if client, instance, daemonErr := findDaemonInstance(ctx, daemonSocket(socketPaths), title); daemonErr == nil {
+		project := req.GetString("project", "")
+		if client, instance, daemonErr := findDaemonInstance(ctx, daemonSocket(socketPaths), project, title); daemonErr == nil {
 			if instance.ExecutionMode == "sdk" {
 				presentation, supported, presentationErr := client.presentation(ctx, instance.Project, title)
 				if presentationErr != nil {
@@ -38,6 +39,8 @@ func makeCapturePaneHandler(loadState StateLoader, runner CmdRunner, socketPaths
 				return mcp.NewToolResultError(fmt.Sprintf("capture_pane: daemon capture: %v", captureErr)), nil
 			}
 			return mcp.NewToolResultText(output), nil
+		} else if daemonLookupMustFail(daemonErr, project) {
+			return mcp.NewToolResultError(fmt.Sprintf("capture_pane: %v", daemonErr)), nil
 		}
 
 		records, err := livepreview.LoadRecords(loadState)
@@ -75,6 +78,7 @@ func registerCapturePane(srv *server.MCPServer, loadState StateLoader, runner Cm
 			mcp.Required(),
 			mcp.Description("title of the instance whose tmux pane to capture"),
 		),
+		mcp.WithString("project", mcp.Description("target daemon project; required when titles are not unique across repositories")),
 		mcp.WithString("start",
 			mcp.Description("optional tmux -S line offset, for example -1000"),
 		),

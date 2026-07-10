@@ -28,11 +28,14 @@ func makeInstancePauseHandler(loadState StateLoader, runner CmdRunner, socketPat
 			return mcp.NewToolResultError(fmt.Sprintf("missing required argument 'title': %v", err)), nil
 		}
 
-		if client, instance, daemonErr := findDaemonInstance(ctx, daemonSocket(socketPaths), title); daemonErr == nil {
+		project := req.GetString("project", "")
+		if client, instance, daemonErr := findDaemonInstance(ctx, daemonSocket(socketPaths), project, title); daemonErr == nil {
 			if pauseErr := client.action(ctx, instance.Project, title, "pause"); pauseErr != nil {
 				return mcp.NewToolResultError(fmt.Sprintf("instance_pause: daemon pause: %v", pauseErr)), nil
 			}
 			return mcp.NewToolResultText(fmt.Sprintf("paused: %s", title)), nil
+		} else if daemonLookupMustFail(daemonErr, project) {
+			return mcp.NewToolResultError(fmt.Sprintf("instance_pause: %v", daemonErr)), nil
 		}
 
 		records, err := loadRecords(loadState)
@@ -81,6 +84,7 @@ func registerInstancePause(srv *server.MCPServer, loadState StateLoader, runner 
 			mcp.Required(),
 			mcp.Description("title of the instance to pause"),
 		),
+		mcp.WithString("project", mcp.Description("target daemon project; required when titles are not unique across repositories")),
 	)
 	srv.AddTool(tool, makeInstancePauseHandler(loadState, runner, socketPath))
 }

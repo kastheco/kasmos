@@ -102,11 +102,14 @@ func makeInstanceResumeHandler(loadState StateLoader, runner CmdRunner, socketPa
 			return mcp.NewToolResultError(fmt.Sprintf("missing required argument 'title': %v", err)), nil
 		}
 
-		if client, instance, daemonErr := findDaemonInstance(ctx, daemonSocket(socketPaths), title); daemonErr == nil {
+		project := req.GetString("project", "")
+		if client, instance, daemonErr := findDaemonInstance(ctx, daemonSocket(socketPaths), project, title); daemonErr == nil {
 			if resumeErr := client.action(ctx, instance.Project, title, "resume"); resumeErr != nil {
 				return mcp.NewToolResultError(fmt.Sprintf("instance_resume: daemon resume: %v", resumeErr)), nil
 			}
 			return mcp.NewToolResultText(fmt.Sprintf("resumed: %s", title)), nil
+		} else if daemonLookupMustFail(daemonErr, project) {
+			return mcp.NewToolResultError(fmt.Sprintf("instance_resume: %v", daemonErr)), nil
 		}
 
 		records, err := loadRecords(loadState)
@@ -173,6 +176,7 @@ func registerInstanceResume(srv *server.MCPServer, loadState StateLoader, runner
 			mcp.Required(),
 			mcp.Description("title of the paused instance to resume"),
 		),
+		mcp.WithString("project", mcp.Description("target daemon project; required when titles are not unique across repositories")),
 	)
 	srv.AddTool(tool, makeInstanceResumeHandler(loadState, runner, socketPath))
 }

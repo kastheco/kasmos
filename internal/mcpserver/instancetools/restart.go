@@ -18,7 +18,7 @@ func makeInstanceRestartHandler(socketPath string) server.ToolHandlerFunc {
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("missing required argument 'title': %v", err)), nil
 		}
-		client, instance, err := findDaemonInstance(ctx, socketPath, title)
+		client, instance, err := findDaemonInstance(ctx, socketPath, req.GetString("project", ""), title)
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("instance_restart: %v", err)), nil
 		}
@@ -34,6 +34,7 @@ func registerInstanceRestart(srv *server.MCPServer, _ StateLoader, _ CmdRunner, 
 		"instance_restart",
 		mcp.WithDescription("restart a daemon-managed agent instance while preserving its worktree and prompt"),
 		mcp.WithString("title", mcp.Required(), mcp.Description("title of the instance to restart")),
+		mcp.WithString("project", mcp.Description("target daemon project; required when titles are not unique across repositories")),
 	)
 	srv.AddTool(tool, makeInstanceRestartHandler(socketPath))
 }
