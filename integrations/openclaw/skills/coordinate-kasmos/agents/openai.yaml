@@ -1,0 +1,4 @@
+interface:
+  display_name: "Coordinate Kasmos"
+  short_description: "Run guarded Kasmos delivery workflows"
+  default_prompt: "Use $coordinate-kasmos to create and coordinate a Kasmos plan for this code change."
