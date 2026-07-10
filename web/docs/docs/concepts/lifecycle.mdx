@@ -196,6 +196,8 @@ agents should emit **agent signals** via mcp `signal_create`. the signal is writ
 
 operator-initiated `implement_start` transitions use the same gateway path. because the task store is already `implementing` when the row is created, the transition handler marks the payload with `{"fsm_applied":true}`; the daemon recognizes that marker and launches the architect or initial wave instead of treating the row as stale.
 
+when an active coder wave must be recovered, `retry_wave` reconstructs that wave from the stored plan, execution state, and subtask statuses. tasks already marked complete stay complete; unresolved tasks return to running state. before those tasks are spawned again, the daemon kills the stale agents for that wave so duplicate workers cannot continue against the shared branch.
+
 ## forcing a status
 
 for recovery when signals fail or the fsm gets stuck:

@@ -13,6 +13,7 @@ type ScanResult struct {
 	FSMSignals          []taskfsm.Signal
 	TaskSignals         []taskfsm.TaskSignal
 	WaveSignals         []taskfsm.WaveSignal
+	RetryWaveSignals    []taskfsm.WaveSignal
 	ElaborationSignals  []taskfsm.ElaborationSignal
 	PlannerDraftSignals []taskfsm.PlannerDraftSignal
 }
@@ -106,6 +107,7 @@ func (p *Processor) Tick(scan ScanResult) []Action {
 	actions = append(actions, p.ProcessPlannerDraftSignals(scan.PlannerDraftSignals)...)
 	actions = append(actions, p.ProcessTaskSignals(scan.TaskSignals)...)
 	actions = append(actions, p.ProcessWaveSignals(scan.WaveSignals)...)
+	actions = append(actions, p.ProcessRetryWaveSignals(scan.RetryWaveSignals)...)
 	actions = append(actions, p.ProcessElaborationSignals(scan.ElaborationSignals)...)
 	return actions
 }

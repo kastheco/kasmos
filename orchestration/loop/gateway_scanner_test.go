@@ -15,6 +15,7 @@ func TestScanGateway_ClaimsAndConvertsSignals(t *testing.T) {
 	require.NoError(t, gw.Create("proj", taskstore.SignalEntry{PlanFile: "my-plan", SignalType: "implement_start", Payload: `{"fsm_applied":true}`}))
 	require.NoError(t, gw.Create("proj", taskstore.SignalEntry{PlanFile: "my-plan", SignalType: "implement_task_finished", Payload: `{"wave_number":2,"task_number":3}`}))
 	require.NoError(t, gw.Create("proj", taskstore.SignalEntry{PlanFile: "my-plan", SignalType: "elaborator_finished", Payload: `{}`}))
+	require.NoError(t, gw.Create("proj", taskstore.SignalEntry{PlanFile: "my-plan", SignalType: "retry_wave"}))
 
 	result, entries, err := ScanGateway(gw, "proj", "daemon:test")
 	require.NoError(t, err)
@@ -31,11 +32,14 @@ func TestScanGateway_ClaimsAndConvertsSignals(t *testing.T) {
 	assert.Len(t, result.ElaborationSignals, 1)
 	assert.Equal(t, "my-plan", result.ElaborationSignals[0].TaskFile)
 	assert.Equal(t, entries[3].ID, result.ElaborationSignals[0].GatewayEntryID)
-	assert.Len(t, entries, 4)
+	assert.Len(t, result.RetryWaveSignals, 1)
+	assert.Equal(t, "my-plan", result.RetryWaveSignals[0].TaskFile)
+	assert.Equal(t, entries[4].ID, result.RetryWaveSignals[0].GatewayEntryID)
+	assert.Len(t, entries, 5)
 
 	processing, err := gw.List("proj", taskstore.SignalProcessing)
 	require.NoError(t, err)
-	assert.Len(t, processing, 4)
+	assert.Len(t, processing, 5)
 }
 
 func TestScanGateway_Empty(t *testing.T) {
@@ -45,6 +49,7 @@ func TestScanGateway_Empty(t *testing.T) {
 	assert.Empty(t, result.FSMSignals)
 	assert.Empty(t, result.TaskSignals)
 	assert.Empty(t, result.WaveSignals)
+	assert.Empty(t, result.RetryWaveSignals)
 	assert.Empty(t, result.ElaborationSignals)
 	assert.Empty(t, entries)
 }

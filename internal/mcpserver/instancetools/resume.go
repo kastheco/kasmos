@@ -95,11 +95,18 @@ func buildResumeProgram(rec instanceRecord, worktreePath string) string {
 //
 // The handler returns a tool error (not a Go error) for all user-facing failures
 // so that MCP callers receive a structured error response.
-func makeInstanceResumeHandler(loadState StateLoader, runner CmdRunner) server.ToolHandlerFunc {
+func makeInstanceResumeHandler(loadState StateLoader, runner CmdRunner, socketPaths ...string) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		title, err := req.RequireString("title")
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("missing required argument 'title': %v", err)), nil
+		}
+
+		if client, instance, daemonErr := findDaemonInstance(ctx, daemonSocket(socketPaths), title); daemonErr == nil {
+			if resumeErr := client.action(ctx, instance.Project, title, "resume"); resumeErr != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("instance_resume: daemon resume: %v", resumeErr)), nil
+			}
+			return mcp.NewToolResultText(fmt.Sprintf("resumed: %s", title)), nil
 		}
 
 		records, err := loadRecords(loadState)
@@ -158,7 +165,7 @@ func makeInstanceResumeHandler(loadState StateLoader, runner CmdRunner) server.T
 }
 
 // registerInstanceResume registers the instance_resume tool with the MCP server.
-func registerInstanceResume(srv *server.MCPServer, loadState StateLoader, runner CmdRunner, _ string) {
+func registerInstanceResume(srv *server.MCPServer, loadState StateLoader, runner CmdRunner, socketPath string) {
 	tool := mcp.NewTool(
 		"instance_resume",
 		mcp.WithDescription("resume a paused agent instance: re-adds the git worktree on the preserved branch and starts a new tmux session"),
@@ -167,5 +174,5 @@ func registerInstanceResume(srv *server.MCPServer, loadState StateLoader, runner
 			mcp.Description("title of the paused instance to resume"),
 		),
 	)
-	srv.AddTool(tool, makeInstanceResumeHandler(loadState, runner))
+	srv.AddTool(tool, makeInstanceResumeHandler(loadState, runner, socketPath))
 }

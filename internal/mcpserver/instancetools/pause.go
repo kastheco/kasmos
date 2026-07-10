@@ -21,11 +21,18 @@ func init() {
 // ensureCleanWorktree check: MCP tool callers are agents that may not be in a
 // position to commit changes first, and the lighter-weight behaviour is sufficient
 // for orchestration use.
-func makeInstancePauseHandler(loadState StateLoader, runner CmdRunner) server.ToolHandlerFunc {
+func makeInstancePauseHandler(loadState StateLoader, runner CmdRunner, socketPaths ...string) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		title, err := req.RequireString("title")
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("missing required argument 'title': %v", err)), nil
+		}
+
+		if client, instance, daemonErr := findDaemonInstance(ctx, daemonSocket(socketPaths), title); daemonErr == nil {
+			if pauseErr := client.action(ctx, instance.Project, title, "pause"); pauseErr != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("instance_pause: daemon pause: %v", pauseErr)), nil
+			}
+			return mcp.NewToolResultText(fmt.Sprintf("paused: %s", title)), nil
 		}
 
 		records, err := loadRecords(loadState)
@@ -66,7 +73,7 @@ func makeInstancePauseHandler(loadState StateLoader, runner CmdRunner) server.To
 }
 
 // registerInstancePause registers the instance_pause tool with the MCP server.
-func registerInstancePause(srv *server.MCPServer, loadState StateLoader, runner CmdRunner, _ string) {
+func registerInstancePause(srv *server.MCPServer, loadState StateLoader, runner CmdRunner, socketPath string) {
 	tool := mcp.NewTool(
 		"instance_pause",
 		mcp.WithDescription("pause a running agent instance: kills its tmux session and removes the git worktree while preserving the branch for later resume"),
@@ -75,5 +82,5 @@ func registerInstancePause(srv *server.MCPServer, loadState StateLoader, runner 
 			mcp.Description("title of the instance to pause"),
 		),
 	)
-	srv.AddTool(tool, makeInstancePauseHandler(loadState, runner))
+	srv.AddTool(tool, makeInstancePauseHandler(loadState, runner, socketPath))
 }

@@ -91,7 +91,7 @@ tool groups exposed:
 | git | `git_status`, `git_diff`, `git_log` |
 | tasks | `task_list`, `task_show`, `task_create`, `task_update_content`, `task_transition` |
 | signals | `signal_create` |
-| instances | `instance_list`, `instance_pause`, `instance_resume`, `instance_send` |
+| instances | `instance_list`, `instance_pause`, `instance_resume`, `instance_restart`, `instance_send`, `capture_pane` |
 | daemon | `daemon_status` |
 
 filesystem and git tools are sandboxed to the repo root. see the [mcp server docs](https://kasmos.kasthe.co/docs/mcp-server) for details.

@@ -92,6 +92,16 @@ type AdvanceWaveAction struct {
 func (AdvanceWaveAction) Kind() string  { return "advance_wave" }
 func (AdvanceWaveAction) sealedAction() {}
 
+// RetryWaveAction instructs the caller to replace the current wave's stale
+// agents and re-run every unresolved task while preserving completed tasks.
+type RetryWaveAction struct {
+	PlanFile string
+	Wave     int
+}
+
+func (RetryWaveAction) Kind() string  { return "retry_wave" }
+func (RetryWaveAction) sealedAction() {}
+
 // ReviewApprovedAction is emitted whenever a ReviewApproved FSM signal is
 // processed, regardless of whether a PR will be created. It carries the review
 // body so callers can perform side effects (audit log, toast, ClickUp progress,

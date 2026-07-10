@@ -94,6 +94,9 @@ sequenceDiagram
         Task-->>Proc: []Action (TaskCompleteAction)
         Proc->>Wave: ProcessWaveSignals(scan.WaveSignals)
         Wave-->>Proc: []Action (AdvanceWaveAction)
+        Proc->>Wave: ProcessRetryWaveSignals(scan.RetryWaveSignals)
+        Note over Wave: rebuild active wave from persisted state; preserve completed tasks
+        Wave-->>Proc: []Action (RetryWaveAction)
         Proc-->>Daemon: combined []Action
 
         alt actions produced
@@ -158,6 +161,7 @@ the `Claim` operation is a serializable transaction: it updates the row to `proc
 |-------------|------------|---------|
 | `implement_finished` | coder / fixer | FSM transition → `reviewing`, spawn reviewer |
 | `implement_task_finished` | wave task agent | wave task complete, possible wave advance |
+| `retry_wave` | operator recovery | kill stale agents for the persisted active wave, then spawn only unresolved tasks; completed tasks remain complete |
 | `implement_wave` | daemon / tui | start next wave |
 | `elaborator_finished` | architect | update plan content, begin wave 1 |
 | `review_approved` | reviewer | FSM transition `reviewing → verifying` (spawn master agent) when `auto_readiness_review = true`; otherwise `reviewing → done` |
