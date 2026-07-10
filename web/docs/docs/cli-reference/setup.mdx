@@ -29,7 +29,7 @@ Scans `$PATH` for supported agent programs: `claude`, `opencode`, and `codex`. T
 
 **Step 2 — configure agent roles**
 
-For each selected harness, choose which agent roles it should fill: `coder`, `reviewer`, `planner`. You can also configure model names and per-role tuning options specific to each program.
+For each selected harness, choose which agent roles it should fill: `coder`, `architect`, `reviewer`, `planner`. You can also configure model names and per-role tuning options specific to each program.
 
 **Step 3 — confirm and write**
 
@@ -53,7 +53,7 @@ After the wizard completes:
 
    Files that already exist are skipped unless `--force` is given.
 
-   The scaffolded planner and architect skills include the current planning contract: optional `[orchestration].planners` fan-out, draft-mode `planner_draft_finished` signals, planner draft cache consumption, and final `decision_audit.planner_drafts` metadata in `.kasmos/cache/<task>-architect.json` so hq can display the decision record. Run `kas setup --force` only when you intend to refresh those scaffold-managed skill and prompt files from the bundled templates.
+   The scaffolded planner and architect skills include the current planning contract: optional `[orchestration].planners` fan-out, draft-mode `planner_draft_finished` signals, planner draft cache consumption, and final `decision_audit.planner_drafts` metadata in `.kasmos/cache/<task>-architect.json` so hq can display the decision record. When `architect` is configured for Claude or OpenCode, setup also creates the matching `architect.md` role prompt. Run `kas setup --force` only when you intend to refresh those scaffold-managed skill and prompt files from the bundled templates.
 
 ## example
 

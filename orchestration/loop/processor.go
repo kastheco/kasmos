@@ -44,6 +44,8 @@ func preAppliedTargetStatus(event taskfsm.Event) (taskfsm.Status, bool) {
 		return taskfsm.StatusPlanning, true
 	case taskfsm.PlannerFinished:
 		return taskfsm.StatusReady, true
+	case taskfsm.ImplementStart:
+		return taskfsm.StatusImplementing, true
 	case taskfsm.ImplementFinished:
 		return taskfsm.StatusReviewing, true
 	case taskfsm.ReviewApproved:
@@ -316,6 +318,9 @@ func (p *Processor) ProcessFSMSignals(signals []taskfsm.Signal) []Action {
 		}
 
 		switch eventToApply {
+		case taskfsm.ImplementStart:
+			actions = append(actions, StartImplementationAction{PlanFile: sig.TaskFile})
+
 		case taskfsm.ImplementFinished:
 			actions = append(actions, SpawnReviewerAction{PlanFile: sig.TaskFile})
 

@@ -187,4 +187,6 @@ The task MCP tools include lifecycle and content operations such as `task_list`,
 
 Long-lived MCP servers refresh that project namespace at request time. A project added to the daemon or shared task store after MCP startup can be selected immediately. When the live catalog is empty, single-repo mode preserves its working-directory project fallback so the first task can be created; an explicit `--repo` invocation remains restricted to its startup allowlist.
 
+For signal-bearing transitions, MCP records the matching pre-applied signal. In particular, `implement_start` dispatches the architect or initial implementation wave even though the task is already in `implementing` state.
+
 When `[linear.receipts]` is enabled, transitions driven through both the task actions REST endpoints and the MCP `task_transition` tool fire the same Linear receipt hooks as the CLI. See [linear receipts](../guides/linear-receipts.mdx) for configuration and event allowlist details.

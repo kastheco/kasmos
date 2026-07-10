@@ -20,6 +20,7 @@ Signals describe lifecycle progress only. Permission and resource-control behavi
 |-------------|---------|-------------|
 | `planner_finished` | optional JSON or text | legacy/manual planner completion; in multi-planner mode the processor applies this transition internally after all drafts finish |
 | `planner_draft_finished` | `{"planner_id": "profile"}` | gateway-only signal emitted by each draft-mode planner listed in `[orchestration].planners` |
+| `implement_start` | optional JSON or text | starts architect or wave execution after a planned task enters `implementing`; task-transition handlers emit it with `{"fsm_applied":true}` |
 | `implement_finished` | optional JSON or text | all coder agents finished implementation |
 | `review_approved` | optional JSON or text | reviewer approved the implementation; triggers `reviewing → verifying` when `auto_readiness_review = true`, otherwise `reviewing → done` |
 | `review_changes_requested` | optional JSON or text | reviewer requested changes |
@@ -36,7 +37,7 @@ Signals describe lifecycle progress only. Permission and resource-control behavi
 
 ### payload rules
 
-- **FSM signals** (`planner_finished`, `implement_finished`, `review_approved`, `review_changes_requested`, `verify_approved`, `verify_failed`): payload is optional. If provided and valid JSON, it is stored verbatim. Plain text is wrapped as `{"body": "..."}`.
+- **FSM signals** (`planner_finished`, `implement_start`, `implement_finished`, `review_approved`, `review_changes_requested`, `verify_approved`, `verify_failed`): payload is optional. If provided and valid JSON, it is stored verbatim. Plain text is wrapped as `{"body": "..."}`.
 - **`planner_draft_finished`**: payload is **required** and must be JSON containing a non-empty string field `planner_id` that matches the configured planner profile name.
 - **`implement_task_finished`**: payload is **required** and must be JSON containing integer fields `wave_number` and `task_number`.
 - **`implement_wave`**: payload is **required** and must be JSON containing an integer `wave_number`.
