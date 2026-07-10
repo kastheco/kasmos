@@ -28,7 +28,7 @@ Use Kasmos as the source of truth for software-delivery state. Use Workboard onl
 1. Call the Kasmos `daemon_status` MCP tool. Stop and report the exact failure if the daemon is unavailable or the requested repository is not registered.
 2. Resolve the project explicitly. Never infer it only from the current OpenClaw workspace when multiple repositories are registered.
 3. Call the Kasmos `task_list` MCP tool for that project before creating anything. Reuse an existing task when its scope matches; do not create duplicate tasks after a session interruption.
-4. For an existing task, call the Kasmos `task_show` MCP tool and continue from its actual state.
+4. For an existing task, use its `task_list` entry for lifecycle status, then call the Kasmos `task_show` MCP tool for the current plan content and continue from that state.
 5. For a new task, call the Kasmos `task_create` MCP tool once with a concise description, stable filename, project, and topic when known. Include full plan content only when the owner supplied an already-approved, implementation-ready plan.
 6. Start research and planning with the Kasmos `task_transition` MCP tool using `event: "plan_start"` when the task is a draft. Planning is not implementation approval.
 
@@ -36,7 +36,7 @@ Prefer a topic that groups changes likely to touch the same code. This lets Kasm
 
 ## Planning checkpoint
 
-Poll with the Kasmos `task_show` MCP tool; use `instance_list` only when task state is insufficient. Do not busy-loop.
+Poll lifecycle status with the Kasmos `task_list` MCP tool; use `instance_list` only when task state is insufficient. Do not busy-loop. Once the task leaves `planning`, call `task_show` to read the full current plan before requesting implementation approval.
 
 When planning finishes:
 
