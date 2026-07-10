@@ -1,0 +1,83 @@
+---
+title: "live status contract"
+---
+
+# live status contract
+
+The live status contract is the stable, compact snapshot that an external Codex Desktop monitor polls to render kasmos orchestration state. The current `schema_version` is `1`.
+
+## access
+
+Codex Desktop reads the `live_status` MCP tool from `http://127.0.0.1:7434/mcp`. The tool accepts a project and an optional `cap`.
+
+The same assembled contract is available from the daemon control API over its Unix socket:
+
+```text
+GET /v1/repos/{project}/live-status
+```
+
+`kas monitor status --json` emits this contract for CLI consumers.
+
+The daemon heartbeat is best effort. If the daemon is unavailable, the MCP tool still returns task-store data with `daemon_running` set to `false`. Daemon-derived `uptime` and `repo_count` may be absent or zero, and `stale_instance` attention is unavailable because instance health requires the daemon.
+
+Poll every 1–5 seconds. Consumers should reuse the latest snapshot between polls rather than treating this endpoint as an event stream. Arrays are capped and the payload contains summary state rather than logs, transcripts, or task bodies, preserving the compactness guarantee.
+
+## top-level fields
+
+| field | type | meaning |
+| --- | --- | --- |
+| `schema_version` | integer | Wire-schema version. Currently `1`. |
+| `generated_at` | timestamp | Snapshot assembly time, normalized to UTC and encoded as RFC3339Nano JSON. |
+| `project` | string | Kasmos project whose state was assembled. |
+| `daemon_running` | boolean | Whether a daemon heartbeat was available when the snapshot was assembled. |
+| `uptime` | string, optional | Daemon uptime. Omitted when empty. |
+| `repo_count` | integer, optional | Repositories known to the daemon. Omitted when zero. |
+| `lifecycle` | `LifecycleCounts` | Counts of tasks in active lifecycle buckets. |
+| `active_agents` | `ActiveAgent[]` | Capped list of current agent instances. |
+| `attention` | `AttentionItem[]` | Capped list of durable conditions that may need action. |
+| `truncated` | `Truncation` | Counts of items omitted from the capped arrays. |
+
+## lifecycle counts
+
+`LifecycleCounts` contains integer fields `planning`, `ready`, `implementing`, `reviewing`, `verifying`, and `total`. `total` is the sum of those five active buckets. Done, cancelled, and other statuses are not included.
+
+## active agents
+
+Each `ActiveAgent` contains:
+
+| field | type | meaning |
+| --- | --- | --- |
+| `task` | string | Task associated with the instance. |
+| `role` | string | Agent role. |
+| `wave` | integer, optional | Current wave number. Omitted when zero. |
+| `stage` | string, optional | Derived stage: `loading`, `ready`, or `running`. Omitted when no stage applies. |
+| `ready` | boolean, optional | Whether the instance is ready. Omitted when false. |
+| `active` | boolean, optional | Whether the instance is active. Omitted when false. |
+
+## attention
+
+Each `AttentionItem` contains `task`, `kind`, and an optional `detail` string. `detail` is omitted when empty.
+
+`kind` is one of:
+
+| value | durable source |
+| --- | --- |
+| `needs_decision` | The task's stored execution phase is `wave_waiting`, meaning orchestration is waiting at a persisted decision boundary. |
+| `review_feedback` | The task store records outstanding review feedback for the task. |
+| `stale_instance` | The daemon reports a non-empty instance health reason; that reason is returned in `detail`. This kind is unavailable without the daemon. |
+
+`stuck` is intentionally not part of v1. Stuck detection belongs to the planned SSE follow-up rather than this polling snapshot.
+
+## truncation and cap
+
+The default cap is 20 items per `active_agents` and `attention` array. Callers may override it with `cap`; non-positive values select the default, and values above the hard maximum of 100 are reduced to 100.
+
+`Truncation` contains optional integer fields `active_agents` and `attention`. Each value is the number of items omitted from its corresponding array, not the total number available. A field is omitted when no items were truncated.
+
+## versioning policy
+
+Consumers must inspect `schema_version` before interpreting the payload.
+
+- Adding optional fields is backward compatible and does not bump `schema_version`.
+- Renaming or removing a field, or changing a field's type or meaning incompatibly, requires a `schema_version` bump.
+- Consumers should ignore unknown fields so additive changes remain compatible.
