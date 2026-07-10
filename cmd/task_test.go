@@ -237,6 +237,23 @@ func TestPlanTransition(t *testing.T) {
 	assert.Error(t, err)
 }
 
+func TestPlanTransitionWithGateway_EmitsPreAppliedSignal(t *testing.T) {
+	store, _, project := setupTestPlanState(t)
+	gw, err := taskstore.NewSQLiteSignalGateway(":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = gw.Close() })
+
+	newStatus, err := executeTaskTransitionWithGateway(project, "test-plan", "plan_start", store, gw)
+	require.NoError(t, err)
+	assert.Equal(t, "planning", newStatus)
+
+	pending, err := gw.List(project, taskstore.SignalPending)
+	require.NoError(t, err)
+	require.Len(t, pending, 1)
+	assert.Equal(t, "plan_start", pending[0].SignalType)
+	assert.Equal(t, taskfsm.PreAppliedGatewayPayload, pending[0].Payload)
+}
+
 func TestPlanTransition_WaitsForHooks(t *testing.T) {
 	store, _, project := setupTestPlanState(t)
 	done := make(chan struct{})

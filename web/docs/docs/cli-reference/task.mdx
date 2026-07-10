@@ -179,6 +179,8 @@ kas task transition my-feature implement_start
 
 When `[linear.receipts]` is enabled and the task has an explicit Linear link, transitions that match the configured event allowlist post a receipt comment to the linked Linear issue. The CLI waits for in-flight receipt deliveries to settle before returning. See [linear receipts](../guides/linear-receipts.mdx).
 
+For lifecycle events with daemon work, `task transition` also emits the canonical gateway signal after applying the FSM change. The signal is marked as pre-applied so the daemon runs the downstream action, such as spawning planners or reviewers, without attempting the state transition a second time.
+
 ---
 
 ### implement

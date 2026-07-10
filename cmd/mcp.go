@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 
 	"github.com/kastheco/kasmos/config"
 	"github.com/kastheco/kasmos/config/taskstore"
@@ -15,6 +16,7 @@ import (
 	"github.com/kastheco/kasmos/internal/mcpserver/fstools"
 	"github.com/kastheco/kasmos/internal/mcpserver/gittools"
 	"github.com/kastheco/kasmos/internal/mcpserver/instancetools"
+	"github.com/kastheco/kasmos/internal/mcpserver/routing"
 	"github.com/kastheco/kasmos/internal/mcpserver/signaltools"
 	"github.com/kastheco/kasmos/internal/mcpserver/symbols"
 	"github.com/kastheco/kasmos/internal/mcpserver/tasktools"
@@ -66,13 +68,63 @@ func (f closeFunc) Close() error {
 //   - nil / empty: fall back to the working directory (single-root, cached path)
 //   - one root: single-root cached path (watcher + CachedRunner + FileCache)
 //   - many roots: multi-root uncached path (ExecRunner, one watcher+indexer per root)
-func newConfiguredMCPServer(store taskstore.Store, gw taskstore.SignalGateway, sharedDB *sql.DB, repoRoots []string) (*mcpserver.Server, error) {
+func newConfiguredMCPServer(store taskstore.Store, gw taskstore.SignalGateway, sharedDB *sql.DB, repoRoots []string, projectLoaders ...routing.ProjectLoader) (*mcpserver.Server, error) {
 	mcpSrv := mcpserver.NewServer(MCPVersion, store, gw)
+	var projectLoader routing.ProjectLoader
+	if len(projectLoaders) > 0 {
+		projectLoader = projectLoaders[0]
+	} else if len(repoRoots) == 0 && sharedDB != nil {
+		projectLoader = newMCPProjectLoader(sharedDB, false)
+	}
 
 	if len(repoRoots) <= 1 {
-		return newConfiguredMCPServerSingleRoot(mcpSrv, sharedDB, repoRoots)
+		return newConfiguredMCPServerSingleRoot(mcpSrv, sharedDB, repoRoots, projectLoader)
 	}
-	return newConfiguredMCPServerMultiRoot(mcpSrv, repoRoots)
+	return newConfiguredMCPServerMultiRoot(mcpSrv, repoRoots, projectLoader)
+}
+
+func newMCPProjectLoader(sharedDB *sql.DB, includeDaemon bool) routing.ProjectLoader {
+	return func(context.Context) ([]string, error) {
+		projects := make(map[string]struct{})
+		var loadErr error
+		if sharedDB != nil {
+			dbProjects, err := taskstore.ListDistinctProjectsFromDB(sharedDB)
+			if err != nil {
+				loadErr = err
+			} else {
+				for _, project := range dbProjects {
+					projects[project] = struct{}{}
+				}
+			}
+		}
+		if includeDaemon {
+			repos, err := listDaemonRepoStatuses()
+			if err != nil {
+				if loadErr == nil {
+					loadErr = err
+				}
+			} else {
+				for _, repo := range repos {
+					project := repo.Project
+					if project == "" {
+						project = filepath.Base(canonicalRepoPath(repo.Path))
+					}
+					if project != "" {
+						projects[project] = struct{}{}
+					}
+				}
+			}
+		}
+		if len(projects) == 0 && loadErr != nil {
+			return nil, loadErr
+		}
+		result := make([]string, 0, len(projects))
+		for project := range projects {
+			result = append(result, project)
+		}
+		sort.Strings(result)
+		return result, nil
+	}
 }
 
 // newConfiguredMCPServerSingleRoot handles the zero-or-one root case, preserving
@@ -84,7 +136,7 @@ func newConfiguredMCPServer(store taskstore.Store, gw taskstore.SignalGateway, s
 //   - exactly one project in DB → register tools with that project as fixed binding
 //   - multiple projects → register tools in multi-project mode (empty fixed project)
 //   - zero projects or query error → fall back to resolveTaskProject(cwd)
-func newConfiguredMCPServerSingleRoot(mcpSrv *mcpserver.Server, sharedDB *sql.DB, repoRoots []string) (*mcpserver.Server, error) {
+func newConfiguredMCPServerSingleRoot(mcpSrv *mcpserver.Server, sharedDB *sql.DB, repoRoots []string, projectLoader routing.ProjectLoader) (*mcpserver.Server, error) {
 	repoRoot := ""
 	if len(repoRoots) == 1 {
 		repoRoot = repoRoots[0]
@@ -159,8 +211,12 @@ func newConfiguredMCPServerSingleRoot(mcpSrv *mcpserver.Server, sharedDB *sql.DB
 		func(_ context.Context) { indexer.Start(indexerCtx) },
 		indexer.PrimeFile,
 	)
-	tasktools.RegisterTools(mcpSrv.MCPServer(), fixedProject, dbProjects, mcpSrv.Store(), mcpSrv.Gateway(), buildTaskTransitionHooks(fixedProject, mcpSrv.Store()))
-	signaltools.RegisterTools(mcpSrv.MCPServer(), fixedProject, dbProjects, mcpSrv.Gateway())
+	routingConfig := routing.NewRegisterConfig(fixedProject, dbProjects)
+	if projectLoader != nil {
+		routingConfig = routing.NewDynamicRegisterConfig(fixedProject, dbProjects, projectLoader)
+	}
+	tasktools.RegisterToolsWithRouting(mcpSrv.MCPServer(), routingConfig, mcpSrv.Store(), mcpSrv.Gateway(), buildTaskTransitionHooks(fixedProject, mcpSrv.Store()))
+	signaltools.RegisterToolsWithRouting(mcpSrv.MCPServer(), routingConfig, mcpSrv.Gateway())
 	instancetools.RegisterTools(
 		mcpSrv.MCPServer(),
 		func() config.StateManager { return config.LoadState() },
@@ -173,7 +229,7 @@ func newConfiguredMCPServerSingleRoot(mcpSrv *mcpserver.Server, sharedDB *sql.DB
 // newConfiguredMCPServerMultiRoot handles two or more roots. It uses an
 // uncached ExecRunner and creates one watcher+indexer pair per root, all
 // feeding the same symbols.Store. No FileCache is created.
-func newConfiguredMCPServerMultiRoot(mcpSrv *mcpserver.Server, repoRoots []string) (*mcpserver.Server, error) {
+func newConfiguredMCPServerMultiRoot(mcpSrv *mcpserver.Server, repoRoots []string, projectLoader routing.ProjectLoader) (*mcpserver.Server, error) {
 	// Dedupe roots (keep first occurrence) after repo-root resolution.
 	seen := make(map[string]struct{}, len(repoRoots))
 	normalized := make([]string, 0, len(repoRoots))
@@ -191,7 +247,7 @@ func newConfiguredMCPServerMultiRoot(mcpSrv *mcpserver.Server, repoRoots []strin
 	// In the multi-root code path there are always explicit roots, so DB-based
 	// project routing is not needed (pass nil for sharedDB).
 	if len(normalized) == 1 {
-		return newConfiguredMCPServerSingleRoot(mcpSrv, nil, normalized)
+		return newConfiguredMCPServerSingleRoot(mcpSrv, nil, normalized, projectLoader)
 	}
 
 	// Build the union of allowed directories (each root plus its resolved root).
@@ -257,8 +313,12 @@ func newConfiguredMCPServerMultiRoot(mcpSrv *mcpserver.Server, repoRoots []strin
 	gittools.RegisterTools(mcpSrv.MCPServer(), allowedDirs, runner)
 	docstools.RegisterTools(mcpSrv.MCPServer(), allowedDirs, docstools.RegisterOptions{Runner: runner})
 	symbols.RegisterToolMulti(mcpSrv.MCPServer(), validator, routes, nil, nil, symbolStore, ctagsAvailable)
-	tasktools.RegisterTools(mcpSrv.MCPServer(), "", projects, mcpSrv.Store(), mcpSrv.Gateway(), buildTaskTransitionHooks("", mcpSrv.Store()))
-	signaltools.RegisterTools(mcpSrv.MCPServer(), "", projects, mcpSrv.Gateway())
+	routingConfig := routing.NewRegisterConfig("", projects)
+	if projectLoader != nil {
+		routingConfig = routing.NewDynamicRegisterConfig("", projects, projectLoader)
+	}
+	tasktools.RegisterToolsWithRouting(mcpSrv.MCPServer(), routingConfig, mcpSrv.Store(), mcpSrv.Gateway(), buildTaskTransitionHooks("", mcpSrv.Store()))
+	signaltools.RegisterToolsWithRouting(mcpSrv.MCPServer(), routingConfig, mcpSrv.Gateway())
 	instancetools.RegisterTools(
 		mcpSrv.MCPServer(),
 		func() config.StateManager { return config.LoadState() },

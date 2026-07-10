@@ -2213,6 +2213,55 @@ func TestDaemon_TickRepoGateway_InvalidPlannerDraftSignalMarkedFailed(t *testing
 	assert.Empty(t, done)
 }
 
+func TestDaemon_TickRepoGateway_ActionFailureMarksSignalFailed(t *testing.T) {
+	dir := t.TempDir()
+	store := taskstore.NewTestStore(t)
+	project := "test-project"
+	planFile := "spawn-failure-plan"
+	require.NoError(t, store.Create(project, taskstore.TaskEntry{Filename: planFile, Status: taskstore.StatusReady}))
+
+	gw, err := taskstore.NewSQLiteSignalGateway(":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = gw.Close() })
+	require.NoError(t, gw.Create(project, taskstore.SignalEntry{
+		PlanFile:   planFile,
+		SignalType: "plan_start",
+	}))
+
+	entry := RepoEntry{
+		Path:          dir,
+		Project:       project,
+		Store:         store,
+		Processor:     loop.NewProcessor(loop.ProcessorConfig{Store: store, Project: project}),
+		SignalGateway: gw,
+	}
+	d := &Daemon{
+		cfg:         &DaemonConfig{PollInterval: time.Second},
+		repos:       NewRepoManager(),
+		spawner:     newTmuxSpawner(slog.Default()),
+		logger:      slog.Default(),
+		broadcaster: api.NewEventBroadcaster(),
+		killAgent: func(_, _, _ string) error {
+			return nil
+		},
+		spawnPlanner: func(context.Context, loop.SpawnOpts) error {
+			return errors.New("planner startup failed")
+		},
+	}
+
+	d.tickRepo(context.Background(), entry)
+
+	failed, err := gw.List(project, taskstore.SignalFailed)
+	require.NoError(t, err)
+	require.Len(t, failed, 1)
+	assert.Contains(t, failed[0].Result, "spawn_planner")
+	assert.Contains(t, failed[0].Result, "planner startup failed")
+
+	done, err := gw.List(project, taskstore.SignalDone)
+	require.NoError(t, err)
+	assert.Empty(t, done)
+}
+
 func TestDaemon_ExecuteAction_ReviewCycleLimit(t *testing.T) {
 	action := loop.ReviewCycleLimitAction{
 		PlanFile: "test.md",

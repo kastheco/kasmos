@@ -1211,10 +1211,19 @@ func (d *Daemon) tickRepo(ctx context.Context, e RepoEntry) {
 			continue
 		}
 
+		var actionErrs []error
 		for _, action := range actions {
 			if err := d.executeAction(ctx, e, action); err != nil {
 				d.logger.Error("execute action failed", "kind", action.Kind(), "repo", e.Path, "err", err)
+				actionErrs = append(actionErrs, fmt.Errorf("%s: %w", action.Kind(), err))
 			}
+		}
+		if len(actionErrs) > 0 {
+			result := errors.Join(actionErrs...).Error()
+			if err := e.SignalGateway.MarkProcessed(entry.ID, taskstore.SignalFailed, result); err != nil {
+				d.logger.Error("mark action-failed signal failed", "repo", e.Path, "id", entry.ID, "err", err)
+			}
+			continue
 		}
 
 		if err := e.SignalGateway.MarkProcessed(entry.ID, taskstore.SignalDone, ""); err != nil {

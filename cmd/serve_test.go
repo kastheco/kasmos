@@ -256,6 +256,22 @@ func TestServeCmd_ProjectValidationMiddleware404(t *testing.T) {
 	})
 }
 
+func TestDynamicProjectValidationMiddlewareRefreshesProjects(t *testing.T) {
+	projects := []string{"alpha"}
+	loadProjects := func(context.Context) ([]string, error) {
+		return projects, nil
+	}
+	h := dynamicProjectValidationMiddleware(loadProjects, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	projects = append(projects, "jobs")
+	req := httptest.NewRequest(http.MethodGet, "/v1/projects/jobs/tasks", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+}
+
 func TestResolveServeRepoPaths_AutoDetectsDaemonRepos(t *testing.T) {
 	repoA := t.TempDir() // e.g. /tmp/TestXXX/alpha
 	repoB := t.TempDir() // e.g. /tmp/TestXXX/bravo
@@ -408,6 +424,36 @@ func TestServeMCPServer_MultipleReposNoError(t *testing.T) {
 	srv, err := newServeMCPServer(nil, nil, nil, []string{repoA, repoB})
 	require.NoError(t, err)
 	assert.NotNil(t, srv)
+}
+
+func TestServeMCPServer_DynamicProjectAddedAfterStartup(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "dynamic_projects.db")
+	sharedDB, store, gw, _, err := openServeSQLiteBackends(dbPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { sharedDB.Close() })
+	require.NoError(t, store.Create("jobs", taskstore.TaskEntry{
+		Filename: "jobs-search",
+		Status:   taskstore.StatusReady,
+		Content:  "dynamic jobs content",
+	}))
+
+	repoA := t.TempDir()
+	repoB := t.TempDir()
+	projects := []string{filepath.Base(repoA), filepath.Base(repoB)}
+	loadProjects := func(context.Context) ([]string, error) {
+		return projects, nil
+	}
+	srv, err := newServeMCPServer(store, gw, sharedDB, []string{repoA, repoB}, loadProjects)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, srv.Close()) })
+
+	projects = append(projects, "jobs")
+	content, isError := mcpToolsCall(t, srv.Handler(), "task_show", map[string]any{
+		"filename": "jobs-search",
+		"project":  "jobs",
+	})
+	assert.False(t, isError, "task_show should accept a project registered after startup: %s", content)
+	assert.Contains(t, content, "dynamic jobs content")
 }
 
 func TestNewServeAPIRootMux_InstanceActionRoutesRegistered(t *testing.T) {

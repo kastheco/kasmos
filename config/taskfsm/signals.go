@@ -15,8 +15,10 @@ type Signal struct {
 	// transition before emitting the gateway row (for example, the HTTP admin
 	// handler calls TaskStateMachine.Transition itself and then emits the
 	// canonical signal). The gateway scanner decodes this from the payload's
-	// "fsm_applied" flag; filesystem-bridged and MCP-created signals leave it
-	// unset because in those paths the daemon is the sole FSM driver.
+	// "fsm_applied" flag. HTTP, MCP task_transition, and CLI task transition
+	// calls set it because they apply the transition before emitting the row.
+	// Filesystem-bridged signals and MCP signal_create leave it unset because in
+	// those paths the daemon is the sole FSM driver.
 	PreApplied bool
 	// GatewayEntryID identifies the claimed DB-backed signal row that produced
 	// this signal. Filesystem sentinels leave it zero.
