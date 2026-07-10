@@ -44,7 +44,7 @@ All PR monitor fields live under the `[pr_monitor]` table in `daemon.toml`:
 | `poll_interval_sec` | float | `60.0` | how often (in seconds) to poll open PRs across all repos |
 | `reactions` | string array | `["eyes"]` | GitHub reactions to add to the first inline comment of each unprocessed review |
 
-The daemon-level `max_review_fix_cycles` (not under `[pr_monitor]`) caps how many review→fix cycles the monitor will trigger per task. Set to `0` for unlimited.
+The effective `max_review_fix_cycles` caps how many review→fix cycles the monitor will trigger per task. A repository's `[ui].max_review_fix_cycles` in `.kasmos/config.toml` takes priority; the top-level value in `daemon.toml` is the fallback. Set the effective value to `0` for unlimited cycles.
 
 ```toml
 max_review_fix_cycles = 3    # at the top level, not under [pr_monitor]
@@ -53,6 +53,13 @@ max_review_fix_cycles = 3    # at the top level, not under [pr_monitor]
 enabled           = true
 poll_interval_sec = 120.0
 reactions         = ["eyes", "+1"]
+```
+
+To override the fallback for one repository, set the project-local value:
+
+```toml title=".kasmos/config.toml"
+[ui]
+max_review_fix_cycles = 2
 ```
 
 ## review qualification
@@ -91,7 +98,7 @@ if currentEntry.ReviewCycle + 1 > maxReviewFixCycles:
 
 When the limit is reached the daemon emits a `review_cycle_limit` SSE event and stops spawning fixers for that task. The task stays in `reviewing` state for human intervention.
 
-Set `max_review_fix_cycles = 0` to disable the cap (unlimited retries).
+Set project-local `[ui].max_review_fix_cycles = 0` to disable the cap for one repository, or set the daemon-level fallback to `0` for repositories without an override.
 
 ## prerequisites
 

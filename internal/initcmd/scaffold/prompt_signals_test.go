@@ -130,3 +130,23 @@ func TestPromptTemplates_UseMCPFirstSignals(t *testing.T) {
 		})
 	}
 }
+
+func TestReviewRoleTemplates_DoNotForceToolReferenceSkills(t *testing.T) {
+	paths := []string{
+		"templates/claude/agents/reviewer.md",
+		"templates/claude/agents/master.md",
+		"templates/opencode/agents/reviewer.md",
+		"templates/opencode/agents/master.md",
+	}
+
+	for _, path := range paths {
+		t.Run(path, func(t *testing.T) {
+			content, err := templates.ReadFile(path)
+			require.NoError(t, err)
+
+			rendered := string(content)
+			assert.NotContains(t, rendered, "CLI Tools (MANDATORY)")
+			assert.NotContains(t, rendered, "cli-tools")
+		})
+	}
+}
