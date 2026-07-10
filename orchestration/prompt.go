@@ -317,7 +317,7 @@ func BuildElaborationPromptWithOptions(planFile, project string, opts ArchitectP
 			"7. Keep ## Wave headers and the plan header fields (Goal, Architecture, Tech Stack, Size). "+
 			"Everything else — task count, task content, file lists, wave assignment — is yours to change.\n"+
 			"8. Write the updated plan: prefer MCP `task_update_content` (filename: \"%[1]s\", project: \"%[2]s\"); fall back to `kas task update-content %[1]s` (pipe content)\n"+
-			"9. Write the architect metadata cache, including the decision audit, to `.kasmos/cache/%[1]s-architect.json` before signaling.\n"+
+			"9. Write the architect metadata cache, including the decision audit, to `.kasmos/cache/%[1]s-architect.json` before signaling, then round-trip validate it with `kas task validate-architect-meta %[1]s`. `waves` is an array of wave metadata objects, never a numeric wave count.\n"+
 			"%[3]s"+
 			"10. Signal architect-pass completion: prefer MCP `signal_create` (signal_type: \"elaborator-finished\", plan_file: \"%[1]s\", project: \"%[2]s\")\n"+
 			"   - If MCP is unavailable, use `kas signal emit elaborator_finished %[1]s`; if CLI signaling is also unavailable, fallback: `touch .kasmos/signals/elaborator-finished-%[1]s`\n"+
@@ -340,6 +340,9 @@ func elaborationDecisionAuditInstructions(planFile, project string) string {
 			"{\n"+
 			"  \"schema_version\": 1,\n"+
 			"  \"plan_id\": \"%[1]s\",\n"+
+			"  \"waves\": [\n"+
+			"    {\"wave\": 1, \"parallel\": true, \"tasks\": []}\n"+
+			"  ],\n"+
 			"  \"decision_audit\": {\n"+
 			"    \"schema_version\": 1,\n"+
 			"    \"plan_file\": \"%[1]s\",\n"+
@@ -372,6 +375,9 @@ func architectDecisionAuditInstructions(planFile, project string) string {
 			"{\n"+
 			"  \"schema_version\": 1,\n"+
 			"  \"plan_id\": \"%[1]s\",\n"+
+			"  \"waves\": [\n"+
+			"    {\"wave\": 1, \"parallel\": true, \"tasks\": []}\n"+
+			"  ],\n"+
 			"  \"decision_audit\": {\n"+
 			"    \"schema_version\": 1,\n"+
 			"    \"plan_file\": \"%[1]s\",\n"+
@@ -406,7 +412,7 @@ func BuildArchitectPrompt(planFile, project string) string {
 			"4. For each task, classify it as `parallel` when it has no file or execution dependency on other tasks in the same wave; otherwise classify it as serial.\n"+
 			"5. Estimate token budgets for each task, including required context depth and expected implementation footprint.\n"+
 			"6. Write the enriched plan back: prefer MCP `task_update_content` (filename: \"%[1]s\", project: \"%[2]s\"); fall back to `kas task update-content %[1]s` (pipe content)\n"+
-			"7. Write architect metadata to `.kasmos/cache/%[1]s-architect.json` using the schema example in `architect-v1.json`, preserving existing wave metadata and adding the decision audit before signaling.\n"+
+			"7. Write architect metadata to `.kasmos/cache/%[1]s-architect.json` using the schema example in `architect-v1.json`, preserving existing wave metadata and adding the decision audit. Before signaling, round-trip validate the file with `kas task validate-architect-meta %[1]s`. `waves` is an array of wave metadata objects, never a numeric wave count.\n"+
 			"%[3]s"+
 			"8. Signal architect-pass completion: prefer MCP `signal_create` (signal_type: \"elaborator-finished\", plan_file: \"%[1]s\", project: \"%[2]s\")\n"+
 			"   - If MCP is unavailable, use `kas signal emit elaborator_finished %[1]s`; if CLI signaling is also unavailable, fallback: `touch .kasmos/signals/elaborator-finished-%[1]s`\n"+

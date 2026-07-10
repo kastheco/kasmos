@@ -114,10 +114,70 @@ func TestArchitectDecisionHandler_CorruptArchitectMeta(t *testing.T) {
 
 	resp := doArchitectDecisionRequest(t, store, repoRoot, architectDecisionPath())
 
-	require.Equal(t, http.StatusInternalServerError, resp.Code)
+	require.Equal(t, http.StatusOK, resp.Code)
 	var body apiResponse
 	decodeResponse(t, resp, &body)
-	assert.Equal(t, "architect_meta_error", body.Code)
+	assert.False(t, body.Available)
+	assert.Equal(t, "architect_meta_invalid", body.Reason)
+	assert.Empty(t, body.Code)
+}
+
+func TestArchitectDecisionHandler_InvalidArchitectMetaSchema(t *testing.T) {
+	store, repoRoot, cacheDir := setupArchitectDecisionTest(t)
+	require.NoError(t, os.WriteFile(
+		filepath.Join(cacheDir, testFilename+"-architect.json"),
+		[]byte(`{"schema_version":1,"waves":4}`),
+		0o644,
+	))
+
+	resp := doArchitectDecisionRequest(t, store, repoRoot, architectDecisionPath())
+
+	require.Equal(t, http.StatusOK, resp.Code)
+	var body apiResponse
+	decodeResponse(t, resp, &body)
+	assert.False(t, body.Available)
+	assert.Equal(t, "architect_meta_invalid", body.Reason)
+	assert.Empty(t, body.Code)
+}
+
+func TestArchitectDecisionHandler_InvalidArchitectMetaTimestamp(t *testing.T) {
+	store, repoRoot, cacheDir := setupArchitectDecisionTest(t)
+	require.NoError(t, os.WriteFile(
+		filepath.Join(cacheDir, testFilename+"-architect.json"),
+		[]byte(`{"decision_audit":{"created_at":"<rfc3339>"}}`),
+		0o644,
+	))
+
+	resp := doArchitectDecisionRequest(t, store, repoRoot, architectDecisionPath())
+
+	require.Equal(t, http.StatusOK, resp.Code)
+	var body apiResponse
+	decodeResponse(t, resp, &body)
+	assert.False(t, body.Available)
+	assert.Equal(t, "architect_meta_invalid", body.Reason)
+	assert.Empty(t, body.Code)
+}
+
+func TestArchitectDecisionHandler_InvalidDecisionAuditIsUnavailable(t *testing.T) {
+	store, repoRoot, cacheDir := setupArchitectDecisionTest(t)
+	writeJSONFixture(t, filepath.Join(cacheDir, testFilename+"-architect.json"), &orchestration.ArchitectMeta{
+		DecisionAudit: &orchestration.ArchitectDecisionAudit{
+			SchemaVersion:  1,
+			PlanFile:       testFilename,
+			Project:        testProject,
+			BaselineSource: "parallel_cache",
+			Summary:        "audit is incomplete",
+		},
+	})
+
+	resp := doArchitectDecisionRequest(t, store, repoRoot, architectDecisionPath())
+
+	require.Equal(t, http.StatusOK, resp.Code)
+	var body apiResponse
+	decodeResponse(t, resp, &body)
+	assert.False(t, body.Available)
+	assert.Equal(t, "architect_meta_invalid", body.Reason)
+	assert.Empty(t, body.Code)
 }
 
 func TestArchitectDecisionHandler_AuditReturnedWithoutBaseline(t *testing.T) {

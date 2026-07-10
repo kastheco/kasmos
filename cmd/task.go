@@ -19,12 +19,22 @@ import (
 	"github.com/kastheco/kasmos/config/taskstate"
 	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/kastheco/kasmos/internal/clickup"
+	"github.com/kastheco/kasmos/orchestration"
 	"github.com/kastheco/kasmos/session/git"
 	"github.com/spf13/cobra"
 )
 
 func normalizeTaskFilename(filename string) string {
 	return strings.TrimSuffix(strings.TrimSpace(filename), ".md")
+}
+
+func executeTaskValidateArchitectMeta(repoRoot, project, filename string) error {
+	planSlug := normalizeTaskFilename(filename)
+	cacheDir := filepath.Join(repoRoot, ".kasmos", "cache")
+	if err := orchestration.ValidateArchitectMetaFile(cacheDir, planSlug, project); err != nil {
+		return fmt.Errorf("validate architect metadata for %s: %w", planSlug, err)
+	}
+	return nil
 }
 
 func resolveExistingTaskFilename(ps *taskstate.TaskState, filename string) string {
@@ -943,6 +953,24 @@ Deprecated aliases: readiness-approved (→ verify-approved), readiness-changes 
 	}
 	implementCmd.Flags().IntVar(&waveNum, "wave", 1, "wave number to trigger (default: 1)")
 	planCmd.AddCommand(implementCmd)
+
+	validateArchitectMetaCmd := &cobra.Command{
+		Use:   "validate-architect-meta <plan-file>",
+		Short: "strictly validate an architect metadata cache before signaling",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			repoRoot, project, err := resolveRepoInfo()
+			if err != nil {
+				return err
+			}
+			if err := executeTaskValidateArchitectMeta(repoRoot, project, args[0]); err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "architect metadata valid: %s\n", normalizeTaskFilename(args[0]))
+			return nil
+		},
+	}
+	planCmd.AddCommand(validateArchitectMetaCmd)
 
 	var showProject string
 	showCmd := &cobra.Command{

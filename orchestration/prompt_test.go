@@ -273,6 +273,9 @@ func TestBuildElaborationPromptWithOptions_PlannerDraftGuidance(t *testing.T) {
 		assert.Contains(t, prompt, "3. Read the relevant codebase surfaces", "opts=%+v", opts)
 		assert.Contains(t, prompt, "4. Create your independent solution baseline", "opts=%+v", opts)
 		assert.Contains(t, prompt, "9. Write the architect metadata cache", "opts=%+v", opts)
+		assert.Contains(t, prompt, "round-trip validate", "opts=%+v", opts)
+		assert.Contains(t, prompt, "`waves` is an array", "opts=%+v", opts)
+		assert.Contains(t, prompt, "kas task validate-architect-meta my-feature", "opts=%+v", opts)
 		assert.Contains(t, prompt, "10. Signal architect-pass completion", "opts=%+v", opts)
 
 		// Legacy baseline cache must NOT be referenced
@@ -306,6 +309,9 @@ func TestBuildArchitectPrompt(t *testing.T) {
 	assert.Contains(t, prompt, "architect-v1.json")
 	assert.Contains(t, prompt, "parallel")
 	assert.Contains(t, prompt, ".kasmos/cache/my-feature-architect.json")
+	assert.Contains(t, prompt, "round-trip validate")
+	assert.Contains(t, prompt, "`waves` is an array")
+	assert.Contains(t, prompt, "kas task validate-architect-meta my-feature")
 	assert.Contains(t, prompt, "decision_audit")
 	assert.Contains(t, prompt, "planner_summary")
 	assert.Contains(t, prompt, "baseline_summary")
