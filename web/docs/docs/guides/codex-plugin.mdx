@@ -37,7 +37,7 @@ In Codex, add the marketplace from a Kasmos checkout, install the plugin, and re
 /reload-plugins
 ```
 
-Replace `<path>` with the absolute or Codex-accessible path to the Kasmos repository root. The plugin connects to the local MCP host and does not require separate credentials.
+Replace `<path>` with the absolute or Codex-accessible path to the Kasmos repository root. Codex discovers the catalogue at `integrations/codex/.agents/plugins/marketplace.json`; pass the containing `integrations/codex` directory, not the JSON file. The plugin connects to the local MCP host and does not require separate credentials.
 
 ## coordinate work with kasmos
 

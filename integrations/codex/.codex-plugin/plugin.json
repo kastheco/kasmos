@@ -22,7 +22,9 @@
     "displayName": "Kasmos",
     "shortDescription": "Run guarded Kasmos delivery workflows",
     "longDescription": "Plan, implement, review, and verify code changes through guarded Kasmos workflows backed by the local Kasmos MCP server.",
-    "category": "developer-tools",
-    "defaultPrompt": "Use coordinate-kasmos to create and coordinate a Kasmos plan for this code change."
+    "category": "Developer Tools",
+    "defaultPrompt": [
+      "Use coordinate-kasmos to create and coordinate a Kasmos plan for this code change."
+    ]
   }
 }

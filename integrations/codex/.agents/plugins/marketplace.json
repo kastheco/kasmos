@@ -8,13 +8,13 @@
       "name": "kasmos",
       "source": {
         "source": "local",
-        "path": "./integrations/codex/"
+        "path": "./"
       },
       "policy": {
         "installation": "AVAILABLE",
         "authentication": "ON_INSTALL"
       },
-      "category": "developer-tools"
+      "category": "Developer Tools"
     }
   ]
 }

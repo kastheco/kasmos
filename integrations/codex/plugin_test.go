@@ -22,6 +22,10 @@ func TestPluginBundleContract(t *testing.T) {
 			Description string `json:"description"`
 			Skills      string `json:"skills"`
 			MCPServers  string `json:"mcpServers"`
+			Interface   struct {
+				Category      string   `json:"category"`
+				DefaultPrompt []string `json:"defaultPrompt"`
+			} `json:"interface"`
 		}
 		readJSON(t, ".codex-plugin/plugin.json", &manifest)
 
@@ -44,6 +48,9 @@ func TestPluginBundleContract(t *testing.T) {
 		} {
 			assert.Truef(t, strings.HasPrefix(field.value, "./"), "%s must begin with ./, got %q", field.name, field.value)
 		}
+		assert.Equal(t, "Developer Tools", manifest.Interface.Category)
+		require.Len(t, manifest.Interface.DefaultPrompt, 1)
+		assert.NotEmpty(t, manifest.Interface.DefaultPrompt[0])
 	})
 
 	t.Run("MCP endpoint matches canonical URL", func(t *testing.T) {
@@ -86,14 +93,26 @@ func TestPluginBundleContract(t *testing.T) {
 				Name   string `json:"name"`
 				Source struct {
 					Source string `json:"source"`
+					Path   string `json:"path"`
 				} `json:"source"`
+				Category string `json:"category"`
 			} `json:"plugins"`
 		}
-		readJSON(t, "marketplace.json", &marketplace)
+		marketplacePath := filepath.Join(".agents", "plugins", "marketplace.json")
+		readJSON(t, marketplacePath, &marketplace)
 
 		require.Len(t, marketplace.Plugins, 1)
-		assert.Equal(t, "kasmos", marketplace.Plugins[0].Name)
-		assert.NotEmpty(t, marketplace.Plugins[0].Source.Source)
+		plugin := marketplace.Plugins[0]
+		assert.Equal(t, "kasmos", plugin.Name)
+		assert.Equal(t, "local", plugin.Source.Source)
+		assert.Equal(t, "Developer Tools", plugin.Category)
+
+		marketplaceRoot := "."
+		sourcePath := filepath.Clean(filepath.Join(marketplaceRoot, plugin.Source.Path))
+		assert.Equal(t, ".", sourcePath)
+		info, err := os.Stat(filepath.Join(sourcePath, ".codex-plugin", "plugin.json"))
+		require.NoError(t, err)
+		assert.False(t, info.IsDir())
 	})
 }
 

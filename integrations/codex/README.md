@@ -23,7 +23,7 @@ Use current task commands such as `kas task list` to inspect work managed by the
 From the Kasmos repository root, add the local marketplace and install the plugin:
 
 ```text
-/plugin marketplace add ./integrations/codex/marketplace.json
+/plugin marketplace add ./integrations/codex
 /plugin install kasmos@kasmos
 ```
 
