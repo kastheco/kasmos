@@ -94,6 +94,9 @@ sequenceDiagram
         Task-->>Proc: []Action (TaskCompleteAction)
         Proc->>Wave: ProcessWaveSignals(scan.WaveSignals)
         Wave-->>Proc: []Action (AdvanceWaveAction)
+        Proc->>Wave: ProcessRetryWaveSignals(scan.RetryWaveSignals)
+        Note over Wave: rebuild active wave from persisted state; preserve completed tasks
+        Wave-->>Proc: []Action (RetryWaveAction)
         Proc-->>Daemon: combined []Action
 
         alt actions produced
@@ -158,6 +161,7 @@ the `Claim` operation is a serializable transaction: it updates the row to `proc
 |-------------|------------|---------|
 | `implement_finished` | coder / fixer | FSM transition → `reviewing`, spawn reviewer |
 | `implement_task_finished` | wave task agent | wave task complete, possible wave advance |
+| `retry_wave` | operator recovery | kill stale agents for the persisted active wave, then spawn only unresolved tasks; completed tasks remain complete |
 | `implement_wave` | daemon / tui | start next wave |
 | `elaborator_finished` | architect | update plan content, begin wave 1 |
 | `review_approved` | reviewer | FSM transition `reviewing → verifying` (spawn master agent) when `auto_readiness_review = true`; otherwise `reviewing → done` |
@@ -170,6 +174,8 @@ the `Claim` operation is a serializable transaction: it updates the row to `proc
 > **architect completion:** the canonical internal event is `architect_finished`, but the persisted gateway signal wire name is `elaborator_finished` (a legacy alias preserved for compatibility). `kas signal emit architect_finished` is accepted and normalized to `elaborator_finished` transparently.
 
 > **planner drafts:** when `[orchestration].planners` is unset or empty, planning uses the legacy single-planner `planner_finished` signal. when the planner list is set, `plan_start` clears stale planner draft caches, spawns each listed profile in draft mode, and waits for `planner_draft_finished` gateway rows. the processor aggregates those rows and internally applies the planning completion transition once all configured profiles have reported.
+
+> **manual implementation start:** a task transition to `implement_start` writes a gateway row with `{"fsm_applied":true}` after the task store already records `implementing`. the processor recognizes that pre-applied state and still dispatches the architect or first implementation wave, rather than dropping the signal as stale.
 
 > **deprecated aliases:** `readiness_approved` → `verify_approved`; `readiness_changes_requested` / `readiness-changes` / `readiness-changes-requested` / `master_approved` → `verify_failed`. these aliases are accepted at ingress and canonicalized — use `verify_approved` / `verify_failed` in new automation.
 

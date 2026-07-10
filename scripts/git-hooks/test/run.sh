@@ -118,6 +118,19 @@ run_hook() {
   ) || SCENARIO_STATUS=$?
 }
 
+run_detector() {
+	local repo="$1"
+	local base_ref="$2"
+
+	SCENARIO_STDERR="$repo/stderr.txt"
+	SCENARIO_STDOUT="$repo/stdout.txt"
+	SCENARIO_STATUS=0
+	(
+		cd "$repo"
+		PATH="$repo/test-bin:$PATH" BASE_REF="$base_ref" TARGET_REF=INDEX bash scripts/detect-docs-drift.sh >"$SCENARIO_STDOUT" 2>"$SCENARIO_STDERR"
+	) || SCENARIO_STATUS=$?
+}
+
 assert_status() {
   local expected="$1"
   if [ "$SCENARIO_STATUS" -ne "$expected" ]; then
@@ -134,6 +147,16 @@ assert_stderr_contains() {
     fail "stderr missing '$expected'; got: $(tr '\n' ' ' <"$SCENARIO_STDERR")"
     return 1
   fi
+}
+
+assert_stdout_contains() {
+	local expected="$1"
+	local stdout
+	stdout="$(<"$SCENARIO_STDOUT")"
+	if [[ "$stdout" != *"$expected"* ]]; then
+		fail "expected stdout to contain '$expected', got: $stdout"
+		return 1
+	fi
 }
 
 assert_stderr_empty() {
@@ -187,6 +210,18 @@ scenario_drift_absent() {
   run_hook "$repo" "refs/heads/feature $local_sha refs/heads/feature $remote" env
   assert_status 0 || return 1
   assert_stderr_empty
+}
+
+scenario_staged_drift_detected() {
+	local repo base
+	repo="$(seed_repo)" || return 1
+	SCENARIO_TMP="$repo"
+	base="$(git -C "$repo" rev-parse HEAD)"
+	printf '\nfunc changed() {}\n' >>"$repo/cmd/task.go"
+	git -C "$repo" add cmd/task.go
+	run_detector "$repo" "$base"
+	assert_status 0 || return 1
+	assert_stdout_contains "web/docs/docs/cli-reference/task.mdx"
 }
 
 scenario_deletion_ref() {
@@ -383,11 +418,12 @@ run_scenario() {
 
 main() {
   local passed=0
-  local total=13
+	local total=14
 
   local scenarios=(
     "drift_detected:scenario_drift_detected"
-    "drift_absent:scenario_drift_absent"
+		"drift_absent:scenario_drift_absent"
+		"staged_drift_detected:scenario_staged_drift_detected"
     "deletion_ref:scenario_deletion_ref"
     "tag_push:scenario_tag_push"
     "new_branch:scenario_new_branch"

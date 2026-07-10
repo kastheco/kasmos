@@ -13,10 +13,17 @@ import (
 // The persisted gateway signal retains the legacy elaborator_finished wire name.
 const ArchitectFinished Event = "architect_finished"
 
+// PreAppliedGatewayPayload marks a gateway signal whose originator already
+// applied the corresponding FSM transition. The daemon must still execute the
+// downstream side effects, but it must not reject the signal as stale when the
+// task is already in the target state.
+const PreAppliedGatewayPayload = `{"fsm_applied":true}`
+
 var validGatewaySignalTypes = map[string]struct{}{
 	"plan_start":               {},
 	"planner_finished":         {},
 	"planner_draft_finished":   {},
+	"implement_start":          {},
 	"implement_finished":       {},
 	"review_approved":          {},
 	"review_changes_requested": {},
@@ -30,7 +37,7 @@ var validGatewaySignalTypes = map[string]struct{}{
 }
 
 func gatewaySignalTypeError(raw string) error {
-	return fmt.Errorf("unknown signal type %q; valid types: plan_start, planner_finished, planner_draft_finished, implement_finished, review_approved, review_changes_requested, verify_approved, verify_failed, advance_wave, retry_wave, implement_task_finished, implement_wave, architect_finished (wire alias: elaborator_finished)", raw)
+	return fmt.Errorf("unknown signal type %q; valid types: plan_start, planner_finished, planner_draft_finished, implement_start, implement_finished, review_approved, review_changes_requested, verify_approved, verify_failed, advance_wave, retry_wave, implement_task_finished, implement_wave, architect_finished (wire alias: elaborator_finished)", raw)
 }
 
 // CanonicalGatewaySignalType normalizes accepted signal-type aliases to the
@@ -42,7 +49,7 @@ func gatewaySignalTypeError(raw string) error {
 func CanonicalGatewaySignalType(raw string) (string, error) {
 	normalized := strings.ReplaceAll(strings.TrimSpace(raw), "-", "_")
 	switch normalized {
-	case string(PlanStart), string(PlannerFinished), "planner_draft_finished", string(ImplementFinished), string(ReviewApproved), string(ReviewChangesRequested), "implement_task_finished", "implement_wave", "advance_wave", "retry_wave":
+	case string(PlanStart), string(PlannerFinished), "planner_draft_finished", string(ImplementStart), string(ImplementFinished), string(ReviewApproved), string(ReviewChangesRequested), "implement_task_finished", "implement_wave", "advance_wave", "retry_wave":
 		return normalized, nil
 	case "review_changes":
 		return string(ReviewChangesRequested), nil
@@ -65,7 +72,7 @@ func CanonicalGatewaySignalType(raw string) (string, error) {
 // lifecycle event that can be emitted via the signal gateway.
 func GatewaySignalTypeForEvent(event Event) (string, error) {
 	switch event {
-	case PlanStart, PlannerFinished, ImplementFinished, ReviewApproved, ReviewChangesRequested:
+	case PlanStart, PlannerFinished, ImplementStart, ImplementFinished, ReviewApproved, ReviewChangesRequested:
 		return string(event), nil
 	case VerifyApproved, VerifyFailed:
 		return string(event), nil
@@ -85,7 +92,7 @@ func NormalizeGatewaySignalPayload(signalType, payload string) (string, error) {
 	}
 
 	switch canonicalType {
-	case "plan_start", "planner_finished", "implement_finished", "review_approved", "review_changes_requested",
+	case "plan_start", "planner_finished", "implement_start", "implement_finished", "review_approved", "review_changes_requested",
 		"verify_approved", "verify_failed", "advance_wave", "retry_wave":
 		if payload == "" {
 			return "", nil

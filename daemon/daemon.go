@@ -1211,10 +1211,19 @@ func (d *Daemon) tickRepo(ctx context.Context, e RepoEntry) {
 			continue
 		}
 
+		var actionErrs []error
 		for _, action := range actions {
 			if err := d.executeAction(ctx, e, action); err != nil {
 				d.logger.Error("execute action failed", "kind", action.Kind(), "repo", e.Path, "err", err)
+				actionErrs = append(actionErrs, fmt.Errorf("%s: %w", action.Kind(), err))
 			}
+		}
+		if len(actionErrs) > 0 {
+			result := errors.Join(actionErrs...).Error()
+			if err := e.SignalGateway.MarkProcessed(entry.ID, taskstore.SignalFailed, result); err != nil {
+				d.logger.Error("mark action-failed signal failed", "repo", e.Path, "id", entry.ID, "err", err)
+			}
+			continue
 		}
 
 		if err := e.SignalGateway.MarkProcessed(entry.ID, taskstore.SignalDone, ""); err != nil {
@@ -1268,6 +1277,18 @@ func (d *Daemon) autoImplementPlan(ctx context.Context, e RepoEntry, planFile st
 	if e.Store == nil {
 		return fmt.Errorf("task store unavailable for %s", planFile)
 	}
+	if err := e.newFSMWithHooks().Transition(planFile, taskfsm.ImplementStart); err != nil {
+		return fmt.Errorf("transition %s to implementing: %w", planFile, err)
+	}
+	return d.startImplementationPlan(ctx, e, planFile)
+}
+
+// startImplementationPlan launches architect or wave execution after the task
+// has already transitioned to implementing.
+func (d *Daemon) startImplementationPlan(ctx context.Context, e RepoEntry, planFile string) error {
+	if e.Store == nil {
+		return fmt.Errorf("task store unavailable for %s", planFile)
+	}
 
 	content, err := e.Store.GetContent(e.Project, planFile)
 	if err != nil {
@@ -1280,10 +1301,6 @@ func (d *Daemon) autoImplementPlan(ctx context.Context, e RepoEntry, planFile st
 	plan, err := taskparser.Parse(content)
 	if err != nil {
 		return fmt.Errorf("parse plan content for %s: %w", planFile, err)
-	}
-
-	if err := e.newFSMWithHooks().Transition(planFile, taskfsm.ImplementStart); err != nil {
-		return fmt.Errorf("transition %s to implementing: %w", planFile, err)
 	}
 
 	if orchestration.ShouldBlueprintSkip(plan, d.blueprintSkipThreshold(e.Path)) {
@@ -1769,7 +1786,18 @@ func (d *Daemon) executeAction(ctx context.Context, e RepoEntry, action loop.Act
 			return nil
 		}
 		return d.autoImplementPlan(ctx, e, a.PlanFile)
+	case loop.StartImplementationAction:
+		return d.startImplementationPlan(ctx, e, a.PlanFile)
 	case loop.AdvanceWaveAction:
+		return d.startWaveTasks(ctx, e, a.PlanFile)
+	case loop.RetryWaveAction:
+		killWaveAgents := d.killWaveAgents
+		if killWaveAgents == nil {
+			killWaveAgents = d.spawner.KillWaveAgents
+		}
+		if err := killWaveAgents(e.Path, a.PlanFile, a.Wave); err != nil {
+			return fmt.Errorf("kill stale wave agents: %w", err)
+		}
 		return d.startWaveTasks(ctx, e, a.PlanFile)
 	case loop.TaskCompleteAction:
 		return d.handleWaveTaskComplete(ctx, e, a)

@@ -194,6 +194,10 @@ kas task transition my-feature reopen
 
 agents should emit **agent signals** via mcp `signal_create`. the signal is written to the sqlite-backed signals table and picked up by the daemon, which drives fsm transitions. `kas signal emit` is the operator and cli fallback. a compatibility path also exists: signals written as files under `.kasmos/signals/` can be processed by `kas signal process`. on daemon startup, kasmos only recovers any files left in `.kasmos/signals/processing/` back to the root; file-based signals are then bridged/processed on subsequent daemon ticks. either way, the orchestration loop claims pending signals atomically before calling `Transition()` on the fsm.
 
+operator-initiated `implement_start` transitions use the same gateway path. because the task store is already `implementing` when the row is created, the transition handler marks the payload with `{"fsm_applied":true}`; the daemon recognizes that marker and launches the architect or initial wave instead of treating the row as stale.
+
+when an active coder wave must be recovered, `retry_wave` reconstructs that wave from the stored plan, execution state, and subtask statuses. tasks already marked complete stay complete; unresolved tasks return to running state. before those tasks are spawned again, the daemon kills the stale agents for that wave so duplicate workers cannot continue against the shared branch.
+
 ## forcing a status
 
 for recovery when signals fail or the fsm gets stuck:

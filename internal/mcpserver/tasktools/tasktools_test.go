@@ -399,6 +399,51 @@ func TestTaskTransitionHandler_SupportsReviewChangesAlias(t *testing.T) {
 	assert.Equal(t, taskstore.StatusImplementing, entry.Status)
 }
 
+func TestTaskTransitionHandler_EmitsPreAppliedGatewaySignal(t *testing.T) {
+	store := taskstore.NewTestSQLiteStore(t)
+	project := "test-project"
+	require.NoError(t, store.Create(project, taskstore.TaskEntry{Filename: "my-plan", Status: taskstore.StatusReady, CreatedAt: time.Now()}))
+	gw, err := taskstore.NewSQLiteSignalGateway(":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = gw.Close() })
+
+	handler := makeTaskTransitionHandler(routing.NewRegisterConfig(project, nil), store, gw, nil)
+	result, err := handler(context.Background(), mockReq(map[string]any{"filename": "my-plan", "event": "plan_start"}))
+	require.NoError(t, err)
+	assert.False(t, result.IsError)
+
+	pending, err := gw.List(project, taskstore.SignalPending)
+	require.NoError(t, err)
+	require.Len(t, pending, 1)
+	assert.Equal(t, "plan_start", pending[0].SignalType)
+	assert.Equal(t, taskfsm.PreAppliedGatewayPayload, pending[0].Payload)
+}
+
+func TestTaskTransitionHandler_ImplementStartEmitsPreAppliedGatewaySignal(t *testing.T) {
+	store := taskstore.NewTestSQLiteStore(t)
+	project := "test-project"
+	require.NoError(t, store.Create(project, taskstore.TaskEntry{
+		Filename:       "my-plan",
+		Status:         taskstore.StatusReady,
+		ExecutionState: taskstore.ExecutionState{Phase: string(taskfsm.ExecutionPhasePlanned)},
+		CreatedAt:      time.Now(),
+	}))
+	gw, err := taskstore.NewSQLiteSignalGateway(":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = gw.Close() })
+
+	handler := makeTaskTransitionHandler(routing.NewRegisterConfig(project, nil), store, gw, nil)
+	result, err := handler(context.Background(), mockReq(map[string]any{"filename": "my-plan", "event": "implement_start"}))
+	require.NoError(t, err)
+	assert.False(t, result.IsError, textResult(t, result))
+
+	pending, err := gw.List(project, taskstore.SignalPending)
+	require.NoError(t, err)
+	require.Len(t, pending, 1)
+	assert.Equal(t, "implement_start", pending[0].SignalType)
+	assert.Equal(t, taskfsm.PreAppliedGatewayPayload, pending[0].Payload)
+}
+
 func TestTaskTransitionHandler_WithLinearReceipts_PostsOneComment(t *testing.T) {
 	store := taskstore.NewTestSQLiteStore(t)
 	project := "test-project"

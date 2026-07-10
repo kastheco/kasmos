@@ -603,11 +603,12 @@ func TestContent_NotFound_404(t *testing.T) {
 // map to a canonical gateway signal type create exactly one pending signal row.
 func TestTransition_SignalBearing_EmitsGateway(t *testing.T) {
 	tests := []struct {
-		name           string
-		event          string
-		setupStatus    taskstore.Status
-		needContent    bool
-		wantSignalType string
+		name              string
+		event             string
+		setupStatus       taskstore.Status
+		needContent       bool
+		useExecutionPhase bool
+		wantSignalType    string
 	}{
 		{
 			name:           "plan_start from ready",
@@ -621,6 +622,13 @@ func TestTransition_SignalBearing_EmitsGateway(t *testing.T) {
 			setupStatus:    taskstore.StatusPlanning,
 			needContent:    true,
 			wantSignalType: "planner_finished",
+		},
+		{
+			name:              "implement_start from planned-ready",
+			event:             "implement_start",
+			setupStatus:       taskstore.StatusReady,
+			useExecutionPhase: true,
+			wantSignalType:    "implement_start",
 		},
 		{
 			name:           "implement_finished from implementing",
@@ -666,7 +674,13 @@ func TestTransition_SignalBearing_EmitsGateway(t *testing.T) {
 			const filename = "signal-task"
 			createTask(t, store, "proj", filename)
 
-			if tc.setupStatus != taskstore.StatusReady {
+			if tc.useExecutionPhase {
+				require.NoError(t, store.Update("proj", filename, taskstore.TaskEntry{
+					Filename:       filename,
+					Status:         taskstore.StatusReady,
+					ExecutionState: taskstore.ExecutionState{Phase: "planned"},
+				}))
+			} else if tc.setupStatus != taskstore.StatusReady {
 				require.NoError(t, store.Update("proj", filename, taskstore.TaskEntry{
 					Filename: filename,
 					Status:   tc.setupStatus,
@@ -696,17 +710,10 @@ func TestTransition_SignalBearing_EmitsGateway(t *testing.T) {
 // which do not map to any gateway signal type leave the gateway empty.
 func TestTransition_NonEmitting_LeavesGatewayEmpty(t *testing.T) {
 	tests := []struct {
-		name              string
-		event             string
-		setupStatus       taskstore.Status
-		useExecutionPhase bool
+		name        string
+		event       string
+		setupStatus taskstore.Status
 	}{
-		{
-			name:              "implement_start from planned-ready",
-			event:             "implement_start",
-			setupStatus:       taskstore.StatusReady,
-			useExecutionPhase: true,
-		},
 		{
 			name:        "request_review from done",
 			event:       "request_review",
@@ -740,15 +747,7 @@ func TestTransition_NonEmitting_LeavesGatewayEmpty(t *testing.T) {
 			const filename = "non-emit-task"
 			createTask(t, store, "proj", filename)
 
-			switch {
-			case tc.useExecutionPhase:
-				// Mark as planned so implement_start is not blocked by draft-ready guard.
-				require.NoError(t, store.Update("proj", filename, taskstore.TaskEntry{
-					Filename:       filename,
-					Status:         taskstore.StatusReady,
-					ExecutionState: taskstore.ExecutionState{Phase: "planned"},
-				}))
-			case tc.setupStatus != taskstore.StatusReady:
+			if tc.setupStatus != taskstore.StatusReady {
 				require.NoError(t, store.Update("proj", filename, taskstore.TaskEntry{
 					Filename: filename,
 					Status:   tc.setupStatus,

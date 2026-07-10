@@ -182,8 +182,17 @@ func executeTaskSetStatus(project, planFile, status string, force bool, store ta
 	return ps.ForceSetLifecycle(planFile, resolvedStatus, state)
 }
 
-// executeTaskTransition applies a named FSM event to a plan and returns the new status.
+// executeTaskTransition applies a named FSM event to a plan and returns the new
+// status. It intentionally omits gateway emission for callers that only need
+// the in-process FSM primitive. CLI callers use
+// executeTaskTransitionWithGateway so daemon side effects are not skipped.
 func executeTaskTransition(project, planFile, event string, store taskstore.Store, hooks ...*taskfsm.HookRegistry) (string, error) {
+	return executeTaskTransitionWithGateway(project, planFile, event, store, nil, hooks...)
+}
+
+// executeTaskTransitionWithGateway applies a transition and emits the matching
+// pre-applied gateway signal when the event drives daemon side effects.
+func executeTaskTransitionWithGateway(project, planFile, event string, store taskstore.Store, gateway taskstore.SignalGateway, hooks ...*taskfsm.HookRegistry) (string, error) {
 	fsmEvent, ok := taskfsm.EventByName(event)
 	if !ok {
 		return "", fmt.Errorf("unknown event %q; valid events: %s", event, strings.Join(taskfsm.EventNames(), ", "))
@@ -203,6 +212,13 @@ func executeTaskTransition(project, planFile, event string, store taskstore.Stor
 	}
 	if hookRegistry != nil {
 		hookRegistry.Wait()
+	}
+	if gateway != nil {
+		if signalType, mapErr := taskfsm.GatewaySignalTypeForEvent(fsmEvent); mapErr == nil {
+			if emitErr := taskfsm.EmitGatewaySignal(gateway, project, signalType, planFile, taskfsm.PreAppliedGatewayPayload); emitErr != nil {
+				return "", fmt.Errorf("transition applied but emit %s signal: %w", signalType, emitErr)
+			}
+		}
 	}
 	ps, err = loadTaskStateByProject(project, store)
 	if err != nil {
@@ -874,8 +890,18 @@ func NewTaskCmd() *cobra.Command {
 				return err
 			}
 			return withAuthoritativeStore(project, func(store taskstore.Store) error {
+				var gateway taskstore.SignalGateway
+				if fsmEvent, ok := taskfsm.EventByName(args[1]); ok {
+					if _, mapErr := taskfsm.GatewaySignalTypeForEvent(fsmEvent); mapErr == nil {
+						gateway, err = taskstore.OpenAuthoritativeSignalGateway(project)
+						if err != nil {
+							return fmt.Errorf("open authoritative signal gateway: %w", err)
+						}
+						defer gateway.Close()
+					}
+				}
 				hooks := buildTaskTransitionHooks(project, store)
-				newStatus, err := executeTaskTransition(project, args[0], args[1], store, hooks)
+				newStatus, err := executeTaskTransitionWithGateway(project, args[0], args[1], store, gateway, hooks)
 				if err != nil {
 					return err
 				}

@@ -20,6 +20,7 @@ Signals describe lifecycle progress only. Permission and resource-control behavi
 |-------------|---------|-------------|
 | `planner_finished` | optional JSON or text | legacy/manual planner completion; in multi-planner mode the processor applies this transition internally after all drafts finish |
 | `planner_draft_finished` | `{"planner_id": "profile"}` | gateway-only signal emitted by each draft-mode planner listed in `[orchestration].planners` |
+| `implement_start` | optional JSON or text | starts architect or wave execution after a planned task enters `implementing`; task-transition handlers emit it with `{"fsm_applied":true}` |
 | `implement_finished` | optional JSON or text | all coder agents finished implementation |
 | `review_approved` | optional JSON or text | reviewer approved the implementation; triggers `reviewing → verifying` when `auto_readiness_review = true`, otherwise `reviewing → done` |
 | `review_changes_requested` | optional JSON or text | reviewer requested changes |
@@ -27,6 +28,7 @@ Signals describe lifecycle progress only. Permission and resource-control behavi
 | `verify_failed` | optional JSON or text | master agent requested changes during verifying (→ `implementing`). Only valid while task is in `verifying` status. When `readiness_max_verify_cycles` is reached, the processor consumes this signal row but applies the `verifying → done` transition directly instead of `verifying → implementing`; no new `verify_approved` signal row is created, and the `verify_failed` row is still marked processed. |
 | `implement_task_finished` | `{"wave_number": N, "task_number": N}` | a single coder task in a wave finished |
 | `implement_wave` | `{"wave_number": N}` | a full wave finished |
+| `retry_wave` | _(none)_ | recovery signal that replaces stale agents for the active wave and re-runs only unresolved tasks; completed tasks remain complete |
 | `elaborator_finished` | _(none)_ | architect agent finished enriching the plan |
 | `architect_finished` | _(none)_ | CLI alias accepted for `elaborator_finished` (stored as `elaborator_finished` in the gateway) |
 
@@ -36,10 +38,11 @@ Signals describe lifecycle progress only. Permission and resource-control behavi
 
 ### payload rules
 
-- **FSM signals** (`planner_finished`, `implement_finished`, `review_approved`, `review_changes_requested`, `verify_approved`, `verify_failed`): payload is optional. If provided and valid JSON, it is stored verbatim. Plain text is wrapped as `{"body": "..."}`.
+- **FSM signals** (`planner_finished`, `implement_start`, `implement_finished`, `review_approved`, `review_changes_requested`, `verify_approved`, `verify_failed`): payload is optional. If provided and valid JSON, it is stored verbatim. Plain text is wrapped as `{"body": "..."}`.
 - **`planner_draft_finished`**: payload is **required** and must be JSON containing a non-empty string field `planner_id` that matches the configured planner profile name.
 - **`implement_task_finished`**: payload is **required** and must be JSON containing integer fields `wave_number` and `task_number`.
 - **`implement_wave`**: payload is **required** and must be JSON containing an integer `wave_number`.
+- **`retry_wave`**: payload is optional and ignored; the daemon reconstructs the wave number and completed-task set from persisted task state.
 - **`elaborator_finished`** / **`architect_finished`**: payload must be **empty**.
 
 ## subcommands

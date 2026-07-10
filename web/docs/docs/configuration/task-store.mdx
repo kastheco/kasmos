@@ -149,7 +149,7 @@ task filenames in the store are always stored without a `.md` suffix. the cli (`
 
 ## signals
 
-the task store includes a `signals` table for daemon coordination. signals transition through `pending`, `processing`, `done`, and `failed` states. agents should use mcp `signal_create` to create signals; `kas signal emit` is the operator and cli fallback. see [signals](../cli-reference/signal.mdx) for details.
+the task store includes a `signals` table for daemon coordination. signals transition through `pending`, `processing`, `done`, and `failed` states. agents should use mcp `signal_create` to create signals; `kas signal emit` is the operator and cli fallback. CLI, REST, and MCP task transitions that apply the FSM before emitting a signal mark the gateway payload with `fsm_applied`; the daemon still runs downstream lifecycle actions without replaying the transition. this includes `implement_start`, whose pre-applied signal launches the architect or first implementation wave after the task enters `implementing`. if any dispatched action fails, the source signal is recorded as `failed` with the action error instead of being marked `done`. see [signals](../cli-reference/signal.mdx) for details.
 
 ## backing up
 

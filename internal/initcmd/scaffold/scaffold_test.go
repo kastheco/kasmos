@@ -354,6 +354,32 @@ func TestScaffoldOpenCodeProject(t *testing.T) {
 	assert.FileExists(t, filepath.Join(dir, ".opencode", "agents", "chat.md"))
 }
 
+func TestScaffoldArchitectRole(t *testing.T) {
+	dir := t.TempDir()
+	agents := []harness.AgentConfig{
+		{Role: "architect", Harness: "claude", Model: "claude-opus-4-8", Enabled: true},
+	}
+
+	_, err := WriteClaudeProject(dir, agents, allTools, false)
+	require.NoError(t, err)
+	claudeAgent := filepath.Join(dir, ".claude", "agents", "architect.md")
+	assert.FileExists(t, claudeAgent)
+	claudeContent, err := os.ReadFile(claudeAgent)
+	require.NoError(t, err)
+	assert.Contains(t, string(claudeContent), "kasmos-architect")
+
+	opencodeAgents := []harness.AgentConfig{
+		{Role: "architect", Harness: "opencode", Model: "anthropic/claude-opus-4-8", Enabled: true},
+	}
+	_, err = WriteOpenCodeProject(dir, opencodeAgents, allTools, false)
+	require.NoError(t, err)
+	opencodeAgent := filepath.Join(dir, ".opencode", "agents", "architect.md")
+	assert.FileExists(t, opencodeAgent)
+	opencodeContent, err := os.ReadFile(opencodeAgent)
+	require.NoError(t, err)
+	assert.Contains(t, string(opencodeContent), "kasmos-architect")
+}
+
 func TestScaffoldCodexProject(t *testing.T) {
 	dir := t.TempDir()
 	agents := []harness.AgentConfig{
@@ -1402,40 +1428,35 @@ func TestPatchWorktreeConfig_Idempotent_NoRewriteWhenUnchanged(t *testing.T) {
 	assert.Equal(t, before, after)
 }
 
-func TestLoadReviewPrompt_ContainsTieredStructure(t *testing.T) {
+func TestLoadReviewPrompt_ContainsOnlyDynamicReviewContext(t *testing.T) {
 	prompt := LoadReviewPrompt("test-plan.md", "test-plan", "myproject", 2, "Round 1 — changes required")
-	assert.Contains(t, prompt, "Phase 0")
-	assert.Contains(t, prompt, "Phase 1")
-	assert.Contains(t, prompt, "Phase 2")
-	assert.Contains(t, prompt, "Phase 3")
-	assert.Contains(t, prompt, "change profile")
-	assert.Contains(t, prompt, "DECISION:")
+	assert.Contains(t, prompt, "Load the `kasmos-reviewer` skill")
 	assert.Contains(t, prompt, "Current review round: 2")
 	assert.Contains(t, prompt, "Round 1 — changes required")
-	assert.Contains(t, prompt, "{{true|false}}", "change profile option markers must remain in rendered output")
+	assert.Contains(t, prompt, "targeted re-review")
+	assert.Contains(t, prompt, "Do not repeat the full first-pass review")
+	assert.NotContains(t, prompt, "Phase 0")
+	assert.NotContains(t, prompt, "MERGE_BASE")
+	assert.NotContains(t, prompt, "go test ./...")
+	assert.Less(t, len(prompt), 3000, "managed review prompt must remain a compact dynamic envelope")
 	assert.NotContains(t, prompt, "{{PLAN_FILE}}")
 	assert.NotContains(t, prompt, "{{PLAN_FILENAME}}")
 	assert.NotContains(t, prompt, "{{PLAN_NAME}}")
 	assert.NotContains(t, prompt, "{{PROJECT}}")
 }
 
-func TestLoadReviewPrompt_UsesMergeBase(t *testing.T) {
+func TestLoadReviewPrompt_InitialRoundDelegatesFullReviewToSkill(t *testing.T) {
 	prompt := LoadReviewPrompt("test-plan.md", "test-plan", "myproject", 1, "")
-	assert.Contains(t, prompt, "merge-base")
-	assert.Contains(t, prompt, "MERGE_BASE")
-	assert.NotContains(t, prompt, "git diff main..HEAD",
-		"bare main..HEAD without merge-base will break in worktrees with diverged main")
-	assert.NotContains(t, prompt, "git diff --stat main..HEAD")
-	assert.NotContains(t, prompt, "git diff --name-only main..HEAD")
-	assert.NotContains(t, prompt, "git log main..HEAD")
+	assert.Contains(t, prompt, "full first-pass review")
+	assert.Contains(t, prompt, "authoritative")
+	assert.NotContains(t, prompt, "Phase 1")
 }
 
 func TestLoadReviewPrompt_UsesGatewayReviewSignals(t *testing.T) {
 	prompt := LoadReviewPrompt("test-plan.md", "test-plan", "myproject", 1, "")
 	assert.Contains(t, prompt, "signal_create` (signal_type: \"review-approved\", plan_file: \"test-plan.md\", project: \"myproject\"")
 	assert.Contains(t, prompt, "signal_create` (signal_type: \"review-changes\", plan_file: \"test-plan.md\", project: \"myproject\"")
-	assert.Contains(t, prompt, "kas signal emit review_approved test-plan.md")
-	assert.Contains(t, prompt, "kas signal emit review_changes_requested test-plan.md")
+	assert.NotContains(t, prompt, "kas signal emit")
 	assert.NotContains(t, prompt, ".kasmos/signals/review-approved-")
 	assert.NotContains(t, prompt, ".kasmos/signals/review-changes-")
 }
@@ -1446,23 +1467,11 @@ func TestLoadReviewPrompt_SubstitutesProject(t *testing.T) {
 	assert.NotContains(t, prompt, "{{PROJECT}}")
 }
 
-func TestLoadReviewPrompt_MentionsReadinessReviewHandoff(t *testing.T) {
+func TestLoadReviewPrompt_DoesNotDuplicateReadinessPolicy(t *testing.T) {
 	prompt := LoadReviewPrompt("test-plan.md", "test-plan", "myproject", 1, "")
-	assert.Contains(t, prompt, "Readiness review handoff")
-	assert.Contains(t, prompt, "verifying")
-	assert.Contains(t, prompt, "auto_readiness_review")
-	assert.NotContains(t, prompt, "readiness_reviewing")
-
-	// triage buckets
-	assert.Contains(t, prompt, "blocker")
-	assert.Contains(t, prompt, "quality")
-	assert.Contains(t, prompt, "note")
-
-	// self-fix ceiling knob
-	assert.Contains(t, prompt, "readiness_self_fix_max_lines")
-
-	// shared static gate language
-	assert.Contains(t, prompt, "post-fix")
+	assert.NotContains(t, prompt, "Readiness review handoff")
+	assert.NotContains(t, prompt, "auto_readiness_review")
+	assert.NotContains(t, prompt, "readiness_self_fix_max_lines")
 }
 
 func ptrFloat(f float64) *float64 { return &f }

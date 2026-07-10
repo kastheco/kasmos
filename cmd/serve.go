@@ -27,6 +27,7 @@ import (
 	"github.com/kastheco/kasmos/internal/linearruntime"
 	"github.com/kastheco/kasmos/internal/livepreview"
 	"github.com/kastheco/kasmos/internal/mcpserver"
+	"github.com/kastheco/kasmos/internal/mcpserver/routing"
 	kaslog "github.com/kastheco/kasmos/log"
 	webassets "github.com/kastheco/kasmos/web"
 	"github.com/spf13/cobra"
@@ -40,6 +41,7 @@ type serveRepoRegistration struct {
 	projects       []string
 	roots          []string
 	rootsByProject map[string]string
+	loadProjects   routing.ProjectLoader
 }
 
 func buildServeRepoRegistration(repoPaths []string) (serveRepoRegistration, error) {
@@ -92,6 +94,30 @@ func projectValidationMiddleware(valid map[string]struct{}, next http.Handler) h
 	})
 }
 
+func dynamicProjectValidationMiddleware(loadProjects routing.ProjectLoader, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		project, ok := projectFromServePath(r.URL.Path)
+		if !ok {
+			next.ServeHTTP(w, r)
+			return
+		}
+		projects, err := loadProjects(r.Context())
+		if err != nil {
+			http.Error(w, "project catalog unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		for _, candidate := range projects {
+			if candidate == project {
+				next.ServeHTTP(w, r)
+				return
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "project not found: " + project})
+	})
+}
+
 func projectFromServePath(path string) (string, bool) {
 	const prefix = "/v1/projects/"
 	if !strings.HasPrefix(path, prefix) {
@@ -132,8 +158,8 @@ func resolveServeRepoPaths(cmd *cobra.Command, repoPaths []string) ([]string, er
 	return roots, nil
 }
 
-func newServeMCPServer(store taskstore.Store, gw taskstore.SignalGateway, sharedDB *sql.DB, repoPaths []string) (*mcpserver.Server, error) {
-	return newConfiguredMCPServer(store, gw, sharedDB, repoPaths)
+func newServeMCPServer(store taskstore.Store, gw taskstore.SignalGateway, sharedDB *sql.DB, repoPaths []string, projectLoaders ...routing.ProjectLoader) (*mcpserver.Server, error) {
+	return newConfiguredMCPServer(store, gw, sharedDB, repoPaths, projectLoaders...)
 }
 
 const serveMCPRequestLogEnv = "KASMOS_MCP_REQUEST_LOG"
@@ -258,9 +284,19 @@ func openServeSQLiteBackends(dbPath string) (*sql.DB, taskstore.Store, taskstore
 // non-empty), it returns exactly the registered project names so that stale
 // DB-only entries are excluded and newly registered repos with no task rows
 // still appear. In bare-DB mode it queries the shared SQLite database.
-func newProjectListHandler(sharedDB *sql.DB, validProjects map[string]struct{}) http.HandlerFunc {
+func newProjectListHandler(sharedDB *sql.DB, validProjects map[string]struct{}, projectLoaders ...routing.ProjectLoader) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+		if len(projectLoaders) > 0 && projectLoaders[0] != nil {
+			projects, err := projectLoaders[0](r.Context())
+			if err != nil {
+				w.WriteHeader(http.StatusServiceUnavailable)
+				_ = json.NewEncoder(w).Encode(map[string]string{"error": "project catalog unavailable"})
+				return
+			}
+			_ = json.NewEncoder(w).Encode(projects)
+			return
+		}
 
 		// Repo-scoped mode: return exactly the registered project names.
 		if len(validProjects) > 0 {
@@ -303,7 +339,7 @@ func newProjectListHandler(sharedDB *sql.DB, validProjects map[string]struct{}) 
 func newServeAPIRootMux(sharedDB *sql.DB, repoRegs serveRepoRegistration, taskAPI, auditAPI, actionsAPI, previewAPI, configAPI, architectAuditAPI http.Handler, linearWebhookAPI ...http.Handler) *http.ServeMux {
 	rootMux := http.NewServeMux()
 	rootMux.Handle("/v1/ping", taskAPI)
-	rootMux.Handle("GET /v1/projects", newProjectListHandler(sharedDB, repoRegs.valid))
+	rootMux.Handle("GET /v1/projects", newProjectListHandler(sharedDB, repoRegs.valid, repoRegs.loadProjects))
 
 	// Task-action routes registered first — more-specific than the taskAPI prefix.
 	rootMux.Handle("GET /v1/projects/{project}/tasks/{filename}/available-actions", actionsAPI)
@@ -438,6 +474,14 @@ func NewServeCmd() *cobra.Command {
 				return err
 			}
 			defer sharedDB.Close()
+			switch {
+			case cmd.Flags().Changed("repo"):
+				// Explicit repo mode remains a fixed allowlist.
+			case cmd.Flags().Changed("db"):
+				repoRegs.loadProjects = newMCPProjectLoader(sharedDB, false)
+			default:
+				repoRegs.loadProjects = newMCPProjectLoader(sharedDB, true)
+			}
 			// store/gw/logger Close() are no-ops (ownsDB=false);
 			// sharedDB.Close() handles the actual connection teardown.
 			defer store.Close()
@@ -511,9 +555,15 @@ func NewServeCmd() *cobra.Command {
 				)
 			}
 			if len(repoPaths) > 0 {
-				taskAPI = projectValidationMiddleware(repoRegs.valid, taskAPI)
-				auditAPI = projectValidationMiddleware(repoRegs.valid, auditAPI)
-				actionsAPI = projectValidationMiddleware(repoRegs.valid, actionsAPI)
+				if repoRegs.loadProjects != nil {
+					taskAPI = dynamicProjectValidationMiddleware(repoRegs.loadProjects, taskAPI)
+					auditAPI = dynamicProjectValidationMiddleware(repoRegs.loadProjects, auditAPI)
+					actionsAPI = dynamicProjectValidationMiddleware(repoRegs.loadProjects, actionsAPI)
+				} else {
+					taskAPI = projectValidationMiddleware(repoRegs.valid, taskAPI)
+					auditAPI = projectValidationMiddleware(repoRegs.valid, auditAPI)
+					actionsAPI = projectValidationMiddleware(repoRegs.valid, actionsAPI)
+				}
 			}
 
 			runtimeByProject, err := buildLinearWebhookRuntimes(cmd.Context(), repoRegs, store, gw, logger)
@@ -589,7 +639,7 @@ func NewServeCmd() *cobra.Command {
 
 			var mcpHTTP *http.Server
 			if mcpEnabled {
-				mcpSrv, err := newServeMCPServer(store, gw, sharedDB, repoRegs.roots)
+				mcpSrv, err := newServeMCPServer(store, gw, sharedDB, repoRegs.roots, repoRegs.loadProjects)
 				if err != nil {
 					return err
 				}

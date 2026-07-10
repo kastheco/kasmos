@@ -44,6 +44,8 @@ func preAppliedTargetStatus(event taskfsm.Event) (taskfsm.Status, bool) {
 		return taskfsm.StatusPlanning, true
 	case taskfsm.PlannerFinished:
 		return taskfsm.StatusReady, true
+	case taskfsm.ImplementStart:
+		return taskfsm.StatusImplementing, true
 	case taskfsm.ImplementFinished:
 		return taskfsm.StatusReviewing, true
 	case taskfsm.ReviewApproved:
@@ -316,6 +318,9 @@ func (p *Processor) ProcessFSMSignals(signals []taskfsm.Signal) []Action {
 		}
 
 		switch eventToApply {
+		case taskfsm.ImplementStart:
+			actions = append(actions, StartImplementationAction{PlanFile: sig.TaskFile})
+
 		case taskfsm.ImplementFinished:
 			actions = append(actions, SpawnReviewerAction{PlanFile: sig.TaskFile})
 
@@ -614,6 +619,49 @@ func (p *Processor) ProcessWaveSignals(signals []taskfsm.WaveSignal) []Action {
 			PlanFile: ws.TaskFile,
 			Wave:     ws.WaveNumber,
 		})
+	}
+	return actions
+}
+
+// ProcessRetryWaveSignals reconstructs the active wave from persisted state
+// and emits a retry action that replaces stale agents. Completed tasks remain
+// complete; every unresolved task is returned to running state.
+func (p *Processor) ProcessRetryWaveSignals(signals []taskfsm.WaveSignal) []Action {
+	var actions []Action
+	for _, sig := range signals {
+		entry, ok := p.taskEntry(sig.TaskFile)
+		if !ok || entry.Status != taskstore.StatusImplementing || entry.ExecutionState.ActiveWave < 1 {
+			continue
+		}
+		waveNumber := entry.ExecutionState.ActiveWave
+		content, err := p.config.Store.GetContent(p.config.Project, sig.TaskFile)
+		if err != nil {
+			continue
+		}
+		plan, err := taskparser.Parse(content)
+		if err != nil || waveNumber > len(plan.Waves) {
+			continue
+		}
+		subtasks, err := p.config.Store.GetSubtasks(p.config.Project, sig.TaskFile)
+		if err != nil {
+			continue
+		}
+		completed := make([]int, 0)
+		for _, subtask := range subtasks {
+			switch subtask.Status {
+			case taskstore.SubtaskStatusComplete, taskstore.SubtaskStatusDone, taskstore.SubtaskStatusClosed:
+				completed = append(completed, subtask.TaskNumber)
+			}
+		}
+		orch := orchestration.NewWaveOrchestrator(sig.TaskFile, plan)
+		orch.SetStore(p.config.Store, p.config.Project)
+		orch.RestoreToWave(waveNumber, completed)
+		if orch.ActiveTaskCount() == 0 {
+			continue
+		}
+		p.waveOrchestrators[sig.TaskFile] = orch
+		p.activeWaveOrchs[sig.TaskFile] = true
+		actions = append(actions, RetryWaveAction{PlanFile: sig.TaskFile, Wave: waveNumber})
 	}
 	return actions
 }

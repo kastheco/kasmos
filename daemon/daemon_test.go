@@ -2213,6 +2213,55 @@ func TestDaemon_TickRepoGateway_InvalidPlannerDraftSignalMarkedFailed(t *testing
 	assert.Empty(t, done)
 }
 
+func TestDaemon_TickRepoGateway_ActionFailureMarksSignalFailed(t *testing.T) {
+	dir := t.TempDir()
+	store := taskstore.NewTestStore(t)
+	project := "test-project"
+	planFile := "spawn-failure-plan"
+	require.NoError(t, store.Create(project, taskstore.TaskEntry{Filename: planFile, Status: taskstore.StatusReady}))
+
+	gw, err := taskstore.NewSQLiteSignalGateway(":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = gw.Close() })
+	require.NoError(t, gw.Create(project, taskstore.SignalEntry{
+		PlanFile:   planFile,
+		SignalType: "plan_start",
+	}))
+
+	entry := RepoEntry{
+		Path:          dir,
+		Project:       project,
+		Store:         store,
+		Processor:     loop.NewProcessor(loop.ProcessorConfig{Store: store, Project: project}),
+		SignalGateway: gw,
+	}
+	d := &Daemon{
+		cfg:         &DaemonConfig{PollInterval: time.Second},
+		repos:       NewRepoManager(),
+		spawner:     newTmuxSpawner(slog.Default()),
+		logger:      slog.Default(),
+		broadcaster: api.NewEventBroadcaster(),
+		killAgent: func(_, _, _ string) error {
+			return nil
+		},
+		spawnPlanner: func(context.Context, loop.SpawnOpts) error {
+			return errors.New("planner startup failed")
+		},
+	}
+
+	d.tickRepo(context.Background(), entry)
+
+	failed, err := gw.List(project, taskstore.SignalFailed)
+	require.NoError(t, err)
+	require.Len(t, failed, 1)
+	assert.Contains(t, failed[0].Result, "spawn_planner")
+	assert.Contains(t, failed[0].Result, "planner startup failed")
+
+	done, err := gw.List(project, taskstore.SignalDone)
+	require.NoError(t, err)
+	assert.Empty(t, done)
+}
+
 func TestDaemon_ExecuteAction_ReviewCycleLimit(t *testing.T) {
 	action := loop.ReviewCycleLimitAction{
 		PlanFile: "test.md",
@@ -2438,6 +2487,64 @@ Do the second thing.
 	require.NoError(t, <-errCh)
 	assert.True(t, seen[1])
 	assert.True(t, seen[2])
+}
+
+func TestDaemon_RetryWave_KillsStaleAgentsBeforeRespawn(t *testing.T) {
+	store := taskstore.NewTestStore(t)
+	project := "test-project"
+	planFile := "retry-wave.md"
+	require.NoError(t, store.Create(project, taskstore.TaskEntry{
+		Filename: planFile,
+		Status:   taskstore.StatusImplementing,
+		Branch:   "plan/retry-wave",
+	}))
+	require.NoError(t, store.SetContent(project, planFile, `# Feature Plan
+
+## Wave 1
+### Task 1: Retry Thing
+
+Retry the thing.
+`))
+	require.NoError(t, store.SetSubtasks(project, planFile, []taskstore.SubtaskEntry{{
+		TaskNumber: 1, Title: "Retry Thing", Status: taskstore.SubtaskStatusRunning,
+	}}))
+	stateWriter, ok := store.(taskstore.ExecutionStateWriter)
+	require.True(t, ok)
+	require.NoError(t, stateWriter.SetExecutionState(project, planFile, taskstore.ExecutionState{
+		Phase:      string(taskfsm.ExecutionPhaseWaveRunning),
+		ActiveWave: 1,
+	}))
+
+	proc := loop.NewProcessor(loop.ProcessorConfig{Store: store, Project: project})
+	actions := proc.ProcessRetryWaveSignals([]taskfsm.WaveSignal{{TaskFile: planFile}})
+	require.Len(t, actions, 1)
+	retry, ok := actions[0].(loop.RetryWaveAction)
+	require.True(t, ok)
+
+	var killed atomic.Bool
+	var spawned atomic.Int32
+	d := &Daemon{
+		spawner:     NewTmuxSpawner(),
+		logger:      slog.Default(),
+		broadcaster: api.NewEventBroadcaster(),
+		killWaveAgents: func(repoPath, gotPlan string, wave int) error {
+			assert.NotEmpty(t, repoPath)
+			assert.Equal(t, planFile, gotPlan)
+			assert.Equal(t, 1, wave)
+			killed.Store(true)
+			return nil
+		},
+		spawnWaveTask: func(_ context.Context, _ loop.SpawnOpts, task taskparser.Task, _ string, _, _ int) error {
+			assert.True(t, killed.Load(), "stale agents must be killed before respawn")
+			assert.Equal(t, 1, task.Number)
+			spawned.Add(1)
+			return nil
+		},
+	}
+	e := RepoEntry{Path: t.TempDir(), Project: project, Store: store, Processor: proc}
+	require.NoError(t, d.executeAction(context.Background(), e, retry))
+	assert.True(t, killed.Load())
+	assert.Equal(t, int32(1), spawned.Load())
 }
 
 // TestDaemon_StartWaveTasks_LimitOne verifies that with MaxParallelWaveTasks=1,

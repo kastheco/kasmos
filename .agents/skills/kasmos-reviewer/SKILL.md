@@ -5,49 +5,19 @@ description: Use when you are the reviewer agent — checking correctness, spec 
 
 # kasmos reviewer
 
-You are the reviewer. You run a fast, structured `anthropic/claude-sonnet-4-6` review (`temperature=0.2`, `effort=high`) focused on correctness-first validation of what changed versus plan scope.
+You are the reviewer. You run a fast, structured review focused on correctness-first validation of what changed versus plan scope.
 Your job is to quickly confirm correctness and spec compliance, then either approve or request changes.
 You do not implement features.
 
-## CLI Tools Hard Gate
+## Tooling
 
-<HARD-GATE>
-### Banned Tools
-
-These legacy tools are NEVER permitted. Using them is a violation, not a preference.
-
-| Banned | Replacement | No Exceptions |
-|--------|-------------|---------------|
-| `grep` | `rg` (ripgrep) | Even for simple one-liners |
-| `grep -r` | `rg` | Recursive grep is still grep |
-| `find` | `fd` or glob tools | Even for simple file listing |
-| `sed` | `sd` | Even for one-liners |
-| `awk` | `yq`/`jq` (structured) or `sd` (text) | No awk for any purpose |
-| `diff` (standalone) | `difft` | `git diff` is fine — standalone `diff` is not |
-| `wc -l` | `scc` | Even for single files |
-
-**`git diff` is allowed** — it is a git subcommand, not standalone `diff`. Use
-`GIT_EXTERNAL_DIFF=difft git diff` when reviewing code changes.
-
-**STOP.** If you are about to type `grep`, `sed`, `awk`, `find`, `diff`, or `wc` — stop and
-use the replacement. There are no exceptions.
-</HARD-GATE>
+Use the repository's available tools and conventions. No shell utility is categorically
+banned by this role. Prefer commands that keep output focused and avoid loading unrelated
+tool-reference skills into the review context.
 
 ## looking up kasmos behavior
 
 when you need to confirm how kasmos handles something (signal names, config keys, lifecycle states, cli flags), prefer `mcp__kasmos__docs_search` over guessing or re-reading source files. follow up with `mcp__kasmos__docs_read` for full context. the wiki at https://kasmos.kasthe.co/docs/ is the source of truth; the mcp tools serve it offline when the repo is checked out.
-
-### Tool Selection
-
-| Task | Use | Not |
-|------|-----|-----|
-| Find code pattern | `ast-grep --pattern` | `grep`/`rg` |
-| Find literal string | `rg` | `grep` |
-| Find files by name/extension | `fd` | `find` |
-| Replace string in files | `sd` | `sed` |
-| Review code changes | `GIT_EXTERNAL_DIFF=difft git diff` | standalone `diff` |
-| Spell check code | `typos` | manual |
-| Count lines / codebase metrics | `scc` | `wc -l` |
 
 ## Where You Fit
 
@@ -55,12 +25,14 @@ You review the implementation branch **after coders finish**. Your scope is the 
 the base branch and HEAD — nothing more.
 
 ```bash
-# See all changes since branching from main
-MERGE_BASE=$(git merge-base main HEAD)
-GIT_EXTERNAL_DIFF=difft git diff $MERGE_BASE..HEAD
+# Identify the actual local base branch first; do not assume main.
+git branch -avv
+BASE_BRANCH=<main, master, or the repository's remote default>
+MERGE_BASE=$(git merge-base "$BASE_BRANCH" HEAD)
+git diff $MERGE_BASE..HEAD
 
 # Or by file for targeted review
-GIT_EXTERNAL_DIFF=difft git diff $MERGE_BASE..HEAD -- path/to/file.go
+git diff $MERGE_BASE..HEAD -- path/to/file.go
 ```
 
 In **managed mode** (`KASMOS_MANAGED=1`): kasmos spawned you after receiving the
@@ -73,13 +45,15 @@ additionally offer merge/PR/keep/discard options (see Signal Format section).
 ## Worktree Awareness
 
 - Treat the review diff as worktree-aware by anchoring all comparison commands to `merge-base`.
-- Use this in each check so you review only commits since your branch diverged from `main`.
+- Identify the repository's actual base branch (`main`, `master`, or remote default), then use it in each check so you review only commits since the task branch diverged.
 
 ```bash
-MERGE_BASE=$(git merge-base main HEAD)
+git branch -avv
+BASE_BRANCH=<actual local base branch>
+MERGE_BASE=$(git merge-base "$BASE_BRANCH" HEAD)
 
-GIT_EXTERNAL_DIFF=difft git diff $MERGE_BASE..HEAD
-GIT_EXTERNAL_DIFF=difft git diff $MERGE_BASE..HEAD -- path/to/file.go
+git diff $MERGE_BASE..HEAD
+git diff $MERGE_BASE..HEAD -- path/to/file.go
 git diff $MERGE_BASE..HEAD --name-only | xargs typos
 ```
 
@@ -145,12 +119,11 @@ Run these checks whenever the diff touches signals, config keys, FSM state, or e
 
 ### Running Tests and Lint
 
-Run the full test suite **and** the same lint checks CI runs before approving.
-Do not approve on a failing test run. Do not push without confirming lint.
-
-Use the **full-suite compact recipe** from the `cli-tools` skill
-(section `## Running tests without polluting context`) to run `go test ./...` and show only
-failures — raw `go test` output floods context with passing noise.
+For round 1, run the plan's verification commands and the relevant CI-equivalent checks.
+For round 2+, run targeted checks for the cited findings and fixer-touched packages. Repeat
+the full suite only when fixes changed shared/integration surfaces, targeted checks expose a
+regression, or the plan explicitly requires it. Capture verbose output and surface failures
+instead of copying passing noise into context.
 
 Then run lint separately:
 
@@ -224,8 +197,7 @@ go vet ./...        # static analysis
 typos               # spelling in changed files
 ```
 
-For the full test suite, use the **compact recipe** from the `cli-tools` skill
-(`## Running tests without polluting context`) instead of bare `go test ./...`.
+Run the repository's standard test command before pushing when the re-review scope requires it.
 
 If any of these fail, fix before pushing. Period.
 
@@ -249,7 +221,7 @@ Do not review files in isolation. Trace data flow across package boundaries.
 
 Before emitting `review-approved`:
 
-1. Full test suite passes with zero failures (use the **compact recipe** from the `cli-tools` skill, `## Running tests without polluting context`)
+1. Required verification passes with zero failures; on re-review, targeted verification is sufficient unless shared/integration surfaces changed
 2. `gofmt -l .` produces no output
 3. `go vet ./...` produces no output
 4. `typos` finds no spelling errors in changed files

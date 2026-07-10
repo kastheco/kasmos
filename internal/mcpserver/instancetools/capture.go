@@ -15,11 +15,32 @@ func init() {
 
 // makeCapturePaneHandler returns a ToolHandlerFunc that captures tmux pane
 // output for a running agent instance.
-func makeCapturePaneHandler(loadState StateLoader, runner CmdRunner) server.ToolHandlerFunc {
+func makeCapturePaneHandler(loadState StateLoader, runner CmdRunner, socketPaths ...string) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		title, err := req.RequireString("title")
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("missing required argument 'title': %v", err)), nil
+		}
+
+		project := req.GetString("project", "")
+		if client, instance, daemonErr := findDaemonInstance(ctx, daemonSocket(socketPaths), project, title); daemonErr == nil {
+			if instance.ExecutionMode == "sdk" {
+				presentation, supported, presentationErr := client.presentation(ctx, instance.Project, title)
+				if presentationErr != nil {
+					return mcp.NewToolResultError(fmt.Sprintf("capture_pane: daemon presentation: %v", presentationErr)), nil
+				}
+				if supported {
+					return mcp.NewToolResultText(presentation), nil
+				}
+			}
+			output, captureErr := client.capture(ctx, instance.Project, title,
+				req.GetString("start", ""), req.GetString("end", ""))
+			if captureErr != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("capture_pane: daemon capture: %v", captureErr)), nil
+			}
+			return mcp.NewToolResultText(output), nil
+		} else if daemonLookupMustFail(daemonErr, project) {
+			return mcp.NewToolResultError(fmt.Sprintf("capture_pane: %v", daemonErr)), nil
 		}
 
 		records, err := livepreview.LoadRecords(loadState)
@@ -49,7 +70,7 @@ func makeCapturePaneHandler(loadState StateLoader, runner CmdRunner) server.Tool
 }
 
 // registerCapturePane registers the capture_pane tool with the MCP server.
-func registerCapturePane(srv *server.MCPServer, loadState StateLoader, runner CmdRunner, _ string) {
+func registerCapturePane(srv *server.MCPServer, loadState StateLoader, runner CmdRunner, socketPath string) {
 	tool := mcp.NewTool(
 		"capture_pane",
 		mcp.WithDescription("capture tmux pane output for a running agent instance"),
@@ -57,6 +78,7 @@ func registerCapturePane(srv *server.MCPServer, loadState StateLoader, runner Cm
 			mcp.Required(),
 			mcp.Description("title of the instance whose tmux pane to capture"),
 		),
+		mcp.WithString("project", mcp.Description("target daemon project; required when titles are not unique across repositories")),
 		mcp.WithString("start",
 			mcp.Description("optional tmux -S line offset, for example -1000"),
 		),
@@ -64,5 +86,5 @@ func registerCapturePane(srv *server.MCPServer, loadState StateLoader, runner Cm
 			mcp.Description("optional tmux -E line offset, for example 0"),
 		),
 	)
-	srv.AddTool(tool, makeCapturePaneHandler(loadState, runner))
+	srv.AddTool(tool, makeCapturePaneHandler(loadState, runner, socketPath))
 }

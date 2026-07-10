@@ -32,6 +32,9 @@ func TestBuildTaskPrompt(t *testing.T) {
 	assert.Contains(t, prompt, "mktemp")
 	assert.Contains(t, prompt, "rg -v")
 	assert.Contains(t, prompt, "tests passed")
+	assert.NotContains(t, prompt, "not grep")
+	assert.NotContains(t, prompt, "not sed")
+	assert.NotContains(t, prompt, "not find")
 
 	// Task identity
 	assert.Contains(t, prompt, "Task 2")
@@ -76,6 +79,7 @@ func TestBuildTaskPrompt_InlineCoderRules(t *testing.T) {
 	assert.Contains(t, prompt, "mktemp")
 	assert.Contains(t, prompt, "rg -v")
 	assert.Contains(t, prompt, "tests passed")
+	assert.NotContains(t, prompt, "not grep")
 }
 
 func TestBuildTaskPrompt_PreservesMdPlanTokenWhenProvided(t *testing.T) {
@@ -159,8 +163,12 @@ func TestBuildFixerPrompt(t *testing.T) {
 	assert.Contains(t, prompt, `project: "myproject"`)
 	assert.Contains(t, prompt, "not an implementer")
 	assert.Contains(t, prompt, "fix the failing review handoff")
+	assert.Contains(t, prompt, "stage only the specific files you changed")
+	assert.Contains(t, prompt, "fix: address review feedback (round 3)")
+	assert.Contains(t, prompt, "Never use `git add .` or `git add -A`")
 	assert.Contains(t, prompt, "signal_create")
 	assert.Contains(t, prompt, "implement-finished")
+	assert.NotContains(t, prompt, "not grep")
 	assert.NotContains(t, prompt, "execute all tasks sequentially")
 }
 
@@ -184,18 +192,14 @@ func TestBuildMasterReviewPrompt(t *testing.T) {
 	// MCP-first verify signal emission (canonical underscore form)
 	assert.Contains(t, prompt, "signal_create` (signal_type: \"verify_approved\"")
 	assert.Contains(t, prompt, "signal_create` (signal_type: \"verify_failed\"")
-	// CLI fallback
-	assert.Contains(t, prompt, "kas signal emit verify_approved my-feature")
-	assert.Contains(t, prompt, "kas signal emit verify_failed my-feature")
-	// Evidence gathering
-	assert.Contains(t, prompt, "Merge-base diff")
-	assert.Contains(t, prompt, "MERGE_BASE")
-	// Compact failures-only command is embedded (wraps go test ./... with failure filtering)
-	assert.Contains(t, prompt, compactFailuresOnlyGoTestCmd)
-	// Self-Fix Protocol integration
-	assert.Contains(t, prompt, "Self-Fix Protocol")
-	assert.Contains(t, prompt, "(master self-fix)")
-	assert.Contains(t, prompt, "git restore")
+	assert.Contains(t, prompt, "Do not repeat the reviewer's full branch review")
+	assert.Contains(t, prompt, "Self-fix ceiling: 80 net lines")
+	assert.Contains(t, prompt, "Verify-round cap: 2")
+	assert.NotContains(t, prompt, "kas signal emit")
+	assert.NotContains(t, prompt, "MERGE_BASE")
+	assert.NotContains(t, prompt, compactFailuresOnlyGoTestCmd)
+	assert.NotContains(t, prompt, "git restore")
+	assert.Less(t, len(prompt), 2500, "managed master prompt must remain a compact dynamic envelope")
 	assert.Contains(t, prompt, "verify_failed")
 	// No readiness-specific signal types (now uses verify-*)
 	assert.NotContains(t, prompt, "readiness-approved")
@@ -249,6 +253,7 @@ func TestBuildElaborationPrompt(t *testing.T) {
 	assert.Contains(t, prompt, "planner_summary")
 	assert.Contains(t, prompt, "baseline_summary")
 	assert.Contains(t, prompt, "final_decision")
+	assert.NotContains(t, prompt, "cli-tools")
 	assert.Contains(t, prompt, "`planner_drafts`, `inline`, `absent`, or `stale`")
 	assert.NotContains(t, prompt, "architect-baseline.json")
 	assert.NotContains(t, prompt, "raw planner snapshot")

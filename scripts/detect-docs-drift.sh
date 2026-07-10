@@ -5,13 +5,18 @@ MAP="${1:-docs/docs-drift-map.yml}"
 BASE_REF="${BASE_REF:-$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || echo main)}"
 TARGET_REF="${TARGET_REF:-HEAD}"
 
+USE_INDEX=false
+if [ "$TARGET_REF" = "INDEX" ]; then
+	USE_INDEX=true
+fi
+
 if ! git rev-parse --verify "$BASE_REF^{commit}" >/dev/null 2>&1; then
 	if git rev-parse --verify "origin/$BASE_REF^{commit}" >/dev/null 2>&1; then
 		BASE_REF="origin/$BASE_REF"
 	fi
 fi
 
-if ! git rev-parse --verify "$TARGET_REF^{commit}" >/dev/null 2>&1; then
+if ! "$USE_INDEX" && ! git rev-parse --verify "$TARGET_REF^{commit}" >/dev/null 2>&1; then
 	echo "target ref not found: $TARGET_REF" >&2
 	exit 2
 fi
@@ -22,6 +27,10 @@ join_by_comma() {
 }
 
 changed_paths() {
+	if "$USE_INDEX"; then
+		git diff --cached --name-only "$BASE_REF" -- "$@" 2>/dev/null || true
+		return
+	fi
 	git diff --name-only "$BASE_REF"..."$TARGET_REF" -- "$@" 2>/dev/null || true
 }
 

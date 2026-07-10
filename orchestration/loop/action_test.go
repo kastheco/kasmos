@@ -18,6 +18,7 @@ func TestActionType_String(t *testing.T) {
 		{SpawnMasterAction{PlanFile: "foo.md"}, "spawn_master"},
 		{ReviewChangesAction{PlanFile: "foo.md"}, "review_changes"},
 		{AdvanceWaveAction{PlanFile: "foo.md", Wave: 2}, "advance_wave"},
+		{RetryWaveAction{PlanFile: "foo.md", Wave: 2}, "retry_wave"},
 		{CreatePRAction{PlanFile: "foo.md"}, "create_pr"},
 		{PlannerCompleteAction{PlanFile: "foo.md"}, "planner_complete"},
 		{SpawnPlannerAction{PlanFile: "foo.md", PlannerProfile: "planner", Primary: true, DraftMode: false}, "spawn_planner"},

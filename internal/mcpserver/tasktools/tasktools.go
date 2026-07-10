@@ -112,7 +112,7 @@ func resolveToolStore(project string, store taskstore.Store) (taskstore.Store, f
 
 func makeTaskListHandler(rc routing.RegisterConfig, store taskstore.Store) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		project, err := routing.ResolveProjectArg(req, rc.FixedProject, rc.Projects)
+		project, err := rc.ResolveProjectArg(ctx, req)
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("task_list: %v", err)), nil
 		}
@@ -157,7 +157,7 @@ func makeTaskListHandler(rc routing.RegisterConfig, store taskstore.Store) serve
 
 func makeTaskShowHandler(rc routing.RegisterConfig, store taskstore.Store) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		project, err := routing.ResolveProjectArg(req, rc.FixedProject, rc.Projects)
+		project, err := rc.ResolveProjectArg(ctx, req)
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("task_show: %v", err)), nil
 		}
@@ -186,7 +186,7 @@ func makeTaskShowHandler(rc routing.RegisterConfig, store taskstore.Store) serve
 
 func makeTaskCreateHandler(rc routing.RegisterConfig, store taskstore.Store) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		project, err := routing.ResolveProjectArg(req, rc.FixedProject, rc.Projects)
+		project, err := rc.ResolveProjectArg(ctx, req)
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("task_create: %v", err)), nil
 		}
@@ -235,7 +235,7 @@ func makeTaskCreateHandler(rc routing.RegisterConfig, store taskstore.Store) ser
 
 func makeTaskUpdateContentHandler(rc routing.RegisterConfig, store taskstore.Store) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		project, err := routing.ResolveProjectArg(req, rc.FixedProject, rc.Projects)
+		project, err := rc.ResolveProjectArg(ctx, req)
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("task_update_content: %v", err)), nil
 		}
@@ -275,7 +275,7 @@ func makeTaskUpdateContentHandler(rc routing.RegisterConfig, store taskstore.Sto
 
 func makeTaskDeleteHandler(rc routing.RegisterConfig, store taskstore.Store) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		project, err := routing.ResolveProjectArg(req, rc.FixedProject, rc.Projects)
+		project, err := rc.ResolveProjectArg(ctx, req)
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("task_delete: %v", err)), nil
 		}
@@ -305,7 +305,7 @@ func makeTaskDeleteHandler(rc routing.RegisterConfig, store taskstore.Store) ser
 
 func makeTaskLinkLinearHandler(rc routing.RegisterConfig, store taskstore.Store) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		project, err := routing.ResolveProjectArg(req, rc.FixedProject, rc.Projects)
+		project, err := rc.ResolveProjectArg(ctx, req)
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("task_link_linear: %v", err)), nil
 		}
@@ -368,7 +368,7 @@ func makeTaskLinkLinearHandler(rc routing.RegisterConfig, store taskstore.Store)
 
 func makeTaskUnlinkLinearHandler(rc routing.RegisterConfig, store taskstore.Store) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		project, err := routing.ResolveProjectArg(req, rc.FixedProject, rc.Projects)
+		project, err := rc.ResolveProjectArg(ctx, req)
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("task_unlink_linear: %v", err)), nil
 		}
@@ -462,7 +462,7 @@ func setPhaseTimestampForStatus(store taskstore.Store, project, filename string,
 
 func makeTaskTransitionHandler(rc routing.RegisterConfig, store taskstore.Store, gateway taskstore.SignalGateway, hooks *taskfsm.HookRegistry) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		project, err := routing.ResolveProjectArg(req, rc.FixedProject, rc.Projects)
+		project, err := rc.ResolveProjectArg(ctx, req)
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("task_transition: %v", err)), nil
 		}
@@ -522,7 +522,7 @@ func makeTaskTransitionHandler(rc routing.RegisterConfig, store taskstore.Store,
 			// "planning" task but no planner session.
 			if gateway != nil {
 				if signalType, mapErr := taskfsm.GatewaySignalTypeForEvent(event); mapErr == nil {
-					if emitErr := taskfsm.EmitGatewaySignal(gateway, project, signalType, filename, ""); emitErr != nil {
+					if emitErr := taskfsm.EmitGatewaySignal(gateway, project, signalType, filename, taskfsm.PreAppliedGatewayPayload); emitErr != nil {
 						return mcp.NewToolResultError(fmt.Sprintf("task_transition: emit %s signal: %v", signalType, emitErr)), nil
 					}
 				}
@@ -547,11 +547,14 @@ func makeTaskTransitionHandler(rc routing.RegisterConfig, store taskstore.Store,
 // accepts an optional "project" argument. When projects has zero or one entry,
 // project is used as the fixed binding and the "project" argument is optional.
 func RegisterTools(srv *server.MCPServer, project string, projects []string, store taskstore.Store, gateway taskstore.SignalGateway, hooks *taskfsm.HookRegistry) {
+	RegisterToolsWithRouting(srv, routing.NewRegisterConfig(project, projects), store, gateway, hooks)
+}
+
+// RegisterToolsWithRouting wires task tools with request-time project routing.
+func RegisterToolsWithRouting(srv *server.MCPServer, rc routing.RegisterConfig, store taskstore.Store, gateway taskstore.SignalGateway, hooks *taskfsm.HookRegistry) {
 	if srv == nil {
 		return
 	}
-
-	rc := routing.NewRegisterConfig(project, projects)
 
 	srv.AddTool(mcp.NewTool("task_list",
 		mcp.WithDescription("list task store entries, optionally filtered by status"),

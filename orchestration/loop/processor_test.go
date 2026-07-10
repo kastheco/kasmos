@@ -251,6 +251,26 @@ func TestProcessor_ProcessFSMSignals_PlanStart_PreAppliedRunsWhenAlreadyPlanning
 	assert.False(t, spawn.DraftMode)
 }
 
+func TestProcessor_ProcessFSMSignals_ImplementStart_PreAppliedStartsImplementation(t *testing.T) {
+	store := taskstore.NewTestStore(t)
+	require.NoError(t, store.Create("test", taskstore.TaskEntry{
+		Filename: "my-plan.md",
+		Status:   taskstore.StatusImplementing,
+	}))
+
+	p := NewProcessor(ProcessorConfig{Store: store, Project: "test"})
+	actions := p.ProcessFSMSignals([]taskfsm.Signal{{
+		Event:      taskfsm.ImplementStart,
+		TaskFile:   "my-plan.md",
+		PreApplied: true,
+	}})
+
+	require.Len(t, actions, 1)
+	start, ok := actions[0].(StartImplementationAction)
+	require.True(t, ok, "pre-applied implement_start must emit StartImplementationAction, got %T", actions[0])
+	assert.Equal(t, "my-plan.md", start.PlanFile)
+}
+
 func TestProcessor_ProcessFSMSignals_PlanStart_PreAppliedDraftModeEmitsClearAndMultiplePlanners(t *testing.T) {
 	store := taskstore.NewTestStore(t)
 	require.NoError(t, store.Create("test", taskstore.TaskEntry{
@@ -422,6 +442,38 @@ func TestProcessor_ProcessWaveSignals(t *testing.T) {
 		}
 	}
 	assert.True(t, found, "expected AdvanceWaveAction")
+}
+
+func TestProcessor_ProcessRetryWaveSignals_RestoresUnresolvedTasks(t *testing.T) {
+	store := taskstore.NewTestStore(t)
+	require.NoError(t, store.Create("test", taskstore.TaskEntry{
+		Filename: "my-plan.md",
+		Status:   taskstore.StatusImplementing,
+		Branch:   "plan/my-plan",
+	}))
+	require.NoError(t, store.SetContent("test", "my-plan.md", "# Plan\n\n**Goal:** test\n\n**Architecture:** test\n\n**Tech Stack:** go\n\n**Size:** Small\n\n---\n\n## Wave 1\n\n### Task 1: Complete\n\nDone.\n\n### Task 2: Retry\n\nRetry this."))
+	require.NoError(t, store.SetSubtasks("test", "my-plan.md", []taskstore.SubtaskEntry{
+		{TaskNumber: 1, Title: "Complete", Status: taskstore.SubtaskStatusComplete},
+		{TaskNumber: 2, Title: "Retry", Status: taskstore.SubtaskStatusRunning},
+	}))
+	stateWriter, ok := store.(taskstore.ExecutionStateWriter)
+	require.True(t, ok)
+	require.NoError(t, stateWriter.SetExecutionState("test", "my-plan.md", taskstore.ExecutionState{
+		Phase:      string(taskfsm.ExecutionPhaseWaveRunning),
+		ActiveWave: 1,
+	}))
+
+	p := NewProcessor(ProcessorConfig{Store: store, Project: "test"})
+	actions := p.ProcessRetryWaveSignals([]taskfsm.WaveSignal{{TaskFile: "my-plan.md"}})
+	require.Len(t, actions, 1)
+	retry, ok := actions[0].(RetryWaveAction)
+	require.True(t, ok)
+	assert.Equal(t, 1, retry.Wave)
+
+	orch := p.WaveOrchestrator("my-plan.md")
+	require.NotNil(t, orch)
+	assert.True(t, orch.IsTaskComplete(1))
+	assert.True(t, orch.IsTaskRunning(2))
 }
 
 func TestProcessor_ProcessFSMSignals_ReviewCycleLimitReached(t *testing.T) {
