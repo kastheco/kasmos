@@ -24,7 +24,7 @@ From the Kasmos repository root, add the local marketplace and install the plugi
 
 ```bash
 codex plugin marketplace add "$(pwd)/integrations/codex"
-codex plugin add kasmos@kasmos
+codex plugin add kasmos@kasthedev
 ```
 
 Start a new Codex session after installation so the plugin is loaded. The plugin does not require credentials. It registers the bundled local MCP server, which can then be enabled in Codex.
