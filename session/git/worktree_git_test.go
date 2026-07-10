@@ -1,11 +1,28 @@
 package git
 
 import (
+	"os"
+	"os/exec"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestRequireCleanForPR(t *testing.T) {
+	repo := t.TempDir()
+	require.NoError(t, exec.Command("git", "init", repo).Run())
+	worktree := NewGitWorktreeFromStorage(repo, repo, "test", "plan/test", "")
+
+	require.NoError(t, worktree.requireCleanForPR())
+	require.NoError(t, os.WriteFile(filepath.Join(repo, "unrelated.txt"), []byte("user edit\n"), 0o644))
+
+	err := worktree.requireCleanForPR()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "worktree has uncommitted changes")
+	assert.Contains(t, err.Error(), "?? unrelated.txt")
+}
 
 func TestParsePRViewJSON(t *testing.T) {
 	tests := []struct {
