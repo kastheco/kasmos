@@ -1980,7 +1980,7 @@ func SyncScaffold(dir string, agents []harness.AgentConfig) ([]WriteResult, erro
 func LoadReviewPrompt(planFile, planName, project string, reviewRound int, previousFeedback string) string {
 	content, err := templates.ReadFile("templates/shared/review-prompt.md")
 	if err != nil {
-		return fmt.Sprintf("Review the implementation of plan: %s\nPlan file: %s\nCurrent review round: %d", planName, planFile, reviewRound)
+		return fmt.Sprintf("Review plan %s. Load the kasmos-reviewer skill. Plan file: %s. Project: %s. Current review round: %d.", planName, planFile, project, reviewRound)
 	}
 	if reviewRound < 1 {
 		reviewRound = 1

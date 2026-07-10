@@ -58,6 +58,36 @@ func TestRepoManager_ProjectName(t *testing.T) {
 	assert.Equal(t, "my-project", repos[0].Project)
 }
 
+func TestRepoManager_AddUsesProjectReviewFixCycleCap(t *testing.T) {
+	repoDir := t.TempDir()
+	kasmosDir := filepath.Join(repoDir, ".kasmos")
+	require.NoError(t, os.MkdirAll(kasmosDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(kasmosDir, "config.toml"), []byte(`
+[ui]
+max_review_fix_cycles = 3
+`), 0o644))
+
+	rm := newTestRepoManager(t)
+	rm.maxReviewFixCycles = 7
+	require.NoError(t, rm.Add(repoDir))
+
+	repos := rm.List()
+	require.Len(t, repos, 1)
+	assert.True(t, repos[0].MaxReviewFixCyclesResolved)
+	assert.Equal(t, 3, repos[0].MaxReviewFixCycles)
+}
+
+func TestRepoManager_AddFallsBackToDaemonReviewFixCycleCap(t *testing.T) {
+	rm := newTestRepoManager(t)
+	rm.maxReviewFixCycles = 7
+	require.NoError(t, rm.Add(t.TempDir()))
+
+	repos := rm.List()
+	require.Len(t, repos, 1)
+	assert.True(t, repos[0].MaxReviewFixCyclesResolved)
+	assert.Equal(t, 7, repos[0].MaxReviewFixCycles)
+}
+
 func TestRepoManager_ThemeDefaultsToBuiltInPalette(t *testing.T) {
 	repoDir := t.TempDir()
 	rm := newTestRepoManager(t)
@@ -376,7 +406,7 @@ func TestSDKTranscriptRetention_ResolveRepoConfig(t *testing.T) {
 
 	t.Run("no project config — default SDK limits apply", func(t *testing.T) {
 		rm := newTestRepoManager(t)
-		_, _, _, _, _, _, sdk, _, err := rm.resolveRepoConfig(t.TempDir())
+		_, _, _, _, _, _, _, sdk, _, err := rm.resolveRepoConfig(t.TempDir())
 		require.NoError(t, err)
 		assert.Equal(t, defaults.TranscriptMaxBytes, sdk.TranscriptMaxBytes)
 		assert.Equal(t, defaults.TranscriptMaxTurns, sdk.TranscriptMaxTurns)
@@ -394,7 +424,7 @@ transcript_max_turns = 500
 		require.NoError(t, os.WriteFile(filepath.Join(kasmosDir, "config.toml"), []byte(content), 0o644))
 
 		rm := newTestRepoManager(t)
-		_, _, _, _, _, _, sdk, _, err := rm.resolveRepoConfig(repoDir)
+		_, _, _, _, _, _, _, sdk, _, err := rm.resolveRepoConfig(repoDir)
 		require.NoError(t, err)
 		assert.Equal(t, int64(1<<20), sdk.TranscriptMaxBytes)
 		assert.Equal(t, int64(500), sdk.TranscriptMaxTurns)
@@ -412,7 +442,7 @@ transcript_max_turns = 0
 		require.NoError(t, os.WriteFile(filepath.Join(kasmosDir, "config.toml"), []byte(content), 0o644))
 
 		rm := newTestRepoManager(t)
-		_, _, _, _, _, _, sdk, _, err := rm.resolveRepoConfig(repoDir)
+		_, _, _, _, _, _, _, sdk, _, err := rm.resolveRepoConfig(repoDir)
 		require.NoError(t, err)
 		assert.Equal(t, int64(0), sdk.TranscriptMaxBytes, "explicit zero must disable byte limit")
 		assert.Equal(t, int64(0), sdk.TranscriptMaxTurns, "explicit zero must disable turn limit")
@@ -430,7 +460,7 @@ transcript_max_turns = -50
 		require.NoError(t, os.WriteFile(filepath.Join(kasmosDir, "config.toml"), []byte(content), 0o644))
 
 		rm := newTestRepoManager(t)
-		_, _, _, _, _, _, sdk, _, err := rm.resolveRepoConfig(repoDir)
+		_, _, _, _, _, _, _, sdk, _, err := rm.resolveRepoConfig(repoDir)
 		require.NoError(t, err)
 		assert.Equal(t, int64(0), sdk.TranscriptMaxBytes, "negative must clamp to 0")
 		assert.Equal(t, int64(0), sdk.TranscriptMaxTurns, "negative must clamp to 0")

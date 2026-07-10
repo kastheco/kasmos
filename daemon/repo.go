@@ -54,6 +54,12 @@ type RepoEntry struct {
 	ReadinessSelfFixMaxLines int
 	// ReadinessMaxVerifyCycles is the effective per-repo verify-round cap.
 	ReadinessMaxVerifyCycles int
+	// MaxReviewFixCycles is the effective per-repo review-fix cycle cap.
+	// Zero means unlimited.
+	MaxReviewFixCycles int
+	// MaxReviewFixCyclesResolved distinguishes an explicit/effective zero cap
+	// from manually-constructed RepoEntry values that should use daemon defaults.
+	MaxReviewFixCyclesResolved bool
 	// PlannerProfiles is the ordered list of named planner profiles configured
 	// for multi-planner draft mode. Empty means legacy single-planner mode.
 	PlannerProfiles []string
@@ -240,7 +246,7 @@ func (m *RepoManager) Add(path string) error {
 	linearTriggerPoller, linearTriggerConfig := m.loadLinearTriggerPoller(path, project, m.globalStore, m.globalGateway)
 
 	// Load per-repo TOML overrides once and derive effective config values.
-	autoAdvance, autoReadinessReview, selfFixMaxLines, maxVerifyCycles, plannerProfiles, plannerDraftMode, sdkCfg, resourceControls, err := m.resolveRepoConfig(path)
+	autoAdvance, autoReadinessReview, maxReviewFixCycles, selfFixMaxLines, maxVerifyCycles, plannerProfiles, plannerDraftMode, sdkCfg, resourceControls, err := m.resolveRepoConfig(path)
 	if err != nil {
 		return err
 	}
@@ -254,7 +260,7 @@ func (m *RepoManager) Add(path string) error {
 		AutoReadinessReview:      autoReadinessReview,
 		Store:                    m.globalStore,
 		Project:                  project,
-		MaxReviewFixCycles:       m.maxReviewFixCycles,
+		MaxReviewFixCycles:       maxReviewFixCycles,
 		ReadinessSelfFixMaxLines: selfFixMaxLines,
 		ReadinessMaxVerifyCycles: maxVerifyCycles,
 		PlannerProfiles:          plannerProfiles,
@@ -264,24 +270,26 @@ func (m *RepoManager) Add(path string) error {
 	})
 
 	m.repos = append(m.repos, RepoEntry{
-		Path:                     path,
-		Project:                  project,
-		Store:                    m.globalStore,
-		SignalGateway:            m.globalGateway,
-		SignalsDir:               signalsDir,
-		Processor:                proc,
-		Hooks:                    hooks,
-		LinearReceiptHook:        linearReceiptHook,
-		LinearTriggerPoller:      linearTriggerPoller,
-		LinearTriggerConfig:      linearTriggerConfig,
-		ReadinessSelfFixMaxLines: selfFixMaxLines,
-		ReadinessMaxVerifyCycles: maxVerifyCycles,
-		PlannerProfiles:          plannerProfiles,
-		PlannerDraftMode:         plannerDraftMode,
-		CacheDir:                 filepath.Join(kasmosDir, "cache"),
-		SDK:                      sdkCfg,
-		Resources:                resourceControls,
-		Theme:                    themeResult,
+		Path:                       path,
+		Project:                    project,
+		Store:                      m.globalStore,
+		SignalGateway:              m.globalGateway,
+		SignalsDir:                 signalsDir,
+		Processor:                  proc,
+		Hooks:                      hooks,
+		LinearReceiptHook:          linearReceiptHook,
+		LinearTriggerPoller:        linearTriggerPoller,
+		LinearTriggerConfig:        linearTriggerConfig,
+		ReadinessSelfFixMaxLines:   selfFixMaxLines,
+		ReadinessMaxVerifyCycles:   maxVerifyCycles,
+		MaxReviewFixCycles:         maxReviewFixCycles,
+		MaxReviewFixCyclesResolved: true,
+		PlannerProfiles:            plannerProfiles,
+		PlannerDraftMode:           plannerDraftMode,
+		CacheDir:                   filepath.Join(kasmosDir, "cache"),
+		SDK:                        sdkCfg,
+		Resources:                  resourceControls,
+		Theme:                      themeResult,
 	})
 	return nil
 }
@@ -475,16 +483,17 @@ func (m *RepoManager) Get(path string) (RepoEntry, error) {
 }
 
 // resolveRepoConfig reads per-repo TOML overrides and returns the effective
-// values for autoAdvance, autoReadinessReview, readinessSelfFixMaxLines,
-// readinessMaxVerifyCycles, planner profile fan-out settings, the SDK transcript
+// values for autoAdvance, autoReadinessReview, maxReviewFixCycles,
+// readinessSelfFixMaxLines, readinessMaxVerifyCycles, planner profile fan-out settings, the SDK transcript
 // retention config, and the resolved resource-control policy for the given repo path.
 // Nil or empty planner lists keep legacy single-planner mode. Falls back to
 // daemon-level defaults for the other fields.
 // SDK limits default to config.DefaultConfig().SDK values when absent from the TOML file.
 // Resource controls default to the normal/no-op profile when [resources] is absent.
-func (m *RepoManager) resolveRepoConfig(path string) (autoAdvance bool, autoReadinessReview bool, selfFixMaxLines int, maxVerifyCycles int, plannerProfiles []string, plannerDraftMode bool, sdkCfg config.SDKConfig, resourceControls config.ResolvedResourceControls, err error) {
+func (m *RepoManager) resolveRepoConfig(path string) (autoAdvance bool, autoReadinessReview bool, maxReviewFixCycles int, selfFixMaxLines int, maxVerifyCycles int, plannerProfiles []string, plannerDraftMode bool, sdkCfg config.SDKConfig, resourceControls config.ResolvedResourceControls, err error) {
 	autoAdvance = m.autoAdvance
 	autoReadinessReview = m.autoReadinessReview
+	maxReviewFixCycles = m.maxReviewFixCycles
 	selfFixMaxLines = m.readinessSelfFixMaxLines
 	maxVerifyCycles = m.readinessMaxVerifyCycles
 	sdkCfg = config.DefaultConfig().SDK
@@ -505,6 +514,19 @@ func (m *RepoManager) resolveRepoConfig(path string) (autoAdvance bool, autoRead
 	}
 	if result.AutoReadinessReview != nil {
 		autoReadinessReview = *result.AutoReadinessReview
+	}
+	if result.MaxReviewFixCycles != nil {
+		if *result.MaxReviewFixCycles >= 0 {
+			maxReviewFixCycles = *result.MaxReviewFixCycles
+		} else {
+			slog.Warn(
+				"daemon: invalid project max_review_fix_cycles override, using daemon default",
+				"repo", path,
+				"config", projTomlPath,
+				"value", *result.MaxReviewFixCycles,
+				"default", maxReviewFixCycles,
+			)
+		}
 	}
 	cfg := &config.Config{
 		Profiles: result.Profiles,
