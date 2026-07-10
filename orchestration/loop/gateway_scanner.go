@@ -101,6 +101,19 @@ func ConvertSignalEntry(entry *taskstore.SignalEntry, result *ScanResult) error 
 			GatewayEntryID: entry.ID,
 		})
 
+	case "implement_start":
+		body, preApplied, err := decodeBody(entry.Payload)
+		if err != nil {
+			return err
+		}
+		result.FSMSignals = append(result.FSMSignals, taskfsm.Signal{
+			Event:          taskfsm.ImplementStart,
+			TaskFile:       entry.PlanFile,
+			Body:           body,
+			PreApplied:     preApplied,
+			GatewayEntryID: entry.ID,
+		})
+
 	case "planner_finished":
 		body, preApplied, err := decodeBody(entry.Payload)
 		if err != nil {

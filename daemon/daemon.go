@@ -1277,6 +1277,18 @@ func (d *Daemon) autoImplementPlan(ctx context.Context, e RepoEntry, planFile st
 	if e.Store == nil {
 		return fmt.Errorf("task store unavailable for %s", planFile)
 	}
+	if err := e.newFSMWithHooks().Transition(planFile, taskfsm.ImplementStart); err != nil {
+		return fmt.Errorf("transition %s to implementing: %w", planFile, err)
+	}
+	return d.startImplementationPlan(ctx, e, planFile)
+}
+
+// startImplementationPlan launches architect or wave execution after the task
+// has already transitioned to implementing.
+func (d *Daemon) startImplementationPlan(ctx context.Context, e RepoEntry, planFile string) error {
+	if e.Store == nil {
+		return fmt.Errorf("task store unavailable for %s", planFile)
+	}
 
 	content, err := e.Store.GetContent(e.Project, planFile)
 	if err != nil {
@@ -1289,10 +1301,6 @@ func (d *Daemon) autoImplementPlan(ctx context.Context, e RepoEntry, planFile st
 	plan, err := taskparser.Parse(content)
 	if err != nil {
 		return fmt.Errorf("parse plan content for %s: %w", planFile, err)
-	}
-
-	if err := e.newFSMWithHooks().Transition(planFile, taskfsm.ImplementStart); err != nil {
-		return fmt.Errorf("transition %s to implementing: %w", planFile, err)
 	}
 
 	if orchestration.ShouldBlueprintSkip(plan, d.blueprintSkipThreshold(e.Path)) {
@@ -1778,6 +1786,8 @@ func (d *Daemon) executeAction(ctx context.Context, e RepoEntry, action loop.Act
 			return nil
 		}
 		return d.autoImplementPlan(ctx, e, a.PlanFile)
+	case loop.StartImplementationAction:
+		return d.startImplementationPlan(ctx, e, a.PlanFile)
 	case loop.AdvanceWaveAction:
 		return d.startWaveTasks(ctx, e, a.PlanFile)
 	case loop.TaskCompleteAction:

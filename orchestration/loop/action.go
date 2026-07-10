@@ -134,6 +134,15 @@ type AutoImplementAction struct {
 func (AutoImplementAction) Kind() string  { return "auto_implement" }
 func (AutoImplementAction) sealedAction() {}
 
+// StartImplementationAction instructs the caller to begin architect or wave
+// execution after an implement_start transition has already been applied.
+type StartImplementationAction struct {
+	PlanFile string
+}
+
+func (StartImplementationAction) Kind() string  { return "start_implementation" }
+func (StartImplementationAction) sealedAction() {}
+
 // TaskCompleteAction signals that an individual task within a wave is done.
 type TaskCompleteAction struct {
 	PlanFile        string

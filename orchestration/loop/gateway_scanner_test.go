@@ -12,26 +12,30 @@ import (
 func TestScanGateway_ClaimsAndConvertsSignals(t *testing.T) {
 	gw := newTestGateway(t)
 	require.NoError(t, gw.Create("proj", taskstore.SignalEntry{PlanFile: "my-plan", SignalType: "planner_finished", Payload: `{"body":"done"}`}))
+	require.NoError(t, gw.Create("proj", taskstore.SignalEntry{PlanFile: "my-plan", SignalType: "implement_start", Payload: `{"fsm_applied":true}`}))
 	require.NoError(t, gw.Create("proj", taskstore.SignalEntry{PlanFile: "my-plan", SignalType: "implement_task_finished", Payload: `{"wave_number":2,"task_number":3}`}))
 	require.NoError(t, gw.Create("proj", taskstore.SignalEntry{PlanFile: "my-plan", SignalType: "elaborator_finished", Payload: `{}`}))
 
 	result, entries, err := ScanGateway(gw, "proj", "daemon:test")
 	require.NoError(t, err)
-	assert.Len(t, result.FSMSignals, 1)
+	assert.Len(t, result.FSMSignals, 2)
 	assert.Equal(t, "done", result.FSMSignals[0].Body)
 	assert.Equal(t, entries[0].ID, result.FSMSignals[0].GatewayEntryID)
+	assert.Equal(t, taskfsm.ImplementStart, result.FSMSignals[1].Event)
+	assert.True(t, result.FSMSignals[1].PreApplied)
+	assert.Equal(t, entries[1].ID, result.FSMSignals[1].GatewayEntryID)
 	assert.Len(t, result.TaskSignals, 1)
 	assert.Equal(t, 2, result.TaskSignals[0].WaveNumber)
 	assert.Equal(t, 3, result.TaskSignals[0].TaskNumber)
-	assert.Equal(t, entries[1].ID, result.TaskSignals[0].GatewayEntryID)
+	assert.Equal(t, entries[2].ID, result.TaskSignals[0].GatewayEntryID)
 	assert.Len(t, result.ElaborationSignals, 1)
 	assert.Equal(t, "my-plan", result.ElaborationSignals[0].TaskFile)
-	assert.Equal(t, entries[2].ID, result.ElaborationSignals[0].GatewayEntryID)
-	assert.Len(t, entries, 3)
+	assert.Equal(t, entries[3].ID, result.ElaborationSignals[0].GatewayEntryID)
+	assert.Len(t, entries, 4)
 
 	processing, err := gw.List("proj", taskstore.SignalProcessing)
 	require.NoError(t, err)
-	assert.Len(t, processing, 3)
+	assert.Len(t, processing, 4)
 }
 
 func TestScanGateway_Empty(t *testing.T) {

@@ -251,6 +251,26 @@ func TestProcessor_ProcessFSMSignals_PlanStart_PreAppliedRunsWhenAlreadyPlanning
 	assert.False(t, spawn.DraftMode)
 }
 
+func TestProcessor_ProcessFSMSignals_ImplementStart_PreAppliedStartsImplementation(t *testing.T) {
+	store := taskstore.NewTestStore(t)
+	require.NoError(t, store.Create("test", taskstore.TaskEntry{
+		Filename: "my-plan.md",
+		Status:   taskstore.StatusImplementing,
+	}))
+
+	p := NewProcessor(ProcessorConfig{Store: store, Project: "test"})
+	actions := p.ProcessFSMSignals([]taskfsm.Signal{{
+		Event:      taskfsm.ImplementStart,
+		TaskFile:   "my-plan.md",
+		PreApplied: true,
+	}})
+
+	require.Len(t, actions, 1)
+	start, ok := actions[0].(StartImplementationAction)
+	require.True(t, ok, "pre-applied implement_start must emit StartImplementationAction, got %T", actions[0])
+	assert.Equal(t, "my-plan.md", start.PlanFile)
+}
+
 func TestProcessor_ProcessFSMSignals_PlanStart_PreAppliedDraftModeEmitsClearAndMultiplePlanners(t *testing.T) {
 	store := taskstore.NewTestStore(t)
 	require.NoError(t, store.Create("test", taskstore.TaskEntry{
