@@ -112,6 +112,18 @@ Returns an error if the task has no stored content.
 
 ---
 
+### validate-architect-meta
+
+Strictly validate `.kasmos/cache/<plan-file>-architect.json` before emitting the architect completion signal.
+
+```sh
+kas task validate-architect-meta <plan-file>
+```
+
+The validator decodes the complete Go metadata schema with unknown fields rejected, requires `waves` and each wave's `tasks` to be arrays, checks task and wave numbers, and validates the embedded decision audit against the task and project. Architect agents must not signal completion when this command fails.
+
+---
+
 ### update-content
 
 Replace the plan content in the task store by reading from stdin.

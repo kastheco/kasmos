@@ -90,6 +90,14 @@ the http store exposes the following endpoints (implemented in `config/taskstore
 | `POST` | `/v1/projects/{project}/tasks/{filename}/rename` | rename (reslug) a task |
 | `POST` | `/v1/projects/{project}/tasks/{filename}/increment-review-cycle` | increment the review cycle counter |
 
+### architect decisions
+
+| method | path | description |
+|--------|------|-------------|
+| `GET` | `/v1/projects/{project}/tasks/{filename}/architect-decisions` | return the architect decision audit rendered by the admin ui |
+
+architect metadata is read from the registered repository's `.kasmos/cache/` directory. malformed json or schema-invalid metadata is reported as an unavailable response with reason `architect_meta_invalid`, allowing the admin ui to remain usable while the cache is repaired or regenerated. filesystem and repository resolution failures remain server errors.
+
 ### linear linkage columns
 
 linear linkage is stored as five additive task columns:

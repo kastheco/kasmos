@@ -211,7 +211,7 @@ Record:
 - `summary`: concise overall audit summary
 - `planner_summary`: short summary of the planner's proposed path
 - `baseline_summary`: short summary of your independent architect baseline
-- `consumed_drafts`: list the planner draft cache paths and profile ids used for the final decision
+- `planner_drafts`: list the planner draft cache paths, profile ids, and decisions used for the final result
 - `differences`: list each meaningful file, wave, API, UI, docs, or verification change
 - `final_decision`: one sentence stating the implementation path coders should follow
 
@@ -221,6 +221,9 @@ Prefer this shape:
 {
   "schema_version": 1,
   "plan_id": "<plan-file>",
+  "waves": [
+    {"wave": 1, "parallel": true, "tasks": []}
+  ],
   "decision_audit": {
     "schema_version": 1,
     "plan_file": "<plan-file>",
@@ -230,10 +233,11 @@ Prefer this shape:
     "summary": "...",
     "planner_summary": "...",
     "baseline_summary": "...",
-    "consumed_drafts": [
+    "planner_drafts": [
       {
         "profile": "<profile>",
-        "cache_path": ".kasmos/cache/<plan-file>-planner-<profile>.md"
+        "cache_path": ".kasmos/cache/<plan-file>-planner-<profile>.md",
+        "decision": "adopted"
       }
     ],
     "final_decision": "...",
@@ -277,6 +281,9 @@ cat > .kasmos/cache/<plan-file>-architect.json <<'EOF'
 {
   "schema_version": 1,
   "plan_id": "<plan-file>",
+  "waves": [
+    {"wave": 1, "parallel": true, "tasks": []}
+  ],
   "decision_audit": {
     "schema_version": 1,
     "plan_file": "<plan-file>",
@@ -286,10 +293,11 @@ cat > .kasmos/cache/<plan-file>-architect.json <<'EOF'
     "summary": "...",
     "planner_summary": "...",
     "baseline_summary": "...",
-    "consumed_drafts": [
+    "planner_drafts": [
       {
         "profile": "<profile>",
-        "cache_path": ".kasmos/cache/<plan-file>-planner-<profile>.md"
+        "cache_path": ".kasmos/cache/<plan-file>-planner-<profile>.md",
+        "decision": "adopted"
       }
     ],
     "final_decision": "...",
@@ -297,7 +305,10 @@ cat > .kasmos/cache/<plan-file>-architect.json <<'EOF'
   }
 }
 EOF
+kas task validate-architect-meta <plan-file>
 ```
+
+The `waves` field is always an array of wave metadata objects, never a numeric wave count. `kas task validate-architect-meta` strictly decodes the Go metadata schema, rejects unknown fields, and validates the decision audit; it must succeed before signaling.
 
 2. verify structure and metadata did not break existing plan framing:
 
@@ -326,6 +337,6 @@ stop.
 | modifying planner structural blocks | leave `## Wave`, `### Task`, `**Files:**` unchanged |
 | creating import dependency between same-wave tasks | split or move tasks to a later wave |
 | skipping metadata JSON output | generate `.kasmos/cache/<plan-file>-architect.json` with `decision_audit` in the same run |
-| ignoring planner draft caches | read `.kasmos/cache/<plan-file>-planner-*.md` caches and list consumed drafts in `decision_audit` |
+| ignoring planner draft caches | read `.kasmos/cache/<plan-file>-planner-*.md` caches and list them in `decision_audit.planner_drafts` |
 | writing signal before round-trip check | run MCP `task_show` (filename: "<plan-file>", project: "$KASMOS_PROJECT") first |
 | writing the compatibility `elaborator-finished` signal with wrong filename | use exact plan file token in filename |

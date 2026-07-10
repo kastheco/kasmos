@@ -227,6 +227,40 @@ func TestLoadArchitectMeta_Missing(t *testing.T) {
 	assert.False(t, ArchitectMetaExists(cacheDir, "missing"))
 }
 
+func TestValidateArchitectMetaFile_StrictSchema(t *testing.T) {
+	cacheDir := t.TempDir()
+	planSlug := "planner"
+	valid := `{
+  "schema_version": 1,
+  "plan_id": "planner",
+  "waves": [{"wave": 1, "parallel": true, "tasks": []}],
+  "decision_audit": {
+    "schema_version": 1,
+    "plan_file": "planner",
+    "project": "kasmos",
+    "created_at": "2026-07-10T12:00:00Z",
+    "baseline_source": "inline",
+    "summary": "validated",
+    "final_decision": "ship it"
+  }
+}`
+	require.NoError(t, os.WriteFile(filepath.Join(cacheDir, architectMetaFilename(planSlug)), []byte(valid), 0o644))
+	require.NoError(t, ValidateArchitectMetaFile(cacheDir, planSlug, "kasmos"))
+
+	invalidCases := map[string]string{
+		"missing waves":      `{"schema_version":1,"plan_id":"planner"}`,
+		"numeric waves":      `{"schema_version":1,"plan_id":"planner","waves":2}`,
+		"unknown task field": `{"schema_version":1,"plan_id":"planner","waves":[{"wave":1,"parallel":true,"tasks":[{"task_number":1,"title":"x","files":["x.go"]}]}]}`,
+		"invalid timestamp":  `{"schema_version":1,"plan_id":"planner","waves":[],"decision_audit":{"created_at":"<rfc3339>"}}`,
+	}
+	for name, payload := range invalidCases {
+		t.Run(name, func(t *testing.T) {
+			require.NoError(t, os.WriteFile(filepath.Join(cacheDir, architectMetaFilename(planSlug)), []byte(payload), 0o644))
+			require.Error(t, ValidateArchitectMetaFile(cacheDir, planSlug, "kasmos"))
+		})
+	}
+}
+
 func TestArchitectMetaExists(t *testing.T) {
 	tmp := t.TempDir()
 	planSlug := "planner"

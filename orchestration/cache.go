@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -12,6 +13,7 @@ import (
 )
 
 const (
+	architectMetaSchemaVersion          = 1
 	architectDecisionAuditSchemaVersion = 1
 )
 
@@ -55,6 +57,58 @@ func LoadArchitectMeta(cacheDir, planSlug string) (*ArchitectMeta, error) {
 	}
 
 	return &meta, nil
+}
+
+// ValidateArchitectMetaFile strictly decodes and validates an architect metadata
+// cache before an architect completion signal is emitted.
+func ValidateArchitectMetaFile(cacheDir, planSlug, project string) error {
+	filename := filepath.Join(cacheDir, architectMetaFilename(planSlug))
+	data, err := os.ReadFile(filename)
+	if err != nil {
+		return fmt.Errorf("read architect meta: %w", err)
+	}
+
+	decoder := json.NewDecoder(strings.NewReader(string(data)))
+	decoder.DisallowUnknownFields()
+	var meta ArchitectMeta
+	if err := decoder.Decode(&meta); err != nil {
+		return fmt.Errorf("decode architect meta: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return errors.New("decode architect meta: multiple JSON values")
+		}
+		return fmt.Errorf("decode architect meta: %w", err)
+	}
+	if meta.SchemaVersion != architectMetaSchemaVersion {
+		return fmt.Errorf("architect meta schema_version must be %d", architectMetaSchemaVersion)
+	}
+	if meta.PlanID != planSlug {
+		return fmt.Errorf("architect meta plan_id %q does not match %q", meta.PlanID, planSlug)
+	}
+	if meta.Waves == nil {
+		return errors.New("architect meta waves must be an array")
+	}
+	for i, wave := range meta.Waves {
+		if wave.Wave <= 0 {
+			return fmt.Errorf("architect meta wave %d number must be positive", i)
+		}
+		if wave.Tasks == nil {
+			return fmt.Errorf("architect meta wave %d tasks must be an array", wave.Wave)
+		}
+		for j, task := range wave.Tasks {
+			if task.TaskNumber <= 0 {
+				return fmt.Errorf("architect meta wave %d task %d number must be positive", wave.Wave, j)
+			}
+		}
+	}
+	if meta.DecisionAudit == nil {
+		return errors.New("architect meta decision_audit is required")
+	}
+	if err := ValidateArchitectDecisionAudit(meta.DecisionAudit, planSlug, project); err != nil {
+		return fmt.Errorf("validate architect decision audit: %w", err)
+	}
+	return nil
 }
 
 // ValidateArchitectDecisionAudit confirms audit belongs to the requested task and
