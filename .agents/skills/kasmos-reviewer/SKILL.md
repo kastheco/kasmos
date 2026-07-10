@@ -55,8 +55,10 @@ You review the implementation branch **after coders finish**. Your scope is the 
 the base branch and HEAD — nothing more.
 
 ```bash
-# See all changes since branching from main
-MERGE_BASE=$(git merge-base main HEAD)
+# Identify the actual local base branch first; do not assume main.
+git branch -avv
+BASE_BRANCH=<main, master, or the repository's remote default>
+MERGE_BASE=$(git merge-base "$BASE_BRANCH" HEAD)
 GIT_EXTERNAL_DIFF=difft git diff $MERGE_BASE..HEAD
 
 # Or by file for targeted review
@@ -73,10 +75,12 @@ additionally offer merge/PR/keep/discard options (see Signal Format section).
 ## Worktree Awareness
 
 - Treat the review diff as worktree-aware by anchoring all comparison commands to `merge-base`.
-- Use this in each check so you review only commits since your branch diverged from `main`.
+- Identify the repository's actual base branch (`main`, `master`, or remote default), then use it in each check so you review only commits since the task branch diverged.
 
 ```bash
-MERGE_BASE=$(git merge-base main HEAD)
+git branch -avv
+BASE_BRANCH=<actual local base branch>
+MERGE_BASE=$(git merge-base "$BASE_BRANCH" HEAD)
 
 GIT_EXTERNAL_DIFF=difft git diff $MERGE_BASE..HEAD
 GIT_EXTERNAL_DIFF=difft git diff $MERGE_BASE..HEAD -- path/to/file.go
