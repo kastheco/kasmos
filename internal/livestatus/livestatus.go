@@ -2,6 +2,7 @@
 package livestatus
 
 import (
+	"sort"
 	"strings"
 	"time"
 
@@ -139,8 +140,20 @@ func Assemble(in Input) LiveStatus {
 		lifecycle.Total++
 	}
 
-	agents := make([]ActiveAgent, 0, len(in.Agents))
-	for _, agent := range in.Agents {
+	agentInputs := append([]AgentInput(nil), in.Agents...)
+	sort.Slice(agentInputs, func(i, j int) bool {
+		left, right := agentInputs[i], agentInputs[j]
+		if left.Task != right.Task {
+			return left.Task < right.Task
+		}
+		if left.Role != right.Role {
+			return left.Role < right.Role
+		}
+		return left.Wave < right.Wave
+	})
+
+	agents := make([]ActiveAgent, 0, len(agentInputs))
+	for _, agent := range agentInputs {
 		agents = append(agents, ActiveAgent{Task: agent.Task, Role: agent.Role, Wave: agent.Wave, Stage: stageFor(agent), Ready: agent.Ready, Active: agent.Active})
 	}
 	var truncated Truncation
@@ -158,7 +171,7 @@ func Assemble(in Input) LiveStatus {
 			attention = append(attention, AttentionItem{Task: task.Filename, Kind: KindReviewFeedback})
 		}
 	}
-	for _, agent := range in.Agents {
+	for _, agent := range agentInputs {
 		if strings.TrimSpace(agent.HealthReason) != "" {
 			attention = append(attention, AttentionItem{Task: agent.Task, Kind: KindStaleInstance, Detail: agent.HealthReason})
 		}

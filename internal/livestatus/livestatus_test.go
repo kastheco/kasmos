@@ -83,3 +83,20 @@ func TestAssembleDeterminismParityInvariant(t *testing.T) {
 	assert.Equal(t, firstJSON, secondJSON)
 	assert.Equal(t, first, Assemble(Input{Project: in.Project, Now: in.Now, Tasks: append([]TaskInput(nil), in.Tasks...), Agents: append([]AgentInput(nil), in.Agents...)}))
 }
+
+func TestAssembleSortsAgentsBeforeTruncation(t *testing.T) {
+	now := time.Date(2026, 7, 10, 12, 0, 0, 0, time.UTC)
+	agents := []AgentInput{
+		{Task: "zeta", Role: "coder", Wave: 2, Active: true, HealthReason: "stale zeta"},
+		{Task: "alpha", Role: "reviewer", Wave: 1, Active: true, HealthReason: "stale alpha"},
+	}
+
+	forward := Assemble(Input{Now: now, Cap: 1, Agents: agents})
+	reverse := Assemble(Input{Now: now, Cap: 1, Agents: []AgentInput{agents[1], agents[0]}})
+
+	assert.Equal(t, forward, reverse)
+	require.Len(t, forward.ActiveAgents, 1)
+	assert.Equal(t, "alpha", forward.ActiveAgents[0].Task)
+	require.Len(t, forward.Attention, 1)
+	assert.Equal(t, AttentionItem{Task: "alpha", Kind: KindStaleInstance, Detail: "stale alpha"}, forward.Attention[0])
+}

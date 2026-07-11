@@ -70,7 +70,7 @@ Each `AttentionItem` contains `task`, `kind`, and an optional `detail` string. `
 
 ## truncation and cap
 
-The default cap is 20 items per `active_agents` and `attention` array. Callers may override it with `cap`; non-positive values select the default, and values above the hard maximum of 100 are reduced to 100.
+The default cap is 20 items per `active_agents` and `attention` array. Callers may override it with `cap`; non-positive values select the default, and values above the hard maximum of 100 are reduced to 100. Active agents are sorted by task, role, and wave before truncation, so repeated snapshots select the same bounded subset when state is unchanged.
 
 `Truncation` contains optional integer fields `active_agents` and `attention`. Each value is the number of items omitted from its corresponding array, not the total number available. A field is omitted when no items were truncated.
 
