@@ -9,7 +9,6 @@ import (
 	"github.com/kastheco/kasmos/config/taskparser"
 	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/kastheco/kasmos/orchestration"
-	prsvc "github.com/kastheco/kasmos/orchestration/pr"
 	"github.com/kastheco/kasmos/session"
 	gitpkg "github.com/kastheco/kasmos/session/git"
 )
@@ -435,12 +434,8 @@ func (p *Processor) ProcessFSMSignals(signals []taskfsm.Signal) []Action {
 				})
 				if p.config.Store != nil {
 					if entry, err := p.config.Store.Get(p.config.Project, sig.TaskFile); err == nil {
-						if prsvc.Eligible(entry) {
-							actions = append(actions, CreatePRAction{
-								PlanFile:   sig.TaskFile,
-								ReviewBody: sig.Body,
-							})
-						}
+						_ = entry
+						actions = append(actions, CreatePRAction{PlanFile: sig.TaskFile, ReviewBody: sig.Body})
 					}
 				}
 			}
@@ -458,12 +453,8 @@ func (p *Processor) ProcessFSMSignals(signals []taskfsm.Signal) []Action {
 			})
 			if p.config.Store != nil {
 				if entry, err := p.config.Store.Get(p.config.Project, sig.TaskFile); err == nil {
-					if prsvc.Eligible(entry) {
-						actions = append(actions, CreatePRAction{
-							PlanFile:   sig.TaskFile,
-							ReviewBody: sig.Body,
-						})
-					}
+					_ = entry
+					actions = append(actions, CreatePRAction{PlanFile: sig.TaskFile, ReviewBody: sig.Body})
 				}
 			}
 

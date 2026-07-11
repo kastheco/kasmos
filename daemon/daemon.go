@@ -1972,6 +1972,11 @@ func (d *Daemon) ensurePRForApprovedTask(e RepoEntry, planFile, reviewBody strin
 			if err := e.Store.ClearVerification(e.Project, planFile, reason); err != nil {
 				return prsvc.Result{}, err
 			}
+			if entry.Status == taskstore.StatusDone {
+				if err := e.newFSMWithHooks().Transition(planFile, taskfsm.VerificationStale); err != nil {
+					return prsvc.Result{}, err
+				}
+			}
 			return prsvc.Result{Outcome: prsvc.OutcomeBlocked, Reason: "verification stale: " + reason}, nil
 		}
 	}

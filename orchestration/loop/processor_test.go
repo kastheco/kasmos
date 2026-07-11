@@ -72,7 +72,7 @@ func TestProcessor_ProcessFSMSignals_ReviewApproved_NoBranch(t *testing.T) {
 		Branch:   "", // no branch — PR not eligible
 	})
 
-	p := NewProcessor(ProcessorConfig{Store: store, Project: "test", AutoReviewFix: true})
+	p := NewProcessor(ProcessorConfig{Store: store, Project: "test", AutoReviewFix: true, HeadSHA: func(string) (string, error) { return verificationHead, nil }})
 	signals := []taskfsm.Signal{
 		{Event: taskfsm.ReviewApproved, TaskFile: "my-plan.md", Body: "LGTM"},
 	}
@@ -99,7 +99,7 @@ func TestProcessor_ProcessFSMSignals_ReviewApproved_RecordedPRStillEmitsCreateAc
 		Filename: "plan", Status: taskstore.StatusReviewing, Branch: "plan/test",
 		PRURL: "https://example.test/pr/7",
 	}))
-	p := NewProcessor(ProcessorConfig{Store: store, Project: "test", AutoReviewFix: true})
+	p := NewProcessor(ProcessorConfig{Store: store, Project: "test", AutoReviewFix: true, HeadSHA: func(string) (string, error) { return verificationHead, nil }})
 	actions := p.ProcessFSMSignals([]taskfsm.Signal{{
 		Event: taskfsm.ReviewApproved, TaskFile: "plan",
 	}})

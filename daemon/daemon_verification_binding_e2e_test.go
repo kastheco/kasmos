@@ -14,6 +14,7 @@ import (
 	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/kastheco/kasmos/daemon/api"
 	"github.com/kastheco/kasmos/orchestration/loop"
+	prsvc "github.com/kastheco/kasmos/orchestration/pr"
 	"github.com/kastheco/kasmos/session"
 	gitpkg "github.com/kastheco/kasmos/session/git"
 	"github.com/stretchr/testify/assert"
@@ -67,7 +68,7 @@ func newVerificationBindingE2EFixture(t *testing.T, status taskstore.Status, aut
 	f.d = &Daemon{cfg: &DaemonConfig{AutoAdvance: true}, spawner: NewTmuxSpawner(), logger: slog.Default(), broadcaster: api.NewEventBroadcaster(),
 		killAgent:   func(_ string, _ string, typ string) error { f.killed = append(f.killed, typ); return nil },
 		spawnMaster: func(_ context.Context, opts loop.SpawnOpts) error { f.spawned = append(f.spawned, opts); return nil },
-		createPR:    func(RepoEntry, string, string) error { return nil },
+		createPR:    func(RepoEntry, string, string) (prsvc.Result, error) { return prsvc.Result{}, nil },
 	}
 	t.Cleanup(func() { f.d.broadcaster.Close() })
 	return f
@@ -152,8 +153,9 @@ func TestDaemonVerificationBindingE2E_PostApprovalDriftAndPRGate(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, state.ForceSetStatus(f.plan, taskstate.StatusDone))
 	require.NoError(t, f.store.SetVerification(f.project, f.plan, taskstore.VerificationRecord{SHA: x, By: "master"}))
-	err = f.d.createPRForApprovedTask(f.entry, f.plan, "")
-	require.NoError(t, err, "stale PR admission is refused by reopening, not by surfacing an operator error")
+	result, err := f.d.ensurePRForApprovedTask(f.entry, f.plan, "")
+	require.NoError(t, err)
+	assert.Equal(t, prsvc.OutcomeBlocked, result.Outcome)
 	entry, _ = f.store.Get(f.project, f.plan)
 	assert.Equal(t, taskstore.StatusVerifying, entry.Status)
 	assert.Empty(t, entry.VerifiedSHA)
