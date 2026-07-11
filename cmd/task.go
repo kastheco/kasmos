@@ -759,7 +759,7 @@ func executeTaskPR(repoRoot, project, planFile, title string, store taskstore.St
 	}
 	subtasks, _ := store.GetSubtasks(project, planFile)
 	body := git.BuildPRBody(buildCLIPRMetadata(entry, subtasks, gitChanges, gitCommits, gitStats))
-	if err := wt.CreatePR(title, body, "update from kas"); err != nil {
+	if err := wt.CreatePR(title, body); err != nil {
 		return "", err
 	}
 	return "", nil

@@ -487,8 +487,7 @@ func (m *home) createPRAfterApproval(planFile, reviewBody string) tea.Cmd {
 		meta := gitpkg.AssemblePRMetadata(entry, subtasks, reviewBody, entry.ReviewCycle, gitChanges, gitCommits, gitStats)
 		title := gitpkg.BuildPRTitle(entry.Description, planName)
 		body := gitpkg.BuildPRBody(meta)
-		commitMsg := fmt.Sprintf("[kas] implementation of '%s'", planName)
-		if err := shared.CreatePR(title, body, commitMsg); err != nil {
+		if err := shared.CreatePR(title, body); err != nil {
 			log.WarningLog.Printf("createPRAfterApproval: PR creation failed for %q: %v", planFile, err)
 			return nil
 		}

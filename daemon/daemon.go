@@ -1948,8 +1948,7 @@ func (d *Daemon) createPRForApprovedTask(e RepoEntry, planFile, reviewBody strin
 	planName := taskstate.DisplayName(planFile)
 	title := gitpkg.BuildPRTitle(entry.Description, planName)
 	body := gitpkg.BuildPRBody(meta)
-	commitMsg := fmt.Sprintf("[kas] implementation of '%s'", planName)
-	if err := shared.CreatePR(title, body, commitMsg); err != nil {
+	if err := shared.CreatePR(title, body); err != nil {
 		return fmt.Errorf("create pr for %s: %w", planFile, err)
 	}
 

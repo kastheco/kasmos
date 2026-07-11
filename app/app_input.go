@@ -1202,7 +1202,7 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 					src := *m.pendingPRSource
 					m.pendingPRSource = nil
 					return m, tea.Batch(tea.RequestWindowSize, func() tea.Msg {
-						if err := src.worktree.CreatePR(capturedPRTitle, prBody, ""); err != nil {
+						if err := src.worktree.CreatePR(capturedPRTitle, prBody); err != nil {
 							return prErrorMsg{id: prToastID, err: err}
 						}
 						if src.planFile != "" {
