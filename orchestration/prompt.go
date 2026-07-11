@@ -451,27 +451,42 @@ func BuildMasterReviewPrompt(planFile, project string) string {
 // (maxVerifyCycles). Values <= 0 are replaced with the defaults (80 and 2
 // respectively).
 func BuildMasterReviewPromptWithConfig(planFile, project string, selfFixMaxLines, maxVerifyCycles int) string {
+	return BuildMasterReviewPromptForRange(planFile, project, selfFixMaxLines, maxVerifyCycles, "", "")
+}
+
+// BuildMasterReviewPromptForRange generates the master agent prompt for an
+// independently reviewed base-to-head commit range.
+func BuildMasterReviewPromptForRange(planFile, project string, selfFixMaxLines, maxVerifyCycles int, baseSHA, headSHA string) string {
 	if selfFixMaxLines <= 0 {
 		selfFixMaxLines = 80
 	}
 	if maxVerifyCycles <= 0 {
 		maxVerifyCycles = 2
 	}
+	shaContext := ""
+	reviewScope := "Review the complete branch diff as if you had never seen this branch and no prior review existed."
+	if baseSHA != "" && headSHA != "" {
+		shaContext = fmt.Sprintf("- Base (merge-base) SHA: %s\n- Head SHA under review: %s\n", baseSHA, headSHA)
+		reviewScope = fmt.Sprintf("Review the complete diff `%s..%s` as if you had never seen this branch and no prior review existed.", baseSHA, headSHA)
+	}
 	return fmt.Sprintf(
 		"You are the master readiness agent running in the `verifying` FSM state.\n\n"+
-			"Load the `kasmos-master` skill before starting and treat it as the authoritative static workflow.\n\n"+
+			"Load the `kasmos-master` skill before starting. This prompt is authoritative. Where the `kasmos-master` skill permits reusing reviewer or CI evidence in place of your own inspection, or limits diff inspection to cross-cutting boundaries, this prompt overrides it: inspect the full `base..head` diff yourself.\n\n"+
 			"## Dynamic context\n\n"+
 			"- Plan file: %[1]q\n"+
 			"- Project: %[2]q\n"+
 			"- Self-fix ceiling: %[3]d net lines\n"+
-			"- Verify-round cap: %[4]d\n\n"+
+			"- Verify-round cap: %[4]d\n"+
+			"%[5]s\n"+
 			"Retrieve the plan with MCP `task_show` (filename: %[1]q, project: %[2]q).\n"+
-			"The reviewer already completed the full branch and specification review. Do not repeat the reviewer's full branch review. "+
-			"Apply the skill's bounded readiness pass to cross-cutting integration risk and the plan's verification evidence only.\n\n"+
+			"%[6]s A reviewer approved this branch earlier; treat every conclusion in that review as an unverified claim. Re-derive each one from the diff, the stored plan, and the repository's rulebooks (`CLAUDE.md`, `AGENTS.md`, `docs/`). Do not cite reviewer evidence as your own.\n\n"+
+			"Independently cover security posture (input validation, command/path/secret boundaries); concurrency and async correctness (races, unsynchronized shared state, goroutine/context lifetimes); changed integration boundaries (signal names, FSM transitions, config keys, store schemas, public interfaces); and acceptance-criteria completeness against the stored plan.\n\n"+
+			"When the diff depends on an external contract (a third-party SDK, API, or library's documented behavior), consult current primary platform documentation — `mcp__kasmos__docs_search` for kasmos behavior, the library's official docs or context7 for third-party contracts. Do not rely on training memory, and do not rely on the reviewer's claim about the contract.\n\n"+
+			"If you commit a self-fix, your commit changes HEAD. Re-resolve `git rev-parse HEAD` after committing and report that new SHA as `reviewed_sha`. Reporting the pre-commit SHA will be rejected as stale and will loop you.\n\n"+
 			"Emit exactly one gateway signal and stop:\n"+
-			"- `signal_create` (signal_type: \"verify_approved\", plan_file: %[1]q, project: %[2]q)\n"+
+			"- `signal_create` (signal_type: \"verify_approved\", plan_file: %[1]q, project: %[2]q, payload: `{\"reviewed_sha\":\"<40-hex head sha>\",\"body\":\"<verdict>\"}`)\n"+
 			"- `signal_create` (signal_type: \"verify_failed\", plan_file: %[1]q, project: %[2]q)\n\n"+
-			"Keep the payload limited to the verdict, evidence, and concrete blocker actions needed by the next role.",
-		planFile, project, selfFixMaxLines, maxVerifyCycles,
+			"Emit exactly one signal. On approval the payload must include the SHA you reviewed. An approval without a matching `reviewed_sha` is rejected and re-queues verification. Keep the payload limited to the verdict, evidence, and concrete blocker actions needed by the next role.",
+		planFile, project, selfFixMaxLines, maxVerifyCycles, shaContext, reviewScope,
 	)
 }

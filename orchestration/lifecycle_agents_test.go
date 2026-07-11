@@ -86,6 +86,16 @@ func TestBuildMasterAgentSpec(t *testing.T) {
 	assert.NotContains(t, spec.Prompt, "touch .kasmos/signals/master-approved")
 }
 
+func TestBuildMasterAgentSpecForRange(t *testing.T) {
+	baseSHA := "1111111111111111111111111111111111111111"
+	headSHA := "2222222222222222222222222222222222222222"
+	spec := BuildMasterAgentSpecForRange("feature", "myproject", 2, 80, 2, baseSHA, headSHA)
+
+	assert.Equal(t, "feature-verify-3", spec.Title)
+	assert.Contains(t, spec.Prompt, baseSHA)
+	assert.Contains(t, spec.Prompt, headSHA)
+}
+
 func TestBuildLifecycleAgentTitle_Master(t *testing.T) {
 	assert.Equal(t, "feature-verify-1", BuildLifecycleAgentTitle("feature", session.AgentTypeMaster, 1))
 	assert.Equal(t, "feature-verify-3", BuildLifecycleAgentTitle("feature", session.AgentTypeMaster, 3))

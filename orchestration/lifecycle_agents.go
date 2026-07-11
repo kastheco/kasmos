@@ -183,9 +183,14 @@ func BuildMasterAgentSpec(planFile, project string, reviewCycle int) LifecycleAg
 // BuildMasterAgentSpecWithConfig is like BuildMasterAgentSpec but accepts
 // configurable self-fix line ceiling and verify-round cap values.
 func BuildMasterAgentSpecWithConfig(planFile, project string, reviewCycle, selfFixMaxLines, maxVerifyCycles int) LifecycleAgentSpec {
+	return BuildMasterAgentSpecForRange(planFile, project, reviewCycle, selfFixMaxLines, maxVerifyCycles, "", "")
+}
+
+// BuildMasterAgentSpecForRange builds a master agent spec bound to a commit range.
+func BuildMasterAgentSpecForRange(planFile, project string, reviewCycle, selfFixMaxLines, maxVerifyCycles int, baseSHA, headSHA string) LifecycleAgentSpec {
 	return LifecycleAgentSpec{
 		Title:  BuildLifecycleAgentTitle(planFile, session.AgentTypeMaster, reviewCycle+1),
-		Prompt: BuildMasterReviewPromptWithConfig(planFile, project, selfFixMaxLines, maxVerifyCycles),
+		Prompt: BuildMasterReviewPromptForRange(planFile, project, selfFixMaxLines, maxVerifyCycles, baseSHA, headSHA),
 	}
 }
 
