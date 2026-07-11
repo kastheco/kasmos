@@ -10,6 +10,7 @@ import (
 
 	"charm.land/bubbles/v2/viewport"
 	"charm.land/lipgloss/v2"
+	gitpkg "github.com/kastheco/kasmos/session/git"
 	zone "github.com/lrstanley/bubblezone/v2"
 )
 
@@ -52,27 +53,31 @@ type InfoData struct {
 	Status  string
 
 	// Plan fields (empty when no plan is associated)
-	PlanName         string
-	PlanDescription  string
-	PlanStatus       string
-	PlanGoal         string
-	PlanTopic        string
-	PlanBranch       string
-	PlanCreated      string
-	LinearIdentifier string
-	LinearURL        string
-	PRURL            string
-	PRCreateState    string
-	PRCreateError    string
-	ExecutionPhase   string
-	ActiveAgentType  string
-	ActiveWave       int
-	ActiveRound      int
-	PlanningAt       time.Time
-	ImplementingAt   time.Time
-	ReviewingAt      time.Time
-	VerifyingAt      time.Time
-	DoneAt           time.Time
+	PlanName                string
+	PlanDescription         string
+	PlanStatus              string
+	PlanGoal                string
+	PlanTopic               string
+	PlanBranch              string
+	PlanCreated             string
+	LinearIdentifier        string
+	LinearURL               string
+	PRURL                   string
+	PRCreateState           string
+	PRCreateError           string
+	ExecutionPhase          string
+	ActiveAgentType         string
+	ActiveWave              int
+	ActiveRound             int
+	PlanningAt              time.Time
+	ImplementingAt          time.Time
+	ReviewingAt             time.Time
+	VerifyingAt             time.Time
+	DoneAt                  time.Time
+	VerifiedSHA             string
+	VerifiedBy              string
+	VerifiedAt              time.Time
+	StaleVerificationReason string
 
 	// Plan summary fields (rendered when plan header row is selected)
 	PlanInstanceCount int
@@ -446,6 +451,19 @@ func (p *InfoPane) renderLifecycleSection() string {
 	if p.data.ActiveRound > 0 && !isVerifyingPhase {
 		rows = append(rows, p.renderRow("round", fmt.Sprintf("%d", p.data.ActiveRound)))
 	}
+	if p.data.VerifiedSHA != "" {
+		verified := gitpkg.ShortSHA(p.data.VerifiedSHA)
+		if p.data.VerifiedBy != "" {
+			verified += " · " + p.data.VerifiedBy
+		}
+		if !p.data.VerifiedAt.IsZero() {
+			verified += " · " + formatRelativeTime(p.data.VerifiedAt)
+		}
+		rows = append(rows, p.renderRow("verified", verified))
+	}
+	if reason := strings.TrimSpace(p.data.StaleVerificationReason); reason != "" {
+		rows = append(rows, lipgloss.NewStyle().Foreground(ColorGold).Render("⚠ verification stale: "+reason))
+	}
 	phases := []struct {
 		label   string
 		time    time.Time
@@ -466,6 +484,20 @@ func (p *InfoPane) renderLifecycleSection() string {
 	}
 
 	return strings.Join(rows, "\n")
+}
+
+func formatRelativeTime(ts time.Time) string {
+	d := time.Since(ts)
+	if d < time.Minute {
+		return "just now"
+	}
+	if d < time.Hour {
+		return fmt.Sprintf("%dm ago", int(d.Minutes()))
+	}
+	if d < 24*time.Hour {
+		return fmt.Sprintf("%dh ago", int(d.Hours()))
+	}
+	return fmt.Sprintf("%dd ago", int(d.Hours()/24))
 }
 
 func asciiProgressBar(total, done int) string {

@@ -257,14 +257,20 @@ func (m *home) ensureProcessor() *loop.Processor {
 	m.processor = loop.NewProcessor(loop.ProcessorConfig{
 		AutoReviewFix:       autoReviewFix,
 		AutoReadinessReview: autoReadinessReview,
-		Store:               m.taskStore,
-		Project:             m.taskStoreProject,
-		Dir:                 m.taskStateDir,
-		MaxReviewFixCycles:  maxCycles,
-		Hooks:               hooks,
-		PlannerProfiles:     plannerProfiles,
-		PlannerDraftMode:    plannerDraftMode,
-		CacheDir:            filepath.Join(m.activeRepoPath, ".kasmos", "cache"),
+		HeadSHA: func(branch string) (string, error) {
+			return gitpkg.BranchHeadSHA(m.activeRepoPath, branch)
+		},
+		MergeBaseSHA: func(branch string) (string, error) {
+			return gitpkg.BranchMergeBaseSHA(m.activeRepoPath, branch)
+		},
+		Store:              m.taskStore,
+		Project:            m.taskStoreProject,
+		Dir:                m.taskStateDir,
+		MaxReviewFixCycles: maxCycles,
+		Hooks:              hooks,
+		PlannerProfiles:    plannerProfiles,
+		PlannerDraftMode:   plannerDraftMode,
+		CacheDir:           filepath.Join(m.activeRepoPath, ".kasmos", "cache"),
 	})
 	return m.processor
 }
@@ -1570,6 +1576,10 @@ func (m *home) updateInfoPaneForPlanHeader() {
 	data.ReviewingAt = entry.ReviewingAt
 	data.VerifyingAt = entry.VerifyingAt
 	data.DoneAt = entry.DoneAt
+	data.VerifiedSHA = entry.VerifiedSHA
+	data.VerifiedBy = entry.VerifiedBy
+	data.VerifiedAt = entry.VerifiedAt
+	data.StaleVerificationReason = entry.StaleVerificationReason
 
 	// Include wave progress if an orchestrator exists for this plan.
 	var orch *orchestration.WaveOrchestrator
@@ -1693,6 +1703,10 @@ func (m *home) updateInfoPane() {
 				data.ReviewingAt = entry.ReviewingAt
 				data.VerifyingAt = entry.VerifyingAt
 				data.DoneAt = entry.DoneAt
+				data.VerifiedSHA = entry.VerifiedSHA
+				data.VerifiedBy = entry.VerifiedBy
+				data.VerifiedAt = entry.VerifiedAt
+				data.StaleVerificationReason = entry.StaleVerificationReason
 				// Review outcome — shown when the plan has been approved.
 				if entry.Status == taskstate.StatusDone {
 					data.ReviewOutcome = "approved"
@@ -1790,15 +1804,16 @@ func (m *home) updateSidebarTasks() {
 				activeRound = entry.ReviewCycle + 1
 			}
 			planDisplays = append(planDisplays, ui.PlanDisplay{
-				Filename:    p.Filename,
-				Status:      string(p.Status),
-				Description: p.Description,
-				Branch:      p.Branch,
-				Topic:       p.Topic,
-				Phase:       strings.TrimSpace(entry.ExecutionState.Phase),
-				AgentType:   strings.TrimSpace(entry.ExecutionState.ActiveAgentType),
-				ActiveWave:  entry.ExecutionState.ActiveWave,
-				ActiveRound: activeRound,
+				Filename:                p.Filename,
+				Status:                  string(p.Status),
+				Description:             p.Description,
+				Branch:                  p.Branch,
+				Topic:                   p.Topic,
+				Phase:                   strings.TrimSpace(entry.ExecutionState.Phase),
+				AgentType:               strings.TrimSpace(entry.ExecutionState.ActiveAgentType),
+				ActiveWave:              entry.ExecutionState.ActiveWave,
+				ActiveRound:             activeRound,
+				StaleVerificationReason: entry.StaleVerificationReason,
 			})
 		}
 		if len(planDisplays) > 0 {
@@ -1820,14 +1835,15 @@ func (m *home) updateSidebarTasks() {
 			activeRound = entry.ReviewCycle + 1
 		}
 		ungrouped = append(ungrouped, ui.PlanDisplay{
-			Filename:    p.Filename,
-			Status:      string(p.Status),
-			Description: p.Description,
-			Branch:      p.Branch,
-			Phase:       strings.TrimSpace(entry.ExecutionState.Phase),
-			AgentType:   strings.TrimSpace(entry.ExecutionState.ActiveAgentType),
-			ActiveWave:  entry.ExecutionState.ActiveWave,
-			ActiveRound: activeRound,
+			Filename:                p.Filename,
+			Status:                  string(p.Status),
+			Description:             p.Description,
+			Branch:                  p.Branch,
+			Phase:                   strings.TrimSpace(entry.ExecutionState.Phase),
+			AgentType:               strings.TrimSpace(entry.ExecutionState.ActiveAgentType),
+			ActiveWave:              entry.ExecutionState.ActiveWave,
+			ActiveRound:             activeRound,
+			StaleVerificationReason: entry.StaleVerificationReason,
 		})
 	}
 
@@ -2048,7 +2064,12 @@ func (m *home) spawnMaster(planFile string) tea.Cmd {
 	if m.taskState != nil {
 		reviewCycle, _ = m.taskState.ReviewCycle(planFile)
 	}
-	spec := orchestration.BuildMasterAgentSpec(planFile, m.taskStoreProject, reviewCycle)
+	selfFixMaxLines, maxVerifyCycles := 80, 2
+	if m.appConfig != nil {
+		selfFixMaxLines = m.appConfig.ReadinessSelfFixMaxLines
+		maxVerifyCycles = m.appConfig.ReadinessMaxVerifyCycles
+	}
+	spec := orchestration.BuildMasterAgentSpecWithConfig(planFile, m.taskStoreProject, reviewCycle, selfFixMaxLines, maxVerifyCycles)
 	title := spec.Title
 	if m.hasLiveOrPendingInstance(planFile, session.AgentTypeMaster, title) {
 		return nil
@@ -2086,7 +2107,6 @@ func (m *home) spawnMaster(planFile string) tea.Cmd {
 		log.WarningLog.Printf("could not create master instance for %q: %v", planFile, err)
 		return nil
 	}
-	masterInst.QueuedPrompt = spec.Prompt
 	masterInst.SetStatus(session.Loading)
 
 	m.addInstanceFinalizer(masterInst, m.nav.AddInstance(masterInst))
@@ -2101,10 +2121,16 @@ func (m *home) spawnMaster(planFile string) tea.Cmd {
 	m.toastManager.Info(fmt.Sprintf("review approved → readiness check started for %s", planName))
 
 	shared := gitpkg.NewSharedTaskWorktree(m.activeRepoPath, branch)
+	repoPath := m.activeRepoPath
+	project := m.taskStoreProject
 	return func() tea.Msg {
 		if err := shared.Setup(); err != nil {
 			return instanceStartedMsg{instance: masterInst, err: err}
 		}
+		base, _ := gitpkg.BranchMergeBaseSHA(repoPath, branch)
+		head, _ := gitpkg.BranchHeadSHA(repoPath, branch)
+		spec := orchestration.BuildMasterAgentSpecForRange(planFile, project, reviewCycle, selfFixMaxLines, maxVerifyCycles, base, head)
+		masterInst.QueuedPrompt = spec.Prompt
 		if err := m.syncSharedWorktreeScaffold(shared.GetWorktreePath()); err != nil {
 			return instanceStartedMsg{instance: masterInst, err: err}
 		}

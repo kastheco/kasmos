@@ -18,6 +18,25 @@ func TestInfoPane_NoInstance(t *testing.T) {
 	assert.Contains(t, p.String(), "no instance selected")
 }
 
+func TestInfoPaneLifecycleShowsVerificationBindingAndStaleReason(t *testing.T) {
+	p := NewInfoPane()
+	p.SetSize(100, 40)
+	p.SetData(InfoData{
+		HasPlan:                 true,
+		PlanStatus:              "verifying",
+		VerifiedSHA:             "3f9a1c2deadbeef",
+		VerifiedBy:              "master",
+		VerifiedAt:              time.Now().Add(-4 * time.Minute),
+		StaleVerificationReason: "head moved from 3f9a1c2 to 8ab42de",
+	})
+
+	rendered := p.renderLifecycleSection()
+	assert.Contains(t, rendered, "3f9a1c2")
+	assert.Contains(t, rendered, "master")
+	assert.Contains(t, rendered, "4m ago")
+	assert.Contains(t, rendered, "verification stale: head moved from 3f9a1c2 to 8ab42de")
+}
+
 func TestInfoPane_AdHocInstance(t *testing.T) {
 	p := NewInfoPane()
 	p.SetSize(80, 24)

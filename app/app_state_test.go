@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -88,6 +89,56 @@ func TestSpawnTaskAgent_PatchesMainBranchOpencodeConfig(t *testing.T) {
 	assert.Equal(t, "anthropic/claude-opus-4-6", plannerCfg["model"])
 	assert.InDelta(t, planTemp, plannerCfg["temperature"].(float64), 0.0001)
 	assert.Equal(t, "high", plannerCfg["reasoningEffort"])
+}
+
+func TestSpawnMasterBuildsPromptForResolvedRangeWithoutFeedback(t *testing.T) {
+	dir := t.TempDir()
+	for _, args := range [][]string{
+		{"init", "-b", "main", dir},
+		{"-C", dir, "config", "user.email", "test@test.com"},
+		{"-C", dir, "config", "user.name", "Test"},
+		{"-C", dir, "commit", "--allow-empty", "-m", "base"},
+		{"-C", dir, "checkout", "-b", "plan/range-prompt"},
+		{"-C", dir, "commit", "--allow-empty", "-m", "head"},
+		{"-C", dir, "checkout", "main"},
+	} {
+		out, err := exec.Command("git", args...).CombinedOutput()
+		require.NoError(t, err, "%s", out)
+	}
+	baseOut, err := exec.Command("git", "-C", dir, "rev-parse", "main").Output()
+	require.NoError(t, err)
+	headOut, err := exec.Command("git", "-C", dir, "rev-parse", "plan/range-prompt").Output()
+	require.NoError(t, err)
+	base, head := strings.TrimSpace(string(baseOut)), strings.TrimSpace(string(headOut))
+
+	plansDir := filepath.Join(dir, "docs", "plans")
+	require.NoError(t, os.MkdirAll(plansDir, 0o755))
+	ps, err := newTestPlanState(t, plansDir)
+	require.NoError(t, err)
+	require.NoError(t, ps.Register("range-prompt", "test", "plan/range-prompt", time.Now()))
+
+	h := newTestHome()
+	h.activeRepoPath = dir
+	h.taskState = ps
+	h.taskStoreProject = "test"
+	h.appConfig = config.DefaultConfig()
+	h.appConfig.ReadinessSelfFixMaxLines = 37
+	h.appConfig.ReadinessMaxVerifyCycles = 5
+	h.program = "true"
+
+	cmd := h.spawnMaster("range-prompt")
+	require.NotNil(t, cmd)
+	instances := h.nav.GetInstances()
+	require.Len(t, instances, 1)
+	assert.Empty(t, instances[0].QueuedPrompt, "prompt must not be frozen before asynchronous git resolution")
+	_ = cmd()
+
+	prompt := instances[0].QueuedPrompt
+	assert.Contains(t, prompt, base)
+	assert.Contains(t, prompt, head)
+	assert.Contains(t, prompt, "37")
+	assert.Contains(t, prompt, "5")
+	assert.NotContains(t, prompt, "Feedback:")
 }
 
 func TestSpawnArchitectPass_PatchesMainBranchOpencodeConfig(t *testing.T) {
