@@ -104,6 +104,19 @@ func TestEventsLoggerFailureDegrades(t *testing.T) {
 	assert.Empty(t, queryEvents("kasmos"))
 }
 
+func TestQueryEventsUsesServedDatabase(t *testing.T) {
+	db, err := taskstore.OpenSharedDB(filepath.Join(t.TempDir(), "served.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, db.Close()) })
+	logger, err := auditlog.NewSQLiteLoggerFromDB(db)
+	require.NoError(t, err)
+	logger.Emit(auditlog.Event{Kind: auditlog.EventWaveStarted, Project: "custom", Message: "from custom db"})
+
+	events := queryEvents("custom", db)
+	require.Len(t, events, 1)
+	assert.Equal(t, "from custom db", events[0].Message)
+}
+
 func stubAuditLogger(t *testing.T) {
 	original := appWidgetAuditLogger
 	t.Cleanup(func() { appWidgetAuditLogger = original })

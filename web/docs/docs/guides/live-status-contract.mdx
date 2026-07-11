@@ -65,6 +65,8 @@ Each `ActiveAgent` contains:
 
 The basename-only form of `active_agents[].worktree` is a contract guarantee, not an implementation detail. Model-visible consumers must never receive the daemon's absolute local worktree path.
 
+The daemon control endpoint, CLI JSON output, MCP tool, and widget all populate the same extended agent fields, including worktree, branch, task number, last activity, and paused state.
+
 ## monitor sections
 
 Schema v2 adds four opt-in sections. `projects` lists available projects. `tasks` contains filename, lifecycle and phase, topic, branch, wave and subtask progress, review and pull-request state, and blocker status. `events` contains timestamped, bounded event summaries with optional task, agent, wave, task-number, and level metadata. `focus` contains the selected task's filename and goal, its waves and wave tasks, and readiness state.

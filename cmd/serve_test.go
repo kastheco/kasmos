@@ -209,6 +209,7 @@ func TestNewServeMCPHTTPHandler_OnlyServesExactMCPPath(t *testing.T) {
 
 		require.Equal(t, http.StatusNoContent, rec.Code)
 		assert.Equal(t, "null", rec.Header().Get("Access-Control-Allow-Origin"))
+		assert.Equal(t, "POST, OPTIONS", rec.Header().Get("Access-Control-Allow-Methods"))
 		assert.Contains(t, rec.Header().Get("Access-Control-Allow-Headers"), "Mcp-Session-Id")
 		assert.Equal(t, "Mcp-Session-Id", rec.Header().Get("Access-Control-Expose-Headers"))
 		require.Equal(t, []string{"/mcp"}, calls)

@@ -200,6 +200,7 @@ func newServeMCPHTTPHandler(next http.Handler) http.Handler {
 		// Origin: null. Limit cross-origin MCP access to that preview origin.
 		if r.Header.Get("Origin") == "null" {
 			w.Header().Set("Access-Control-Allow-Origin", "null")
+			w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Accept, Mcp-Session-Id")
 			w.Header().Set("Access-Control-Expose-Headers", "Mcp-Session-Id")
 			if r.Method == http.MethodOptions {

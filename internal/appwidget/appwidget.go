@@ -3,6 +3,7 @@ package appwidget
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"strings"
 	"time"
@@ -28,7 +29,7 @@ var appWidgetAuditLogger = func() (auditlog.Logger, func(), error) {
 var widgetSnapshots = newSnapshotCache(time.Second)
 
 // RegisterWithRouting registers the monitor resource and its read-only data tool.
-func RegisterWithRouting(srv *server.MCPServer, rc routing.RegisterConfig, store taskstore.Store, socketPath string) {
+func RegisterWithRouting(srv *server.MCPServer, rc routing.RegisterConfig, store taskstore.Store, socketPath string, sharedDB ...*sql.DB) {
 	if srv == nil {
 		return
 	}
@@ -45,7 +46,7 @@ func RegisterWithRouting(srv *server.MCPServer, rc routing.RegisterConfig, store
 			"openai/outputTemplate": WidgetURI, "openai/widgetAccessible": true,
 			"openai/toolInvocation/invoking": "opening kasmos monitor", "openai/toolInvocation/invoked": "kasmos monitor ready",
 			"ui": map[string]any{"resourceUri": WidgetURI, "visibility": []string{"model", "app"}},
-		})), makeOpenMonitorHandler(rc, store, socketPath, widgetSnapshots))
+		})), makeOpenMonitorHandler(rc, store, socketPath, widgetSnapshots, sharedDB...))
 }
 
 func resourceHandler(context.Context, mcp.ReadResourceRequest) ([]mcp.ResourceContents, error) {
@@ -70,7 +71,7 @@ func resolveToolStore(project string, store taskstore.Store) (taskstore.Store, f
 	return resolved, func() { _ = resolved.Close() }, nil
 }
 
-func makeOpenMonitorHandler(rc routing.RegisterConfig, store taskstore.Store, socketPath string, cache *snapshotCache) server.ToolHandlerFunc {
+func makeOpenMonitorHandler(rc routing.RegisterConfig, store taskstore.Store, socketPath string, cache *snapshotCache, sharedDB ...*sql.DB) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		project, projects, err := rc.ResolveProjectArgWithCatalog(ctx, req)
 		if err != nil {
@@ -86,7 +87,7 @@ func makeOpenMonitorHandler(rc routing.RegisterConfig, store taskstore.Store, so
 			return mcp.NewToolResultError(fmt.Sprintf("open_monitor: resolve store: %v", err)), nil
 		}
 		defer closeStore()
-		snapshot, err := buildSnapshot(project, focus, projects, resolved, socketPath)
+		snapshot, err := buildSnapshot(project, focus, projects, resolved, socketPath, sharedDB...)
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("open_monitor: %v", err)), nil
 		}
@@ -95,7 +96,7 @@ func makeOpenMonitorHandler(rc routing.RegisterConfig, store taskstore.Store, so
 	}
 }
 
-func buildSnapshot(project, focus string, projects []string, store taskstore.Store, socketPath string) (livestatus.LiveStatus, error) {
+func buildSnapshot(project, focus string, projects []string, store taskstore.Store, socketPath string, sharedDB ...*sql.DB) (livestatus.LiveStatus, error) {
 	entries, err := store.List(project)
 	if err != nil {
 		return livestatus.LiveStatus{}, fmt.Errorf("list tasks: %w", err)
@@ -132,7 +133,7 @@ func buildSnapshot(project, focus string, projects []string, store taskstore.Sto
 		}
 		inputs = append(inputs, task)
 	}
-	events := queryEvents(project)
+	events := queryEvents(project, sharedDB...)
 	heartbeat, agents := statustools.DaemonStatus(socketPath, project)
 	return livestatus.Assemble(livestatus.Input{Project: project, Now: time.Now(), Daemon: heartbeat, Tasks: inputs, Agents: agents, Include: livestatus.Include{Projects: true, Tasks: true, Events: true, Focus: focus}, Projects: projects, Events: events, FocusTask: focused}), nil
 }
@@ -141,8 +142,15 @@ func focusInput(entry taskstore.TaskEntry, subtasks []taskstore.SubtaskEntry) *l
 	return &livestatus.FocusInput{Filename: entry.Filename, Goal: entry.Goal, Subtasks: subtasks, ActiveWave: entry.ExecutionState.ActiveWave, Readiness: livestatus.Readiness{Status: string(entry.Status), ReviewCycle: entry.ReviewCycle, HasReviewFeedback: strings.TrimSpace(entry.LatestReviewFeedback) != "", PRCheckStatus: entry.PRCheckStatus, PRReviewDecision: entry.PRReviewDecision}}
 }
 
-func queryEvents(project string) []livestatus.EventItem {
-	logger, closeLogger, err := appWidgetAuditLogger()
+func queryEvents(project string, sharedDB ...*sql.DB) []livestatus.EventItem {
+	var logger auditlog.Logger
+	closeLogger := func() {}
+	var err error
+	if len(sharedDB) > 0 && sharedDB[0] != nil {
+		logger, err = auditlog.NewSQLiteLoggerFromDB(sharedDB[0])
+	} else {
+		logger, closeLogger, err = appWidgetAuditLogger()
+	}
 	if err != nil {
 		return nil
 	}

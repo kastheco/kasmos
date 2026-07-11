@@ -185,7 +185,7 @@ A built-in web admin UI is served at `/admin/`. To use an externally built admin
 
 When `--mcp` is `true` (the default), a Streamable HTTP MCP server starts on `--mcp-port` (default `7434`). The MCP endpoint is at `http://<bind>:<mcp-port>/mcp`. It exposes the task store and signal gateway as MCP tools, plus filesystem tools scoped to the current working directory and repo root.
 
-The MCP endpoint accepts CORS requests only from the `null` origin used by the generated `kas monitor widget` file preview. That preview performs the normal Streamable HTTP initialization handshake and reuses its MCP session ID; arbitrary web origins are not allowed.
+The MCP endpoint accepts CORS requests only from the `null` origin used by the generated `kas monitor widget` file preview. Its preflight permits `POST` and `OPTIONS` plus the MCP session header. The preview performs the normal Streamable HTTP initialization handshake and reuses its MCP session ID; arbitrary web origins are not allowed.
 
 The task MCP tools include lifecycle and content operations such as `task_list`, `task_show`, `task_create`, `task_update_content`, `task_delete`, and `task_transition`. They also expose explicit Linear linking operations: `task_link_linear` fetches and stores a Linear issue link, while `task_unlink_linear` clears the stored link. In multi-project mode these tools accept an optional `project` argument to select the target project namespace.
 

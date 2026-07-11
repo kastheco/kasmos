@@ -134,7 +134,7 @@ key methods:
 
 the same tracked instances are exposed over the control api as `api.InstanceStatus` rows. status rows include the resolved `skip_permissions` value when reported by a new daemon; clients treat a missing value from an older daemon as the legacy daemon default of bypassing permissions.
 
-`InstanceStatus.worktree` is the absolute worktree path on the daemon's local control-plane wire. `InstanceStatus.paused` explicitly reports a paused instance and is distinct from `active`, which continues to mean running and not paused. before instance data reaches a model-visible live-status surface, the live-status contract narrows `worktree` to its basename so absolute local paths are never exposed there.
+`InstanceStatus.worktree` is the absolute worktree path on the daemon's local control-plane wire. `InstanceStatus.paused` explicitly reports a paused instance and is distinct from `active`, which continues to mean running and not paused. The daemon live-status adapter forwards worktree, branch, task number, last activity, and paused state into the shared contract. Before instance data reaches a model-visible live-status surface, the contract narrows `worktree` to its basename so absolute local paths are never exposed there.
 
 ### `api.EventBroadcaster`
 

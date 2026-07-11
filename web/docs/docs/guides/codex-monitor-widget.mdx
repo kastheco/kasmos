@@ -43,7 +43,7 @@ The supported way to see the real widget today is the browser preview. With `kas
 kas monitor widget --out preview.html
 ```
 
-The generated preview performs the MCP `initialize` handshake, reuses the returned session ID, and then polls `open_monitor`. The MCP listener permits the standalone `file://` preview origin only; other cross-origin callers remain blocked.
+The generated preview performs the MCP `initialize` handshake, reuses the returned session ID, and then polls `open_monitor`. The MCP listener permits the standalone `file://` preview origin and its POST preflight only; other cross-origin callers remain blocked.
 
 ## authority boundary
 
@@ -54,6 +54,8 @@ This keeps the `coordinate-kasmos` approval gate in authority. The coordinating 
 ## polling and transport
 
 The widget polls through `window.openai.callTool("open_monitor", …)`: every 2 seconds in `pip` and `fullscreen`, and every 3 seconds inline. Polls are single-flight and pause when the document is hidden. The server uses a one-second TTL cache to avoid repeating snapshot assembly for rapid calls.
+
+Task state and the event feed come from the same database selected by `kas serve --db`, including custom database paths, so the widget never mixes task and audit history from different stores.
 
 The widget makes no HTTP, WebSocket, or other network calls of its own. Codex rewrites `http://` and `ws://` CSP entries to their secure forms, which prevents a sandboxed widget iframe from fetching a localhost Kasmos server. Sending all data over the MCP bridge avoids that failure mode.
 
