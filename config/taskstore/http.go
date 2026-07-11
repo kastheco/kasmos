@@ -118,6 +118,11 @@ func (s *HTTPStore) taskPRURLURL(project, filename string) string {
 	return fmt.Sprintf("%s/v1/projects/%s/tasks/%s/pr-url", s.baseURL, url.PathEscape(project), url.PathEscape(filename))
 }
 
+func (s *HTTPStore) taskPRCreateOutcomeURL(project, filename string) string {
+	project = s.resolveProject(project)
+	return fmt.Sprintf("%s/v1/projects/%s/tasks/%s/pr-create-outcome", s.baseURL, url.PathEscape(project), url.PathEscape(filename))
+}
+
 // taskPRStateURL builds the URL for a task's PR state update endpoint.
 func (s *HTTPStore) taskPRStateURL(project, filename string) string {
 	project = s.resolveProject(project)
@@ -889,6 +894,49 @@ func (s *HTTPStore) SetPRURL(project, filename, prURL string) error {
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode == http.StatusNotFound {
+		return newNotFoundError("task store: plan not found: %s", filename)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return decodeError(resp)
+	}
+	return nil
+}
+
+func (s *HTTPStore) SetPRCreateOutcome(project, filename string, outcome PRCreateOutcome) error {
+	body, err := json.Marshal(outcome)
+	if err != nil {
+		return fmt.Errorf("task store: marshal pr create outcome: %w", err)
+	}
+	req, err := http.NewRequest(http.MethodPut, s.taskPRCreateOutcomeURL(project, filename), bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("task store: build request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := s.do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return newNotFoundError("task store: plan not found: %s", filename)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return decodeError(resp)
+	}
+	return nil
+}
+
+func (s *HTTPStore) ClearPRCreateOutcome(project, filename string) error {
+	req, err := http.NewRequest(http.MethodDelete, s.taskPRCreateOutcomeURL(project, filename), nil)
+	if err != nil {
+		return fmt.Errorf("task store: build request: %w", err)
+	}
+	resp, err := s.do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusNotFound {
 		return newNotFoundError("task store: plan not found: %s", filename)
 	}

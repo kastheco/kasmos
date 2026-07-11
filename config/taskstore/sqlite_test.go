@@ -853,6 +853,50 @@ func TestSQLiteStore_PRMetadata(t *testing.T) {
 	assert.Equal(t, "SUCCESS", entry.PRCheckStatus)
 }
 
+func TestSQLiteStore_PRCreateOutcome(t *testing.T) {
+	store := newTestStore(t)
+	createReadyTask(t, store, "test", "plan")
+	at := time.Date(2026, 7, 10, 12, 34, 56, 0, time.UTC)
+	want := taskstore.PRCreateOutcome{State: "failed", Error: "network unavailable", Attempts: 2, AttemptedAt: at}
+	require.NoError(t, store.SetPRCreateOutcome("test", "plan", want))
+	assertOutcome := func(entry taskstore.TaskEntry) {
+		assert.Equal(t, want.State, entry.PRCreateState)
+		assert.Equal(t, want.Error, entry.PRCreateError)
+		assert.Equal(t, want.Attempts, entry.PRCreateAttempts)
+		assert.Equal(t, want.AttemptedAt, entry.PRCreateAttemptedAt)
+	}
+	got, err := store.Get("test", "plan")
+	require.NoError(t, err)
+	assertOutcome(got)
+	list, err := store.List("test")
+	require.NoError(t, err)
+	require.Len(t, list, 1)
+	assertOutcome(list[0])
+	byStatus, err := store.ListByStatus("test", taskstore.StatusReady)
+	require.NoError(t, err)
+	require.Len(t, byStatus, 1)
+	assertOutcome(byStatus[0])
+
+	got.Description = "updated"
+	require.NoError(t, store.Update("test", "plan", got))
+	got, err = store.Get("test", "plan")
+	require.NoError(t, err)
+	assertOutcome(got)
+
+	require.NoError(t, store.ClearPRCreateOutcome("test", "plan"))
+	got, err = store.Get("test", "plan")
+	require.NoError(t, err)
+	assert.Empty(t, got.PRCreateState)
+	assert.Empty(t, got.PRCreateError)
+	assert.Zero(t, got.PRCreateAttempts)
+	assert.True(t, got.PRCreateAttemptedAt.IsZero())
+
+	createReadyTask(t, store, "test", "unset")
+	unset, err := store.Get("test", "unset")
+	require.NoError(t, err)
+	assert.True(t, unset.PRCreateAttemptedAt.IsZero())
+}
+
 func TestSQLiteStore_PRMetadata_NotFound(t *testing.T) {
 	store := newTestStore(t)
 

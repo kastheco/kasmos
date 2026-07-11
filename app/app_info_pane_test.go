@@ -457,6 +457,12 @@ func (f *failingSubtaskStore) CreateTopic(project string, entry taskstore.TopicE
 func (f *failingSubtaskStore) SetPRURL(project, filename, url string) error {
 	return f.inner.SetPRURL(project, filename, url)
 }
+func (f *failingSubtaskStore) SetPRCreateOutcome(project, filename string, outcome taskstore.PRCreateOutcome) error {
+	return f.inner.SetPRCreateOutcome(project, filename, outcome)
+}
+func (f *failingSubtaskStore) ClearPRCreateOutcome(project, filename string) error {
+	return f.inner.ClearPRCreateOutcome(project, filename)
+}
 func (f *failingSubtaskStore) SetPRState(project, filename, reviewDecision, checkStatus string) error {
 	return f.inner.SetPRState(project, filename, reviewDecision, checkStatus)
 }
