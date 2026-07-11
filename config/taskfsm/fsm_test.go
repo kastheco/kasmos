@@ -35,6 +35,7 @@ func TestTransition_ValidTransitions(t *testing.T) {
 		{StatusVerifying, VerifyApproved, StatusDone},
 		{StatusVerifying, VerifyFailed, StatusImplementing},
 		{StatusVerifying, Cancel, StatusCancelled},
+		{StatusDone, VerificationStale, StatusVerifying},
 		{StatusDone, StartOver, StatusPlanning},
 		{StatusDone, Cancel, StatusCancelled},
 		{StatusReady, Cancel, StatusCancelled},
@@ -50,6 +51,29 @@ func TestTransition_ValidTransitions(t *testing.T) {
 			assert.Equal(t, tc.to, result)
 		})
 	}
+}
+
+func TestTransition_VerificationStaleRejectedOutsideDone(t *testing.T) {
+	statuses := []Status{
+		StatusReady,
+		StatusPlanning,
+		StatusImplementing,
+		StatusReviewing,
+		StatusVerifying,
+		StatusCancelled,
+	}
+
+	for _, status := range statuses {
+		t.Run(string(status), func(t *testing.T) {
+			_, err := ApplyTransition(status, VerificationStale)
+			assert.Error(t, err)
+		})
+	}
+}
+
+func TestCanonicalGatewaySignalType_RejectsVerificationStale(t *testing.T) {
+	_, err := CanonicalGatewaySignalType(string(VerificationStale))
+	assert.Error(t, err)
 }
 
 func TestTransition_InvalidTransitions(t *testing.T) {

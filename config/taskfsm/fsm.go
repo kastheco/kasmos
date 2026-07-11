@@ -45,6 +45,7 @@ const (
 	ReviewChangesRequested Event = "review_changes_requested"
 	VerifyApproved         Event = "verify_approved"
 	VerifyFailed           Event = "verify_failed"
+	VerificationStale      Event = "verification_stale"
 	RequestReview          Event = "request_review"
 	StartOver              Event = "start_over"
 	Reimplement            Event = "reimplement"
@@ -120,10 +121,11 @@ var transitionTable = map[Status]map[Event]Status{
 		Cancel:         StatusCancelled,
 	},
 	StatusDone: {
-		StartOver:     StatusPlanning,
-		Reimplement:   StatusImplementing, // resume implementation without resetting branch
-		RequestReview: StatusReviewing,    // retrigger review for unmerged branches
-		Cancel:        StatusCancelled,    // explicit user cancellation from done
+		VerificationStale: StatusVerifying,
+		StartOver:         StatusPlanning,
+		Reimplement:       StatusImplementing, // resume implementation without resetting branch
+		RequestReview:     StatusReviewing,    // retrigger review for unmerged branches
+		Cancel:            StatusCancelled,    // explicit user cancellation from done
 	},
 	StatusCancelled: {
 		Reopen: StatusPlanning,
