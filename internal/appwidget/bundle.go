@@ -1,6 +1,7 @@
 package appwidget
 
 import (
+	"encoding/json"
 	"os"
 	"strings"
 
@@ -25,10 +26,21 @@ func WidgetHTML() string {
 
 const previewShim = `<script>
 const kasmosPreviewEndpoint="http://127.0.0.1:7433/v1/widget-preview/open-monitor";
-window.openai={displayMode:"inline",theme:"light",widgetState:{},callTool:async function(name,args){if(name!=="open_monitor")throw new Error("preview only supports open_monitor");const response=await fetch(kasmosPreviewEndpoint,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(args||{})});const payload=await response.json();if(!response.ok)throw new Error("open_monitor failed: "+response.status);return payload},setWidgetState:function(state){this.widgetState=state},requestDisplayMode:async function(mode){this.displayMode=mode;document.documentElement.classList.toggle("pip",mode==="pip");return {mode:mode}},sendFollowUpMessage:function(message){console.log(message)}};
+const kasmosPreviewInput=__KASMOS_PREVIEW_INPUT__;
+window.openai={displayMode:"inline",theme:"light",toolInput:kasmosPreviewInput,widgetState:kasmosPreviewInput,callTool:async function(name,args){if(name!=="refresh_monitor")throw new Error("preview only supports refresh_monitor");const response=await fetch(kasmosPreviewEndpoint,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(args||{})});const payload=await response.json();if(!response.ok)throw new Error("refresh_monitor failed: "+response.status);return payload},setWidgetState:function(state){this.widgetState=state},requestDisplayMode:async function(request){const mode=request.mode;this.displayMode=mode;document.documentElement.classList.toggle("pip",mode==="pip");window.dispatchEvent(new CustomEvent("openai:set_globals",{detail:{globals:{displayMode:mode}}}));return {mode:mode}},sendFollowUpMessage:function(message){console.log(message)}};
 </script>`
 
 // PreviewHTML returns the widget with a browser-host shim injected before its module.
 func PreviewHTML() string {
-	return strings.Replace(WidgetHTML(), `<script type="module">`, previewShim+`<script type="module">`, 1)
+	return PreviewHTMLWithInput("", "")
+}
+
+// PreviewHTMLWithInput returns the widget with seeded tool input for standalone previews.
+func PreviewHTMLWithInput(project, task string) string {
+	input, _ := json.Marshal(struct {
+		Project string `json:"project,omitempty"`
+		Task    string `json:"task,omitempty"`
+	}{Project: project, Task: task})
+	shim := strings.Replace(previewShim, "__KASMOS_PREVIEW_INPUT__", string(input), 1)
+	return strings.Replace(WidgetHTML(), `<script type="module">`, shim+`<script type="module">`, 1)
 }

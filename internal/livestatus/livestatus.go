@@ -268,6 +268,10 @@ func Assemble(in Input) LiveStatus {
 			attention = append(attention, AttentionItem{Task: agent.Task, Kind: KindStaleInstance, Detail: agent.HealthReason})
 		}
 	}
+	blocked := make(map[string]bool, len(attention))
+	for _, item := range attention {
+		blocked[item.Task] = true
+	}
 	if len(attention) > cap {
 		truncated.Attention = len(attention) - cap
 		attention = attention[:cap]
@@ -278,10 +282,6 @@ func Assemble(in Input) LiveStatus {
 		sort.Strings(result.Projects)
 	}
 	if in.Include.Tasks {
-		blocked := map[string]bool{}
-		for _, item := range attention {
-			blocked[item.Task] = true
-		}
 		for _, task := range in.Tasks {
 			if !activeStatus(task.Status) {
 				continue

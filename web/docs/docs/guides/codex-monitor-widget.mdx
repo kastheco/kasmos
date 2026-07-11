@@ -20,17 +20,11 @@ The monitor requires all of the following:
 - the `integrations/codex` plugin installed
 - Codex MCP-app rendering enabled
 
-MCP-app rendering is an under-development, default-off Codex feature. Enable it in `~/.codex/config.toml`:
+Codex Apps integration is stable and enabled by default. No feature flag is normally required. If Apps were explicitly disabled in `~/.codex/config.toml`, re-enable the canonical setting:
 
 ```toml
 [features]
-enable_mcp_apps = true
-```
-
-Or start Codex with:
-
-```sh
-codex --enable enable_mcp_apps
+apps = true
 ```
 
 On a Codex build without MCP-app rendering, `open_monitor` returns a text snapshot instead of a widget. That fallback is expected, not a bug.
@@ -43,17 +37,23 @@ The supported way to see the real widget today is the browser preview. With `kas
 kas monitor widget --out preview.html
 ```
 
+In multi-project mode, seed the preview with the target project and optional focused task:
+
+```sh
+kas monitor widget --out preview.html --project kasmos --task codex-live-monitor-ui
+```
+
 The generated file polls a dedicated read-only preview bridge at `http://127.0.0.1:7433/v1/widget-preview/open-monitor`. That bridge accepts only the `project` and `task` inputs used to build an `open_monitor` snapshot. It does not expose the shared MCP server or any mutating tool. The full MCP listener remains unavailable to `file://` and other cross-origin callers.
 
 ## authority boundary
 
-The widget is read-only. `open_monitor` is the only MCP tool the widget can call, and its MCP descriptor explicitly marks it read-only, non-destructive, idempotent, and closed-world so compatible hosts do not gate polling as a mutation. Its action buttons do not invoke lifecycle transitions or mutate Kasmos state; each sends a follow-up message into the conversation instead.
+The widget is read-only. `open_monitor` renders the widget, while the app-only `refresh_monitor` data tool supplies subsequent snapshots without attaching another output template. Both descriptors explicitly mark the tools read-only, non-destructive, idempotent, and closed-world. The widget cannot call any mutating Kasmos tool. Its action buttons do not invoke lifecycle transitions or mutate Kasmos state; each sends a follow-up message into the conversation instead.
 
 This keeps the `coordinate-kasmos` approval gate in authority. The coordinating agent must still obtain the required approval before `implement_start`, merges, pushes, or destructive operations. Users can verify this boundary by observing that a widget action creates a chat request for the agent rather than directly changing task state.
 
 ## polling and transport
 
-The widget polls through `window.openai.callTool("open_monitor", …)`: every 2 seconds in `pip` and `fullscreen`, and every 3 seconds inline. Polls are single-flight and pause when the document is hidden. The server uses a one-second TTL cache to avoid repeating snapshot assembly for rapid calls.
+The widget polls through `window.openai.callTool("refresh_monitor", …)`: every 2 seconds in `pip` and `fullscreen`, and every 3 seconds inline. `refresh_monitor` has no `openai/outputTemplate` or `ui.resourceUri`, so refreshes update the existing widget instead of asking the host to render a new one. Polls are single-flight and pause when the document is hidden. The server uses a one-second TTL cache to avoid repeating snapshot assembly for rapid calls.
 
 Task state and the event feed come from the same database selected by `kas serve --db`, including custom database paths, so the widget never mixes task and audit history from different stores.
 

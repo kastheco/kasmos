@@ -55,7 +55,11 @@ raw JSON suitable for piping to jq.`,
 }
 
 func newMonitorWidgetCmd() *cobra.Command {
-	var outPath string
+	var (
+		outPath string
+		project string
+		task    string
+	)
 	cmd := &cobra.Command{
 		Use:   "widget",
 		Short: "write a standalone monitor widget preview",
@@ -64,7 +68,7 @@ func newMonitorWidgetCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("resolve output path: %w", err)
 			}
-			if err := os.WriteFile(path, []byte(appwidget.PreviewHTML()), 0o644); err != nil {
+			if err := os.WriteFile(path, []byte(appwidget.PreviewHTMLWithInput(project, task)), 0o644); err != nil {
 				return fmt.Errorf("write widget preview: %w", err)
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "%s\nopen this in a browser with `kas serve` running\n", path)
@@ -72,6 +76,8 @@ func newMonitorWidgetCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&outPath, "out", "./kasmos-monitor-preview.html", "output html path")
+	cmd.Flags().StringVar(&project, "project", "", "seed the preview with a project (required in multi-repo mode)")
+	cmd.Flags().StringVar(&task, "task", "", "seed the preview with a focused task")
 	return cmd
 }
 

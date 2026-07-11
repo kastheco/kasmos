@@ -142,6 +142,19 @@ func TestAssembleBlockedDerivationInvariant(t *testing.T) {
 	assert.False(t, got.Tasks[1].Blocked)
 }
 
+func TestAssembleBlockedDerivationUsesUntruncatedAttention(t *testing.T) {
+	got := Assemble(Input{Cap: 1, Include: Include{Tasks: true}, Tasks: []TaskInput{
+		{Filename: "z-blocker", Status: taskstore.StatusImplementing, Phase: "wave_waiting"},
+		{Filename: "a-blocker", Status: taskstore.StatusImplementing, ReviewFeedback: true},
+	}})
+	require.Len(t, got.Attention, 1)
+	assert.Equal(t, "z-blocker", got.Attention[0].Task)
+	require.Len(t, got.Tasks, 1)
+	assert.Equal(t, "a-blocker", got.Tasks[0].Filename)
+	assert.True(t, got.Tasks[0].Blocked)
+	assert.Equal(t, 1, got.Truncated.Attention)
+}
+
 func TestAssembleExtendedDeterminismInvariant(t *testing.T) {
 	now := time.Date(2026, 7, 10, 12, 0, 0, 0, time.UTC)
 	in := Input{Now: now, Include: Include{Projects: true, Tasks: true, Events: true, Focus: "x"}, Projects: []string{"z", "a"}, Tasks: []TaskInput{{Filename: "x", Status: taskstore.StatusReady}}, Events: []EventItem{{At: now, Kind: "signal", Message: "done"}}, FocusTask: &FocusInput{Filename: "x", Content: "## Wave 1\n### Task 1: one"}}

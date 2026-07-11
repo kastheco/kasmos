@@ -48,7 +48,7 @@ export function useMonitorSnapshot(globals: OpenAiGlobals, project?: string, tas
   const scopeKey = `${project ?? ""}\u0000${task ?? ""}`;
   const latestScope = useRef(scopeKey);
   latestScope.current = scopeKey;
-  const inFlight = useRef<string | undefined>(undefined);
+  const inFlight = useRef(false);
   const failures = useRef(0);
   const timer = useRef<number | undefined>(undefined);
   const mounted = useRef(true);
@@ -58,11 +58,11 @@ export function useMonitorSnapshot(globals: OpenAiGlobals, project?: string, tas
   useEffect(() => () => { mounted.current = false; }, []);
   const refresh = useCallback(async () => {
     const requestScope = scopeKey;
-    if (inFlight.current === requestScope || document.visibilityState !== "visible" || !window.openai?.callTool) return;
-    inFlight.current = requestScope;
+    if (inFlight.current || document.visibilityState !== "visible" || !window.openai?.callTool) return;
+    inFlight.current = true;
     try {
-      const next = snapshotFrom(await window.openai.callTool("open_monitor", { project, task }));
-      if (!next) throw new Error("open_monitor returned an invalid snapshot");
+      const next = snapshotFrom(await window.openai.callTool("refresh_monitor", { project, task }));
+      if (!next) throw new Error("refresh_monitor returned an invalid snapshot");
       if (mounted.current && latestScope.current === requestScope) {
         setSnapshot(next);
         failures.current = 0;
@@ -73,11 +73,13 @@ export function useMonitorSnapshot(globals: OpenAiGlobals, project?: string, tas
         failures.current += 1;
         setStale(true);
       }
-    } finally { if (inFlight.current === requestScope) inFlight.current = undefined; }
+    } finally { inFlight.current = false; }
   }, [project, scopeKey, task]);
 
   useEffect(() => {
+    let cancelled = false;
     const schedule = () => {
+      if (cancelled) return;
       window.clearInterval(timer.current);
       const delay = Math.min(baseDelay * 2 ** failures.current, 30000);
       timer.current = window.setInterval(async () => { await refresh(); schedule(); }, delay);
@@ -88,7 +90,7 @@ export function useMonitorSnapshot(globals: OpenAiGlobals, project?: string, tas
     };
     schedule();
     document.addEventListener("visibilitychange", visibility);
-    return () => { window.clearInterval(timer.current); document.removeEventListener("visibilitychange", visibility); };
+    return () => { cancelled = true; window.clearInterval(timer.current); document.removeEventListener("visibilitychange", visibility); };
   }, [baseDelay, refresh]);
   const visibleSnapshot = !project || snapshot?.project === project ? snapshot : undefined;
   return { snapshot: visibleSnapshot, stale, refresh };

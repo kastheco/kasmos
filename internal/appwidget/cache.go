@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/kastheco/kasmos/internal/livestatus"
+	"golang.org/x/sync/singleflight"
 )
 
 type snapshotCache struct {
@@ -12,6 +13,7 @@ type snapshotCache struct {
 	ttl     time.Duration
 	now     func() time.Time
 	entries map[string]cachedSnapshot
+	flight  singleflight.Group
 }
 
 type cachedSnapshot struct {

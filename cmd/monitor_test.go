@@ -37,6 +37,16 @@ func TestMonitorWidgetWritesPreview(t *testing.T) {
 	assert.Contains(t, string(content), "callTool:async function")
 }
 
+func TestMonitorWidgetSeedsMultiProjectPreview(t *testing.T) {
+	outPath := filepath.Join(t.TempDir(), "preview.html")
+	cmd := NewMonitorCmd()
+	cmd.SetArgs([]string{"widget", "--out", outPath, "--project", "kasmos", "--task", "monitor"})
+	require.NoError(t, cmd.Execute())
+	content, err := os.ReadFile(outPath)
+	require.NoError(t, err)
+	assert.Contains(t, string(content), `const kasmosPreviewInput={"project":"kasmos","task":"monitor"}`)
+}
+
 func TestMonitorCmd_HasSubcommands(t *testing.T) {
 	cmd := NewMonitorCmd()
 	subcommands := make(map[string]bool)

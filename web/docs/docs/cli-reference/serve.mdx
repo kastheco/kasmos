@@ -191,7 +191,7 @@ The task MCP tools include lifecycle and content operations such as `task_list`,
 
 The read-only `live_status` tool returns the canonical compact orchestration snapshot. It accepts `project` to select the target project (required in multi-project mode) and an optional numeric `cap` that limits each of the `active_agents` and `attention` arrays. The default cap is 20 and values above the hard maximum of 100 are reduced to 100.
 
-The read-only `open_monitor` tool serves the Codex monitor widget and its structured snapshot. In multi-project mode its `projects` field follows the same live routing catalog as other MCP tools, so newly registered projects become selectable without restarting the server.
+The read-only `open_monitor` tool serves the Codex monitor widget and its initial structured snapshot. The app-only `refresh_monitor` tool returns subsequent snapshots without a widget template, preventing polling calls from remounting the rendered UI. In multi-project mode their `projects` fields follow the same live routing catalog as other MCP tools, so newly registered projects become selectable without restarting the server.
 
 Daemon data is best effort for `live_status`. If the daemon control socket is unavailable, the tool still returns lifecycle counts and task-derived attention from the task store with `daemon_running: false`; daemon-derived agents, heartbeat fields, and `stale_instance` attention are unavailable. See the [live status contract](../guides/live-status-contract.mdx) for the response fields and truncation semantics.
 

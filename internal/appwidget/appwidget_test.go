@@ -9,6 +9,8 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -23,11 +25,40 @@ import (
 
 type countingStore struct {
 	taskstore.Store
-	listCalls int
+	listCalls   atomic.Int32
+	listEntered chan struct{}
+	releaseList chan struct{}
+	listOnce    sync.Once
+}
+
+type failingDetailStore struct {
+	taskstore.Store
+	failSubtasks bool
+	failContent  bool
+}
+
+func (s *failingDetailStore) GetSubtasks(project, filename string) ([]taskstore.SubtaskEntry, error) {
+	if s.failSubtasks {
+		return nil, errors.New("subtasks unavailable")
+	}
+	return s.Store.GetSubtasks(project, filename)
+}
+
+func (s *failingDetailStore) GetContent(project, filename string) (string, error) {
+	if s.failContent {
+		return "", errors.New("content unavailable")
+	}
+	return s.Store.GetContent(project, filename)
 }
 
 func (s *countingStore) List(project string) ([]taskstore.TaskEntry, error) {
-	s.listCalls++
+	s.listCalls.Add(1)
+	if s.listEntered != nil {
+		s.listOnce.Do(func() { close(s.listEntered) })
+	}
+	if s.releaseList != nil {
+		<-s.releaseList
+	}
 	return s.Store.List(project)
 }
 
@@ -95,8 +126,33 @@ func TestOpenMonitorPollSafetyUsesCachedStructuredResult(t *testing.T) {
 	require.NoError(t, err)
 	second, err := handler(context.Background(), mcp.CallToolRequest{})
 	require.NoError(t, err)
-	assert.Equal(t, 1, store.listCalls)
+	assert.Equal(t, int32(1), store.listCalls.Load())
 	assert.Equal(t, first.StructuredContent, second.StructuredContent)
+}
+
+func TestOpenMonitorPollSafetyCoalescesConcurrentCacheMisses(t *testing.T) {
+	store := &countingStore{Store: taskstore.NewTestSQLiteStore(t), listEntered: make(chan struct{}), releaseList: make(chan struct{})}
+	require.NoError(t, store.Create("kasmos", taskstore.TaskEntry{Filename: "monitor", Status: taskstore.StatusReady}))
+	stubAuditLogger(t)
+	handler := makeOpenMonitorHandler(routing.NewRegisterConfig("kasmos", []string{"kasmos"}), store, filepath.Join(t.TempDir(), "missing.sock"), newSnapshotCache(time.Second))
+
+	const callers = 8
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(callers)
+	for range callers {
+		go func() {
+			defer wg.Done()
+			<-start
+			_, _ = handler(context.Background(), mcp.CallToolRequest{})
+		}()
+	}
+	close(start)
+	<-store.listEntered
+	time.Sleep(50 * time.Millisecond)
+	assert.Equal(t, int32(1), store.listCalls.Load(), "same-key cache misses must share one snapshot build")
+	close(store.releaseList)
+	wg.Wait()
 }
 
 func TestEventsLoggerFailureDegrades(t *testing.T) {
@@ -121,28 +177,20 @@ func TestQueryEventsUsesServedDatabase(t *testing.T) {
 	assert.Equal(t, "from custom db", events[0].Message)
 }
 
-func TestSnapshotProjectsLatestVerifyOutcome(t *testing.T) {
-	db, err := taskstore.OpenSharedDB(filepath.Join(t.TempDir(), "served.db"))
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, db.Close()) })
-	store, err := taskstore.NewSQLiteStoreFromDB(db)
-	require.NoError(t, err)
-	require.NoError(t, store.Create("kasmos", taskstore.TaskEntry{Filename: "monitor", Status: taskstore.StatusDone, Content: "## Wave 1\n### Task 1: ship"}))
-	gateway, err := taskstore.NewSQLiteSignalGatewayFromDB(db)
-	require.NoError(t, err)
-	require.NoError(t, gateway.Create("kasmos", taskstore.SignalEntry{PlanFile: "monitor", SignalType: "verify_failed"}))
-	require.NoError(t, gateway.Create("kasmos", taskstore.SignalEntry{PlanFile: "monitor", SignalType: "verify_approved"}))
-	for _, worker := range []string{"first", "second"} {
-		signal, claimErr := gateway.Claim("kasmos", worker)
-		require.NoError(t, claimErr)
-		require.NotNil(t, signal)
-		require.NoError(t, gateway.MarkProcessed(signal.ID, taskstore.SignalDone, "processed"))
-	}
+func TestBuildSnapshotPropagatesRequiredDetailErrors(t *testing.T) {
+	base := taskstore.NewTestSQLiteStore(t)
+	require.NoError(t, base.Create("kasmos", taskstore.TaskEntry{Filename: "monitor", Status: taskstore.StatusImplementing, Content: "## Wave 1\n### Task 1: ship"}))
+	stubAuditLogger(t)
 
-	snapshot, err := buildSnapshot("kasmos", "monitor", []string{"kasmos"}, store, filepath.Join(t.TempDir(), "missing.sock"), db)
-	require.NoError(t, err)
-	require.NotNil(t, snapshot.Focus)
-	assert.Equal(t, "approved", snapshot.Focus.Readiness.LastVerifyOutcome)
+	t.Run("subtasks", func(t *testing.T) {
+		_, err := buildSnapshot("kasmos", "monitor", []string{"kasmos"}, &failingDetailStore{Store: base, failSubtasks: true}, filepath.Join(t.TempDir(), "missing.sock"))
+		require.ErrorContains(t, err, "get subtasks for monitor: subtasks unavailable")
+	})
+
+	t.Run("content", func(t *testing.T) {
+		_, err := buildSnapshot("kasmos", "monitor", []string{"kasmos"}, &failingDetailStore{Store: base, failContent: true}, filepath.Join(t.TempDir(), "missing.sock"))
+		require.ErrorContains(t, err, "get content for monitor: content unavailable")
+	})
 }
 
 func stubAuditLogger(t *testing.T) {
@@ -158,6 +206,9 @@ func TestPreviewHTMLIncludesHostShim(t *testing.T) {
 	assert.Contains(t, html, "window.openai=")
 	assert.Contains(t, html, "callTool:async function")
 	assert.Contains(t, html, "http://127.0.0.1:7433/v1/widget-preview/open-monitor")
+	assert.Contains(t, html, `name!=="refresh_monitor"`)
+	assert.Contains(t, html, `const mode=request.mode`)
+	assert.Contains(t, html, `new CustomEvent("openai:set_globals"`)
 	assert.NotContains(t, html, "mcp-session-id")
 	assert.NotContains(t, html, `name:name`)
 	assert.Less(t, strings.Index(html, "window.openai="), strings.Index(html, `<script type="module">`))

@@ -34,7 +34,7 @@ describe("kasmos monitor host contract", () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(6000); }); expect(openai.callTool).toHaveBeenCalledTimes(1); expect(screen.getAllByRole("listitem").some((item) => item.textContent === "3 implementing")).toBe(true);
     resolve({ structuredContent: snapshot }); await act(async () => { await pending; }); Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" }); fireEvent(document, new Event("visibilitychange")); await act(async () => { await vi.advanceTimersByTimeAsync(9000); }); expect(openai.callTool).toHaveBeenCalledTimes(1); view.unmount();
   });
-  it("authority-boundary invariant: actions send messages and only polling uses open_monitor", () => { const openai = host({ displayMode: "fullscreen" }); render(<Monitor />); screen.getAllByRole("button").filter((button) => /start wave|look at blocker|approve review/.test(button.textContent ?? "")).forEach(fireEvent.click); expect(openai.sendFollowUpMessage).toHaveBeenCalledTimes(3); expect(openai.callTool).not.toHaveBeenCalled(); });
+  it("authority-boundary invariant: actions send messages and polling never reuses the render tool", async () => { vi.useFakeTimers(); const openai = host({ displayMode: "fullscreen" }); render(<Monitor />); screen.getAllByRole("button").filter((button) => /start wave|look at blocker|approve review/.test(button.textContent ?? "")).forEach(fireEvent.click); expect(openai.sendFollowUpMessage).toHaveBeenCalledTimes(3); await act(async () => { await vi.advanceTimersByTimeAsync(2000); }); expect(openai.callTool).toHaveBeenCalledWith("refresh_monitor", expect.any(Object)); expect(openai.callTool).not.toHaveBeenCalledWith("open_monitor", expect.any(Object)); });
   it("no-network invariant: a full poll cycle never fetches", async () => { vi.useFakeTimers(); const fetchSpy = vi.fn(() => { throw new Error("network forbidden"); }); vi.stubGlobal("fetch", fetchSpy); host(); render(<Monitor />); await act(async () => { await vi.advanceTimersByTimeAsync(3000); }); expect(fetchSpy).not.toHaveBeenCalled(); vi.unstubAllGlobals(); });
   it("degraded-host invariant: missing optional methods still renders", () => { host({ requestDisplayMode: undefined, sendFollowUpMessage: undefined }); render(<Monitor />); expect(screen.getByText("kasmos monitor")).toBeTruthy(); expect(screen.queryByRole("button", { name: /pin/ })).toBeNull(); });
   it("a11y invariant: stale status is live and actions are native buttons", () => { host({ displayMode: "fullscreen" }); render(<Monitor />); expect(document.querySelector('[aria-live="polite"]')).toBeTruthy(); expect(screen.getByRole("button", { name: "look at blocker" }).tabIndex).toBe(0); });
@@ -55,10 +55,12 @@ describe("kasmos monitor host contract", () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
     fireEvent.change(screen.getByLabelText("project"), { target: { value: "beta" } });
     await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
-    expect(callTool).toHaveBeenNthCalledWith(2, "open_monitor", { project: "beta", task: undefined });
+    expect(callTool).toHaveBeenCalledTimes(1);
+    resolveAlpha({ structuredContent: alpha }); await act(async () => { await alphaPending; });
+    await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+    expect(callTool).toHaveBeenNthCalledWith(2, "refresh_monitor", { project: "beta", task: undefined });
     resolveBeta({ structuredContent: beta }); await act(async () => { await betaPending; });
     expect(screen.getAllByText("beta-task")).toHaveLength(2);
-    resolveAlpha({ structuredContent: alpha }); await act(async () => { await alphaPending; });
     expect(screen.queryByText("alpha-task")).toBeNull(); expect(screen.getAllByText("beta-task")).toHaveLength(2);
   });
 });

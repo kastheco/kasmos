@@ -3125,6 +3125,32 @@ func TestDaemonStateAdapter_ListInstances_IncludesSoloAgentFieldsAndPausedWorktr
 	assert.False(t, statuses[0].Active)
 }
 
+func TestDaemonStateAdapter_ListInstances_PrefersAttachedWorktree(t *testing.T) {
+	const (
+		project  = "proj"
+		repoPath = "/tmp/proj"
+	)
+	spawner := NewTmuxSpawner()
+	d := &Daemon{repos: NewRepoManager(), spawner: spawner, logger: slog.Default(), broadcaster: api.NewEventBroadcaster()}
+	d.repos.repos = []RepoEntry{{Path: repoPath, Project: project}}
+
+	inst := &session.Instance{Title: "shared-coder", Path: repoPath, TaskFile: "monitor", AgentType: session.AgentTypeCoder, Status: session.Paused}
+	inst.BindSharedTaskWorktree(repoPath, "plan/monitor")
+	expectedWorktree := inst.GetWorktreePath()
+	key := instanceKey(repoPath, "monitor", session.AgentTypeCoder)
+	spawner.mu.Lock()
+	spawner.instances[key] = inst
+	spawner.planFileByKey[key] = "monitor"
+	spawner.agentTypeByKey[key] = session.AgentTypeCoder
+	spawner.projectByKey[key] = project
+	spawner.mu.Unlock()
+
+	statuses := (&daemonStateAdapter{d: d}).ListInstances(project)
+	require.Len(t, statuses, 1)
+	assert.NotEqual(t, repoPath, expectedWorktree)
+	assert.Equal(t, expectedWorktree, statuses[0].Worktree)
+}
+
 func TestDaemonStateAdapter_ActivePlans_IgnoresStandaloneInstances(t *testing.T) {
 	const (
 		project  = "proj"

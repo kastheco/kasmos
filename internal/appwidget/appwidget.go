@@ -48,9 +48,21 @@ func RegisterWithRouting(srv *server.MCPServer, rc routing.RegisterConfig, store
 		mcp.WithString("project", mcp.Description("target project name (required in multi-repo mode)")),
 		mcp.WithString("task", mcp.Description("optional task filename to focus")),
 		withToolMeta(map[string]any{
-			"openai/outputTemplate": WidgetURI, "openai/widgetAccessible": true,
+			"openai/outputTemplate":          WidgetURI,
 			"openai/toolInvocation/invoking": "opening kasmos monitor", "openai/toolInvocation/invoked": "kasmos monitor ready",
-			"ui": map[string]any{"resourceUri": WidgetURI, "visibility": []string{"model", "app"}},
+			"ui": map[string]any{"resourceUri": WidgetURI, "visibility": []string{"model"}},
+		})), makeOpenMonitorHandler(rc, store, socketPath, widgetSnapshots, sharedDB...))
+	srv.AddTool(mcp.NewTool("refresh_monitor",
+		mcp.WithDescription("refresh live kasmos orchestration data for an existing monitor widget"),
+		mcp.WithReadOnlyHintAnnotation(true),
+		mcp.WithDestructiveHintAnnotation(false),
+		mcp.WithIdempotentHintAnnotation(true),
+		mcp.WithOpenWorldHintAnnotation(false),
+		mcp.WithString("project", mcp.Description("target project name (required in multi-repo mode)")),
+		mcp.WithString("task", mcp.Description("optional task filename to focus")),
+		withToolMeta(map[string]any{
+			"openai/widgetAccessible": true,
+			"ui":                      map[string]any{"visibility": []string{"app"}},
 		})), makeOpenMonitorHandler(rc, store, socketPath, widgetSnapshots, sharedDB...))
 }
 
@@ -87,16 +99,26 @@ func makeOpenMonitorHandler(rc routing.RegisterConfig, store taskstore.Store, so
 		if snapshot, ok := cache.get(key); ok {
 			return mcp.NewToolResultStructured(snapshot, monitorSummary(snapshot)), nil
 		}
-		resolved, closeStore, err := resolveToolStore(project, store)
-		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("open_monitor: resolve store: %v", err)), nil
-		}
-		defer closeStore()
-		snapshot, err := buildSnapshot(project, focus, projects, resolved, socketPath, sharedDB...)
+		value, err, _ := cache.flight.Do(key, func() (any, error) {
+			if snapshot, ok := cache.get(key); ok {
+				return snapshot, nil
+			}
+			resolved, closeStore, err := resolveToolStore(project, store)
+			if err != nil {
+				return nil, fmt.Errorf("resolve store: %w", err)
+			}
+			defer closeStore()
+			snapshot, err := buildSnapshot(project, focus, projects, resolved, socketPath, sharedDB...)
+			if err != nil {
+				return nil, err
+			}
+			cache.set(key, snapshot)
+			return snapshot, nil
+		})
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("open_monitor: %v", err)), nil
 		}
-		cache.set(key, snapshot)
+		snapshot := value.(livestatus.LiveStatus)
 		return mcp.NewToolResultStructured(snapshot, monitorSummary(snapshot)), nil
 	}
 }
@@ -159,7 +181,6 @@ func buildSnapshot(project, focus string, projects []string, store taskstore.Sto
 		return livestatus.LiveStatus{}, fmt.Errorf("list tasks: %w", err)
 	}
 	inputs := make([]livestatus.TaskInput, 0, len(entries))
-	verifyOutcome := queryVerifyOutcome(project, focus, sharedDB...)
 	var focused *livestatus.FocusInput
 	for _, entry := range entries {
 		task := livestatus.TaskInput{Filename: entry.Filename, Status: entry.Status, Phase: entry.ExecutionState.Phase, Topic: entry.Topic, Branch: entry.Branch, ActiveWave: entry.ExecutionState.ActiveWave, ReviewCycle: entry.ReviewCycle, PRURL: entry.PRURL, PRCheckStatus: entry.PRCheckStatus, PRReviewDecision: entry.PRReviewDecision, ReviewFeedback: strings.TrimSpace(entry.LatestReviewFeedback) != ""}
@@ -168,26 +189,28 @@ func buildSnapshot(project, focus string, projects []string, store taskstore.Sto
 		}
 		if entry.Status == taskstore.StatusImplementing || entry.Status == taskstore.StatusReviewing || entry.Status == taskstore.StatusVerifying {
 			subtasks, subErr := store.GetSubtasks(project, entry.Filename)
-			if subErr == nil {
-				task.SubtasksTotal = len(subtasks)
-				for _, subtask := range subtasks {
-					if subtask.Status == taskstore.SubtaskStatusDone || subtask.Status == taskstore.SubtaskStatusComplete {
-						task.SubtasksDone++
-					}
+			if subErr != nil {
+				return livestatus.LiveStatus{}, fmt.Errorf("get subtasks for %s: %w", entry.Filename, subErr)
+			}
+			task.SubtasksTotal = len(subtasks)
+			for _, subtask := range subtasks {
+				if subtask.Status == taskstore.SubtaskStatusDone || subtask.Status == taskstore.SubtaskStatusComplete {
+					task.SubtasksDone++
 				}
-				if entry.Filename == focus {
-					focused = focusInput(entry, subtasks, verifyOutcome)
-				}
+			}
+			if entry.Filename == focus {
+				focused = focusInput(entry, subtasks)
 			}
 		}
 		if entry.Filename == focus {
 			content, contentErr := store.GetContent(project, entry.Filename)
-			if contentErr == nil {
-				if focused == nil {
-					focused = focusInput(entry, nil, verifyOutcome)
-				}
-				focused.Content = content
+			if contentErr != nil {
+				return livestatus.LiveStatus{}, fmt.Errorf("get content for %s: %w", entry.Filename, contentErr)
 			}
+			if focused == nil {
+				focused = focusInput(entry, nil)
+			}
+			focused.Content = content
 		}
 		inputs = append(inputs, task)
 	}
@@ -196,41 +219,8 @@ func buildSnapshot(project, focus string, projects []string, store taskstore.Sto
 	return livestatus.Assemble(livestatus.Input{Project: project, Now: time.Now(), Daemon: heartbeat, Tasks: inputs, Agents: agents, Include: livestatus.Include{Projects: true, Tasks: true, Events: true, Focus: focus}, Projects: projects, Events: events, FocusTask: focused}), nil
 }
 
-func focusInput(entry taskstore.TaskEntry, subtasks []taskstore.SubtaskEntry, verifyOutcome string) *livestatus.FocusInput {
-	return &livestatus.FocusInput{Filename: entry.Filename, Goal: entry.Goal, Subtasks: subtasks, ActiveWave: entry.ExecutionState.ActiveWave, Readiness: livestatus.Readiness{Status: string(entry.Status), ReviewCycle: entry.ReviewCycle, HasReviewFeedback: strings.TrimSpace(entry.LatestReviewFeedback) != "", PRCheckStatus: entry.PRCheckStatus, PRReviewDecision: entry.PRReviewDecision, LastVerifyOutcome: verifyOutcome}}
-}
-
-func queryVerifyOutcome(project, focus string, sharedDB ...*sql.DB) string {
-	if strings.TrimSpace(focus) == "" {
-		return ""
-	}
-	var gateway taskstore.SignalGateway
-	var err error
-	if len(sharedDB) > 0 && sharedDB[0] != nil {
-		gateway, err = taskstore.NewSQLiteSignalGatewayFromDB(sharedDB[0])
-	} else {
-		gateway, err = taskstore.OpenAuthoritativeSignalGateway(project)
-	}
-	if err != nil {
-		return ""
-	}
-	defer gateway.Close() //nolint:errcheck
-	signals, err := gateway.List(project, taskstore.SignalDone)
-	if err != nil {
-		return ""
-	}
-	for i := len(signals) - 1; i >= 0; i-- {
-		if strings.TrimSuffix(signals[i].PlanFile, ".md") != strings.TrimSuffix(focus, ".md") {
-			continue
-		}
-		switch signals[i].SignalType {
-		case "verify_approved", "master_approved", "readiness_approved":
-			return "approved"
-		case "verify_failed", "readiness_changes", "readiness_changes_requested":
-			return "failed"
-		}
-	}
-	return ""
+func focusInput(entry taskstore.TaskEntry, subtasks []taskstore.SubtaskEntry) *livestatus.FocusInput {
+	return &livestatus.FocusInput{Filename: entry.Filename, Goal: entry.Goal, Subtasks: subtasks, ActiveWave: entry.ExecutionState.ActiveWave, Readiness: livestatus.Readiness{Status: string(entry.Status), ReviewCycle: entry.ReviewCycle, HasReviewFeedback: strings.TrimSpace(entry.LatestReviewFeedback) != "", PRCheckStatus: entry.PRCheckStatus, PRReviewDecision: entry.PRReviewDecision}}
 }
 
 func queryEvents(project string, sharedDB ...*sql.DB) []livestatus.EventItem {
