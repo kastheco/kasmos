@@ -1208,7 +1208,7 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 						if src.planFile != "" {
 							state, err := src.worktree.QueryPRState()
 							if err == nil && state.URL != "" {
-								return prCreatedForPlanMsg{planFile: src.planFile, url: state.URL}
+								return prCreatedForPlanMsg{planFile: src.planFile, url: state.URL, toastID: prToastID}
 							}
 						}
 						return prCreatedMsg{instanceTitle: capturedPRTitle, prTitle: capturedPRTitle}

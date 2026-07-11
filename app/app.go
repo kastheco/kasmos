@@ -1018,9 +1018,12 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.menu.SetState(ui.StateDefault)
 		return m, m.toastTickCmd()
 	case prCreatedForPlanMsg:
-		m.toastManager.Resolve(m.pendingPRToastID, overlay.ToastSuccess, "PR created!")
-		m.pendingPRToastID = ""
-		m.pendingPRSource = nil
+		if msg.toastID != "" {
+			m.toastManager.Resolve(msg.toastID, overlay.ToastSuccess, "PR created!")
+			if m.pendingPRToastID == msg.toastID {
+				m.pendingPRToastID = ""
+			}
+		}
 		if msg.url != "" && m.taskStore != nil {
 			if err := m.taskStore.SetPRURL(m.taskStoreProject, msg.planFile, msg.url); err != nil {
 				log.WarningLog.Printf("prCreatedForPlanMsg: could not persist PR URL for %q: %v", msg.planFile, err)
@@ -3281,6 +3284,7 @@ type prCreatedMsg struct {
 type prCreatedForPlanMsg struct {
 	planFile string
 	url      string
+	toastID  string
 }
 
 type prBodyReadyMsg struct {

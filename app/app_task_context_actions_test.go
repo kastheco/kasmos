@@ -138,6 +138,23 @@ func TestPRPreparingBodyBlocksInputAndIgnoresStaleResponses(t *testing.T) {
 	assert.Equal(t, "plan/current", updated.pendingPRSource.branch)
 }
 
+func TestAutomaticPRCompletionDoesNotClearManualPRState(t *testing.T) {
+	h, planFile, _ := newCompletedTaskPRHome(t, false)
+	h.state = statePRPreparingBody
+	h.pendingPRSource = &prSource{branch: "plan/manual", title: "manual"}
+	h.pendingPRToastID = h.toastManager.Loading("preparing manual pr...")
+	manualToastID := h.pendingPRToastID
+
+	model, cmd := h.Update(prCreatedForPlanMsg{planFile: planFile, url: "https://github.test/pr/1"})
+	updated := model.(*home)
+
+	require.NotNil(t, cmd)
+	require.NotNil(t, updated.pendingPRSource)
+	assert.Equal(t, "plan/manual", updated.pendingPRSource.branch)
+	assert.Equal(t, manualToastID, updated.pendingPRToastID)
+	assert.Equal(t, statePRPreparingBody, updated.state)
+}
+
 func TestCreatePRKeyOnTaskRowUsesTaskMetadata(t *testing.T) {
 	t.Parallel()
 	h, _, branch := newCompletedTaskPRHome(t, false)
