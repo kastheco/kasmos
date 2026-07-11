@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"regexp"
 	"strings"
 
 	"github.com/kastheco/kasmos/config/taskstore"
@@ -35,6 +36,8 @@ var validGatewaySignalTypes = map[string]struct{}{
 	"advance_wave":             {},
 	"retry_wave":               {},
 }
+
+var reviewedSHARegexp = regexp.MustCompile(`^[0-9a-f]{40}$`)
 
 func gatewaySignalTypeError(raw string) error {
 	return fmt.Errorf("unknown signal type %q; valid types: plan_start, planner_finished, planner_draft_finished, implement_start, implement_finished, review_approved, review_changes_requested, verify_approved, verify_failed, advance_wave, retry_wave, implement_task_finished, implement_wave, architect_finished (wire alias: elaborator_finished)", raw)
@@ -92,8 +95,31 @@ func NormalizeGatewaySignalPayload(signalType, payload string) (string, error) {
 	}
 
 	switch canonicalType {
+	case "verify_approved", "verify_failed":
+		if payload == "" {
+			return "", nil
+		}
+		if !json.Valid([]byte(payload)) {
+			b, _ := json.Marshal(map[string]string{"body": payload})
+			return string(b), nil
+		}
+		var p struct {
+			ReviewedSHA string `json:"reviewed_sha"`
+			Origin      string `json:"origin"`
+		}
+		if err := json.Unmarshal([]byte(payload), &p); err != nil {
+			return "", fmt.Errorf("%s: decode payload: %w", canonicalType, err)
+		}
+		if p.ReviewedSHA != "" && !reviewedSHARegexp.MatchString(p.ReviewedSHA) {
+			return "", fmt.Errorf("%s: reviewed_sha must be 40 lowercase hexadecimal characters", canonicalType)
+		}
+		if p.Origin != "" && p.Origin != "master" && p.Origin != "operator" && p.Origin != "force_promoted" && p.Origin != "auto" {
+			return "", fmt.Errorf("%s: invalid origin %q", canonicalType, p.Origin)
+		}
+		return payload, nil
+
 	case "plan_start", "planner_finished", "implement_start", "implement_finished", "review_approved", "review_changes_requested",
-		"verify_approved", "verify_failed", "advance_wave", "retry_wave":
+		"advance_wave", "retry_wave":
 		if payload == "" {
 			return "", nil
 		}
