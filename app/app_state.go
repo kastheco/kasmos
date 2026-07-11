@@ -1594,6 +1594,13 @@ func (m *home) updateInfoPaneForPlanHeader() {
 		ActiveAgentType:      strings.TrimSpace(entry.ExecutionState.ActiveAgentType),
 		ActiveWave:           entry.ExecutionState.ActiveWave,
 	}
+	if m.taskStore != nil {
+		if storeEntry, err := m.taskStore.Get(m.taskStoreProject, planFile); err == nil {
+			data.PRURL = storeEntry.PRURL
+			data.PRCreateState = storeEntry.PRCreateState
+			data.PRCreateError = storeEntry.PRCreateError
+		}
+	}
 	switch taskfsm.NormalizeExecutionPhase(entry.ExecutionState.Phase) {
 	case taskfsm.ExecutionPhaseFixing, taskfsm.ExecutionPhaseReviewing:
 		data.ActiveRound = entry.ReviewCycle + 1

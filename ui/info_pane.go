@@ -61,6 +61,9 @@ type InfoData struct {
 	PlanCreated      string
 	LinearIdentifier string
 	LinearURL        string
+	PRURL            string
+	PRCreateState    string
+	PRCreateError    string
 	ExecutionPhase   string
 	ActiveAgentType  string
 	ActiveWave       int
@@ -544,6 +547,17 @@ func (p *InfoPane) renderPlanSection() string {
 	}
 	if p.data.LinearIdentifier != "" {
 		rows = append(rows, p.renderRow("linear", strings.TrimSpace(p.data.LinearIdentifier+"  "+p.data.LinearURL)))
+	}
+	if p.data.PlanStatus == "done" {
+		if p.data.PRURL != "" {
+			rows = append(rows, p.renderRow("pr", p.data.PRURL))
+		}
+		if p.data.PRCreateState != "" {
+			rows = append(rows, p.renderStatusRow("pr creation", p.data.PRCreateState))
+		}
+		if p.data.PRCreateError != "" {
+			rows = append(rows, p.renderRow("pr error", p.data.PRCreateError))
+		}
 	}
 	return strings.Join(rows, "\n")
 }

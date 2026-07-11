@@ -129,6 +129,41 @@ func TestInfoPane_OmitsLinearRowWhenAbsent(t *testing.T) {
 	assert.NotContains(t, stripANSI(after.String()), "linear")
 }
 
+func TestInfoPane_DonePlanRendersPRCreationFailure(t *testing.T) {
+	p := NewInfoPane()
+	p.SetSize(80, 24)
+	p.SetData(InfoData{
+		HasInstance:   true,
+		HasPlan:       true,
+		PlanName:      "my-feature",
+		PlanStatus:    "done",
+		PRCreateState: "failed",
+		PRCreateError: "worktree has uncommitted changes",
+	})
+
+	plain := stripANSI(p.String())
+	assert.Contains(t, plain, "pr creation")
+	assert.Contains(t, plain, "failed")
+	assert.Contains(t, plain, "worktree has uncommitted changes")
+}
+
+func TestInfoPane_NonDonePlanOmitsPRCreationState(t *testing.T) {
+	p := NewInfoPane()
+	p.SetSize(80, 24)
+	p.SetData(InfoData{
+		HasInstance:   true,
+		HasPlan:       true,
+		PlanName:      "my-feature",
+		PlanStatus:    "implementing",
+		PRCreateState: "failed",
+		PRCreateError: "should not render yet",
+	})
+
+	plain := stripANSI(p.String())
+	assert.NotContains(t, plain, "pr creation")
+	assert.NotContains(t, plain, "should not render yet")
+}
+
 func TestInfoPane_PlannerProfileInstanceUsesLowercaseRole(t *testing.T) {
 	p := NewInfoPane()
 	p.SetSize(80, 24)

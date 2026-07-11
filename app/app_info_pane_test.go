@@ -110,6 +110,28 @@ func TestUpdateInfoPaneForPlanHeader_GoalPopulated(t *testing.T) {
 	assert.Equal(t, "improve the info tab display", data.PlanGoal)
 }
 
+func TestUpdateInfoPaneForPlanHeader_PopulatesPersistedPRState(t *testing.T) {
+	t.Parallel()
+	h, _, store, _ := buildInfoPaneHome(t)
+	require.NoError(t, store.SetPRURL("test", "plan.md", "https://github.test/pull/42"))
+	require.NoError(t, store.SetPRCreateOutcome("test", "plan.md", taskstore.PRCreateOutcome{
+		State: "failed",
+		Error: "worktree has uncommitted changes",
+	}))
+	state, err := taskstate.Load(store, "test", h.activeRepoPath)
+	require.NoError(t, err)
+	h.taskState = state
+
+	ok := h.nav.SelectByID(ui.SidebarPlanPrefix + "plan.md")
+	require.True(t, ok)
+	h.updateInfoPaneForPlanHeader()
+
+	data := h.tabbedWindow.GetInfoData()
+	assert.Equal(t, "https://github.test/pull/42", data.PRURL)
+	assert.Equal(t, "failed", data.PRCreateState)
+	assert.Equal(t, "worktree has uncommitted changes", data.PRCreateError)
+}
+
 // TestUpdateInfoPaneForPlanHeader_LifecycleTimestamps verifies that PlanningAt and ImplementingAt are set.
 func TestUpdateInfoPaneForPlanHeader_LifecycleTimestamps(t *testing.T) {
 	t.Parallel()
