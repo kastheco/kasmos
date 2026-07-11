@@ -1,0 +1,4 @@
+interface:
+  display_name: "Monitor Kasmos Task"
+  short_description: "Watch one Kasmos task cheaply and escalate only on change"
+  default_prompt: "Use $monitor-kasmos-task to watch a running Kasmos task and escalate only when something actionable happens."
