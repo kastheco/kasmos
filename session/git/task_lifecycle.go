@@ -39,6 +39,81 @@ func NewSharedTaskWorktree(repoPath, branch string) *GitWorktree {
 	)
 }
 
+// TaskBranchExists reports whether branch resolves locally (refs/heads/<branch>)
+// or on the remote (refs/remotes/origin/<branch>). Local refs only; no network.
+func TaskBranchExists(repoPath, branch string) (local bool, remote bool) {
+	gt := &GitWorktree{repoPath: repoPath, worktreePath: repoPath}
+	_, localErr := gt.runGitCommand(repoPath, "show-ref", "--verify", "--quiet", "refs/heads/"+branch)
+	_, remoteErr := gt.runGitCommand(repoPath, "show-ref", "--verify", "--quiet", "refs/remotes/origin/"+branch)
+	return localErr == nil, remoteErr == nil
+}
+
+// EnsureTaskWorktree returns a ready shared task worktree for branch, with its
+// base commit SHA resolved. It never fabricates a branch: if branch exists only
+// on origin, the local ref is created from origin/<branch> first, because
+// GitWorktree.Setup() detects branches through refs/heads/<branch> only and would
+// otherwise cut a new branch off HEAD (see setupNewWorktree).
+func EnsureTaskWorktree(repoPath, branch string) (*GitWorktree, error) {
+	if branch == "" {
+		return nil, fmt.Errorf("no branch to create a worktree from")
+	}
+
+	local, remote := TaskBranchExists(repoPath, branch)
+	if !local && !remote {
+		return nil, fmt.Errorf("branch '%s' no longer exists locally or on origin", branch)
+	}
+
+	gt := &GitWorktree{repoPath: repoPath, worktreePath: repoPath}
+	if !local {
+		if _, err := gt.runGitCommand(repoPath, "branch", "--track", branch, "origin/"+branch); err != nil {
+			return nil, fmt.Errorf("restore branch '%s' from origin: %w", branch, err)
+		}
+	}
+
+	path := TaskWorktreePath(repoPath, branch)
+	out, err := gt.runGitCommand(repoPath, "worktree", "list", "--porcelain")
+	if err != nil {
+		return nil, fmt.Errorf("inspect worktree registrations: %w", err)
+	}
+	var currentPath string
+	var registration string
+	checkRegistration := func() error {
+		if currentPath != filepath.Clean(path) {
+			return nil
+		}
+		if registration != "branch refs/heads/"+branch {
+			if strings.HasPrefix(registration, "branch refs/heads/") {
+				registeredBranch := strings.TrimPrefix(registration, "branch refs/heads/")
+				return fmt.Errorf("worktree path %s is registered to branch '%s'", path, registeredBranch)
+			}
+			return fmt.Errorf("worktree path %s is registered as '%s'", path, registration)
+		}
+		return nil
+	}
+	for _, line := range strings.Split(out, "\n") {
+		switch {
+		case line == "":
+			if err := checkRegistration(); err != nil {
+				return nil, err
+			}
+			currentPath = ""
+			registration = ""
+		case strings.HasPrefix(line, "worktree "):
+			currentPath = filepath.Clean(strings.TrimSpace(strings.TrimPrefix(line, "worktree ")))
+		case strings.HasPrefix(line, "branch "):
+			registration = strings.TrimSpace(line)
+		case line == "detached" || line == "bare":
+			registration = line
+		}
+	}
+
+	wt := NewSharedTaskWorktree(repoPath, branch)
+	if err := wt.Setup(); err != nil {
+		return nil, fmt.Errorf("set up task worktree for branch '%s': %w", branch, err)
+	}
+	return wt, nil
+}
+
 // EnsureTaskBranch creates the plan branch off the current HEAD if it doesn't
 // already exist. It is idempotent.
 func EnsureTaskBranch(repoPath, branch string) error {

@@ -175,6 +175,8 @@ const (
 	stateSpawnAgent
 	// statePRTitle is the state when the user is entering a PR title.
 	statePRTitle
+	// statePRPreparingBody is the state while the PR body is assembled asynchronously.
+	statePRPreparingBody
 	// statePRBody is the state when the user is editing the PR body/description.
 	statePRBody
 	// stateRenameInstance is the state when the user is renaming an instance.
@@ -327,9 +329,11 @@ type home struct {
 	pendingPlanDesc string
 	// pendingPRTitle stores the PR title during the two-step PR creation flow
 	pendingPRTitle string
-	// pendingPRWorktree is a GitWorktree built from taskState for plan-level PR
-	// creation flows where no running instance is available. Cleared after use.
-	pendingPRWorktree *gitpkg.GitWorktree
+	// pendingPRSource identifies the task or session branch used by the PR flow.
+	pendingPRSource *prSource
+	// pendingPRRequestID correlates asynchronous body preparation with the
+	// source that initiated it so stale responses cannot replace a newer flow.
+	pendingPRRequestID uint64
 	// pendingSpawnProgram stores the selected harness program during the spawn flow
 	pendingSpawnProgram string
 	// pendingSpawnExecutionMode stores the chosen execution mode during the spawn flow
@@ -988,7 +992,38 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.toastManager.Resolve(msg.id, overlay.ToastError, msg.err.Error())
 		m.pendingPRToastID = ""
 		return m, m.toastTickCmd()
+	case prBodyReadyMsg:
+		if msg.requestID != m.pendingPRRequestID || m.state != statePRPreparingBody || m.pendingPRSource == nil {
+			return m, nil
+		}
+		m.pendingPRSource.worktree = msg.worktree
+		m.pendingPRSource.needsSetup = false
+		m.toastManager.Resolve(m.pendingPRToastID, overlay.ToastSuccess, "pr description ready")
+		m.pendingPRToastID = ""
+		m.pendingPRTitle = msg.title
+		m.state = statePRBody
+		tio := overlay.NewTextInputOverlay("pr description (edit or submit)", msg.body)
+		tio.SetSize(80, 20)
+		m.overlays.Show(tio)
+		return m, m.toastTickCmd()
+	case prBodyErrorMsg:
+		if msg.requestID != m.pendingPRRequestID || m.state != statePRPreparingBody {
+			return m, nil
+		}
+		m.toastManager.Resolve(msg.id, overlay.ToastError, msg.err.Error())
+		m.pendingPRToastID = ""
+		m.pendingPRTitle = ""
+		m.pendingPRSource = nil
+		m.state = stateDefault
+		m.menu.SetState(ui.StateDefault)
+		return m, m.toastTickCmd()
 	case prCreatedForPlanMsg:
+		if msg.toastID != "" {
+			m.toastManager.Resolve(msg.toastID, overlay.ToastSuccess, "PR created!")
+			if m.pendingPRToastID == msg.toastID {
+				m.pendingPRToastID = ""
+			}
+		}
 		if msg.url != "" && m.taskStore != nil {
 			if err := m.taskStore.SetPRURL(m.taskStoreProject, msg.planFile, msg.url); err != nil {
 				log.WarningLog.Printf("prCreatedForPlanMsg: could not persist PR URL for %q: %v", msg.planFile, err)
@@ -999,6 +1034,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.loadTaskState()
 		m.updateInfoPane()
 		planName := taskstate.DisplayName(msg.planFile)
+		m.audit(auditlog.EventPRCreated, fmt.Sprintf("pr created: %s", planName), auditlog.WithPlan(msg.planFile))
 		m.toastManager.Success(fmt.Sprintf("pr created for '%s'", planName))
 		return m, m.toastTickCmd()
 	case planRenderedMsg:
@@ -3248,6 +3284,20 @@ type prCreatedMsg struct {
 type prCreatedForPlanMsg struct {
 	planFile string
 	url      string
+	toastID  string
+}
+
+type prBodyReadyMsg struct {
+	requestID uint64
+	title     string
+	body      string
+	worktree  *gitpkg.GitWorktree
+}
+
+type prBodyErrorMsg struct {
+	requestID uint64
+	id        string
+	err       error
 }
 
 // prStateUpdateMsg carries updated PR review/check state for a single plan.

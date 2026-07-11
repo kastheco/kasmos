@@ -514,6 +514,50 @@ func (m *home) createPRAfterApproval(planFile, reviewBody string) tea.Cmd {
 	}
 }
 
+func (m *home) preparePRBody(src prSource, title string, requestID uint64) tea.Cmd {
+	repoPath := m.activeRepoPath
+	store := m.taskStore
+	project := m.taskStoreProject
+	id := m.pendingPRToastID
+
+	return func() tea.Msg {
+		wt := src.worktree
+		if src.needsSetup {
+			var err error
+			wt, err = gitpkg.EnsureTaskWorktree(repoPath, src.branch)
+			if err != nil {
+				return prBodyErrorMsg{requestID: requestID, id: id, err: err}
+			}
+		}
+
+		if src.planFile != "" && store != nil {
+			entry, err := store.Get(project, src.planFile)
+			if err != nil {
+				return prBodyErrorMsg{requestID: requestID, id: id, err: err}
+			}
+			subtasks, _ := store.GetSubtasks(project, src.planFile)
+			base := wt.GetBaseCommitSHA()
+			gitChanges, gitCommits, gitStats := "", "", ""
+			if base != "" {
+				if files, err := exec.Command("git", "-C", wt.GetWorktreePath(), "diff", "--name-only", base).CombinedOutput(); err == nil {
+					gitChanges = strings.TrimSpace(string(files))
+				}
+				if commits, err := exec.Command("git", "-C", wt.GetWorktreePath(), "log", "--oneline", base+"..HEAD").CombinedOutput(); err == nil {
+					gitCommits = strings.TrimSpace(string(commits))
+				}
+				if stats, err := exec.Command("git", "-C", wt.GetWorktreePath(), "diff", "--stat", base).CombinedOutput(); err == nil {
+					gitStats = strings.TrimSpace(string(stats))
+				}
+			}
+			body := gitpkg.BuildPRBody(gitpkg.AssemblePRMetadata(entry, subtasks, "", entry.ReviewCycle, gitChanges, gitCommits, gitStats))
+			return prBodyReadyMsg{requestID: requestID, title: title, body: body, worktree: wt}
+		}
+
+		body, _ := wt.GeneratePRBody()
+		return prBodyReadyMsg{requestID: requestID, title: title, body: body, worktree: wt}
+	}
+}
+
 func mergeTopicStatus(status ui.TopicStatus, inst *session.Instance, started bool) ui.TopicStatus {
 	if started && !inst.Paused() && !inst.PromptDetected {
 		status.HasRunning = true
