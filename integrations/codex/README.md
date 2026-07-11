@@ -1,6 +1,6 @@
 # Kasmos for Codex
 
-This plugin makes Kasmos available to Codex as a guarded, headless implementation backend. It bundles the `coordinate-kasmos` skill and connects Codex to the local Kasmos MCP server for planning, implementation, review, and verification workflows.
+This plugin makes Kasmos available to Codex as a guarded, headless implementation backend. It bundles `coordinate-kasmos` for planning, implementation, review, and verification workflows and `monitor-kasmos-task` for read-only monitoring and escalation of an already-running task, then connects both skills to the local Kasmos MCP server.
 
 ## prerequisite
 

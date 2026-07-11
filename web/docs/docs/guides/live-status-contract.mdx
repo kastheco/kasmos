@@ -20,7 +20,7 @@ GET /v1/repos/{project}/live-status
 
 The daemon heartbeat is best effort. If the daemon is unavailable, the MCP tool still returns task-store data with `daemon_running` set to `false`. Daemon-derived `uptime` and `repo_count` may be absent or zero, and `stale_instance` attention is unavailable because instance health requires the daemon.
 
-Poll every 1–5 seconds. Consumers should reuse the latest snapshot between polls rather than treating this endpoint as an event stream. Arrays are capped and the payload contains summary state rather than logs, transcripts, or task bodies, preserving the compactness guarantee.
+A UI process may poll every 1–5 seconds when it reuses the latest snapshot between polls rather than treating this endpoint as an event stream; a model-driven poller must use a much slower cadence of at least 30 seconds. Arrays are capped and the payload contains summary state rather than logs, transcripts, or task bodies, preserving the compactness guarantee.
 
 ## top-level fields
 

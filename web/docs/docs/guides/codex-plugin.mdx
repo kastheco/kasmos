@@ -4,7 +4,7 @@ title: "codex plugin"
 
 # codex plugin
 
-The Kasmos Codex plugin packages the `coordinate-kasmos` skill and the shared Kasmos MCP connection as an installable, host-level integration. It lets Codex plan, implement, review, and verify repository changes through Kasmos without copying the skill into each project.
+The Kasmos Codex plugin packages the `coordinate-kasmos` and `monitor-kasmos-task` skills with the shared Kasmos MCP connection as an installable, host-level integration. It lets Codex coordinate repository changes or watch running tasks through Kasmos without copying the skills into each project.
 
 ## prerequisites
 
@@ -44,11 +44,19 @@ Ask Codex to use `coordinate-kasmos` for a repository change. The skill routes t
 
 The skill preserves Kasmos's authority boundaries. Planning and inspection do not grant permission to implement. Codex must stop at approval gates before implementation, and it must not perform destructive actions unless you explicitly request them.
 
+## monitor a running task
+
+Use `coordinate-kasmos` to plan, implement, review, and approve work. Use `monitor-kasmos-task` only to watch an already-running task and escalate when its stable state changes or it needs attention.
+
+Invoke the monitor with an explicit Kasmos project and task filename, for example: “monitor task `temporary-kasmos-monitoring-skill` in project `kasmos`.” While the task is healthy and unchanged, a cheap model polls silently with at most two MCP calls per poll. When something actionable happens, it escalates to the frontier model with only the minimal evidence needed to respond. A hard poll budget terminates monitoring instead of allowing an unbounded run.
+
+The monitor is strictly read-only. It never approves, transitions, signals, steers, merges, or restarts anything. It is a temporary stopgap until the native event-driven monitor is available; see the bundled skill's `## Retirement` section for the removal criteria. The [live status contract](./live-status-contract.mdx) documents the snapshot it consumes.
+
 ## plugin and per-repo setup
 
 The plugin and `kas setup` serve different scopes:
 
-- the plugin is distributable, host-level packaging for the `coordinate-kasmos` skill and shared MCP server registration
+- the plugin is distributable, host-level packaging for the bundled skills and shared MCP server registration
 - `kas setup` still configures each repository for Kasmos and Codex
 
 For Codex projects, `kas setup` uses `WriteCodexProject` to create the repo-scoped `.codex` files and `EnsureCodexMCPEntry` to keep `.codex/config.toml` pointed at the shared MCP endpoint. Installing the plugin does not replace that repository wiring or register the repository with Kasmos.
