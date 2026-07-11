@@ -20,6 +20,24 @@ func TestDefaultDaemonConfig_PRMonitor(t *testing.T) {
 	assert.Equal(t, 60*time.Second, cfg.PRMonitor.PollInterval, "default PollInterval should be 60s")
 	assert.Equal(t, []string{"eyes"}, cfg.PRMonitor.Reactions, "default Reactions should be [eyes]")
 	assert.Equal(t, 60*time.Second, cfg.LinearTriggerMonitor.PollInterval)
+	assert.True(t, cfg.PRCreator.Enabled)
+	assert.Equal(t, 120*time.Second, cfg.PRCreator.RetryInterval)
+	assert.Equal(t, 5, cfg.PRCreator.MaxAttempts)
+}
+
+func TestLoadDaemonConfig_PRCreator(t *testing.T) {
+	t.Run("absent uses defaults", func(t *testing.T) {
+		cfg := loadFromString(t, "poll_interval_sec = 2")
+		assert.True(t, cfg.PRCreator.Enabled)
+		assert.Equal(t, 120*time.Second, cfg.PRCreator.RetryInterval)
+		assert.Equal(t, 5, cfg.PRCreator.MaxAttempts)
+	})
+	t.Run("section overrides defaults", func(t *testing.T) {
+		cfg := loadFromString(t, "[pr_creator]\nenabled = false\nretry_interval_sec = 30\nmax_attempts = 3")
+		assert.False(t, cfg.PRCreator.Enabled)
+		assert.Equal(t, 30*time.Second, cfg.PRCreator.RetryInterval)
+		assert.Equal(t, 3, cfg.PRCreator.MaxAttempts)
+	})
 }
 
 func TestLoadDaemonConfig_MissingFile(t *testing.T) {

@@ -48,6 +48,7 @@ type Daemon struct {
 	pidLock              *PIDLock
 	broadcaster          *api.EventBroadcaster
 	prMonitor            *PRMonitor
+	prCreator            *PRCreator
 	linearTriggerMonitor *LinearTriggerMonitor
 	pushBranch           func(*session.Instance) error
 	killAgent            func(repoPath, planFile, agentType string) error
@@ -609,6 +610,9 @@ func NewDaemon(cfg *DaemonConfig) (*Daemon, error) {
 	if cfg.PRMonitor.Enabled {
 		d.prMonitor = NewPRMonitor(cfg.PRMonitor, cfg.MaxReviewFixCycles, repos, d.broadcaster, logger, d.executeAction)
 	}
+	if cfg.PRCreator.Enabled && cfg.AutoCreatePR {
+		d.prCreator = NewPRCreator(cfg.PRCreator, repos, logger, d.executeAction)
+	}
 	for _, repo := range repos.List() {
 		if repo.LinearTriggerConfig.Enabled {
 			d.linearTriggerMonitor = NewLinearTriggerMonitor(cfg.LinearTriggerMonitor, repos, d.broadcaster, logger)
@@ -990,6 +994,15 @@ func (d *Daemon) Run(ctx context.Context) error {
 					// Monitor exited while context is still live — log as a warning.
 					d.logger.Warn("pr monitor exited unexpectedly", "err", err)
 				}
+			}
+		}()
+	}
+	if d.prCreator != nil {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := d.prCreator.Run(ctx); err != nil && ctx.Err() == nil {
+				d.logger.Warn("pr creator exited unexpectedly", "err", err)
 			}
 		}()
 	}

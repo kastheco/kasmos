@@ -24,6 +24,13 @@ type PRMonitorConfig struct {
 	Reactions []string
 }
 
+// PRCreatorConfig holds configuration for retrying transient PR creation failures.
+type PRCreatorConfig struct {
+	Enabled       bool
+	RetryInterval time.Duration
+	MaxAttempts   int
+}
+
 // LinearTriggerMonitorConfig holds configuration for Linear trigger polling.
 type LinearTriggerMonitorConfig struct {
 	// PollInterval is the daemon-level default. Per-repo [linear.triggers] can override it.
@@ -74,6 +81,9 @@ type DaemonConfig struct {
 	// PRMonitor holds configuration for the PR monitoring subsystem.
 	PRMonitor PRMonitorConfig `toml:"pr_monitor"`
 
+	// PRCreator holds configuration for the bounded PR creation retry sweep.
+	PRCreator PRCreatorConfig `toml:"pr_creator"`
+
 	// LinearTriggerMonitor holds daemon defaults for Linear trigger polling.
 	LinearTriggerMonitor LinearTriggerMonitorConfig `toml:"linear_trigger_monitor"`
 }
@@ -83,6 +93,12 @@ type tomlPRMonitorConfig struct {
 	Enabled         bool     `toml:"enabled"`
 	PollIntervalSec float64  `toml:"poll_interval_sec"`
 	Reactions       []string `toml:"reactions"`
+}
+
+type tomlPRCreatorConfig struct {
+	Enabled          *bool   `toml:"enabled"`
+	RetryIntervalSec float64 `toml:"retry_interval_sec"`
+	MaxAttempts      int     `toml:"max_attempts"`
 }
 
 // tomlLinearTriggerMonitorConfig is the raw TOML representation of LinearTriggerMonitorConfig.
@@ -105,6 +121,7 @@ type tomlDaemonConfig struct {
 	ReadinessMaxVerifyCycles *int                           `toml:"readiness_max_verify_cycles"`
 	SocketPath               string                         `toml:"socket_path"`
 	PRMonitor                tomlPRMonitorConfig            `toml:"pr_monitor"`
+	PRCreator                tomlPRCreatorConfig            `toml:"pr_creator"`
 	LinearTriggerMonitor     tomlLinearTriggerMonitorConfig `toml:"linear_trigger_monitor"`
 }
 
@@ -123,6 +140,11 @@ func defaultDaemonConfig() *DaemonConfig {
 			Enabled:      false,
 			PollInterval: 60 * time.Second,
 			Reactions:    []string{"eyes"},
+		},
+		PRCreator: PRCreatorConfig{
+			Enabled:       true,
+			RetryInterval: 120 * time.Second,
+			MaxAttempts:   5,
 		},
 		LinearTriggerMonitor: LinearTriggerMonitorConfig{
 			PollInterval: 60 * time.Second,
@@ -213,6 +235,15 @@ func LoadDaemonConfig(path string) (*DaemonConfig, error) {
 			reactions = []string{"eyes"}
 		}
 		cfg.PRMonitor.Reactions = reactions
+	}
+	if tc.PRCreator.Enabled != nil {
+		cfg.PRCreator.Enabled = *tc.PRCreator.Enabled
+	}
+	if tc.PRCreator.RetryIntervalSec > 0 {
+		cfg.PRCreator.RetryInterval = time.Duration(tc.PRCreator.RetryIntervalSec * float64(time.Second))
+	}
+	if tc.PRCreator.MaxAttempts > 0 {
+		cfg.PRCreator.MaxAttempts = tc.PRCreator.MaxAttempts
 	}
 	if tc.LinearTriggerMonitor.PollIntervalSec > 0 {
 		cfg.LinearTriggerMonitor.PollInterval = time.Duration(tc.LinearTriggerMonitor.PollIntervalSec * float64(time.Second))
