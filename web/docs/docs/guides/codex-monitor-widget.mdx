@@ -43,7 +43,14 @@ In multi-project mode, seed the preview with the target project and optional foc
 kas monitor widget --out preview.html --project kasmos --task codex-live-monitor-ui
 ```
 
-The generated file polls a dedicated read-only preview bridge at `http://127.0.0.1:7433/v1/widget-preview/open-monitor`. That bridge accepts only the `project` and `task` inputs used to build an `open_monitor` snapshot. It does not expose the shared MCP server or any mutating tool. The full MCP listener remains unavailable to `file://` and other cross-origin callers.
+When `kas serve` uses a non-default port or origin, pass the same base URL while generating the preview:
+
+```sh
+kas serve --port 8080
+kas monitor widget --out preview.html --serve-url http://127.0.0.1:8080
+```
+
+The generated file polls a dedicated read-only preview bridge under the configured `--serve-url` (default: `http://127.0.0.1:7433/v1/widget-preview/open-monitor`). That bridge accepts only the `project` and `task` inputs used to build an `open_monitor` snapshot. It does not expose the shared MCP server or any mutating tool. The full MCP listener remains unavailable to `file://` and other cross-origin callers.
 
 ## authority boundary
 

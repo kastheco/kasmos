@@ -47,6 +47,17 @@ func TestMonitorWidgetSeedsMultiProjectPreview(t *testing.T) {
 	assert.Contains(t, string(content), `const kasmosPreviewInput={"project":"kasmos","task":"monitor"}`)
 }
 
+func TestMonitorWidgetUsesCustomServeURL(t *testing.T) {
+	outPath := filepath.Join(t.TempDir(), "preview.html")
+	cmd := NewMonitorCmd()
+	cmd.SetArgs([]string{"widget", "--out", outPath, "--serve-url", "http://127.0.0.1:8080"})
+	require.NoError(t, cmd.Execute())
+	content, err := os.ReadFile(outPath)
+	require.NoError(t, err)
+	assert.Contains(t, string(content), `const kasmosPreviewEndpoint="http://127.0.0.1:8080/v1/widget-preview/open-monitor"`)
+	assert.NotContains(t, string(content), "127.0.0.1:7433")
+}
+
 func TestMonitorCmd_HasSubcommands(t *testing.T) {
 	cmd := NewMonitorCmd()
 	subcommands := make(map[string]bool)
