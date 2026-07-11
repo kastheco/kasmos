@@ -236,6 +236,10 @@ func (a *daemonStateAdapter) ListInstances(project string) []api.InstanceStatus 
 			if resourceProfile == "normal" {
 				resourceProfile = ""
 			}
+			worktreePath := inst.GetWorktreePath()
+			if worktreePath == "" {
+				worktreePath = inst.Path
+			}
 			out = append(out, api.InstanceStatus{
 				ID:              inst.Title,
 				Project:         project,
@@ -246,6 +250,8 @@ func (a *daemonStateAdapter) ListInstances(project string) []api.InstanceStatus 
 				Ready:           ready,
 				Title:           inst.Title,
 				Branch:          inst.Branch,
+				Worktree:        worktreePath,
+				Paused:          inst.Paused(),
 				Program:         inst.Program,
 				CreatedAt:       createdAt,
 				TaskNumber:      inst.TaskNumber,

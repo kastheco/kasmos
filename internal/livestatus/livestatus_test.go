@@ -102,3 +102,73 @@ func TestAssembleSortsAgentsBeforeTruncation(t *testing.T) {
 	require.Len(t, forward.Attention, 1)
 	assert.Equal(t, AttentionItem{Task: "alpha", Kind: KindStaleInstance, Detail: "stale alpha"}, forward.Attention[0])
 }
+
+func TestAssembleV1CompatibilityInvariant(t *testing.T) {
+	b, err := json.Marshal(Assemble(Input{}))
+	require.NoError(t, err)
+	var object map[string]any
+	require.NoError(t, json.Unmarshal(b, &object))
+	assert.ElementsMatch(t, []string{"schema_version", "generated_at", "project", "daemon_running", "lifecycle", "active_agents", "attention", "truncated"}, mapKeys(object))
+	assert.Equal(t, float64(2), object["schema_version"])
+}
+
+func TestAssemblePathPrivacyInvariant(t *testing.T) {
+	got := Assemble(Input{Agents: []AgentInput{{Worktree: "/home/u/wt/foo"}}})
+	require.Len(t, got.ActiveAgents, 1)
+	assert.Equal(t, "foo", got.ActiveAgents[0].Worktree)
+	b, err := json.Marshal(got)
+	require.NoError(t, err)
+	assert.NotContains(t, string(b), "/home/")
+}
+
+func TestAssembleExtendedCompactnessInvariant(t *testing.T) {
+	const cap = 4
+	tasks := make([]TaskInput, cap+3)
+	for i := range tasks {
+		tasks[i] = TaskInput{Filename: fmt.Sprintf("%02d", i), Status: taskstore.StatusReady}
+	}
+	events := make([]EventItem, cap+5)
+	got := Assemble(Input{Cap: cap, Include: Include{Tasks: true, Events: true}, Tasks: tasks, Events: events})
+	assert.Len(t, got.Tasks, cap)
+	assert.Len(t, got.Events, cap)
+	assert.Equal(t, 3, got.Truncated.Tasks)
+	assert.Equal(t, 5, got.Truncated.Events)
+}
+
+func TestAssembleBlockedDerivationInvariant(t *testing.T) {
+	got := Assemble(Input{Include: Include{Tasks: true}, Tasks: []TaskInput{{Filename: "blocked", Status: taskstore.StatusImplementing, Phase: "wave_waiting"}, {Filename: "healthy", Status: taskstore.StatusReady}}})
+	require.Len(t, got.Tasks, 2)
+	assert.True(t, got.Tasks[0].Blocked)
+	assert.False(t, got.Tasks[1].Blocked)
+}
+
+func TestAssembleBlockedDerivationUsesUntruncatedAttention(t *testing.T) {
+	got := Assemble(Input{Cap: 1, Include: Include{Tasks: true}, Tasks: []TaskInput{
+		{Filename: "z-blocker", Status: taskstore.StatusImplementing, Phase: "wave_waiting"},
+		{Filename: "a-blocker", Status: taskstore.StatusImplementing, ReviewFeedback: true},
+	}})
+	require.Len(t, got.Attention, 1)
+	assert.Equal(t, "z-blocker", got.Attention[0].Task)
+	require.Len(t, got.Tasks, 1)
+	assert.Equal(t, "a-blocker", got.Tasks[0].Filename)
+	assert.True(t, got.Tasks[0].Blocked)
+	assert.Equal(t, 1, got.Truncated.Attention)
+}
+
+func TestAssembleExtendedDeterminismInvariant(t *testing.T) {
+	now := time.Date(2026, 7, 10, 12, 0, 0, 0, time.UTC)
+	in := Input{Now: now, Include: Include{Projects: true, Tasks: true, Events: true, Focus: "x"}, Projects: []string{"z", "a"}, Tasks: []TaskInput{{Filename: "x", Status: taskstore.StatusReady}}, Events: []EventItem{{At: now, Kind: "signal", Message: "done"}}, FocusTask: &FocusInput{Filename: "x", Content: "## Wave 1\n### Task 1: one"}}
+	first, err := json.Marshal(Assemble(in))
+	require.NoError(t, err)
+	second, err := json.Marshal(Assemble(in))
+	require.NoError(t, err)
+	assert.Equal(t, first, second)
+}
+
+func mapKeys(m map[string]any) []string {
+	keys := make([]string, 0, len(m))
+	for key := range m {
+		keys = append(keys, key)
+	}
+	return keys
+}

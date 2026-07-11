@@ -3077,10 +3077,11 @@ func TestDaemonStateAdapter_SpawnSolo_Conflict(t *testing.T) {
 	close(release)
 }
 
-func TestDaemonStateAdapter_ListInstances_IncludesSoloAgentFields(t *testing.T) {
+func TestDaemonStateAdapter_ListInstances_IncludesSoloAgentFieldsAndPausedWorktree(t *testing.T) {
 	const (
-		project  = "proj"
-		repoPath = "/tmp/proj"
+		project      = "proj"
+		repoPath     = "/tmp/proj"
+		worktreePath = "/tmp/proj-worktrees/sdk-solo-agent"
 	)
 	spawner := NewTmuxSpawner()
 	d := &Daemon{
@@ -3095,12 +3096,12 @@ func TestDaemonStateAdapter_ListInstances_IncludesSoloAgentFields(t *testing.T) 
 	key := instanceKeyForStandalone(repoPath, "sdk-solo-agent")
 	inst := &session.Instance{
 		Title:           "sdk-solo-agent",
-		Path:            repoPath,
+		Path:            worktreePath,
 		SoloAgent:       true,
 		SDKSpeedTier:    "fast",
 		SkipPermissions: true,
 		ResourceProfile: "interactive",
-		Status:          session.Loading,
+		Status:          session.Paused,
 	}
 	spawner.mu.Lock()
 	spawner.instances[key] = inst
@@ -3118,8 +3119,36 @@ func TestDaemonStateAdapter_ListInstances_IncludesSoloAgentFields(t *testing.T) 
 	require.NotNil(t, statuses[0].SkipPermissions)
 	assert.True(t, *statuses[0].SkipPermissions)
 	assert.Equal(t, "sdk-solo-agent", statuses[0].Title)
-	assert.True(t, statuses[0].Loading)
-	assert.True(t, statuses[0].Active)
+	assert.Equal(t, worktreePath, statuses[0].Worktree)
+	assert.True(t, statuses[0].Paused)
+	assert.False(t, statuses[0].Loading)
+	assert.False(t, statuses[0].Active)
+}
+
+func TestDaemonStateAdapter_ListInstances_PrefersAttachedWorktree(t *testing.T) {
+	const (
+		project  = "proj"
+		repoPath = "/tmp/proj"
+	)
+	spawner := NewTmuxSpawner()
+	d := &Daemon{repos: NewRepoManager(), spawner: spawner, logger: slog.Default(), broadcaster: api.NewEventBroadcaster()}
+	d.repos.repos = []RepoEntry{{Path: repoPath, Project: project}}
+
+	inst := &session.Instance{Title: "shared-coder", Path: repoPath, TaskFile: "monitor", AgentType: session.AgentTypeCoder, Status: session.Paused}
+	inst.BindSharedTaskWorktree(repoPath, "plan/monitor")
+	expectedWorktree := inst.GetWorktreePath()
+	key := instanceKey(repoPath, "monitor", session.AgentTypeCoder)
+	spawner.mu.Lock()
+	spawner.instances[key] = inst
+	spawner.planFileByKey[key] = "monitor"
+	spawner.agentTypeByKey[key] = session.AgentTypeCoder
+	spawner.projectByKey[key] = project
+	spawner.mu.Unlock()
+
+	statuses := (&daemonStateAdapter{d: d}).ListInstances(project)
+	require.Len(t, statuses, 1)
+	assert.NotEqual(t, repoPath, expectedWorktree)
+	assert.Equal(t, expectedWorktree, statuses[0].Worktree)
 }
 
 func TestDaemonStateAdapter_ActivePlans_IgnoresStandaloneInstances(t *testing.T) {

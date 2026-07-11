@@ -200,6 +200,21 @@ func TestNewServeMCPHTTPHandler_OnlyServesExactMCPPath(t *testing.T) {
 		require.Equal(t, []string{"/mcp"}, calls)
 	})
 
+	t.Run("file preview origin cannot access the full mcp surface", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodOptions, "/mcp", nil)
+		req.Header.Set("Origin", "null")
+		rec := httptest.NewRecorder()
+
+		h.ServeHTTP(rec, req)
+
+		require.Equal(t, http.StatusNoContent, rec.Code)
+		assert.Empty(t, rec.Header().Get("Access-Control-Allow-Origin"))
+		assert.Empty(t, rec.Header().Get("Access-Control-Allow-Methods"))
+		assert.Empty(t, rec.Header().Get("Access-Control-Allow-Headers"))
+		assert.Empty(t, rec.Header().Get("Access-Control-Expose-Headers"))
+		require.Equal(t, []string{"/mcp", "/mcp"}, calls)
+	})
+
 	t.Run("well-known root path returns 404", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/.well-known/oauth-authorization-server/mcp", nil)
 		rec := httptest.NewRecorder()
@@ -207,7 +222,7 @@ func TestNewServeMCPHTTPHandler_OnlyServesExactMCPPath(t *testing.T) {
 		h.ServeHTTP(rec, req)
 
 		require.Equal(t, http.StatusNotFound, rec.Code)
-		require.Equal(t, []string{"/mcp"}, calls)
+		require.Equal(t, []string{"/mcp", "/mcp"}, calls)
 	})
 
 	t.Run("nested /mcp path returns 404", func(t *testing.T) {
@@ -217,7 +232,7 @@ func TestNewServeMCPHTTPHandler_OnlyServesExactMCPPath(t *testing.T) {
 		h.ServeHTTP(rec, req)
 
 		require.Equal(t, http.StatusNotFound, rec.Code)
-		require.Equal(t, []string{"/mcp"}, calls)
+		require.Equal(t, []string{"/mcp", "/mcp"}, calls)
 	})
 }
 

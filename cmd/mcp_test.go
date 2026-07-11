@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/kastheco/kasmos/config/taskstore"
+	"github.com/kastheco/kasmos/internal/appwidget"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -110,11 +111,62 @@ func mcpToolsList(t *testing.T, h http.Handler) []string {
 }
 
 type mcpToolDescriptor struct {
-	Name        string `json:"name"`
+	Name        string         `json:"name"`
+	Meta        map[string]any `json:"_meta"`
+	Annotations struct {
+		ReadOnlyHint    *bool `json:"readOnlyHint"`
+		DestructiveHint *bool `json:"destructiveHint"`
+		IdempotentHint  *bool `json:"idempotentHint"`
+		OpenWorldHint   *bool `json:"openWorldHint"`
+	} `json:"annotations"`
 	InputSchema struct {
 		Properties map[string]any `json:"properties"`
 		Required   []string       `json:"required"`
 	} `json:"inputSchema"`
+}
+
+func TestConfiguredMCPServersSeparateWidgetRenderAndRefreshTools(t *testing.T) {
+	tests := map[string][]string{
+		"single root": {makeTempGitRepo(t, "single")},
+		"multi root":  {makeTempGitRepo(t, "alpha-widget"), makeTempGitRepo(t, "beta-widget")},
+	}
+	for name, roots := range tests {
+		t.Run(name, func(t *testing.T) {
+			srv, err := newConfiguredMCPServer(nil, nil, nil, roots)
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, srv.Close()) })
+			widgetTools := make(map[string]mcpToolDescriptor)
+			for _, tool := range mcpToolsListDetails(t, srv.Handler()) {
+				if tool.Name == "open_monitor" || tool.Name == "refresh_monitor" {
+					widgetTools[tool.Name] = tool
+					require.NotNil(t, tool.Annotations.ReadOnlyHint)
+					assert.True(t, *tool.Annotations.ReadOnlyHint)
+					require.NotNil(t, tool.Annotations.DestructiveHint)
+					assert.False(t, *tool.Annotations.DestructiveHint)
+					require.NotNil(t, tool.Annotations.IdempotentHint)
+					assert.True(t, *tool.Annotations.IdempotentHint)
+					require.NotNil(t, tool.Annotations.OpenWorldHint)
+					assert.False(t, *tool.Annotations.OpenWorldHint)
+				}
+			}
+			require.Len(t, widgetTools, 2)
+			renderTool, ok := widgetTools["open_monitor"]
+			require.True(t, ok)
+			assert.Equal(t, appwidget.WidgetURI, renderTool.Meta["openai/outputTemplate"])
+			assert.NotEqual(t, true, renderTool.Meta["openai/widgetAccessible"])
+			renderUI, ok := renderTool.Meta["ui"].(map[string]any)
+			require.True(t, ok)
+			assert.Equal(t, []any{"model"}, renderUI["visibility"])
+			refreshTool, ok := widgetTools["refresh_monitor"]
+			require.True(t, ok)
+			assert.Equal(t, true, refreshTool.Meta["openai/widgetAccessible"])
+			assert.NotContains(t, refreshTool.Meta, "openai/outputTemplate")
+			ui, ok := refreshTool.Meta["ui"].(map[string]any)
+			require.True(t, ok)
+			assert.NotContains(t, ui, "resourceUri")
+			assert.Equal(t, []any{"app"}, ui["visibility"])
+		})
+	}
 }
 
 func mcpToolsListDetails(t *testing.T, h http.Handler) []mcpToolDescriptor {

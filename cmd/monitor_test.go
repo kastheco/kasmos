@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net"
 	"net/http"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -22,6 +24,38 @@ func startMonitorTestDaemon(t *testing.T, handler http.Handler) string {
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(func() { _ = server.Close() })
 	return socket
+}
+
+func TestMonitorWidgetWritesPreview(t *testing.T) {
+	outPath := filepath.Join(t.TempDir(), "preview.html")
+	cmd := NewMonitorCmd()
+	cmd.SetArgs([]string{"widget", "--out", outPath})
+	require.NoError(t, cmd.Execute())
+	content, err := os.ReadFile(outPath)
+	require.NoError(t, err)
+	assert.Contains(t, string(content), `id="root"`)
+	assert.Contains(t, string(content), "callTool:async function")
+}
+
+func TestMonitorWidgetSeedsMultiProjectPreview(t *testing.T) {
+	outPath := filepath.Join(t.TempDir(), "preview.html")
+	cmd := NewMonitorCmd()
+	cmd.SetArgs([]string{"widget", "--out", outPath, "--project", "kasmos", "--task", "monitor"})
+	require.NoError(t, cmd.Execute())
+	content, err := os.ReadFile(outPath)
+	require.NoError(t, err)
+	assert.Contains(t, string(content), `const kasmosPreviewInput={"project":"kasmos","task":"monitor"}`)
+}
+
+func TestMonitorWidgetUsesCustomServeURL(t *testing.T) {
+	outPath := filepath.Join(t.TempDir(), "preview.html")
+	cmd := NewMonitorCmd()
+	cmd.SetArgs([]string{"widget", "--out", outPath, "--serve-url", "http://127.0.0.1:8080"})
+	require.NoError(t, cmd.Execute())
+	content, err := os.ReadFile(outPath)
+	require.NoError(t, err)
+	assert.Contains(t, string(content), `const kasmosPreviewEndpoint="http://127.0.0.1:8080/v1/widget-preview/open-monitor"`)
+	assert.NotContains(t, string(content), "127.0.0.1:7433")
 }
 
 func TestMonitorCmd_HasSubcommands(t *testing.T) {

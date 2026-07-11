@@ -66,6 +66,11 @@ func buildLiveStatusInput(project string, plans []taskstore.TaskEntry, instances
 			Active:       instance.Active,
 			Loading:      instance.Loading,
 			HealthReason: instance.HealthReason,
+			Worktree:     instance.Worktree,
+			Branch:       instance.Branch,
+			TaskNumber:   instance.TaskNumber,
+			LastActivity: instance.LastActivity,
+			Paused:       instance.Paused,
 		})
 	}
 

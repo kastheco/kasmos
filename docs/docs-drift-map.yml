@@ -13,3 +13,7 @@
   docs_paths: ["web/docs/docs/configuration/**"]
 - code_paths: ["integrations/codex/**"]
   docs_paths: ["web/docs/docs/guides/codex-plugin.mdx"]
+- code_paths: ["internal/appwidget/**", "web/admin/src/widget/**"]
+  docs_paths: ["web/docs/docs/guides/codex-monitor-widget.mdx"]
+- code_paths: ["internal/livestatus/**/*.go"]
+  docs_paths: ["web/docs/docs/guides/live-status-contract.mdx"]

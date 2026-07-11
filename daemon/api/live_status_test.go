@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/kastheco/kasmos/internal/livestatus"
@@ -37,12 +38,13 @@ func (s *liveStatusState) ListInstances(project string) []InstanceStatus {
 }
 
 func TestLiveStatusSurfaceAdapter(t *testing.T) {
+	lastActivity := time.Date(2026, 7, 11, 6, 0, 0, 0, time.UTC)
 	state := &liveStatusState{
 		DaemonState: &DaemonState{
 			Running: true,
 			Repos:   []RepoStatus{{Project: "kasmos"}},
 			Instances: []InstanceStatus{
-				{Project: "kasmos", Plan: "stale", Role: "coder", WaveNumber: 2, Active: true, HealthReason: "no heartbeat"},
+				{Project: "kasmos", Plan: "stale", Role: "coder", WaveNumber: 2, Active: true, HealthReason: "no heartbeat", Worktree: "/tmp/worktrees/stale", Branch: "plan/stale", TaskNumber: 3, LastActivity: &lastActivity, Paused: true},
 			},
 		},
 		plans: map[string][]taskstore.TaskEntry{
@@ -68,6 +70,12 @@ func TestLiveStatusSurfaceAdapter(t *testing.T) {
 	assert.Contains(t, got.Attention, livestatus.AttentionItem{Task: "decision", Kind: livestatus.KindNeedsDecision})
 	assert.Contains(t, got.Attention, livestatus.AttentionItem{Task: "review", Kind: livestatus.KindReviewFeedback})
 	assert.Contains(t, got.Attention, livestatus.AttentionItem{Task: "stale", Kind: livestatus.KindStaleInstance, Detail: "no heartbeat"})
+	require.Len(t, got.ActiveAgents, 1)
+	assert.Equal(t, "stale", got.ActiveAgents[0].Worktree)
+	assert.Equal(t, "plan/stale", got.ActiveAgents[0].Branch)
+	assert.Equal(t, 3, got.ActiveAgents[0].TaskNumber)
+	assert.Equal(t, &lastActivity, got.ActiveAgents[0].LastActivity)
+	assert.True(t, got.ActiveAgents[0].Paused)
 }
 
 func TestLiveStatusUnknownProject(t *testing.T) {

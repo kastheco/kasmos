@@ -52,6 +52,8 @@ Do not treat approval to research, create a plan, or create a Workboard card as 
 
 After explicit approval, re-read the task and verify it is still the approved plan, then call the Kasmos `task_transition` MCP tool using `event: "implement_start"`.
 
+The read-only `open_monitor` tool provides a live progress widget. Offer it when the user wants to watch progress; its actions return to this coordination flow and do not bypass approval gates.
+
 - Let Kasmos own architect elaboration, coder waves, review, fixes, and readiness review.
 - Observe through the Kasmos `task_show`, `instance_list`, and `capture_pane` MCP tools when a live instance needs diagnosis.
 - Do not manually emit lifecycle signals for healthy agents. Use the Kasmos `signal_create` MCP tool only to recover a known missing signal after confirming the agent completed the required work and the expected signal is absent.

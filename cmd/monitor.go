@@ -7,9 +7,13 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/kastheco/kasmos/daemon/api"
+	"github.com/kastheco/kasmos/internal/appwidget"
 	"github.com/spf13/cobra"
 )
 
@@ -46,7 +50,44 @@ raw JSON suitable for piping to jq.`,
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "output raw JSON event stream (for piping to jq)")
 
 	cmd.AddCommand(newMonitorStatusCmd(&socketPath))
+	cmd.AddCommand(newMonitorWidgetCmd())
 
+	return cmd
+}
+
+func newMonitorWidgetCmd() *cobra.Command {
+	var (
+		outPath  string
+		project  string
+		task     string
+		serveURL string
+	)
+	cmd := &cobra.Command{
+		Use:   "widget",
+		Short: "write a standalone monitor widget preview",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			base, err := url.Parse(serveURL)
+			if err != nil || (base.Scheme != "http" && base.Scheme != "https") || base.Host == "" {
+				return fmt.Errorf("invalid --serve-url %q: expected an http(s) origin", serveURL)
+			}
+			base.Path = strings.TrimRight(base.Path, "/") + appwidget.PreviewPath
+			base.RawQuery = ""
+			base.Fragment = ""
+			path, err := filepath.Abs(outPath)
+			if err != nil {
+				return fmt.Errorf("resolve output path: %w", err)
+			}
+			if err := os.WriteFile(path, []byte(appwidget.PreviewHTMLWithEndpoint(project, task, base.String())), 0o644); err != nil {
+				return fmt.Errorf("write widget preview: %w", err)
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "%s\nopen this in a browser with `kas serve` running\n", path)
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&outPath, "out", "./kasmos-monitor-preview.html", "output html path")
+	cmd.Flags().StringVar(&project, "project", "", "seed the preview with a project (required in multi-repo mode)")
+	cmd.Flags().StringVar(&task, "task", "", "seed the preview with a focused task")
+	cmd.Flags().StringVar(&serveURL, "serve-url", "http://127.0.0.1:7433", "base URL of the running kas serve instance")
 	return cmd
 }
 
