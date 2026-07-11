@@ -1142,11 +1142,7 @@ func TestExecuteContextAction_MergePlanRejectsDriftedVerification(t *testing.T) 
 	require.Nil(t, cmd)
 	require.NotNil(t, h.pendingConfirmAction)
 	msg := h.pendingConfirmAction()
-	stale, ok := msg.(staleVerificationMsg)
-	require.True(t, ok, "expected staleVerificationMsg, got %T: %v", msg, msg)
-	assert.Equal(t, planFile, stale.planFile)
-	assert.Contains(t, stale.reason, baseSHA)
-	assert.Contains(t, stale.reason, branchSHA)
+	require.IsType(t, taskRefreshMsg{}, msg)
 	assert.Equal(t, baseSHA, runGit("rev-parse", "HEAD"), "drifted task branch must not be merged")
 
 	reloaded, err := taskstate.Load(store, "test", plansDir)
@@ -1155,7 +1151,8 @@ func TestExecuteContextAction_MergePlanRejectsDriftedVerification(t *testing.T) 
 	require.True(t, exists)
 	assert.Equal(t, taskstate.StatusVerifying, entry.Status)
 	assert.Empty(t, entry.VerifiedSHA)
-	assert.Equal(t, stale.reason, entry.StaleVerificationReason)
+	assert.Contains(t, entry.StaleVerificationReason, gitpkg.ShortSHA(baseSHA))
+	assert.Contains(t, entry.StaleVerificationReason, gitpkg.ShortSHA(branchSHA))
 }
 
 // TestFSM_PlanLifecycleStages verifies that the FSM produces the correct status for
@@ -1571,6 +1568,9 @@ func TestMergeInstance_UsesSelectedInstanceTask(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "tracked.txt"), []byte("branch change\n"), 0o644))
 	runGit("add", "tracked.txt")
 	runGit("commit", "-m", "branch change")
+	verifiedOut, err := exec.Command("git", "-C", dir, "rev-parse", "HEAD").Output()
+	require.NoError(t, err)
+	verifiedSHA := strings.TrimSpace(string(verifiedOut))
 	runGit("checkout", "-")
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "tracked.txt"), []byte("dirty local change\n"), 0o644))
 
@@ -1582,6 +1582,10 @@ func TestMergeInstance_UsesSelectedInstanceTask(t *testing.T) {
 	const planFile = "merge-instance"
 	require.NoError(t, ps.Register(planFile, "merge instance", "plan/merge-instance", time.Now()))
 	seedPlanStatus(t, ps, planFile, taskstate.StatusReviewing)
+	store := storeForDir(t, plansDir)
+	require.NoError(t, store.SetVerification("test", planFile, taskstore.VerificationRecord{SHA: verifiedSHA, By: "master", At: time.Now()}))
+	ps, err = taskstate.Load(store, "test", plansDir)
+	require.NoError(t, err)
 
 	spin := spinner.New(spinner.WithSpinner(spinner.Dot))
 	inst, err := session.NewInstance(session.InstanceOptions{
@@ -1594,15 +1598,17 @@ func TestMergeInstance_UsesSelectedInstanceTask(t *testing.T) {
 	require.NoError(t, err)
 
 	h := &home{
-		taskState:      ps,
-		taskStateDir:   plansDir,
-		nav:            ui.NewNavigationPanel(&spin),
-		menu:           ui.NewMenu(),
-		tabbedWindow:   ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewInfoPane()),
-		toastManager:   overlay.NewToastManager(&spin),
-		overlays:       overlay.NewManager(),
-		activeRepoPath: dir,
-		allInstances:   []*session.Instance{inst},
+		taskState:        ps,
+		taskStore:        store,
+		taskStoreProject: "test",
+		taskStateDir:     plansDir,
+		nav:              ui.NewNavigationPanel(&spin),
+		menu:             ui.NewMenu(),
+		tabbedWindow:     ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewInfoPane()),
+		toastManager:     overlay.NewToastManager(&spin),
+		overlays:         overlay.NewManager(),
+		activeRepoPath:   dir,
+		allInstances:     []*session.Instance{inst},
 	}
 
 	h.nav.AddInstance(inst)

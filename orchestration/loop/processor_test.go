@@ -19,7 +19,7 @@ func TestProcessor_ProcessFSMSignals_ImplementFinished(t *testing.T) {
 		Branch:   "plan/my-plan",
 	})
 
-	p := NewProcessor(ProcessorConfig{Store: store, Project: "test", AutoReviewFix: true})
+	p := NewProcessor(ProcessorConfig{Store: store, Project: "test", AutoReviewFix: true, HeadSHA: func(string) (string, error) { return verificationHead, nil }})
 	signals := []taskfsm.Signal{
 		{Event: taskfsm.ImplementFinished, TaskFile: "my-plan.md"},
 	}
@@ -39,7 +39,7 @@ func TestProcessor_ProcessFSMSignals_ReviewApproved(t *testing.T) {
 		Branch:   "plan/my-plan",
 	})
 
-	p := NewProcessor(ProcessorConfig{Store: store, Project: "test", AutoReviewFix: true})
+	p := NewProcessor(ProcessorConfig{Store: store, Project: "test", AutoReviewFix: true, HeadSHA: func(string) (string, error) { return verificationHead, nil }})
 	signals := []taskfsm.Signal{
 		{Event: taskfsm.ReviewApproved, TaskFile: "my-plan.md", Body: "LGTM"},
 	}
@@ -791,6 +791,7 @@ func TestProcessor_VerifyFailed_ReadinessLoopCapForcePromotes(t *testing.T) {
 				Project:                  "test",
 				AutoReviewFix:            true,
 				AutoReadinessReview:      true,
+				HeadSHA:                  func(string) (string, error) { return verificationHead, nil },
 				ReadinessMaxVerifyCycles: tc.cap,
 			})
 			actions := p.ProcessFSMSignals([]taskfsm.Signal{
@@ -825,6 +826,7 @@ func TestProcessor_VerifyFailed_ReadinessLoopCapForcePromotes(t *testing.T) {
 				entry, err := store.Get("test", "my-plan.md")
 				require.NoError(t, err)
 				assert.Equal(t, taskstore.StatusDone, entry.Status, "task must transition to done")
+				assert.Equal(t, verificationHead, actions[0].(RecordVerificationAction).SHA)
 			} else {
 				assert.False(t, foundApproved, "must not promote below cap")
 				assert.True(t, foundFailed, "expected VerifyFailedAction below cap")
@@ -938,7 +940,7 @@ func TestProcessor_ProcessFSMSignals_PreAppliedHTTPSignals(t *testing.T) {
 			Branch:   "plan/my-plan",
 		}))
 
-		p := NewProcessor(ProcessorConfig{Store: store, Project: "test"})
+		p := NewProcessor(ProcessorConfig{Store: store, Project: "test", HeadSHA: func(string) (string, error) { return verificationHead, nil }})
 		actions := p.ProcessFSMSignals([]taskfsm.Signal{{
 			Event:      taskfsm.ImplementFinished,
 			TaskFile:   "my-plan.md",
@@ -958,7 +960,7 @@ func TestProcessor_ProcessFSMSignals_PreAppliedHTTPSignals(t *testing.T) {
 			Branch:   "plan/my-plan",
 		}))
 
-		p := NewProcessor(ProcessorConfig{Store: store, Project: "test"})
+		p := NewProcessor(ProcessorConfig{Store: store, Project: "test", HeadSHA: func(string) (string, error) { return verificationHead, nil }})
 		actions := p.ProcessFSMSignals([]taskfsm.Signal{{
 			Event:      taskfsm.ReviewApproved,
 			TaskFile:   "my-plan.md",

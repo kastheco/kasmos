@@ -411,10 +411,16 @@ func (p *Processor) ProcessFSMSignals(signals []taskfsm.Signal) []Action {
 			}
 			// No readiness gate: chain verify_approved immediately so the task moves
 			// from verifying → done inside the processor (single FSM driver).
+			rec, stale, ok := p.bindVerification(sig.TaskFile, "auto", "")
+			if !ok {
+				p.setGatewaySignalOutcome(sig.GatewayEntryID, taskstore.SignalFailed, stale.Reason)
+				actions = append(actions, stale,
+					PausePlanAgentAction{PlanFile: sig.TaskFile, AgentType: session.AgentTypeMaster},
+					SpawnMasterAction{PlanFile: sig.TaskFile})
+				break
+			}
 			if err := p.fsm.Transition(sig.TaskFile, taskfsm.VerifyApproved); err == nil {
-				if rec, _, ok := p.bindVerification(sig.TaskFile, "auto", ""); ok {
-					actions = append(actions, rec)
-				}
+				actions = append(actions, rec)
 				actions = append(actions, VerifyApprovedAction{
 					PlanFile:   sig.TaskFile,
 					ReviewBody: sig.Body,

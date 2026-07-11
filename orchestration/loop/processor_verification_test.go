@@ -84,6 +84,20 @@ func TestProcessor_HEADBoundVerificationAlternateAdmissions(t *testing.T) {
 		assert.Equal(t, "auto", actions[1].(RecordVerificationAction).By)
 	})
 
+	t.Run("readiness off resolver failure stays verifying", func(t *testing.T) {
+		store := taskstore.NewTestStore(t)
+		require.NoError(t, store.Create("test", taskstore.TaskEntry{Filename: "plan", Status: taskstore.StatusReviewing, Branch: "plan/branch"}))
+		p := NewProcessor(ProcessorConfig{Store: store, Project: "test", HeadSHA: func(string) (string, error) { return "", errors.New("git failed") }})
+		actions := p.ProcessFSMSignals([]taskfsm.Signal{{Event: taskfsm.ReviewApproved, TaskFile: "plan"}})
+		require.Len(t, actions, 4)
+		require.IsType(t, ReviewApprovedAction{}, actions[0])
+		require.IsType(t, StaleVerificationAction{}, actions[1])
+		entry, err := store.Get("test", "plan")
+		require.NoError(t, err)
+		assert.Equal(t, taskstore.StatusVerifying, entry.Status)
+		assert.Empty(t, entry.VerifiedSHA)
+	})
+
 	t.Run("pre-applied admin approval", func(t *testing.T) {
 		p, _ := verificationProcessor(t, head)
 		require.NoError(t, p.fsm.Transition("plan", taskfsm.VerifyApproved))

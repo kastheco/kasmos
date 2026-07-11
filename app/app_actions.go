@@ -856,8 +856,8 @@ func (m *home) mergeTaskToMain(planFile string) (tea.Model, tea.Cmd) {
 			return err
 		}
 		if fresh.VerifiedSHA == "" || !strings.EqualFold(fresh.VerifiedSHA, head) {
-			reason := staleVerificationReason(fresh.VerifiedSHA, head)
-			if err := m.taskState.ClearVerification(planFile, reason); err != nil {
+			reason := fmt.Sprintf("head_changed_after_verification: verified %s, head is now %s", gitpkg.ShortSHA(fresh.VerifiedSHA), gitpkg.ShortSHA(head))
+			if err := m.taskStore.ClearVerification(m.taskStoreProject, planFile, reason); err != nil {
 				return err
 			}
 			if taskfsm.Status(fresh.Status) == taskfsm.StatusDone {
@@ -865,7 +865,7 @@ func (m *home) mergeTaskToMain(planFile string) (tea.Model, tea.Cmd) {
 					return err
 				}
 			}
-			return staleVerificationMsg{planFile: planFile, reason: reason}
+			return taskRefreshMsg{}
 		}
 		if err := gitpkg.PreflightMergeTaskBranch(m.activeRepoPath, fresh.Branch); err != nil {
 			return err
