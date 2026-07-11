@@ -24,7 +24,7 @@ every task in kasmos moves through a finite state machine (fsm). the fsm validat
 | `implementing` | coder agents are working on the task |
 | `reviewing` | a reviewer agent is checking the implementation |
 | `verifying` | a master agent is running the holistic readiness gate before `done` (only entered when `auto_readiness_review = true`); the verify loop is capped by `readiness_max_verify_cycles` — when the cap is reached, the processor consumes the next `verify_failed` signal but applies the `verifying → done` transition directly instead of looping back to `implementing` |
-| `done` | the task is complete and merged (or ready to merge) |
+| `done` | the current branch HEAD is approved and ready to merge. `done` is revocable: a later commit reopens verification |
 | `cancelled` | explicitly stopped; can be reopened |
 
 ## execution phases
@@ -69,6 +69,7 @@ events trigger transitions. some events are **user-only** (can only be fired fro
 | `review_changes_requested` | no | reviewer requested changes |
 | `verify_approved` | no | master agent approved during verifying (→ `done`). the daemon never writes a `verify_approved` signal row itself — see `verify_failed` for loop-cap handling |
 | `verify_failed` | no | master agent requested changes during verifying (→ `implementing`). when the verify-round count reaches `readiness_max_verify_cycles` the processor still consumes this `verify_failed` signal but applies the `verifying → done` transition directly instead; no new signal is emitted, and the processor tags the emitted `VerifyApprovedAction` as `ForcePromoted` so the tui can surface a warning |
+| `verification_stale` | no | internal drift event that reopens `done → verifying` when the verified commit no longer matches branch HEAD |
 | `start_over` | **yes** | reset to planning from done |
 | `reimplement` | **yes** | resume implementation from done without resetting branch |
 | `mark_done` | **yes** | skip straight to `done` from `ready` when the work has been absorbed elsewhere or is obsolete |
@@ -114,6 +115,7 @@ stateDiagram-v2
     done --> planning        : start_over
     done --> implementing    : reimplement
     done --> reviewing       : request_review
+    done --> verifying       : verification_stale
     done --> cancelled       : cancel
 
     cancelled --> planning   : reopen
@@ -155,11 +157,14 @@ done
   ├─ start_over          → planning
   ├─ reimplement         → implementing
   ├─ request_review      → reviewing
+  ├─ verification_stale  → verifying  (internal; branch HEAD drifted)
   └─ cancel              → cancelled
 
 cancelled
   └─ reopen              → planning
 ```
+
+Approval is persisted as `verified_sha`, `verified_base_sha`, `verified_at`, and `verified_by`, with `stale_verification_reason` explaining a revoked approval. `verified_by` is one of `master`, `operator`, `force_promoted`, or `auto`. The daemon compares `verified_sha` with live branch HEAD after approval; drift kills the stale master and applies `verification_stale` so a fresh master reviews the new commit. Legacy pre-upgrade `done` tasks with an empty `verified_sha` are left alone by this background check, but cannot create a PR or merge until re-verified.
 
 ## phase timestamps
 

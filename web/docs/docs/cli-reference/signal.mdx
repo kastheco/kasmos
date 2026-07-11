@@ -24,7 +24,7 @@ Signals describe lifecycle progress only. Permission and resource-control behavi
 | `implement_finished` | optional JSON or text | all coder agents finished implementation |
 | `review_approved` | optional JSON or text | reviewer approved the implementation; triggers `reviewing → verifying` when `auto_readiness_review = true`, otherwise `reviewing → done` |
 | `review_changes_requested` | optional JSON or text | reviewer requested changes |
-| `verify_approved` | optional JSON or text | master agent approved during verifying (→ `done`). Only valid while task is in `verifying` status. The daemon never writes a `verify_approved` signal row itself — see `verify_failed` below for loop-cap handling. |
+| `verify_approved` | `{"reviewed_sha":"<full-head-sha>"}` (master) or `{"origin":"operator"}` (override) | approve during verifying (→ `done`). Master admission is strict: `reviewed_sha` must equal live branch HEAD. Trusted overrides bind live HEAD and identify their origin. |
 | `verify_failed` | optional JSON or text | master agent requested changes during verifying (→ `implementing`). Only valid while task is in `verifying` status. When `readiness_max_verify_cycles` is reached, the processor consumes this signal row but applies the `verifying → done` transition directly instead of `verifying → implementing`; no new `verify_approved` signal row is created, and the `verify_failed` row is still marked processed. |
 | `implement_task_finished` | `{"wave_number": N, "task_number": N}` | a single coder task in a wave finished |
 | `implement_wave` | `{"wave_number": N}` | a full wave finished |
@@ -46,6 +46,7 @@ After terminal approval, the processor may dispatch automatic PR creation as a s
 - **`implement_wave`**: payload is **required** and must be JSON containing an integer `wave_number`.
 - **`retry_wave`**: payload is optional and ignored; the daemon reconstructs the wave number and completed-task set from persisted task state.
 - **`elaborator_finished`** / **`architect_finished`**: payload must be **empty**.
+- **`verify_approved`**: master agents must provide a non-empty `reviewed_sha`. Manual recovery uses `{"origin":"operator"}`; internal bypasses use `force_promoted` or `auto`. Arbitrary origins are rejected.
 
 ## subcommands
 

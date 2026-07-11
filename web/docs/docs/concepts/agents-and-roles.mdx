@@ -25,7 +25,7 @@ func DefaultAgentRoles() []string {
 | `planner_gpt` | `plan_start` draft lane | default Codex planner profile for independent implementation structure |
 | `chat` | (ad-hoc) | general-purpose assistant; available in all phases |
 | `fixer` | `fixer` | debugger and investigator; fixes stuck states and failures |
-| `master` | `verifying` | holistic readiness reviewer; spawned when the task enters the `verifying` status after reviewer approval (enabled by default; disable with `auto_readiness_review = false`). The master agent applies a **materiality triage** — trivial findings (typos, format fixes, missing doc comments, total ≤ `readiness_self_fix_max_lines` net lines) are self-fixed directly in the worktree and approved; only material issues escalate via `verify_failed`. Every self-fix attempt passes a reviewer-parity static-check gate (`gofmt`, `go vet`, `go test`, `typos`) before approval. Config alias `master_review` is accepted for backward compatibility. |
+| `master` | `verifying` | independent readiness reviewer; resolves merge base and HEAD, inspects the complete `base..head` diff, and runs its own verification without reusing reviewer conclusions or evidence. It reports the approved HEAD as `reviewed_sha`; after a self-fix commit it resolves HEAD again. Trivial findings may be self-fixed within `readiness_self_fix_max_lines`; material issues emit `verify_failed`. Config alias `master_review` is accepted for backward compatibility. |
 
 ## agent profile
 
