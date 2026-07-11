@@ -1,0 +1,61 @@
+---
+title: "codex monitor widget"
+---
+
+# codex monitor widget
+
+The Kasmos monitor is an Apps SDK widget served by the Kasmos MCP server. Call `open_monitor` in Codex Desktop to watch live orchestration state without leaving the conversation.
+
+The display mode controls how much detail it renders:
+
+- `pip` is a compact, pinnable picture-in-picture rail with lifecycle progress, running-agent count, and blocker or readiness status.
+- `inline` shows the lifecycle, task selector, active task progress, agents, branches, blockers, and readiness in the conversation.
+- `fullscreen` adds the complete wave breakdown and event stream for deeper inspection.
+
+## prerequisites
+
+The monitor requires all of the following:
+
+- `kas serve` or the `kasmosdb` user service running
+- the `integrations/codex` plugin installed
+- Codex MCP-app rendering enabled
+
+MCP-app rendering is an under-development, default-off Codex feature. Enable it in `~/.codex/config.toml`:
+
+```toml
+[features]
+enable_mcp_apps = true
+```
+
+Or start Codex with:
+
+```sh
+codex --enable enable_mcp_apps
+```
+
+On a Codex build without MCP-app rendering, `open_monitor` returns a text snapshot instead of a widget. That fallback is expected, not a bug.
+
+## browser preview
+
+The supported way to see the real widget today is the browser preview. With `kas serve` running, generate it and open the resulting file in a browser:
+
+```sh
+kas monitor widget --out preview.html
+```
+
+## authority boundary
+
+The widget is read-only. `open_monitor` is the only MCP tool the widget can call. Its action buttons do not invoke lifecycle transitions or mutate Kasmos state; each sends a follow-up message into the conversation instead.
+
+This keeps the `coordinate-kasmos` approval gate in authority. The coordinating agent must still obtain the required approval before `implement_start`, merges, pushes, or destructive operations. Users can verify this boundary by observing that a widget action creates a chat request for the agent rather than directly changing task state.
+
+## polling and transport
+
+The widget polls through `window.openai.callTool("open_monitor", …)`: every 2 seconds in `pip` and `fullscreen`, and every 3 seconds inline. Polls are single-flight and pause when the document is hidden. The server uses a one-second TTL cache to avoid repeating snapshot assembly for rapid calls.
+
+The widget makes no HTTP, WebSocket, or other network calls of its own. Codex rewrites `http://` and `ws://` CSP entries to their secure forms, which prevents a sandboxed widget iframe from fetching a localhost Kasmos server. Sending all data over the MCP bridge avoids that failure mode.
+
+## known limitations
+
+- Codex inline UI rendering remains affected by [#21019](https://github.com/openai/codex/issues/21019) and [#28912](https://github.com/openai/codex/issues/28912).
+- Codex rewrites localhost CSP entries as described in [#30560](https://github.com/openai/codex/issues/30560), so direct browser-to-localhost fetching is unsupported.

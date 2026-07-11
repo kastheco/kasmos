@@ -4,7 +4,7 @@ title: "live status contract"
 
 # live status contract
 
-The live status contract is the stable, compact snapshot that an external Codex Desktop monitor polls to render kasmos orchestration state. The current `schema_version` is `1`.
+The live status contract is the stable, compact snapshot that an external Codex Desktop monitor polls to render kasmos orchestration state. The current `schema_version` is `2`.
 
 ## access
 
@@ -26,7 +26,7 @@ Poll every 1–5 seconds. Consumers should reuse the latest snapshot between pol
 
 | field | type | meaning |
 | --- | --- | --- |
-| `schema_version` | integer | Wire-schema version. Currently `1`. |
+| `schema_version` | integer | Wire-schema version. Currently `2`. |
 | `generated_at` | timestamp | Snapshot assembly time, normalized to UTC and encoded as RFC3339Nano JSON. |
 | `project` | string | Kasmos project whose state was assembled. |
 | `daemon_running` | boolean | Whether a daemon heartbeat was available when the snapshot was assembled. |
@@ -36,6 +36,10 @@ Poll every 1–5 seconds. Consumers should reuse the latest snapshot between pol
 | `active_agents` | `ActiveAgent[]` | Capped list of current agent instances. |
 | `attention` | `AttentionItem[]` | Capped list of durable conditions that may need action. |
 | `truncated` | `Truncation` | Counts of items omitted from the capped arrays. |
+| `projects` | `string[]`, optional | Available project names, included only when requested. |
+| `tasks` | `TaskSummary[]`, optional | Bounded task summaries, included only when requested. |
+| `events` | `EventItem[]`, optional | Bounded recent orchestration events, included only when requested. |
+| `focus` | `TaskFocus`, optional | Wave and readiness detail for a requested task. |
 
 ## lifecycle counts
 
@@ -53,6 +57,19 @@ Each `ActiveAgent` contains:
 | `stage` | string, optional | Derived stage: `loading`, `ready`, or `running`. Omitted when no stage applies. |
 | `ready` | boolean, optional | Whether the instance is ready. Omitted when false. |
 | `active` | boolean, optional | Whether the instance is active. Omitted when false. |
+| `worktree` | string, optional | Worktree basename. This is never an absolute path. |
+| `branch` | string, optional | Git branch associated with the instance. |
+| `task_number` | integer, optional | Wave task number. |
+| `last_activity` | timestamp, optional | Most recent observed activity in UTC. |
+| `paused` | boolean, optional | Whether the instance is explicitly paused. |
+
+The basename-only form of `active_agents[].worktree` is a contract guarantee, not an implementation detail. Model-visible consumers must never receive the daemon's absolute local worktree path.
+
+## monitor sections
+
+Schema v2 adds four opt-in sections. `projects` lists available projects. `tasks` contains filename, lifecycle and phase, topic, branch, wave and subtask progress, review and pull-request state, and blocker status. `events` contains timestamped, bounded event summaries with optional task, agent, wave, task-number, and level metadata. `focus` contains the selected task's filename and goal, its waves and wave tasks, and readiness state.
+
+These sections are omitted unless requested, preserving the compact default snapshot. All v1 fields and their meanings are unchanged, so v1 consumers continue to work when they ignore unknown fields.
 
 ## attention
 
@@ -72,7 +89,7 @@ Each `AttentionItem` contains `task`, `kind`, and an optional `detail` string. `
 
 The default cap is 20 items per `active_agents` and `attention` array. Callers may override it with `cap`; non-positive values select the default, and values above the hard maximum of 100 are reduced to 100. Active agents are sorted by task, role, and wave before truncation, so repeated snapshots select the same bounded subset when state is unchanged.
 
-`Truncation` contains optional integer fields `active_agents` and `attention`. Each value is the number of items omitted from its corresponding array, not the total number available. A field is omitted when no items were truncated.
+`Truncation` contains optional integer fields `active_agents`, `attention`, `tasks`, and `events`. Each value is the number of items omitted from its corresponding array, not the total number available. A field is omitted when no items were truncated.
 
 ## versioning policy
 
@@ -81,3 +98,5 @@ Consumers must inspect `schema_version` before interpreting the payload.
 - Adding optional fields is backward compatible and does not bump `schema_version`.
 - Renaming or removing a field, or changing a field's type or meaning incompatibly, requires a `schema_version` bump.
 - Consumers should ignore unknown fields so additive changes remain compatible.
+
+Schema v2 is additive and leaves every v1 field unchanged. It was bumped despite that compatibility so monitor clients can feature-detect the opt-in `projects`, `tasks`, `events`, and `focus` sections without probing for individual fields.
