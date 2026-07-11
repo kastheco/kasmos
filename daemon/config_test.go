@@ -225,6 +225,20 @@ func TestLoadDaemonConfig_AutoReadinessReview(t *testing.T) {
 	})
 }
 
+func TestLoadDaemonConfig_AutoCreatePR(t *testing.T) {
+	t.Run("explicit false loads", func(t *testing.T) {
+		assert.False(t, loadFromString(t, `auto_create_pr = false`).AutoCreatePR)
+	})
+
+	t.Run("absent key defaults to true", func(t *testing.T) {
+		assert.True(t, loadFromString(t, `poll_interval_sec = 2`).AutoCreatePR)
+	})
+
+	t.Run("default config enables automatic PR creation", func(t *testing.T) {
+		assert.True(t, defaultDaemonConfig().AutoCreatePR)
+	})
+}
+
 // loadFromString writes toml content to a temp file and calls LoadDaemonConfig.
 func loadFromString(t *testing.T, content string) *DaemonConfig {
 	t.Helper()

@@ -52,8 +52,12 @@ type DaemonConfig struct {
 	MaxReviewFixCycles int `toml:"max_review_fix_cycles"`
 
 	// AutoReadinessReview enables the post-reviewer master-agent readiness gate.
-	// Disabled by default; must be explicitly opted in.
+	// Enabled by default; set to false to opt out.
 	AutoReadinessReview bool `toml:"auto_readiness_review"`
+
+	// AutoCreatePR creates or adopts a pull request after terminal approval.
+	// Enabled by default; set to false to opt out.
+	AutoCreatePR bool `toml:"auto_create_pr"`
 
 	// ReadinessSelfFixMaxLines is the maximum number of net lines the master agent
 	// may change in a self-fix attempt. Defaults to 80.
@@ -64,7 +68,7 @@ type DaemonConfig struct {
 	ReadinessMaxVerifyCycles int `toml:"readiness_max_verify_cycles"`
 
 	// SocketPath is the Unix domain socket path for the control API.
-	// Defaults to ~/.config/kasmos/daemon.sock when empty.
+	// Defaults to $XDG_RUNTIME_DIR/kasmos/kas.sock, with a /tmp fallback.
 	SocketPath string `toml:"socket_path"`
 
 	// PRMonitor holds configuration for the PR monitoring subsystem.
@@ -96,6 +100,7 @@ type tomlDaemonConfig struct {
 	AutoReviewFix            *bool                          `toml:"auto_review_fix"`
 	MaxReviewFixCycles       int                            `toml:"max_review_fix_cycles"`
 	AutoReadinessReview      *bool                          `toml:"auto_readiness_review"`
+	AutoCreatePR             *bool                          `toml:"auto_create_pr"`
 	ReadinessSelfFixMaxLines *int                           `toml:"readiness_self_fix_max_lines"`
 	ReadinessMaxVerifyCycles *int                           `toml:"readiness_max_verify_cycles"`
 	SocketPath               string                         `toml:"socket_path"`
@@ -111,6 +116,7 @@ func defaultDaemonConfig() *DaemonConfig {
 		AutoAdvanceWaves:         true,
 		AutoReviewFix:            true,
 		AutoReadinessReview:      true,
+		AutoCreatePR:             true,
 		ReadinessSelfFixMaxLines: 80,
 		ReadinessMaxVerifyCycles: 2,
 		PRMonitor: PRMonitorConfig{
@@ -169,6 +175,9 @@ func LoadDaemonConfig(path string) (*DaemonConfig, error) {
 	cfg.MaxReviewFixCycles = tc.MaxReviewFixCycles
 	if tc.AutoReadinessReview != nil {
 		cfg.AutoReadinessReview = *tc.AutoReadinessReview
+	}
+	if tc.AutoCreatePR != nil {
+		cfg.AutoCreatePR = *tc.AutoCreatePR
 	}
 	if tc.ReadinessSelfFixMaxLines != nil {
 		if *tc.ReadinessSelfFixMaxLines <= 0 {

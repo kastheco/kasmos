@@ -345,6 +345,9 @@ type Config struct {
 	// AutoReadinessReview enables the post-reviewer master-agent readiness gate.
 	// Enabled by default; set to false to skip the readiness review phase.
 	AutoReadinessReview bool `json:"auto_readiness_review,omitempty"`
+	// AutoCreatePR creates or adopts a pull request after terminal approval.
+	// Enabled by default; set to false to skip automatic PR creation.
+	AutoCreatePR bool `json:"auto_create_pr,omitempty"`
 	// ReadinessSelfFixMaxLines is the maximum number of net lines the master agent
 	// may change in a self-fix attempt. Defaults to 80. Values <= 0 are invalid and
 	// fall back to the default.
@@ -445,6 +448,7 @@ func DefaultConfig() *Config {
 		AutoAdvance:              true,
 		AutoReviewFix:            true,
 		AutoReadinessReview:      true,
+		AutoCreatePR:             true,
 		ReadinessSelfFixMaxLines: 80,
 		ReadinessMaxVerifyCycles: 2,
 		NotificationsEnabled:     &trueVal,
@@ -610,6 +614,9 @@ func configFromTOML(result *TOMLConfigResult) *Config {
 		if result.AutoReadinessReview != nil {
 			cfg.AutoReadinessReview = *result.AutoReadinessReview
 		}
+		if result.AutoCreatePR != nil {
+			cfg.AutoCreatePR = *result.AutoCreatePR
+		}
 		if result.ReadinessSelfFixMaxLines != nil {
 			if *result.ReadinessSelfFixMaxLines <= 0 {
 				if log.WarningLog != nil {
@@ -729,6 +736,8 @@ func configToTOML(cfg *Config) *TOMLConfig {
 	out.UI.MaxReviewFixCycles = &maxReviewFixCycles
 	autoReadinessReview := cfg.AutoReadinessReview
 	out.UI.AutoReadinessReview = &autoReadinessReview
+	autoCreatePR := cfg.AutoCreatePR
+	out.UI.AutoCreatePR = &autoCreatePR
 	if cfg.ReadinessSelfFixMaxLines > 0 {
 		v := cfg.ReadinessSelfFixMaxLines
 		out.UI.ReadinessSelfFixMaxLines = &v
