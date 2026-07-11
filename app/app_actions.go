@@ -124,12 +124,13 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 		return m.mergeTaskToMain(selected.TaskFile)
 
 	case "create_pr_instance":
-		selected := m.nav.GetSelectedInstance()
-		if selected == nil {
-			return m, nil
+		src, err := m.instancePRSource(m.nav.GetSelectedInstance())
+		if err != nil {
+			return m, m.handleError(err)
 		}
+		m.pendingPRSource = &src
 		m.state = statePRTitle
-		tio := overlay.NewTextInputOverlay("pr title", selected.Title)
+		tio := overlay.NewTextInputOverlay("pr title", src.title)
 		tio.SetSize(60, 3)
 		m.overlays.Show(tio)
 		return m, nil
@@ -411,53 +412,38 @@ func (m *home) executeContextAction(action string) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case "push_plan_branch":
-		planInst := m.findTaskInstance()
-		if planInst == nil {
-			return m, m.handleError(fmt.Errorf("no active session for this plan"))
+		src, err := m.taskPRSource(m.nav.GetSelectedPlanFile())
+		if err != nil {
+			return m, m.handleError(err)
 		}
-		capturedPlanTitle := planInst.Title
-		capturedPlanBranch := planInst.Branch
+		repoPath := m.activeRepoPath
 		pushAction := func() tea.Msg {
-			worktree, err := planInst.GetGitWorktree()
-			if err != nil {
+			wt := src.worktree
+			if src.needsSetup {
+				var err error
+				if wt, err = gitpkg.EnsureTaskWorktree(repoPath, src.branch); err != nil {
+					return err
+				}
+			}
+			if err := wt.PushChanges("update from kas", true); err != nil {
 				return err
 			}
-			if err := worktree.PushChanges("update from kas", true); err != nil {
-				return err
-			}
-			m.audit(auditlog.EventGitPush, fmt.Sprintf("pushed plan branch %s", capturedPlanBranch),
-				auditlog.WithInstance(capturedPlanTitle),
+			m.audit(auditlog.EventGitPush, fmt.Sprintf("pushed task branch %s", src.branch),
+				auditlog.WithPlan(src.planFile),
 			)
 			return nil
 		}
-		message := fmt.Sprintf("push changes from plan '%s'?", planInst.Title)
+		message := fmt.Sprintf("push changes from task '%s'?", src.title)
 		return m, m.confirmAction(message, pushAction)
 
 	case "create_plan_pr":
-		planFile := m.nav.GetSelectedPlanFile()
-		if planFile == "" || m.taskState == nil {
-			return m, m.handleError(fmt.Errorf("no plan selected"))
+		src, err := m.taskPRSource(m.nav.GetSelectedPlanFile())
+		if err != nil {
+			return m, m.handleError(err)
 		}
-		entry, ok := m.taskState.Entry(planFile)
-		if !ok || entry.Branch == "" {
-			return m, m.handleError(fmt.Errorf("plan has no branch — implement it first"))
-		}
-		// Prefer to use the running instance so GetSelectedInstance() works
-		// in the PR-body submission path. Fall back to a worktree-only approach
-		// (pendingPRWorktree) when there is no instance or the instance has an
-		// empty branch (e.g. started on main without a worktree).
-		planInst := m.findTaskInstance()
-		if planInst != nil && planInst.Branch != "" {
-			m.nav.SelectInstance(planInst)
-			m.pendingPRWorktree = nil
-		} else {
-			// No valid running instance — build a GitWorktree directly from the
-			// task store's authoritative branch so PR creation still works.
-			m.pendingPRWorktree = gitpkg.NewSharedTaskWorktree(m.activeRepoPath, entry.Branch)
-		}
-		defaultTitle := taskstate.DisplayName(planFile)
+		m.pendingPRSource = &src
 		m.state = statePRTitle
-		tio := overlay.NewTextInputOverlay("pr title", defaultTitle)
+		tio := overlay.NewTextInputOverlay("pr title", src.title)
 		tio.SetSize(60, 3)
 		m.overlays.Show(tio)
 		return m, nil

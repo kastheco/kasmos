@@ -8,6 +8,12 @@ import (
 
 	"github.com/kastheco/kasmos/config/taskfsm"
 	"github.com/kastheco/kasmos/config/taskstate"
+	gitpkg "github.com/kastheco/kasmos/session/git"
+	"github.com/kastheco/kasmos/ui/overlay"
+
+	tea "charm.land/bubbletea/v2"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // TestFSMPlanStart_TransitionsReadyToPlanning verifies that the FSM correctly
@@ -41,4 +47,27 @@ func TestFSMPlanStart_TransitionsReadyToPlanning(t *testing.T) {
 	if entry.Status != taskstate.StatusPlanning {
 		t.Fatalf("status = %q, want %q", entry.Status, taskstate.StatusPlanning)
 	}
+}
+
+func TestPRTitleSubmitPreparesBodyAsynchronously(t *testing.T) {
+	t.Parallel()
+	h := newTestHome()
+	h.state = statePRTitle
+	h.pendingPRSource = &prSource{
+		worktree: gitpkg.NewSharedTaskWorktree(t.TempDir(), "task/test"),
+		branch:   "task/test",
+		title:    "test task",
+	}
+	h.overlays.Show(&submittedOverlay{result: overlay.Result{
+		Dismissed: true,
+		Submitted: true,
+		Value:     "test task",
+	}})
+
+	model, cmd := h.handleKeyPress(tea.KeyPressMsg{Code: tea.KeyEnter})
+	updated := model.(*home)
+
+	require.NotNil(t, cmd)
+	assert.Equal(t, statePRPreparingBody, updated.state)
+	assert.NotEqual(t, statePRBody, updated.state)
 }

@@ -654,14 +654,14 @@ func (m *home) handleActiveOverlayMouse(msg tea.MouseClickMsg) (tea.Model, tea.C
 		)
 
 	case statePRTitle:
-		m.pendingPRWorktree = nil
+		m.pendingPRSource = nil
 		m.state = stateDefault
 		m.menu.SetState(ui.StateDefault)
 		return m, tea.RequestWindowSize
 
 	case statePRBody:
 		m.pendingPRTitle = ""
-		m.pendingPRWorktree = nil
+		m.pendingPRSource = nil
 		m.state = stateDefault
 		m.menu.SetState(ui.StateDefault)
 		return m, tea.RequestWindowSize
@@ -1153,7 +1153,7 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 	if m.state == statePRTitle {
 		if !m.overlays.IsActive() {
 			m.state = stateDefault
-			m.pendingPRWorktree = nil
+			m.pendingPRSource = nil
 			return m, nil
 		}
 		result := m.overlays.HandleKey(msg)
@@ -1162,36 +1162,12 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 				prTitle := result.Value
 				if prTitle != "" {
 					m.pendingPRTitle = prTitle
-
-					// Generate a PR body from git data. Use pendingPRWorktree when
-					// available (plan-level PR without a running instance), otherwise
-					// fall back to the selected instance's worktree.
-					var prWorktree interface {
-						GeneratePRBody() (string, error)
-					}
-					if m.pendingPRWorktree != nil {
-						prWorktree = m.pendingPRWorktree
-					} else if selected := m.nav.GetSelectedInstance(); selected != nil {
-						if wt, err := selected.GetGitWorktree(); err == nil {
-							prWorktree = wt
-						}
-					}
-					generatedBody := ""
-					if prWorktree != nil {
-						if body, genErr := prWorktree.GeneratePRBody(); genErr == nil {
-							generatedBody = body
-						}
-					}
-
-					// Transition to PR body editing state
-					m.state = statePRBody
-					tio := overlay.NewTextInputOverlay("pr description (edit or submit)", generatedBody)
-					tio.SetSize(80, 20)
-					m.overlays.Show(tio)
-					return m, nil
+					m.state = statePRPreparingBody
+					m.pendingPRToastID = m.toastManager.Loading("preparing pr description...")
+					return m, m.preparePRBody(*m.pendingPRSource, prTitle)
 				}
 			}
-			m.pendingPRWorktree = nil
+			m.pendingPRSource = nil
 			m.state = stateDefault
 			m.menu.SetState(ui.StateDefault)
 			return m, tea.RequestWindowSize
@@ -1203,7 +1179,7 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 	if m.state == statePRBody {
 		if !m.overlays.IsActive() {
 			m.state = stateDefault
-			m.pendingPRWorktree = nil
+			m.pendingPRSource = nil
 			return m, nil
 		}
 		result := m.overlays.HandleKey(msg)
@@ -1219,43 +1195,24 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 					prToastID := m.pendingPRToastID
 					capturedPRTitle := prTitle
 
-					// Use pendingPRWorktree (plan-level PR without a running instance)
-					// when available; otherwise fall back to the selected instance's worktree.
-					if pendingWT := m.pendingPRWorktree; pendingWT != nil {
-						m.pendingPRWorktree = nil
-						capturedWT := pendingWT
-						return m, tea.Batch(tea.RequestWindowSize, func() tea.Msg {
-							commitMsg := fmt.Sprintf("[kas] update on %s", time.Now().Format(time.RFC822))
-							if err := capturedWT.CreatePR(capturedPRTitle, prBody, commitMsg); err != nil {
-								return prErrorMsg{id: prToastID, err: err}
+					src := *m.pendingPRSource
+					m.pendingPRSource = nil
+					return m, tea.Batch(tea.RequestWindowSize, func() tea.Msg {
+						if err := src.worktree.CreatePR(capturedPRTitle, prBody, ""); err != nil {
+							return prErrorMsg{id: prToastID, err: err}
+						}
+						if src.planFile != "" {
+							state, err := src.worktree.QueryPRState()
+							if err == nil && state.URL != "" {
+								return prCreatedForPlanMsg{planFile: src.planFile, url: state.URL}
 							}
-							return prCreatedMsg{instanceTitle: capturedPRTitle, prTitle: capturedPRTitle}
-						}, m.toastTickCmd())
-					}
-
-					selected := m.nav.GetSelectedInstance()
-					if selected != nil {
-						capturedTitle := selected.Title
-						return m, tea.Batch(tea.RequestWindowSize, func() tea.Msg {
-							commitMsg := fmt.Sprintf("[kas] update from '%s' on %s", capturedTitle, time.Now().Format(time.RFC822))
-							worktree, err := selected.GetGitWorktree()
-							if err != nil {
-								return prErrorMsg{id: prToastID, err: err}
-							}
-							if err := worktree.CreatePR(capturedPRTitle, prBody, commitMsg); err != nil {
-								return prErrorMsg{id: prToastID, err: err}
-							}
-							return prCreatedMsg{instanceTitle: capturedTitle, prTitle: capturedPRTitle}
-						}, m.toastTickCmd())
-					}
-
-					// Neither worktree nor instance — surface an error.
-					m.toastManager.Resolve(prToastID, overlay.ToastError, "no instance or branch to create PR from")
-					return m, m.toastTickCmd()
+						}
+						return prCreatedMsg{instanceTitle: capturedPRTitle, prTitle: capturedPRTitle}
+					}, m.toastTickCmd())
 				}
 			}
 			m.pendingPRTitle = ""
-			m.pendingPRWorktree = nil
+			m.pendingPRSource = nil
 			m.state = stateDefault
 			m.menu.SetState(ui.StateDefault)
 			return m, tea.RequestWindowSize
@@ -2563,12 +2520,21 @@ func (m *home) handleResolvedKey(name keys.KeyName) (tea.Model, tea.Cmd) {
 		message := fmt.Sprintf("[!] push changes from session '%s'?", selected.Title)
 		return m, m.confirmAction(message, pushAction)
 	case keys.KeyCreatePR:
-		selected := m.nav.GetSelectedInstance()
-		if selected == nil {
+		var src prSource
+		var err error
+		if selected := m.nav.GetSelectedInstance(); selected != nil {
+			src, err = m.instancePRSource(selected)
+		} else if planFile := m.nav.GetSelectedPlanFile(); planFile != "" {
+			src, err = m.taskPRSource(planFile)
+		} else {
 			return m, nil
 		}
+		if err != nil {
+			return m, m.handleError(err)
+		}
+		m.pendingPRSource = &src
 		m.state = statePRTitle
-		tio := overlay.NewTextInputOverlay("pr title", selected.Title)
+		tio := overlay.NewTextInputOverlay("pr title", src.title)
 		tio.SetSize(60, 3)
 		m.overlays.Show(tio)
 		return m, nil
