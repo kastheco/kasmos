@@ -1242,6 +1242,7 @@ func (d *Daemon) tickRepo(ctx context.Context, e RepoEntry) {
 			if err := d.executeAction(ctx, e, action); err != nil {
 				d.logger.Error("execute action failed", "kind", action.Kind(), "repo", e.Path, "err", err)
 				actionErrs = append(actionErrs, fmt.Errorf("%s: %w", action.Kind(), err))
+				break
 			}
 		}
 		if len(actionErrs) > 0 {
@@ -1868,6 +1869,9 @@ func (d *Daemon) executeAction(ctx context.Context, e RepoEntry, action loop.Act
 		if err := e.Store.SetVerification(e.Project, a.PlanFile, taskstore.VerificationRecord{
 			SHA: a.SHA, BaseSHA: a.BaseSHA, By: a.By, At: time.Now().UTC(),
 		}); err != nil {
+			if transitionErr := e.newFSMWithHooks().Transition(a.PlanFile, taskfsm.VerificationStale); transitionErr != nil {
+				return fmt.Errorf("record verification for %s: %v; reopen verification: %w", a.PlanFile, err, transitionErr)
+			}
 			return fmt.Errorf("record verification for %s: %w", a.PlanFile, err)
 		}
 		d.broadcaster.Emit(api.Event{Kind: "verification_recorded", Repo: e.Path, PlanFile: a.PlanFile})
@@ -1962,9 +1966,14 @@ func (d *Daemon) ensurePRForApprovedTask(e RepoEntry, planFile, reviewBody strin
 	if err != nil {
 		return prsvc.Result{}, fmt.Errorf("load task entry for %s: %w", planFile, err)
 	}
-	if entry.PRURL == "" && entry.Branch != "" {
-		head, err := gitpkg.BranchHeadSHA(e.Path, entry.Branch)
+	branch := entry.Branch
+	if branch == "" {
+		branch = gitpkg.TaskBranchFromFile(planFile)
+	}
+	if entry.PRURL == "" {
+		head, err := gitpkg.BranchHeadSHA(e.Path, branch)
 		if err != nil {
+			_ = e.Store.SetPRCreateOutcome(e.Project, planFile, taskstore.PRCreateOutcome{State: string(prsvc.OutcomeBlocked), Error: err.Error(), AttemptedAt: time.Now().UTC()})
 			return prsvc.Result{Outcome: prsvc.OutcomeBlocked, Reason: err.Error()}, nil
 		}
 		if entry.VerifiedSHA == "" || !strings.EqualFold(entry.VerifiedSHA, head) {

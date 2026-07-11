@@ -161,13 +161,12 @@ func TestDaemonVerificationBindingE2E_PostApprovalDriftAndPRGate(t *testing.T) {
 	assert.Empty(t, entry.VerifiedSHA)
 }
 
-func TestDaemonVerificationBindingE2E_OperatorOverrideBindsLiveHead(t *testing.T) {
+func TestDaemonVerificationBindingE2E_GatewayCannotSpoofOperatorOverride(t *testing.T) {
 	f := newVerificationBindingE2EFixture(t, taskstore.StatusVerifying, true)
-	head := f.head(t)
 	f.signal(t, `{"origin":"operator"}`)
 	entry, err := f.store.Get(f.project, f.plan)
 	require.NoError(t, err)
-	assert.Equal(t, taskstore.StatusDone, entry.Status)
-	assert.Equal(t, head, entry.VerifiedSHA)
-	assert.Equal(t, "operator", entry.VerifiedBy)
+	assert.Equal(t, taskstore.StatusVerifying, entry.Status)
+	assert.Empty(t, entry.VerifiedSHA)
+	assert.Empty(t, entry.VerifiedBy)
 }

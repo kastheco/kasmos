@@ -744,9 +744,10 @@ func executeTaskPR(repoRoot, project, planFile, title string, store taskstore.St
 	if branch == "" {
 		branch = git.TaskBranchFromFile(planFile)
 	}
-	if entry.PRURL == "" && entry.Branch != "" {
+	if entry.PRURL == "" {
 		head, err := git.BranchHeadSHA(repoRoot, branch)
 		if err != nil {
+			_ = store.SetPRCreateOutcome(project, planFile, taskstore.PRCreateOutcome{State: string(pr.OutcomeBlocked), Error: err.Error(), AttemptedAt: time.Now().UTC()})
 			return "", fmt.Errorf("resolve branch head for %s: %w", planFile, err)
 		}
 		if entry.VerifiedSHA == "" || !strings.EqualFold(entry.VerifiedSHA, head) {

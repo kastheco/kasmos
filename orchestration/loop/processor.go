@@ -339,6 +339,11 @@ func (p *Processor) ProcessFSMSignals(signals []taskfsm.Signal) []Action {
 				continue
 			}
 			origin := sig.Origin
+			// Gateway payload is agent-controlled. Only in-process callers may
+			// assert operator/internal provenance without a reviewed SHA.
+			if sig.GatewayEntryID != 0 && origin != "master" {
+				origin = ""
+			}
 			if sig.PreApplied && origin == "" && sig.ReviewedSHA == "" {
 				origin = "operator"
 			}

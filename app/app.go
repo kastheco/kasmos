@@ -1540,6 +1540,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				draftSpawnCmds := make(map[string][]tea.Cmd)
 				failedDraftPlannerFanout := make(map[string]bool)
 				draftSpawnGroups := make(map[string]string)
+			actionLoop:
 				for _, act := range actions {
 					switch a := act.(type) {
 					case loop.SpawnReviewerAction:
@@ -1609,6 +1610,27 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							if cmd := m.instanceChanged(); cmd != nil {
 								signalCmds = append(signalCmds, cmd)
 							}
+						}
+					case loop.RecordVerificationAction:
+						if err := m.taskStore.SetVerification(m.taskStoreProject, a.PlanFile, taskstore.VerificationRecord{
+							SHA: a.SHA, BaseSHA: a.BaseSHA, By: a.By, At: time.Now().UTC(),
+						}); err != nil {
+							log.WarningLog.Printf("could not record verification for %q: %v", a.PlanFile, err)
+							if m.fsm != nil {
+								_ = m.fsm.Transition(a.PlanFile, taskfsm.VerificationStale)
+							}
+							break actionLoop
+						}
+					case loop.StaleVerificationAction:
+						if err := m.taskStore.ClearVerification(m.taskStoreProject, a.PlanFile, a.Reason); err != nil {
+							log.WarningLog.Printf("could not clear stale verification for %q: %v", a.PlanFile, err)
+							break actionLoop
+						}
+						if entry, ok := m.taskState.Entry(a.PlanFile); ok && entry.Status == taskstate.StatusDone {
+							_ = m.fsm.Transition(a.PlanFile, taskfsm.VerificationStale)
+						}
+						if cmd := m.spawnMaster(a.PlanFile); cmd != nil {
+							signalCmds = append(signalCmds, cmd)
 						}
 					case loop.VerifyFailedAction:
 						m.audit(auditlog.EventPlanTransition, "verifying → implementing (verify failed)",
@@ -2721,6 +2743,10 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.loadTaskState()
 		m.updateSidebarTasks()
 		return m, tea.Batch(tea.RequestWindowSize, m.instanceChanged())
+	case verificationStaleMsg:
+		m.loadTaskState()
+		m.updateSidebarTasks()
+		return m, tea.Batch(tea.RequestWindowSize, m.instanceChanged(), m.spawnMaster(msg.planFile))
 	case startOverCompletedMsg:
 		// The reset command does branch/FSM I/O only. Keep model mutations and
 		// replacement agent spawning on the Bubble Tea update path.
@@ -3366,6 +3392,8 @@ type taskStageConfirmedMsg struct {
 
 // taskRefreshMsg triggers a plan state reload and sidebar refresh in Update.
 type taskRefreshMsg struct{}
+
+type verificationStaleMsg struct{ planFile string }
 
 // startOverCompletedMsg is emitted after the async start-over reset finishes.
 // Update removes old runtime rows and starts replacement planning agents.

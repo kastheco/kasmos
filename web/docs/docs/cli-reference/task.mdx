@@ -405,3 +405,4 @@ kas task unlink-linear my-feature --reason "issue moved back to planning"
 | `--project` | override project name (default: derived from current directory) |
 
 unlinking updates only kasmos task metadata and audit history. it does not edit the Linear issue or drive any kasmos lifecycle transition.
+PR creation resolves legacy tasks without a stored branch using the canonical `plan/<task>` branch, then applies the same HEAD-bound verification gate before creating or adopting a pull request.

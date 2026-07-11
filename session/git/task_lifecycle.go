@@ -28,16 +28,33 @@ func BranchHeadSHA(repoPath, branch string) (string, error) {
 	return sha, nil
 }
 
-// BranchMergeBaseSHA returns the merge-base of HEAD and branch, from repoPath.
+// BranchMergeBaseSHA returns the merge-base of the repository's default branch
+// and branch. It does not depend on whichever branch the root worktree happens
+// to have checked out.
 func BranchMergeBaseSHA(repoPath, branch string) (string, error) {
 	gt := &GitWorktree{repoPath: repoPath, worktreePath: repoPath}
-	out, err := gt.runGitCommand(repoPath, "merge-base", "HEAD", branch)
+	base := ""
+	if out, err := gt.runGitCommand(repoPath, "symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"); err == nil {
+		base = strings.TrimSpace(out)
+	}
+	if base == "" {
+		for _, candidate := range []string{"main", "master"} {
+			if _, err := gt.runGitCommand(repoPath, "rev-parse", "--verify", candidate+"^{commit}"); err == nil {
+				base = candidate
+				break
+			}
+		}
+	}
+	if base == "" {
+		return "", fmt.Errorf("resolve default branch: neither origin/HEAD, main, nor master exists")
+	}
+	out, err := gt.runGitCommand(repoPath, "merge-base", base, branch)
 	if err != nil {
-		return "", fmt.Errorf("merge-base HEAD %s: %w", branch, err)
+		return "", fmt.Errorf("merge-base %s %s: %w", base, branch, err)
 	}
 	sha := strings.TrimSpace(out)
 	if sha == "" {
-		return "", fmt.Errorf("merge-base HEAD %s: empty commit SHA", branch)
+		return "", fmt.Errorf("merge-base %s %s: empty commit SHA", base, branch)
 	}
 	return sha, nil
 }

@@ -1114,7 +1114,7 @@ func TestExecuteContextAction_MergePlanRejectsDriftedVerification(t *testing.T) 
 
 	plansDir := filepath.Join(dir, "docs", "plans")
 	require.NoError(t, os.MkdirAll(plansDir, 0o755))
-	store, ps, fsm := newSharedStoreForTest(t, plansDir)
+	store, _, fsm := newSharedStoreForTest(t, plansDir)
 	const planFile = "drifted-verification"
 	require.NoError(t, store.Create("test", taskstore.TaskEntry{
 		Filename: planFile,
@@ -1142,7 +1142,7 @@ func TestExecuteContextAction_MergePlanRejectsDriftedVerification(t *testing.T) 
 	require.Nil(t, cmd)
 	require.NotNil(t, h.pendingConfirmAction)
 	msg := h.pendingConfirmAction()
-	require.IsType(t, taskRefreshMsg{}, msg)
+	require.IsType(t, verificationStaleMsg{}, msg)
 	assert.Equal(t, baseSHA, runGit("rev-parse", "HEAD"), "drifted task branch must not be merged")
 
 	reloaded, err := taskstate.Load(store, "test", plansDir)

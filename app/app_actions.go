@@ -865,7 +865,7 @@ func (m *home) mergeTaskToMain(planFile string) (tea.Model, tea.Cmd) {
 					return err
 				}
 			}
-			return taskRefreshMsg{}
+			return verificationStaleMsg{planFile: planFile}
 		}
 		if err := gitpkg.PreflightMergeTaskBranch(m.activeRepoPath, fresh.Branch); err != nil {
 			return err

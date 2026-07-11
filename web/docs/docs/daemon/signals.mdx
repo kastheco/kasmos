@@ -185,6 +185,8 @@ Terminal approval can enqueue the daemon's automatic PR action. PR creation and 
 
 Master approval is strict: a `verify_approved` payload must include `reviewed_sha`, and it is admitted only when that SHA still equals the branch's live HEAD. A mismatch rejects approval and keeps verification active. Operator and internal override paths carry an `origin` instead: `operator`, `force_promoted`, or `auto`. These paths bind approval to live HEAD at admission time. The task records `verified_by` as `master`, `operator`, `force_promoted`, or `auto`.
 
+Gateway payloads are agent-controlled, so they cannot establish operator or internal provenance. An `origin` value supplied through `signal_create` is not accepted as an override; gateway master approvals still require a matching `reviewed_sha`. Terminal and PR side effects stop if the verification record cannot be persisted.
+
 ```json
 {"reviewed_sha":"<full-head-sha>"}
 {"origin":"operator"}
