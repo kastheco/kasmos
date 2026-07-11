@@ -1,0 +1,33 @@
+.root { min-height: 0; background: var(--background); color: var(--foreground); padding: 12px; font: 13px/1.45 var(--font-sans); overflow: auto; }
+.dark { color-scheme: dark; }
+.light { color-scheme: light; --background: #faf9fc; --foreground: #232136; --foreground-secondary: #6e6a86; --card-bg: rgba(35,33,54,.04); --card-border: rgba(35,33,54,.14); }
+.header, .header > div, .controls, .lifecycle, .pipRail, .selectors, .task > div, .event { display: flex; align-items: center; gap: 8px; }
+.header { justify-content: space-between; margin-bottom: 4px; }
+.connection, .meta, .muted, small, time { color: var(--foreground-secondary); font-size: 11px; }
+.stale { color: var(--rp-gold); min-height: 18px; font-size: 11px; }
+.lifecycle { flex-wrap: wrap; margin: 4px 0 14px; }
+.chip { padding: 3px 7px; border: 1px solid var(--card-border); border-radius: 99px; background: var(--card-bg); white-space: nowrap; }
+.list { list-style: none; display: grid; gap: 7px; margin: 6px 0 14px; }
+.card, .attention, .task, .readiness { padding: 9px; border: 1px solid var(--card-border); border-radius: 7px; background: var(--card-bg); }
+.attention { border-left: 3px solid var(--rp-gold); }
+.waveBoard { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px; margin: 6px 0 14px; }
+.waveBoard ul { list-style: none; margin: 6px 0; }
+.waveBoard li { display: flex; justify-content: space-between; gap: 8px; padding: 3px 0; }
+.task > div { justify-content: space-between; }
+.task progress { width: 100%; accent-color: var(--rp-foam); }
+.event { align-items: baseline; }
+.event time { min-width: 72px; }
+.selectors { margin-bottom: 10px; }
+.selectors label { display: grid; gap: 2px; font-size: 11px; }
+button, select { color: inherit; background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 5px; padding: 4px 7px; }
+button { cursor: pointer; }
+button:focus-visible, select:focus-visible { outline: 2px solid var(--rp-foam); outline-offset: 2px; }
+.linkButton { border: 0; padding: 0; background: none; text-align: left; }
+.pip { padding: 8px; }
+.inlineMode, .fullscreen { min-height: 0; }
+.pip .header { margin: 0; }
+.pip .stale { min-height: 14px; }
+.pipRail { flex-wrap: wrap; justify-content: space-between; }
+.pipRail .lifecycle { margin: 0; }
+h2 { font-size: 12px; text-transform: lowercase; margin-top: 10px; }
+@media (prefers-reduced-motion: no-preference) { button { transition: border-color .15s, background-color .15s; } }
