@@ -86,6 +86,8 @@ func TestLiveStatusCapQuery(t *testing.T) {
 		wantOmitted int
 	}{
 		{name: "explicit cap", cap: "2", agentCount: 5, wantCount: 2, wantOmitted: 3},
+		{name: "zero uses default", cap: "0", agentCount: 25, wantCount: 20, wantOmitted: 5},
+		{name: "negative uses default", cap: "-1", agentCount: 25, wantCount: 20, wantOmitted: 5},
 		{name: "hard maximum", cap: "1000", agentCount: 105, wantCount: 100, wantOmitted: 5},
 	}
 

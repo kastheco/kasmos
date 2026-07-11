@@ -39,8 +39,8 @@ func parseLiveStatusCap(r *http.Request) (int, error) {
 		return 0, nil
 	}
 	cap, err := strconv.Atoi(value)
-	if err != nil || cap <= 0 {
-		return 0, errors.New("cap must be a positive integer")
+	if err != nil {
+		return 0, errors.New("cap must be an integer")
 	}
 	return cap, nil
 }
