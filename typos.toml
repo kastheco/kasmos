@@ -3,6 +3,18 @@
 # (e.g. LOLCODE keywords, obfuscated identifiers) that trip typos
 extend-exclude = ["web/admin/dist", "web/admin/widget-dist"]
 
+[default.extend-identifiers]
+# Explicit changed-file checks bypass path exclusions, so allow the stable
+# minifier-generated identifiers present in the committed widget bundle.
+Iy = "Iy"
+Nd = "Nd"
+Ot = "Ot"
+Ue = "Ue"
+iy = "iy"
+nd = "nd"
+ot = "ot"
+ue = "ue"
+
 [default.extend-words]
 # "caf-au-lait" is correct expected output in slugifyTaskName tests that strip
 # non-ASCII from "café au lait". typos incorrectly flags "caf" as "calf".
@@ -15,5 +27,7 @@ hel = "hel"
 helo = "helo"
 nto = "nto"
 ser = "ser"
+# Standard media event name used by React's bundled DOM event table.
+seeked = "seeked"
 tio = "tio"
 unparseable = "unparseable"
