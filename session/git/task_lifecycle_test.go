@@ -180,6 +180,22 @@ func TestEnsureTaskWorktree(t *testing.T) {
 		require.EqualError(t, err, fmt.Sprintf("worktree path %s is registered to branch 'plan/other'", path))
 		assert.FileExists(t, marker)
 	})
+
+	t.Run("detached registered worktree is preserved", func(t *testing.T) {
+		repo := initTestRepo(t)
+		branch := "plan/target"
+		path := TaskWorktreePath(repo, branch)
+		runGitAt(t, repo, "branch", branch)
+		runGitAt(t, repo, "worktree", "add", path, branch)
+		t.Cleanup(func() { runGitAt(t, repo, "worktree", "remove", "-f", path) })
+		runGitAt(t, path, "checkout", "--detach")
+		marker := filepath.Join(path, "marker.txt")
+		require.NoError(t, os.WriteFile(marker, []byte("keep\n"), 0o644))
+
+		_, err := EnsureTaskWorktree(repo, branch)
+		require.EqualError(t, err, fmt.Sprintf("worktree path %s is registered as 'detached'", path))
+		assert.FileExists(t, marker)
+	})
 }
 
 func runGitAt(t *testing.T, repo string, args ...string) {

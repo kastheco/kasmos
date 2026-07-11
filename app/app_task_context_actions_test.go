@@ -8,7 +8,10 @@ import (
 
 	"github.com/kastheco/kasmos/config/taskfsm"
 	"github.com/kastheco/kasmos/config/taskstate"
+	"github.com/kastheco/kasmos/config/taskstore"
+	"github.com/kastheco/kasmos/session"
 	gitpkg "github.com/kastheco/kasmos/session/git"
+	"github.com/kastheco/kasmos/ui"
 	"github.com/kastheco/kasmos/ui/overlay"
 
 	tea "charm.land/bubbletea/v2"
@@ -70,4 +73,121 @@ func TestPRTitleSubmitPreparesBodyAsynchronously(t *testing.T) {
 	require.NotNil(t, cmd)
 	assert.Equal(t, statePRPreparingBody, updated.state)
 	assert.NotEqual(t, statePRBody, updated.state)
+}
+
+func TestCompletedTaskPublicationDoesNotRequireLiveInstance(t *testing.T) {
+	t.Parallel()
+	h, planFile, branch := newCompletedTaskPRHome(t, true)
+
+	model, cmd := h.executeContextAction("create_plan_pr")
+	updated := model.(*home)
+	require.Nil(t, cmd)
+	require.Equal(t, statePRTitle, updated.state)
+	require.NotNil(t, updated.pendingPRSource)
+	assert.Equal(t, branch, updated.pendingPRSource.branch)
+	assert.Equal(t, planFile, updated.pendingPRSource.planFile)
+
+	updated.state = stateDefault
+	updated.overlays.Dismiss()
+	model, cmd = updated.executeContextAction("push_plan_branch")
+	updated = model.(*home)
+	assert.Nil(t, cmd)
+	assert.Equal(t, stateConfirm, updated.state)
+	assert.True(t, updated.overlays.IsActive())
+}
+
+func TestPreparePRBodyUsesTaskMetadata(t *testing.T) {
+	t.Parallel()
+	h, planFile, branch := newCompletedTaskPRHome(t, false)
+	require.NoError(t, h.taskStore.SetSubtasks(h.taskStoreProject, planFile, []taskstore.SubtaskEntry{
+		{TaskNumber: 1, Title: "preserve completed task flow", Status: taskstore.SubtaskStatusDone},
+		{TaskNumber: 2, Title: "persist pull request metadata", Status: taskstore.SubtaskStatusPending},
+	}))
+
+	msg := h.preparePRBody(prSource{
+		worktree: gitpkg.NewSharedTaskWorktree(h.activeRepoPath, branch),
+		planFile: planFile,
+		branch:   branch,
+	}, "completed task publishing")()
+	ready, ok := msg.(prBodyReadyMsg)
+	require.True(t, ok, "message = %T", msg)
+	assert.NotEmpty(t, ready.body)
+	assert.Contains(t, ready.body, "publish a completed task without a live agent")
+	assert.Contains(t, ready.body, "keep completed task publishing available")
+	assert.Contains(t, ready.body, "preserve completed task flow")
+	assert.Contains(t, ready.body, "persist pull request metadata")
+}
+
+func TestCreatePRKeyOnTaskRowUsesTaskMetadata(t *testing.T) {
+	t.Parallel()
+	h, _, branch := newCompletedTaskPRHome(t, false)
+	h.keySent = true // bypass the first-pass menu highlight replay
+
+	model, _ := h.handleKeyPress(tea.KeyPressMsg{Code: 'P', Text: "P"})
+	updated := model.(*home)
+	require.Equal(t, statePRTitle, updated.state)
+	require.NotNil(t, updated.pendingPRSource)
+	assert.Equal(t, branch, updated.pendingPRSource.branch)
+	assert.Equal(t, "publish a completed task without a live agent", updated.pendingPRSource.title)
+}
+
+func TestUnresolvableTaskPRFailsClosed(t *testing.T) {
+	t.Parallel()
+	h, planFile, _ := newCompletedTaskPRHome(t, false)
+	entry, err := h.taskStore.Get(h.taskStoreProject, planFile)
+	require.NoError(t, err)
+	entry.Branch = ""
+	require.NoError(t, h.taskStore.Update(h.taskStoreProject, planFile, entry))
+	h.taskState.Plans[planFile] = taskstate.TaskEntry{
+		Status:      taskstate.StatusDone,
+		Description: entry.Description,
+		Goal:        entry.Goal,
+	}
+
+	model, cmd := h.executeContextAction("create_plan_pr")
+	updated := model.(*home)
+	require.NotNil(t, cmd)
+	assert.Equal(t, stateDefault, updated.state)
+	assert.Nil(t, updated.pendingPRSource)
+	assert.False(t, updated.overlays.IsActive())
+}
+
+func newCompletedTaskPRHome(t *testing.T, placeholder bool) (*home, string, string) {
+	t.Helper()
+	const (
+		planFile = "completed-task"
+		branch   = "plan/completed-task"
+	)
+	dir := t.TempDir()
+	store, ps, _ := newSharedStoreForTest(t, dir)
+	require.NoError(t, store.Create("test", taskstore.TaskEntry{
+		Filename:    planFile,
+		Status:      taskstore.StatusDone,
+		Description: "publish a completed task without a live agent",
+		Goal:        "keep completed task publishing available",
+		Branch:      branch,
+	}))
+	ps.Plans[planFile] = taskstate.TaskEntry{
+		Status:      taskstate.StatusDone,
+		Description: "publish a completed task without a live agent",
+		Goal:        "keep completed task publishing available",
+		Branch:      branch,
+	}
+	h := newTestHome()
+	h.activeRepoPath = dir
+	h.taskStore = store
+	h.taskStoreProject = "test"
+	h.taskState = ps
+	// Keep the task selected in the active rows while the authoritative store
+	// entry remains done; publication behavior reads status and branch from there.
+	h.nav.SetPlans([]ui.PlanDisplay{{Filename: planFile, Status: string(taskstate.StatusReady)}})
+	if placeholder {
+		inst, err := session.NewInstance(session.InstanceOptions{Title: "completed task placeholder", Program: "opencode", TaskFile: planFile})
+		require.NoError(t, err)
+		inst.BindSharedTaskWorktree(dir, branch)
+		h.nav.AddInstance(inst)
+	}
+	h.nav.ClickItem(0)
+	require.Equal(t, planFile, h.nav.GetSelectedPlanFile())
+	return h, planFile, branch
 }

@@ -76,15 +76,34 @@ func EnsureTaskWorktree(repoPath, branch string) (*GitWorktree, error) {
 		return nil, fmt.Errorf("inspect worktree registrations: %w", err)
 	}
 	var currentPath string
+	var registration string
+	checkRegistration := func() error {
+		if currentPath != filepath.Clean(path) {
+			return nil
+		}
+		if registration != "branch refs/heads/"+branch {
+			if strings.HasPrefix(registration, "branch refs/heads/") {
+				registeredBranch := strings.TrimPrefix(registration, "branch refs/heads/")
+				return fmt.Errorf("worktree path %s is registered to branch '%s'", path, registeredBranch)
+			}
+			return fmt.Errorf("worktree path %s is registered as '%s'", path, registration)
+		}
+		return nil
+	}
 	for _, line := range strings.Split(out, "\n") {
 		switch {
+		case line == "":
+			if err := checkRegistration(); err != nil {
+				return nil, err
+			}
+			currentPath = ""
+			registration = ""
 		case strings.HasPrefix(line, "worktree "):
 			currentPath = filepath.Clean(strings.TrimSpace(strings.TrimPrefix(line, "worktree ")))
-		case strings.HasPrefix(line, "branch ") && currentPath == filepath.Clean(path):
-			registeredBranch := strings.TrimPrefix(strings.TrimSpace(line), "branch refs/heads/")
-			if registeredBranch != branch {
-				return nil, fmt.Errorf("worktree path %s is registered to branch '%s'", path, registeredBranch)
-			}
+		case strings.HasPrefix(line, "branch "):
+			registration = strings.TrimSpace(line)
+		case line == "detached" || line == "bare":
+			registration = line
 		}
 	}
 
