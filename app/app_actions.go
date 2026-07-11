@@ -847,7 +847,27 @@ func (m *home) mergeTaskToMain(planFile string) (tea.Model, tea.Cmd) {
 	}
 	planName := taskstate.DisplayName(planFile)
 	mergeAction := func() tea.Msg {
-		if err := gitpkg.PreflightMergeTaskBranch(m.activeRepoPath, entry.Branch); err != nil {
+		fresh, ok := m.taskState.Entry(planFile)
+		if !ok {
+			return fmt.Errorf("task not found: %s", planFile)
+		}
+		head, err := gitpkg.BranchHeadSHA(m.activeRepoPath, fresh.Branch)
+		if err != nil {
+			return err
+		}
+		if fresh.VerifiedSHA == "" || !strings.EqualFold(fresh.VerifiedSHA, head) {
+			reason := staleVerificationReason(fresh.VerifiedSHA, head)
+			if err := m.taskState.ClearVerification(planFile, reason); err != nil {
+				return err
+			}
+			if taskfsm.Status(fresh.Status) == taskfsm.StatusDone {
+				if err := m.fsm.Transition(planFile, taskfsm.VerificationStale); err != nil {
+					return err
+				}
+			}
+			return staleVerificationMsg{planFile: planFile, reason: reason}
+		}
+		if err := gitpkg.PreflightMergeTaskBranch(m.activeRepoPath, fresh.Branch); err != nil {
 			return err
 		}
 		// Kill all instances bound to this plan.
@@ -859,18 +879,18 @@ func (m *home) mergeTaskToMain(planFile string) (tea.Model, tea.Cmd) {
 				m.allInstances = append(m.allInstances[:i], m.allInstances[i+1:]...)
 			}
 		}
-		if err := gitpkg.MergeTaskBranch(m.activeRepoPath, entry.Branch); err != nil {
+		if err := gitpkg.MergeTaskBranch(m.activeRepoPath, fresh.Branch); err != nil {
 			return err
 		}
 		// Walk through FSM to done if not already there.
-		if taskfsm.Status(entry.Status) != taskfsm.StatusDone {
-			if taskfsm.Status(entry.Status) != taskfsm.StatusReviewing &&
-				taskfsm.Status(entry.Status) != taskfsm.StatusVerifying {
+		if taskfsm.Status(fresh.Status) != taskfsm.StatusDone {
+			if taskfsm.Status(fresh.Status) != taskfsm.StatusReviewing &&
+				taskfsm.Status(fresh.Status) != taskfsm.StatusVerifying {
 				if err := m.fsmSetReviewing(planFile); err != nil {
 					return err
 				}
 			}
-			if taskfsm.Status(entry.Status) != taskfsm.StatusVerifying {
+			if taskfsm.Status(fresh.Status) != taskfsm.StatusVerifying {
 				if err := m.fsm.Transition(planFile, taskfsm.ReviewApproved); err != nil {
 					return err
 				}
@@ -1583,6 +1603,16 @@ func (m *home) prepareSelectedInstanceSignal(selected *session.Instance, event t
 	}
 	if err := m.captureSelectedReviewFeedback(selected); err != nil {
 		return "", "", err
+	}
+	if event == taskfsm.VerifyApproved {
+		payload, err := json.Marshal(map[string]string{
+			"body":   m.reviewFeedbackPayload(selected),
+			"origin": "operator",
+		})
+		if err != nil {
+			return "", "", err
+		}
+		return signalType, string(payload), nil
 	}
 	return signalType, m.reviewFeedbackPayload(selected), nil
 }
