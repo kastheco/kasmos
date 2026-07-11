@@ -5,6 +5,7 @@ package routing
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/mark3labs/mcp-go/mcp"
@@ -50,27 +51,52 @@ func NewDynamicRegisterConfig(project string, projects []string, loader ProjectL
 // ResolveProjectArg resolves a request using the current project catalog when
 // one is configured, otherwise it preserves the static routing behavior.
 func (rc RegisterConfig) ResolveProjectArg(ctx context.Context, req mcp.CallToolRequest) (string, error) {
-	if rc.LoadProjects == nil {
-		return ResolveProjectArg(req, rc.FixedProject, rc.Projects)
-	}
+	project, _, err := rc.ResolveProjectArgWithCatalog(ctx, req)
+	return project, err
+}
 
-	allowed := rc.Projects
+// ResolveProjectArgWithCatalog resolves a request and returns the same project
+// catalog used for validation so callers can project a consistent snapshot.
+func (rc RegisterConfig) ResolveProjectArgWithCatalog(ctx context.Context, req mcp.CallToolRequest) (string, []string, error) {
+	projects, dynamic := rc.ProjectCatalog(ctx)
+	allowed := make(map[string]struct{}, len(projects))
+	for _, project := range projects {
+		allowed[project] = struct{}{}
+	}
 	fixedProject := rc.FixedProject
-	projects, err := rc.LoadProjects(ctx)
-	if err == nil {
-		liveProjects := make(map[string]struct{}, len(projects))
-		for _, project := range projects {
-			project = strings.TrimSpace(project)
-			if project != "" {
-				liveProjects[project] = struct{}{}
+	if dynamic {
+		fixedProject = ""
+	}
+	project, err := ResolveProjectArg(req, fixedProject, allowed)
+	return project, projects, err
+}
+
+// ProjectCatalog returns the current normalized project catalog. The boolean
+// reports whether a non-empty dynamic catalog replaced the static fallback.
+func (rc RegisterConfig) ProjectCatalog(ctx context.Context) ([]string, bool) {
+	projects := rc.Projects
+	dynamic := false
+	if rc.LoadProjects != nil {
+		loaded, err := rc.LoadProjects(ctx)
+		if err == nil {
+			live := make(map[string]struct{}, len(loaded))
+			for _, project := range loaded {
+				if project = strings.TrimSpace(project); project != "" {
+					live[project] = struct{}{}
+				}
+			}
+			if len(live) > 0 {
+				projects = live
+				dynamic = true
 			}
 		}
-		if len(liveProjects) > 0 {
-			allowed = liveProjects
-			fixedProject = ""
-		}
 	}
-	return ResolveProjectArg(req, fixedProject, allowed)
+	result := make([]string, 0, len(projects))
+	for project := range projects {
+		result = append(result, project)
+	}
+	sort.Strings(result)
+	return result, dynamic
 }
 
 // ResolveProjectArg extracts the target project from a tool request, enforcing

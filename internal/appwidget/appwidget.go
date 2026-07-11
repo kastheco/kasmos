@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/kastheco/kasmos/config/auditlog"
+	"github.com/kastheco/kasmos/config/taskparser"
 	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/kastheco/kasmos/internal/livestatus"
 	"github.com/kastheco/kasmos/internal/mcpserver/routing"
@@ -67,7 +68,7 @@ func resolveToolStore(project string, store taskstore.Store) (taskstore.Store, f
 
 func makeOpenMonitorHandler(rc routing.RegisterConfig, store taskstore.Store, socketPath string, cache *snapshotCache) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		project, err := rc.ResolveProjectArg(ctx, req)
+		project, projects, err := rc.ResolveProjectArgWithCatalog(ctx, req)
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("open_monitor: %v", err)), nil
 		}
@@ -81,7 +82,7 @@ func makeOpenMonitorHandler(rc routing.RegisterConfig, store taskstore.Store, so
 			return mcp.NewToolResultError(fmt.Sprintf("open_monitor: resolve store: %v", err)), nil
 		}
 		defer closeStore()
-		snapshot, err := buildSnapshot(project, focus, resolved, socketPath)
+		snapshot, err := buildSnapshot(project, focus, projects, resolved, socketPath)
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("open_monitor: %v", err)), nil
 		}
@@ -90,7 +91,7 @@ func makeOpenMonitorHandler(rc routing.RegisterConfig, store taskstore.Store, so
 	}
 }
 
-func buildSnapshot(project, focus string, store taskstore.Store, socketPath string) (livestatus.LiveStatus, error) {
+func buildSnapshot(project, focus string, projects []string, store taskstore.Store, socketPath string) (livestatus.LiveStatus, error) {
 	entries, err := store.List(project)
 	if err != nil {
 		return livestatus.LiveStatus{}, fmt.Errorf("list tasks: %w", err)
@@ -99,6 +100,9 @@ func buildSnapshot(project, focus string, store taskstore.Store, socketPath stri
 	var focused *livestatus.FocusInput
 	for _, entry := range entries {
 		task := livestatus.TaskInput{Filename: entry.Filename, Status: entry.Status, Phase: entry.ExecutionState.Phase, Topic: entry.Topic, Branch: entry.Branch, ActiveWave: entry.ExecutionState.ActiveWave, ReviewCycle: entry.ReviewCycle, PRURL: entry.PRURL, PRCheckStatus: entry.PRCheckStatus, PRReviewDecision: entry.PRReviewDecision, ReviewFeedback: strings.TrimSpace(entry.LatestReviewFeedback) != ""}
+		if plan, parseErr := taskparser.Parse(entry.Content); parseErr == nil {
+			task.TotalWaves = len(plan.Waves)
+		}
 		if entry.Status == taskstore.StatusImplementing || entry.Status == taskstore.StatusReviewing || entry.Status == taskstore.StatusVerifying {
 			subtasks, subErr := store.GetSubtasks(project, entry.Filename)
 			if subErr == nil {
@@ -126,7 +130,7 @@ func buildSnapshot(project, focus string, store taskstore.Store, socketPath stri
 	}
 	events := queryEvents(project)
 	heartbeat, agents := statustools.DaemonStatus(socketPath, project)
-	return livestatus.Assemble(livestatus.Input{Project: project, Now: time.Now(), Daemon: heartbeat, Tasks: inputs, Agents: agents, Include: livestatus.Include{Projects: true, Tasks: true, Events: true, Focus: focus}, Projects: []string{project}, Events: events, FocusTask: focused}), nil
+	return livestatus.Assemble(livestatus.Input{Project: project, Now: time.Now(), Daemon: heartbeat, Tasks: inputs, Agents: agents, Include: livestatus.Include{Projects: true, Tasks: true, Events: true, Focus: focus}, Projects: projects, Events: events, FocusTask: focused}), nil
 }
 
 func focusInput(entry taskstore.TaskEntry, subtasks []taskstore.SubtaskEntry) *livestatus.FocusInput {
