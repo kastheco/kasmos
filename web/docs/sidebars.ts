@@ -47,6 +47,7 @@ const sidebars: SidebarsConfig = {
         "guides/skills",
         "guides/agent-harnesses",
         "guides/codex-plugin",
+        "guides/live-status-contract",
       ],
     },
     {

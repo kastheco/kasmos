@@ -86,6 +86,7 @@ func TestNewConfiguredMCPServer_RegistersSymbolsTool(t *testing.T) {
 	assert.Contains(t, names, "symbols")
 	assert.Contains(t, names, "grep")
 	assert.Contains(t, names, "read_file")
+	assert.Contains(t, names, "live_status")
 }
 
 // makeTempGitRepo creates a temp dir with a .git marker directory so
@@ -180,6 +181,7 @@ func TestNewConfiguredMCPServer_MultiRoot_RegistersExpectedTools(t *testing.T) {
 	assert.Contains(t, names, "read_file")
 	assert.Contains(t, names, "task_list")
 	assert.Contains(t, names, "signal_create")
+	assert.Contains(t, names, "live_status")
 }
 
 func TestNewConfiguredMCPServer_SymbolsToolDescriptorExposesProject(t *testing.T) {

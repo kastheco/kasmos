@@ -2,12 +2,27 @@ package cmd
 
 import (
 	"bytes"
+	"encoding/json"
+	"net"
+	"net/http"
 	"testing"
 	"time"
 
+	"github.com/kastheco/kasmos/internal/livestatus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func startMonitorTestDaemon(t *testing.T, handler http.Handler) string {
+	t.Helper()
+	socket := t.TempDir() + "/daemon.sock"
+	listener, err := net.Listen("unix", socket)
+	require.NoError(t, err)
+	server := &http.Server{Handler: handler}
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(func() { _ = server.Close() })
+	return socket
+}
 
 func TestMonitorCmd_HasSubcommands(t *testing.T) {
 	cmd := NewMonitorCmd()
@@ -65,4 +80,39 @@ func TestMonitorEventMapMatchesSinceAcceptsFractionalTimestamp(t *testing.T) {
 	}
 
 	assert.True(t, monitorEventMapMatches(event, "", "", nil, since))
+}
+
+func TestMonitorStatusJSON(t *testing.T) {
+	want := livestatus.LiveStatus{SchemaVersion: livestatus.SchemaVersion, Project: "kasmos", DaemonRunning: true, ActiveAgents: []livestatus.ActiveAgent{}, Attention: []livestatus.AttentionItem{}}
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /v1/repos", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`[{"project":"kasmos"}]`))
+	})
+	mux.HandleFunc("GET /v1/repos/kasmos/live-status", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(want)
+	})
+
+	cmd := NewMonitorCmd()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetArgs([]string{"--socket", startMonitorTestDaemon(t, mux), "status", "--json"})
+	require.NoError(t, cmd.Execute())
+	var got livestatus.LiveStatus
+	require.NoError(t, json.Unmarshal(out.Bytes(), &got))
+	assert.Equal(t, want, got)
+}
+
+func TestMonitorStatusTextBackwardCompatibility(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /v1/status", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"repos":["kasmos"]}`))
+	})
+
+	cmd := NewMonitorCmd()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetArgs([]string{"--socket", startMonitorTestDaemon(t, mux), "status"})
+	require.NoError(t, cmd.Execute())
+	assert.Contains(t, out.String(), "daemon status snapshot:\n")
+	assert.Contains(t, out.String(), "  repos:\n")
 }
