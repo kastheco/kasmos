@@ -200,6 +200,20 @@ func TestNewServeMCPHTTPHandler_OnlyServesExactMCPPath(t *testing.T) {
 		require.Equal(t, []string{"/mcp"}, calls)
 	})
 
+	t.Run("file preview origin receives scoped cors", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodOptions, "/mcp", nil)
+		req.Header.Set("Origin", "null")
+		rec := httptest.NewRecorder()
+
+		h.ServeHTTP(rec, req)
+
+		require.Equal(t, http.StatusNoContent, rec.Code)
+		assert.Equal(t, "null", rec.Header().Get("Access-Control-Allow-Origin"))
+		assert.Contains(t, rec.Header().Get("Access-Control-Allow-Headers"), "Mcp-Session-Id")
+		assert.Equal(t, "Mcp-Session-Id", rec.Header().Get("Access-Control-Expose-Headers"))
+		require.Equal(t, []string{"/mcp"}, calls)
+	})
+
 	t.Run("well-known root path returns 404", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/.well-known/oauth-authorization-server/mcp", nil)
 		rec := httptest.NewRecorder()

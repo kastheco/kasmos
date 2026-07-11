@@ -116,5 +116,8 @@ func TestPreviewHTMLIncludesHostShim(t *testing.T) {
 	html := PreviewHTML()
 	assert.Contains(t, html, "window.openai=")
 	assert.Contains(t, html, "callTool:async function")
+	assert.Contains(t, html, `this.post("initialize"`)
+	assert.Contains(t, html, `headers["mcp-session-id"]=this.session`)
+	assert.Contains(t, html, `this.notify("notifications/initialized"`)
 	assert.Less(t, strings.Index(html, "window.openai="), strings.Index(html, `<script type="module">`))
 }

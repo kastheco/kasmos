@@ -196,6 +196,17 @@ func newServeMCPHTTPHandler(next http.Handler) http.Handler {
 			http.NotFound(w, r)
 			return
 		}
+		// Standalone widget previews are opened from file:// and therefore send
+		// Origin: null. Limit cross-origin MCP access to that preview origin.
+		if r.Header.Get("Origin") == "null" {
+			w.Header().Set("Access-Control-Allow-Origin", "null")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Accept, Mcp-Session-Id")
+			w.Header().Set("Access-Control-Expose-Headers", "Mcp-Session-Id")
+			if r.Method == http.MethodOptions {
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+		}
 		next.ServeHTTP(w, r)
 	}))
 }

@@ -43,6 +43,8 @@ The supported way to see the real widget today is the browser preview. With `kas
 kas monitor widget --out preview.html
 ```
 
+The generated preview performs the MCP `initialize` handshake, reuses the returned session ID, and then polls `open_monitor`. The MCP listener permits the standalone `file://` preview origin only; other cross-origin callers remain blocked.
+
 ## authority boundary
 
 The widget is read-only. `open_monitor` is the only MCP tool the widget can call, and its MCP descriptor explicitly marks it read-only, non-destructive, idempotent, and closed-world so compatible hosts do not gate polling as a mutation. Its action buttons do not invoke lifecycle transitions or mutate Kasmos state; each sends a follow-up message into the conversation instead.
