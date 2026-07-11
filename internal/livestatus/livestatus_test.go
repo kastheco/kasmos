@@ -61,6 +61,17 @@ func TestAssembleAttentionMappingInvariant(t *testing.T) {
 	assert.Equal(t, AttentionItem{Task: "stale", Kind: KindStaleInstance, Detail: "unhealthy"}, got.Attention[2])
 }
 
+func TestAssembleReviewFeedbackExcludesTerminalTasks(t *testing.T) {
+	got := Assemble(Input{Tasks: []TaskInput{
+		{Filename: "active", Status: taskstore.StatusReviewing, ReviewFeedback: true},
+		{Filename: "done", Status: taskstore.StatusDone, ReviewFeedback: true},
+		{Filename: "cancelled", Status: taskstore.StatusCancelled, ReviewFeedback: true},
+	}})
+
+	require.Len(t, got.Attention, 1)
+	assert.Equal(t, AttentionItem{Task: "active", Kind: KindReviewFeedback}, got.Attention[0])
+}
+
 func TestAssembleDeterminismParityInvariant(t *testing.T) {
 	in := Input{Project: "kasmos", Now: time.Date(2026, 7, 10, 12, 0, 0, 0, time.UTC), Tasks: []TaskInput{{Filename: "task", Status: taskstore.StatusReady}}, Agents: []AgentInput{{Task: "task", Role: "coder", Active: true}}}
 	first, second := Assemble(in), Assemble(in)
