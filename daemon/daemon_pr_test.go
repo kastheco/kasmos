@@ -9,6 +9,7 @@ import (
 	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/kastheco/kasmos/daemon/api"
 	"github.com/kastheco/kasmos/orchestration/loop"
+	prsvc "github.com/kastheco/kasmos/orchestration/pr"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -19,7 +20,7 @@ func TestCreatePRForApprovedTask_NilStore(t *testing.T) {
 	d := &Daemon{logger: slog.Default(), broadcaster: api.NewEventBroadcaster()}
 	defer d.broadcaster.Close()
 
-	err := d.createPRForApprovedTask(RepoEntry{
+	_, err := d.ensurePRForApprovedTask(RepoEntry{
 		Path:    t.TempDir(),
 		Project: "test-project",
 		Store:   nil,
@@ -46,13 +47,15 @@ func TestCreatePRForApprovedTask_NoBranch(t *testing.T) {
 	d := &Daemon{logger: slog.Default(), broadcaster: api.NewEventBroadcaster()}
 	defer d.broadcaster.Close()
 
-	err := d.createPRForApprovedTask(RepoEntry{
-		Path:    t.TempDir(),
-		Project: project,
-		Store:   store,
+	res, err := d.ensurePRForApprovedTask(RepoEntry{
+		Path:         t.TempDir(),
+		Project:      project,
+		Store:        store,
+		AutoCreatePR: true,
 	}, planFile, "LGTM")
 
 	require.NoError(t, err)
+	assert.Equal(t, prsvc.OutcomeBlocked, res.Outcome)
 }
 
 func TestDaemon_CreatePRAction_NoBranch_EmitsEvent(t *testing.T) {
@@ -78,9 +81,10 @@ func TestDaemon_CreatePRAction_NoBranch_EmitsEvent(t *testing.T) {
 		broadcaster: b,
 	}
 	e := RepoEntry{
-		Path:    t.TempDir(),
-		Project: project,
-		Store:   store,
+		Path:         t.TempDir(),
+		Project:      project,
+		Store:        store,
+		AutoCreatePR: true,
 	}
 
 	err := d.executeAction(context.Background(), e, loop.CreatePRAction{
@@ -91,11 +95,39 @@ func TestDaemon_CreatePRAction_NoBranch_EmitsEvent(t *testing.T) {
 
 	select {
 	case ev := <-sub:
-		assert.Equal(t, "signal_processed", ev.Kind)
-		assert.Equal(t, "create PR for "+planFile, ev.Message)
+		assert.Equal(t, "pr_create_failed", ev.Kind)
+		assert.Contains(t, ev.Detail, "no branch")
 		assert.Equal(t, planFile, ev.PlanFile)
 		assert.Equal(t, e.Path, ev.Repo)
 	case <-time.After(time.Second):
-		t.Fatal("timeout waiting for signal_processed event")
+		t.Fatal("timeout waiting for pr_create_failed event")
 	}
+}
+
+func TestDaemon_CreatePRAction_RecordedURLPersistsSkippedOutcome(t *testing.T) {
+	t.Parallel()
+	b := api.NewEventBroadcaster()
+	defer b.Close()
+	sub := b.Subscribe()
+	store := taskstore.NewTestStore(t)
+	const project, planFile = "test-project", "plan.md"
+	require.NoError(t, store.Create(project, taskstore.TaskEntry{
+		Filename: planFile, Status: taskstore.StatusDone,
+		PRURL: "https://example.test/pr/7",
+	}))
+	d := &Daemon{logger: slog.Default(), broadcaster: b}
+	e := RepoEntry{Path: t.TempDir(), Project: project, Store: store, AutoCreatePR: true}
+
+	require.NoError(t, d.executeAction(context.Background(), e, loop.CreatePRAction{PlanFile: planFile}))
+	select {
+	case ev := <-sub:
+		assert.Equal(t, "pr_create_skipped", ev.Kind)
+		assert.Equal(t, "pr already recorded", ev.Detail)
+	case <-time.After(time.Second):
+		t.Fatal("timeout waiting for pr_create_skipped event")
+	}
+	entry, err := store.Get(project, planFile)
+	require.NoError(t, err)
+	assert.Equal(t, string(prsvc.OutcomeSkipped), entry.PRCreateState)
+	assert.Equal(t, "pr already recorded", entry.PRCreateError)
 }

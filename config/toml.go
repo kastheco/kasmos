@@ -53,6 +53,7 @@ type TOMLUIConfig struct {
 	AutoReviewFix            *bool  `toml:"auto_review_fix"`
 	MaxReviewFixCycles       *int   `toml:"max_review_fix_cycles"`
 	AutoReadinessReview      *bool  `toml:"auto_readiness_review"`
+	AutoCreatePR             *bool  `toml:"auto_create_pr"`
 	ReadinessSelfFixMaxLines *int   `toml:"readiness_self_fix_max_lines"`
 	ReadinessMaxVerifyCycles *int   `toml:"readiness_max_verify_cycles"`
 }
@@ -152,6 +153,7 @@ type TOMLConfigResult struct {
 	AutoReviewFix            *bool
 	MaxReviewFixCycles       *int
 	AutoReadinessReview      *bool
+	AutoCreatePR             *bool
 	ReadinessSelfFixMaxLines *int
 	ReadinessMaxVerifyCycles *int
 	TelemetryEnabled         *bool
@@ -238,6 +240,7 @@ func LoadTOMLConfigFrom(path string) (*TOMLConfigResult, error) {
 		AutoReviewFix:            tc.UI.AutoReviewFix,
 		MaxReviewFixCycles:       tc.UI.MaxReviewFixCycles,
 		AutoReadinessReview:      tc.UI.AutoReadinessReview,
+		AutoCreatePR:             tc.UI.AutoCreatePR,
 		ReadinessSelfFixMaxLines: tc.UI.ReadinessSelfFixMaxLines,
 		ReadinessMaxVerifyCycles: tc.UI.ReadinessMaxVerifyCycles,
 		TelemetryEnabled:         tc.Telemetry.Enabled,

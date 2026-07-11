@@ -9,6 +9,19 @@ the task store is the authoritative database for all kasmos task state. it track
 1. **global sqlite** (default) — a single machine-wide database shared by all repos.
 2. **remote http store** — a kasmos server instance, used for team or ci environments.
 
+## pr creation outcome columns
+
+automatic and manual PR creation persist their latest result on the task row:
+
+| column | type | meaning |
+|--------|------|---------|
+| `pr_create_state` | text | latest outcome: `created`, `adopted`, `skipped`, `failed`, or `blocked` |
+| `pr_create_error` | text | human-readable reason for a non-success outcome |
+| `pr_create_attempts` | integer | number of creation attempts, used to bound retries |
+| `pr_create_attempted_at` | timestamp | time of the latest attempt, used to schedule retry backoff |
+
+`pr_url` remains the canonical URL. A created or adopted PR writes `pr_url` and the corresponding outcome; a non-success records enough detail for the TUI, CLI, and retry sweep to explain the result.
+
 ## global sqlite
 
 **default path:** `~/.config/kasmos/taskstore.db`

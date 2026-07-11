@@ -1,0 +1,53 @@
+---
+title: "automatic PR creation"
+---
+
+# automatic PR creation
+
+kasmos can ensure a task has a GitHub pull request when it reaches terminal approval. `auto_create_pr` controls automatic creation, which uses the same task-metadata-first service as `kas task pr`.
+
+The service resolves the stored task branch, prepares its worktree, and calls `gh pr view` before `gh pr create`. An existing PR is adopted and persisted, making repeated signals and manual retries idempotent.
+
+## outcomes
+
+Every attempt persists one of five outcomes:
+
+| outcome | meaning | retried automatically |
+|---------|---------|-----------------------|
+| `created` | a new PR was created and its URL persisted | no |
+| `adopted` | an existing PR was found and its URL persisted | no |
+| `skipped` | policy or task eligibility says no PR should be created | no |
+| `failed` | a transient operation failed | yes, within the attempt limit |
+| `blocked` | user action is required before creation can proceed | no |
+
+The task store also records a human-readable reason, attempt count, and latest attempt time.
+
+## daemon events
+
+PR creation emits one of three event kinds:
+
+- `pr_created` for a newly created or adopted PR; detail includes the URL
+- `pr_create_skipped` when creation is ineligible or skipped by policy
+- `pr_create_failed` when creation fails or requires operator action; detail includes the persisted outcome and reason
+
+PR creation does not emit `signal_processed`. Consumers should use these PR-specific event kinds for this operation.
+
+## retries
+
+The daemon's `[pr_creator]` sweep considers only completed tasks with a `failed` outcome and no persisted PR URL. It retries with exponential backoff, up to `max_attempts`, and scans at `retry_interval_sec`. Created, adopted, skipped, and blocked outcomes are never retried automatically. If `gh` is unavailable or unauthenticated, the sweep pauses without consuming attempt budgets.
+
+## clearing blocked outcomes
+
+| reason | recovery |
+|--------|----------|
+| dirty task worktree | commit or otherwise clean the task's intended changes, then retry |
+| missing task branch | restore or create the branch named in task metadata, or correct the metadata, then retry |
+| `gh` unauthenticated | run `gh auth login`, verify with `gh auth status`, then retry |
+
+After clearing the condition, run:
+
+```sh
+kas task pr <plan-file>
+```
+
+The command prints and persists the URL on success and exits non-zero if the task is still blocked. Its existing-PR preflight makes this manual recovery safe to repeat.

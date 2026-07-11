@@ -145,6 +145,17 @@ type TaskEntry struct {
 	PRURL                string         `json:"pr_url,omitempty"`
 	PRReviewDecision     string         `json:"pr_review_decision,omitempty"`
 	PRCheckStatus        string         `json:"pr_check_status,omitempty"`
+	PRCreateState        string         `json:"pr_create_state,omitempty"`
+	PRCreateError        string         `json:"pr_create_error,omitempty"`
+	PRCreateAttempts     int            `json:"pr_create_attempts,omitempty"`
+	PRCreateAttemptedAt  time.Time      `json:"pr_create_attempted_at,omitempty"`
+}
+
+type PRCreateOutcome struct {
+	State       string
+	Error       string
+	Attempts    int
+	AttemptedAt time.Time
 }
 
 // LinearLink holds the persisted Linear issue coordinates for a task.
@@ -283,6 +294,8 @@ type Store interface {
 
 	// PR metadata
 	SetPRURL(project, filename, url string) error
+	SetPRCreateOutcome(project, filename string, outcome PRCreateOutcome) error
+	ClearPRCreateOutcome(project, filename string) error
 	SetPRState(project, filename, reviewDecision, checkStatus string) error
 
 	// PR reviews
@@ -310,3 +323,8 @@ type Store interface {
 	// Close releases any resources held by the store.
 	Close() error
 }
+
+var (
+	_ Store = (*SQLiteStore)(nil)
+	_ Store = (*HTTPStore)(nil)
+)

@@ -487,6 +487,36 @@ func NewHandler(store Store) http.Handler {
 	})
 
 	// Set PR URL
+	mux.HandleFunc("PUT /v1/projects/{project}/tasks/{filename}/pr-create-outcome", func(w http.ResponseWriter, r *http.Request) {
+		project, filename := r.PathValue("project"), normalizeFilename(r.PathValue("filename"))
+		var outcome PRCreateOutcome
+		if err := json.NewDecoder(r.Body).Decode(&outcome); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+			return
+		}
+		if err := store.SetPRCreateOutcome(project, filename, outcome); err != nil {
+			if isNotFound(err) {
+				writeError(w, http.StatusNotFound, "task not found: "+filename)
+			} else {
+				writeError(w, http.StatusInternalServerError, err.Error())
+			}
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+	mux.HandleFunc("DELETE /v1/projects/{project}/tasks/{filename}/pr-create-outcome", func(w http.ResponseWriter, r *http.Request) {
+		project, filename := r.PathValue("project"), normalizeFilename(r.PathValue("filename"))
+		if err := store.ClearPRCreateOutcome(project, filename); err != nil {
+			if isNotFound(err) {
+				writeError(w, http.StatusNotFound, "task not found: "+filename)
+			} else {
+				writeError(w, http.StatusInternalServerError, err.Error())
+			}
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+
 	mux.HandleFunc("PUT /v1/projects/{project}/tasks/{filename}/pr-url", func(w http.ResponseWriter, r *http.Request) {
 		project := r.PathValue("project")
 		filename := normalizeFilename(r.PathValue("filename"))

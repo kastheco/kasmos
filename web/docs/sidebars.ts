@@ -95,6 +95,7 @@ const sidebars: SidebarsConfig = {
         "daemon/setup",
         "daemon/signals",
         "daemon/multi-repo",
+        "daemon/pr-creation",
         "daemon/pr-monitor",
       ],
     },

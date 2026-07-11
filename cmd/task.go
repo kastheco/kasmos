@@ -2,11 +2,11 @@ package cmd
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -15,11 +15,11 @@ import (
 	"github.com/kastheco/kasmos/config/linearlink"
 	"github.com/kastheco/kasmos/config/linearreceipt"
 	"github.com/kastheco/kasmos/config/taskfsm"
-	"github.com/kastheco/kasmos/config/taskparser"
 	"github.com/kastheco/kasmos/config/taskstate"
 	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/kastheco/kasmos/internal/clickup"
 	"github.com/kastheco/kasmos/orchestration"
+	"github.com/kastheco/kasmos/orchestration/pr"
 	"github.com/kastheco/kasmos/session/git"
 	"github.com/spf13/cobra"
 )
@@ -701,10 +701,7 @@ func executeTaskStartOver(repoRoot, project, planFile string, store taskstore.St
 	return nil
 }
 
-// executeTaskPR resolves the task entry, derives the PR title from the task
-// description when title is empty, generates a PR body from the git log, and
-// creates (or reopens) the PR via the GitHub CLI. The PR URL is printed to
-// stdout by the gh CLI; the returned string is currently always empty.
+// executeTaskPR ensures the task has a pull request and returns its URL.
 func executeTaskPR(repoRoot, project, planFile, title string, store taskstore.Store) (string, error) {
 	if store == nil {
 		var err error
@@ -713,90 +710,26 @@ func executeTaskPR(repoRoot, project, planFile, title string, store taskstore.St
 			return "", err
 		}
 	}
-
 	ps, err := loadTaskStateByProject(project, store)
 	if err != nil {
 		return "", err
 	}
 	planFile = resolveExistingTaskFilename(ps, planFile)
 
-	entry, err := store.Get(project, planFile)
+	res, err := pr.Ensure(context.Background(), store, pr.Request{
+		RepoPath: repoRoot,
+		Project:  project,
+		PlanFile: planFile,
+		Title:    title,
+		Manual:   true,
+	})
 	if err != nil {
-		return "", fmt.Errorf("task not found: %s (%w)", planFile, err)
-	}
-	branch := entry.Branch
-	if branch == "" {
-		branch = git.TaskBranchFromFile(planFile)
-	}
-	defaultTitle := git.BuildPRTitle(entry.Description, strings.TrimSuffix(planFile, ".md"))
-	if title == "" {
-		title = defaultTitle
-	}
-	worktreePath := git.TaskWorktreePath(repoRoot, branch)
-	wt := git.NewGitWorktreeFromStorage(repoRoot, worktreePath, "pr", branch, "")
-
-	gitChanges := ""
-	gitCommits := ""
-	gitStats := ""
-	// If the branch cannot be resolved against main, keep PR metadata text-only.
-	if baseOut, err := exec.Command("git", "-C", repoRoot, "merge-base", "HEAD", branch).CombinedOutput(); err == nil {
-		base := strings.TrimSpace(string(baseOut))
-		if base != "" {
-			if files, err := exec.Command("git", "-C", worktreePath, "diff", "--name-only", base).CombinedOutput(); err == nil {
-				gitChanges = strings.TrimSpace(string(files))
-			}
-			if commits, err := exec.Command("git", "-C", worktreePath, "log", "--oneline", base+"..HEAD").CombinedOutput(); err == nil {
-				gitCommits = strings.TrimSpace(string(commits))
-			}
-			if stats, err := exec.Command("git", "-C", worktreePath, "diff", "--stat", base).CombinedOutput(); err == nil {
-				gitStats = strings.TrimSpace(string(stats))
-			}
-		}
-	}
-
-	if content, err := store.GetContent(project, planFile); err == nil && content != "" {
-		entry.Content = content
-	}
-	subtasks, _ := store.GetSubtasks(project, planFile)
-	body := git.BuildPRBody(buildCLIPRMetadata(entry, subtasks, gitChanges, gitCommits, gitStats))
-	if err := wt.CreatePR(title, body, "update from kas"); err != nil {
 		return "", err
 	}
-	return "", nil
-}
-
-func buildCLIPRMetadata(
-	entry taskstore.TaskEntry,
-	subtasks []taskstore.SubtaskEntry,
-	gitChanges, gitCommits, gitStats string,
-) git.PRMetadata {
-	meta := git.PRMetadata{
-		Description: strings.TrimSpace(entry.Description),
-		Goal:        strings.TrimSpace(entry.Goal),
-		GitChanges:  strings.TrimSpace(gitChanges),
-		GitCommits:  strings.TrimSpace(gitCommits),
-		GitStats:    strings.TrimSpace(gitStats),
+	if res.Outcome == pr.OutcomeBlocked || res.Outcome == pr.OutcomeFailed {
+		return "", fmt.Errorf("%s", res.Reason)
 	}
-
-	if entry.Content != "" {
-		if parsed, err := taskparser.Parse(entry.Content); err == nil {
-			if meta.Goal == "" && strings.TrimSpace(parsed.Goal) != "" {
-				meta.Goal = strings.TrimSpace(parsed.Goal)
-			}
-			meta.Architecture = strings.TrimSpace(parsed.Architecture)
-			meta.TechStack = strings.TrimSpace(parsed.TechStack)
-		}
-	}
-
-	for _, subtask := range subtasks {
-		meta.Subtasks = append(meta.Subtasks, git.PRSubtask{
-			Number: subtask.TaskNumber,
-			Title:  strings.TrimSpace(subtask.Title),
-			Status: string(subtask.Status),
-		})
-	}
-
-	return meta
+	return res.URL, nil
 }
 
 // NewTaskCmd builds the `kq plan` cobra command tree.
@@ -1191,7 +1124,7 @@ Deprecated aliases: readiness-approved (→ verify-approved), readiness-changes 
 					return err
 				}
 				if url != "" {
-					fmt.Println(url)
+					fmt.Fprintln(cmd.OutOrStdout(), url)
 				}
 				return nil
 			})

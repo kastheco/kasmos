@@ -227,6 +227,16 @@ func TestDaemon_StartStop(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+func TestNewDaemonStartsPRCreatorWhenGlobalAutoCreateIsDisabled(t *testing.T) {
+	cfg := defaultDaemonConfig()
+	cfg.AutoCreatePR = false
+	cfg.SocketPath = filepath.Join(t.TempDir(), "kas.sock")
+
+	d, err := NewDaemon(cfg)
+	require.NoError(t, err)
+	assert.NotNil(t, d.prCreator, "repo-level auto_create_pr opt-ins require the retry sweeper")
+}
+
 func TestDaemon_ControlSocket(t *testing.T) {
 	dir := t.TempDir()
 	cfg := &DaemonConfig{

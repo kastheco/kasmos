@@ -90,7 +90,29 @@ func TestProcessor_ProcessFSMSignals_ReviewApproved_NoBranch(t *testing.T) {
 		}
 	}
 	assert.True(t, foundApproved, "expected ReviewApprovedAction regardless of branch")
-	assert.False(t, foundPR, "expected no CreatePRAction when plan has no branch")
+	assert.True(t, foundPR, "expected CreatePRAction so the handler records a blocked outcome")
+}
+
+func TestProcessor_ProcessFSMSignals_ReviewApproved_RecordedPRStillEmitsCreateAction(t *testing.T) {
+	store := taskstore.NewTestStore(t)
+	require.NoError(t, store.Create("test", taskstore.TaskEntry{
+		Filename: "plan", Status: taskstore.StatusReviewing, Branch: "plan/test",
+		PRURL: "https://example.test/pr/7",
+	}))
+	p := NewProcessor(ProcessorConfig{Store: store, Project: "test", AutoReviewFix: true})
+	actions := p.ProcessFSMSignals([]taskfsm.Signal{{
+		Event: taskfsm.ReviewApproved, TaskFile: "plan",
+	}})
+	assert.True(t, containsCreatePRAction(actions), "expected Ensure to record the already-recorded URL skip")
+}
+
+func containsCreatePRAction(actions []Action) bool {
+	for _, action := range actions {
+		if _, ok := action.(CreatePRAction); ok {
+			return true
+		}
+	}
+	return false
 }
 
 func TestProcessor_ProcessFSMSignals_ReviewChangesRequested(t *testing.T) {

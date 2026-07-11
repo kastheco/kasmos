@@ -31,6 +31,7 @@ import (
 	"github.com/kastheco/kasmos/log"
 	"github.com/kastheco/kasmos/orchestration"
 	"github.com/kastheco/kasmos/orchestration/loop"
+	prsvc "github.com/kastheco/kasmos/orchestration/pr"
 	"github.com/kastheco/kasmos/session"
 	gitpkg "github.com/kastheco/kasmos/session/git"
 	sessionsdk "github.com/kastheco/kasmos/session/sdk"
@@ -1018,24 +1019,44 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.menu.SetState(ui.StateDefault)
 		return m, m.toastTickCmd()
 	case prCreatedForPlanMsg:
-		if msg.toastID != "" {
-			m.toastManager.Resolve(msg.toastID, overlay.ToastSuccess, "PR created!")
-			if m.pendingPRToastID == msg.toastID {
-				m.pendingPRToastID = ""
-			}
-		}
-		if msg.url != "" && m.taskStore != nil {
-			if err := m.taskStore.SetPRURL(m.taskStoreProject, msg.planFile, msg.url); err != nil {
-				log.WarningLog.Printf("prCreatedForPlanMsg: could not persist PR URL for %q: %v", msg.planFile, err)
-			} else if m.linearReceiptHook != nil {
-				go m.linearReceiptHook.NotifyPRCreated(context.Background(), msg.planFile, msg.url)
-			}
+		toastID := msg.toastID
+		if toastID == "" && m.state != statePRPreparingBody && m.state != statePRTitle && m.state != statePRBody {
+			toastID = m.pendingPRToastID
 		}
 		m.loadTaskState()
 		m.updateInfoPane()
+		if msg.outcome == prsvc.OutcomeFailed || msg.outcome == prsvc.OutcomeBlocked {
+			message := "pr creation failed: " + msg.reason
+			if toastID != "" {
+				m.toastManager.Resolve(toastID, overlay.ToastError, message)
+				m.pendingPRToastID = ""
+			} else {
+				m.toastManager.Error(message)
+			}
+			return m, m.toastTickCmd()
+		}
+		if msg.outcome == prsvc.OutcomeSkipped {
+			message := "pr creation skipped: " + msg.reason
+			if toastID != "" {
+				m.toastManager.Resolve(toastID, overlay.ToastInfo, message)
+				m.pendingPRToastID = ""
+			} else {
+				m.toastManager.Info(message)
+			}
+			return m, m.toastTickCmd()
+		}
+		if msg.url != "" && m.linearReceiptHook != nil {
+			go m.linearReceiptHook.NotifyPRCreated(context.Background(), msg.planFile, msg.url)
+		}
 		planName := taskstate.DisplayName(msg.planFile)
 		m.audit(auditlog.EventPRCreated, fmt.Sprintf("pr created: %s", planName), auditlog.WithPlan(msg.planFile))
-		m.toastManager.Success(fmt.Sprintf("pr created for '%s'", planName))
+		message := fmt.Sprintf("pr created for '%s'", planName)
+		if toastID != "" {
+			m.toastManager.Resolve(toastID, overlay.ToastSuccess, message)
+			m.pendingPRToastID = ""
+		} else {
+			m.toastManager.Success(message)
+		}
 		return m, m.toastTickCmd()
 	case planRenderedMsg:
 		if msg.err != nil {
@@ -1808,7 +1829,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						}
 						if m.taskStore != nil {
 							if entry, err := m.taskStore.Get(m.taskStoreProject, sig.TaskFile); err == nil {
-								if shouldCreatePR(entry) {
+								if prsvc.Eligible(entry) {
 									signalCmds = append(signalCmds, m.createPRAfterApproval(sig.TaskFile, sig.Body))
 								}
 							}
@@ -3285,6 +3306,8 @@ type prCreatedForPlanMsg struct {
 	planFile string
 	url      string
 	toastID  string
+	outcome  prsvc.Outcome
+	reason   string
 }
 
 type prBodyReadyMsg struct {

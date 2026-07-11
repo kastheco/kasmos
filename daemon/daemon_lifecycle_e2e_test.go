@@ -16,6 +16,7 @@ import (
 	"github.com/kastheco/kasmos/daemon/api"
 	"github.com/kastheco/kasmos/orchestration"
 	"github.com/kastheco/kasmos/orchestration/loop"
+	prsvc "github.com/kastheco/kasmos/orchestration/pr"
 	"github.com/kastheco/kasmos/session"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -188,12 +189,12 @@ Complete the last implementation task and transition into review.
 			recorder("spawn:reviewer")
 			return nil
 		},
-		createPR: func(e RepoEntry, gotPlanFile, reviewBody string) error {
+		createPR: func(e RepoEntry, gotPlanFile, reviewBody string) (prsvc.Result, error) {
 			assert.Equal(t, repo.Project, e.Project)
 			assert.Equal(t, planFile, gotPlanFile)
 			assert.Equal(t, "lgtm", reviewBody)
 			recorder("create:pr")
-			return store.SetPRURL(project, planFile, prURL)
+			return prsvc.Result{Outcome: prsvc.OutcomeCreated, URL: prURL}, store.SetPRURL(project, planFile, prURL)
 		},
 	}
 	t.Cleanup(func() { d.broadcaster.Close() })

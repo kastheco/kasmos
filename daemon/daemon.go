@@ -28,6 +28,7 @@ import (
 	"github.com/kastheco/kasmos/log"
 	"github.com/kastheco/kasmos/orchestration"
 	"github.com/kastheco/kasmos/orchestration/loop"
+	prsvc "github.com/kastheco/kasmos/orchestration/pr"
 	"github.com/kastheco/kasmos/session"
 	gitpkg "github.com/kastheco/kasmos/session/git"
 	"github.com/kastheco/kasmos/session/tmux"
@@ -48,6 +49,7 @@ type Daemon struct {
 	pidLock              *PIDLock
 	broadcaster          *api.EventBroadcaster
 	prMonitor            *PRMonitor
+	prCreator            *PRCreator
 	linearTriggerMonitor *LinearTriggerMonitor
 	pushBranch           func(*session.Instance) error
 	killAgent            func(repoPath, planFile, agentType string) error
@@ -60,7 +62,7 @@ type Daemon struct {
 	spawnWaveTask        func(context.Context, loop.SpawnOpts, taskparser.Task, string, int, int) error
 	killWaveAgents       func(repoPath, planFile string, wave int) error
 	reapSDKOrphan        func(project, instanceTitle, program string) error
-	createPR             func(RepoEntry, string, string) error
+	createPR             func(RepoEntry, string, string) (prsvc.Result, error)
 	// spawnSolo is an injectable seam for tests to override standalone spawn behaviour
 	// without needing a real agent process.
 	spawnSolo               func(context.Context, SpawnSoloOpts) error
@@ -586,6 +588,7 @@ func NewDaemon(cfg *DaemonConfig) (*Daemon, error) {
 	repos.autoAdvance = cfg.AutoAdvance
 	repos.autoReviewFix = cfg.AutoReviewFix
 	repos.autoReadinessReview = cfg.AutoReadinessReview
+	repos.autoCreatePR = cfg.AutoCreatePR
 	repos.maxReviewFixCycles = cfg.MaxReviewFixCycles
 	repos.readinessSelfFixMaxLines = cfg.ReadinessSelfFixMaxLines
 	repos.readinessMaxVerifyCycles = cfg.ReadinessMaxVerifyCycles
@@ -607,6 +610,9 @@ func NewDaemon(cfg *DaemonConfig) (*Daemon, error) {
 
 	if cfg.PRMonitor.Enabled {
 		d.prMonitor = NewPRMonitor(cfg.PRMonitor, cfg.MaxReviewFixCycles, repos, d.broadcaster, logger, d.executeAction)
+	}
+	if cfg.PRCreator.Enabled {
+		d.prCreator = NewPRCreator(cfg.PRCreator, repos, logger, d.executeAction)
 	}
 	for _, repo := range repos.List() {
 		if repo.LinearTriggerConfig.Enabled {
@@ -989,6 +995,15 @@ func (d *Daemon) Run(ctx context.Context) error {
 					// Monitor exited while context is still live — log as a warning.
 					d.logger.Warn("pr monitor exited unexpectedly", "err", err)
 				}
+			}
+		}()
+	}
+	if d.prCreator != nil {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := d.prCreator.Run(ctx); err != nil && ctx.Err() == nil {
+				d.logger.Warn("pr creator exited unexpectedly", "err", err)
 			}
 		}()
 	}
@@ -1859,19 +1874,21 @@ func (d *Daemon) executeAction(ctx context.Context, e RepoEntry, action loop.Act
 		})
 		return nil
 	case loop.CreatePRAction:
-		createPR := d.createPR
-		if createPR == nil {
-			createPR = d.createPRForApprovedTask
+		ensure := d.createPR
+		if ensure == nil {
+			ensure = d.ensurePRForApprovedTask
 		}
-		if err := createPR(e, a.PlanFile, a.ReviewBody); err != nil {
-			d.logger.Warn("create pr after approval failed", "plan", a.PlanFile, "repo", e.Path, "err", err)
+		res, err := ensure(e, a.PlanFile, a.ReviewBody)
+		switch {
+		case err != nil || res.Outcome == prsvc.OutcomeFailed || res.Outcome == prsvc.OutcomeBlocked:
+			d.logger.Warn("create pr after approval failed", "plan", a.PlanFile, "repo", e.Path, "outcome", res.Outcome, "reason", res.Reason, "err", err)
+			d.broadcaster.Emit(api.Event{Kind: "pr_create_failed", Message: "pr creation failed for " + a.PlanFile, Repo: e.Path, PlanFile: a.PlanFile, Detail: res.Reason})
+		case res.Outcome == prsvc.OutcomeSkipped:
+			d.broadcaster.Emit(api.Event{Kind: "pr_create_skipped", Message: "pr creation skipped for " + a.PlanFile, Repo: e.Path, PlanFile: a.PlanFile, Detail: res.Reason})
+		default:
+			d.broadcaster.Emit(api.Event{Kind: "pr_created", Message: "pr created for " + a.PlanFile, Repo: e.Path, PlanFile: a.PlanFile, Detail: res.URL})
+			d.notifyPRCreated(e, a.PlanFile, res.URL)
 		}
-		d.broadcaster.Emit(api.Event{
-			Kind:     "signal_processed",
-			Message:  "create PR for " + a.PlanFile,
-			Repo:     e.Path,
-			PlanFile: a.PlanFile,
-		})
 		return nil
 	case loop.ReviewCycleLimitAction:
 		d.logger.Warn("review-fix cycle limit reached",
@@ -1901,81 +1918,8 @@ func (d *Daemon) executeAction(ctx context.Context, e RepoEntry, action loop.Act
 	}
 }
 
-func (d *Daemon) createPRForApprovedTask(e RepoEntry, planFile, reviewBody string) error {
-	if e.Store == nil {
-		return fmt.Errorf("task store unavailable for %s", planFile)
-	}
-
-	entry, err := e.Store.Get(e.Project, planFile)
-	if err != nil {
-		return fmt.Errorf("load task entry for %s: %w", planFile, err)
-	}
-	if entry.Branch == "" {
-		d.logger.Warn("no branch for approved task; skipping pr creation", "plan", planFile, "repo", e.Path)
-		return nil
-	}
-
-	shared := gitpkg.NewSharedTaskWorktree(e.Path, entry.Branch)
-	if err := shared.Setup(); err != nil {
-		return fmt.Errorf("setup shared worktree for %s: %w", planFile, err)
-	}
-
-	subtasks := []taskstore.SubtaskEntry(nil)
-	if subtasksFromStore, err := e.Store.GetSubtasks(e.Project, planFile); err == nil {
-		subtasks = subtasksFromStore
-	} else {
-		d.logger.Warn("load subtasks for pr creation failed", "plan", planFile, "repo", e.Path, "err", err)
-	}
-
-	base := shared.GetBaseCommitSHA()
-	gitChanges, gitCommits, gitStats := "", "", ""
-	if base != "" {
-		worktreePath := shared.GetWorktreePath()
-		runGit := func(args ...string) string {
-			cmd := exec.Command("git", append([]string{"-C", worktreePath}, args...)...)
-			out, err := cmd.CombinedOutput()
-			if err != nil {
-				return ""
-			}
-			return strings.TrimSpace(string(out))
-		}
-		gitChanges = runGit("diff", "--name-only", base)
-		gitCommits = runGit("log", "--oneline", base+"..HEAD")
-		gitStats = runGit("diff", "--stat", base)
-	}
-
-	meta := gitpkg.AssemblePRMetadata(entry, subtasks, reviewBody, entry.ReviewCycle, gitChanges, gitCommits, gitStats)
-	planName := taskstate.DisplayName(planFile)
-	title := gitpkg.BuildPRTitle(entry.Description, planName)
-	body := gitpkg.BuildPRBody(meta)
-	commitMsg := fmt.Sprintf("[kas] implementation of '%s'", planName)
-	if err := shared.CreatePR(title, body, commitMsg); err != nil {
-		return fmt.Errorf("create pr for %s: %w", planFile, err)
-	}
-
-	state, err := shared.QueryPRState()
-	if err != nil {
-		return fmt.Errorf("query pr state for %s: %w", planFile, err)
-	}
-	if state.URL == "" {
-		d.logger.Warn("empty pr url after creation", "plan", planFile, "repo", e.Path)
-		return nil
-	}
-
-	if err := e.Store.SetPRURL(e.Project, planFile, state.URL); err != nil {
-		return fmt.Errorf("persist pr url for %s: %w", planFile, err)
-	}
-	if entry.PRURL == "" {
-		d.notifyPRCreated(e, planFile, state.URL)
-	}
-
-	if state.Number > 0 {
-		if err := shared.PostGitHubReview(state.Number, body, true); err != nil {
-			d.logger.Warn("post approving review failed", "plan", planFile, "repo", e.Path, "pr", state.Number, "err", err)
-		}
-	}
-
-	return nil
+func (d *Daemon) ensurePRForApprovedTask(e RepoEntry, planFile, reviewBody string) (prsvc.Result, error) {
+	return prsvc.Ensure(context.Background(), e.Store, prsvc.Request{RepoPath: e.Path, Project: e.Project, PlanFile: planFile, ReviewBody: reviewBody, Enabled: e.AutoCreatePR})
 }
 
 func (d *Daemon) notifyPRCreated(e RepoEntry, planFile, prURL string) {

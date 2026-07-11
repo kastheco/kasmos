@@ -110,6 +110,28 @@ func TestUpdateInfoPaneForPlanHeader_GoalPopulated(t *testing.T) {
 	assert.Equal(t, "improve the info tab display", data.PlanGoal)
 }
 
+func TestUpdateInfoPaneForPlanHeader_PopulatesPersistedPRState(t *testing.T) {
+	t.Parallel()
+	h, _, store, _ := buildInfoPaneHome(t)
+	require.NoError(t, store.SetPRURL("test", "plan.md", "https://github.test/pull/42"))
+	require.NoError(t, store.SetPRCreateOutcome("test", "plan.md", taskstore.PRCreateOutcome{
+		State: "failed",
+		Error: "worktree has uncommitted changes",
+	}))
+	state, err := taskstate.Load(store, "test", h.activeRepoPath)
+	require.NoError(t, err)
+	h.taskState = state
+
+	ok := h.nav.SelectByID(ui.SidebarPlanPrefix + "plan.md")
+	require.True(t, ok)
+	h.updateInfoPaneForPlanHeader()
+
+	data := h.tabbedWindow.GetInfoData()
+	assert.Equal(t, "https://github.test/pull/42", data.PRURL)
+	assert.Equal(t, "failed", data.PRCreateState)
+	assert.Equal(t, "worktree has uncommitted changes", data.PRCreateError)
+}
+
 // TestUpdateInfoPaneForPlanHeader_LifecycleTimestamps verifies that PlanningAt and ImplementingAt are set.
 func TestUpdateInfoPaneForPlanHeader_LifecycleTimestamps(t *testing.T) {
 	t.Parallel()
@@ -456,6 +478,12 @@ func (f *failingSubtaskStore) CreateTopic(project string, entry taskstore.TopicE
 }
 func (f *failingSubtaskStore) SetPRURL(project, filename, url string) error {
 	return f.inner.SetPRURL(project, filename, url)
+}
+func (f *failingSubtaskStore) SetPRCreateOutcome(project, filename string, outcome taskstore.PRCreateOutcome) error {
+	return f.inner.SetPRCreateOutcome(project, filename, outcome)
+}
+func (f *failingSubtaskStore) ClearPRCreateOutcome(project, filename string) error {
+	return f.inner.ClearPRCreateOutcome(project, filename)
 }
 func (f *failingSubtaskStore) SetPRState(project, filename, reviewDecision, checkStatus string) error {
 	return f.inner.SetPRState(project, filename, reviewDecision, checkStatus)

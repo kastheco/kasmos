@@ -21,6 +21,7 @@ import (
 	theme "github.com/kastheco/kasmos/internal/theme"
 	"github.com/kastheco/kasmos/keys"
 	"github.com/kastheco/kasmos/log"
+	prsvc "github.com/kastheco/kasmos/orchestration/pr"
 	"github.com/kastheco/kasmos/session"
 	gitpkg "github.com/kastheco/kasmos/session/git"
 	sessionsdk "github.com/kastheco/kasmos/session/sdk"
@@ -3393,13 +3394,13 @@ func TestShouldCreatePROnApproval(t *testing.T) {
 		expect bool
 	}{
 		{name: "done with branch and no pr", entry: taskstore.TaskEntry{Status: taskstore.StatusDone, Branch: "plan/test", PRURL: ""}, expect: true},
-		{name: "done with existing pr", entry: taskstore.TaskEntry{Status: taskstore.StatusDone, Branch: "plan/test", PRURL: "https://github.com/org/repo/pull/1"}, expect: false},
+		{name: "done with existing pr", entry: taskstore.TaskEntry{Status: taskstore.StatusDone, Branch: "plan/test", PRURL: "https://github.com/org/repo/pull/1"}, expect: true},
 		{name: "not done", entry: taskstore.TaskEntry{Status: taskstore.StatusImplementing, Branch: "plan/test"}, expect: false},
-		{name: "done but no branch", entry: taskstore.TaskEntry{Status: taskstore.StatusDone, Branch: ""}, expect: false},
+		{name: "done but no branch", entry: taskstore.TaskEntry{Status: taskstore.StatusDone, Branch: ""}, expect: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.expect, shouldCreatePR(tt.entry))
+			assert.Equal(t, tt.expect, prsvc.Eligible(tt.entry))
 		})
 	}
 }

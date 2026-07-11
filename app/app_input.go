@@ -12,8 +12,10 @@ import (
 	"github.com/kastheco/kasmos/internal/clickup"
 	"github.com/kastheco/kasmos/keys"
 	"github.com/kastheco/kasmos/log"
+	prsvc "github.com/kastheco/kasmos/orchestration/pr"
 	"github.com/kastheco/kasmos/session"
 	"github.com/kastheco/kasmos/session/common"
+	gitpkg "github.com/kastheco/kasmos/session/git"
 	"github.com/kastheco/kasmos/session/tmux"
 	"github.com/kastheco/kasmos/ui"
 	"github.com/kastheco/kasmos/ui/overlay"
@@ -1201,14 +1203,36 @@ func (m *home) handleKeyPress(msg tea.KeyPressMsg) (mod tea.Model, cmd tea.Cmd) 
 
 					src := *m.pendingPRSource
 					m.pendingPRSource = nil
+					if src.planFile != "" && m.taskStore != nil {
+						capturedPlanFile := src.planFile
+						return m, tea.Batch(tea.RequestWindowSize, func() tea.Msg {
+							res, err := prsvc.Ensure(context.Background(), m.taskStore, prsvc.Request{RepoPath: m.activeRepoPath, Project: m.taskStoreProject, PlanFile: capturedPlanFile, BodyOverride: prBody, Title: capturedPRTitle, Manual: true})
+							if err != nil || res.Outcome == prsvc.OutcomeFailed || res.Outcome == prsvc.OutcomeBlocked {
+								if err == nil {
+									err = fmt.Errorf("%s", res.Reason)
+								}
+								return prErrorMsg{id: prToastID, err: err}
+							}
+							if res.URL != "" && m.urlOpener != nil {
+								_ = m.urlOpener(res.URL)
+							}
+							return prCreatedForPlanMsg{planFile: capturedPlanFile, url: res.URL, toastID: prToastID, outcome: res.Outcome, reason: res.Reason}
+						}, m.toastTickCmd())
+					}
 					return m, tea.Batch(tea.RequestWindowSize, func() tea.Msg {
-						if err := src.worktree.CreatePR(capturedPRTitle, prBody, ""); err != nil {
+						if err := src.worktree.CreatePR(capturedPRTitle, prBody); err != nil && !errors.Is(err, gitpkg.ErrPRAlreadyExists) {
 							return prErrorMsg{id: prToastID, err: err}
 						}
-						if src.planFile != "" {
-							state, err := src.worktree.QueryPRState()
-							if err == nil && state.URL != "" {
-								return prCreatedForPlanMsg{planFile: src.planFile, url: state.URL, toastID: prToastID}
+						state, err := src.worktree.QueryPRState()
+						if err != nil {
+							return prErrorMsg{id: prToastID, err: err}
+						}
+						if state.URL == "" {
+							return prErrorMsg{id: prToastID, err: fmt.Errorf("pull request created but no URL was returned")}
+						}
+						if m.urlOpener != nil {
+							if err := m.urlOpener(state.URL); err != nil {
+								return prErrorMsg{id: prToastID, err: err}
 							}
 						}
 						return prCreatedMsg{instanceTitle: capturedPRTitle, prTitle: capturedPRTitle}

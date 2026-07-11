@@ -2,11 +2,21 @@ package git
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os/exec"
 	"strings"
 
 	"github.com/kastheco/kasmos/log"
+)
+
+var (
+	// ErrPRAlreadyExists reports that gh refused to create a PR because one
+	// already exists for the head branch. Callers should adopt it, not retry.
+	ErrPRAlreadyExists = errors.New("pull request already exists for branch")
+	// ErrWorktreeDirty reports uncommitted changes blocking PR creation.
+	// Terminal: a human must commit or stash.
+	ErrWorktreeDirty = errors.New("worktree has uncommitted changes")
 )
 
 // PRState holds the current state of a GitHub pull request as returned by
@@ -54,15 +64,13 @@ func ParsePRViewJSON(data []byte) (PRState, error) {
 // needs any valid git repo directory, and the branch-specific worktree may
 // have been cleaned up after the plan completed.
 func (g *GitWorktree) QueryPRState() (PRState, error) {
-	cmd := exec.Command("gh", "pr", "view", g.branchName,
+	out, err := ghOutput(g.repoPath, "pr", "view", g.branchName,
 		"--json", "url,reviewDecision,statusCheckRollup,isDraft,number")
-	cmd.Dir = g.repoPath
-	out, err := cmd.CombinedOutput()
 	if err != nil {
-		if strings.Contains(string(out), "no pull requests found") {
+		if strings.Contains(err.Error(), "no pull requests found") {
 			return PRState{}, nil
 		}
-		return PRState{}, fmt.Errorf("failed to query PR state: %s (%w)", out, err)
+		return PRState{}, fmt.Errorf("failed to query PR state: %w", err)
 	}
 	return ParsePRViewJSON(out)
 }
@@ -75,16 +83,14 @@ func (g *GitWorktree) PostGitHubReview(prNumber int, body string, approve bool) 
 		return fmt.Errorf("invalid pr number: %d", prNumber)
 	}
 	numStr := fmt.Sprintf("%d", prNumber)
-	var cmd *exec.Cmd
 	if approve {
-		cmd = exec.Command("gh", "pr", "review", numStr, "--approve", "-b", body)
-	} else {
-		cmd = exec.Command("gh", "pr", "review", numStr, "--comment", "-b", body)
+		if err := ghRun(g.worktreePath, "pr", "review", numStr, "--approve", "-b", body); err != nil {
+			return fmt.Errorf("failed to post github review: %w", err)
+		}
+		return nil
 	}
-	cmd.Dir = g.worktreePath
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("failed to post github review: %s (%w)", out, err)
+	if err := ghRun(g.worktreePath, "pr", "review", numStr, "--comment", "-b", body); err != nil {
+		return fmt.Errorf("failed to post github review: %w", err)
 	}
 	return nil
 }
@@ -169,8 +175,7 @@ func (g *GitWorktree) GeneratePRBody() (string, error) {
 }
 
 // CreatePR pushes the current branch and opens a pull request on GitHub.
-// If the PR already exists it opens the existing one in the browser instead.
-func (g *GitWorktree) CreatePR(title, body, _ string) error {
+func (g *GitWorktree) CreatePR(title, body string) error {
 	if err := g.requireCleanForPR(); err != nil {
 		return err
 	}
@@ -178,22 +183,13 @@ func (g *GitWorktree) CreatePR(title, body, _ string) error {
 		return fmt.Errorf("failed to push branch: %w", err)
 	}
 
-	prCmd := exec.Command("gh", "pr", "create", "--title", title, "--body", body, "--head", g.branchName)
-	prCmd.Dir = g.worktreePath
-	out, err := prCmd.CombinedOutput()
+	_, err := ghOutput(g.worktreePath, "pr", "create", "--title", title, "--body", body, "--head", g.branchName)
 	if err != nil {
-		if strings.Contains(string(out), "already exists") {
-			viewCmd := exec.Command("gh", "pr", "view", "--web", g.branchName)
-			viewCmd.Dir = g.worktreePath
-			_ = viewCmd.Run()
-			return nil
+		if strings.Contains(err.Error(), "already exists") {
+			return fmt.Errorf("%w: %s", ErrPRAlreadyExists, err)
 		}
-		return fmt.Errorf("failed to create PR: %s (%w)", out, err)
+		return fmt.Errorf("failed to create PR: %w", err)
 	}
-
-	viewCmd := exec.Command("gh", "pr", "view", "--web", g.branchName)
-	viewCmd.Dir = g.worktreePath
-	_ = viewCmd.Run()
 	return nil
 }
 
@@ -206,7 +202,7 @@ func (g *GitWorktree) requireCleanForPR() error {
 		return fmt.Errorf("failed to check worktree before PR creation: %w", err)
 	}
 	if strings.TrimSpace(status) != "" {
-		return fmt.Errorf("worktree has uncommitted changes; commit only the intended files and preserve unrelated edits before creating a PR:\n%s", strings.TrimSpace(status))
+		return fmt.Errorf("%w; commit only the intended files and preserve unrelated edits before creating a PR:\n%s", ErrWorktreeDirty, strings.TrimSpace(status))
 	}
 	return nil
 }
@@ -257,9 +253,7 @@ func (g *GitWorktree) OpenBranchURL() error {
 	if err := checkGHCLI(); err != nil {
 		return err
 	}
-	cmd := exec.Command("gh", "browse", "--branch", g.branchName)
-	cmd.Dir = g.worktreePath
-	if err := cmd.Run(); err != nil {
+	if err := ghRun(g.worktreePath, "browse", "--branch", g.branchName); err != nil {
 		return fmt.Errorf("failed to open branch URL: %w", err)
 	}
 	return nil

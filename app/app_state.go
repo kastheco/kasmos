@@ -31,6 +31,7 @@ import (
 	"github.com/kastheco/kasmos/log"
 	"github.com/kastheco/kasmos/orchestration"
 	"github.com/kastheco/kasmos/orchestration/loop"
+	prsvc "github.com/kastheco/kasmos/orchestration/pr"
 	"github.com/kastheco/kasmos/session"
 	"github.com/kastheco/kasmos/session/common"
 	gitpkg "github.com/kastheco/kasmos/session/git"
@@ -185,12 +186,6 @@ type daemonPlannerStartedMsg struct {
 type instanceTitleSyncMsg struct {
 	instance *session.Instance
 	newTitle string
-}
-
-// shouldCreatePR returns true when a plan entry is eligible for automatic PR creation:
-// the plan is done, has a branch, and does not already have a PR URL.
-func shouldCreatePR(entry taskstore.TaskEntry) bool {
-	return entry.Status == taskstore.StatusDone && entry.Branch != "" && entry.PRURL == ""
 }
 
 // toTaskFSMHooks converts a slice of config.TOMLHook to taskfsm.HookConfig entries.
@@ -444,73 +439,17 @@ func (m *home) createPRAfterApproval(planFile, reviewBody string) tea.Cmd {
 	repoPath := m.activeRepoPath
 	store := m.taskStore
 	project := m.taskStoreProject
-	planName := taskstate.DisplayName(planFile)
+	enabled := true
+	if m.appConfig != nil {
+		enabled = m.appConfig.AutoCreatePR
+	}
 
 	return func() tea.Msg {
-		entry, err := store.Get(project, planFile)
-		if err != nil {
-			log.WarningLog.Printf("createPRAfterApproval: could not get entry for %q: %v", planFile, err)
-			return nil
+		res, err := prsvc.Ensure(context.Background(), store, prsvc.Request{RepoPath: repoPath, Project: project, PlanFile: planFile, ReviewBody: reviewBody, Enabled: enabled})
+		if err != nil && res.Reason == "" {
+			res.Reason = err.Error()
 		}
-		if entry.Branch == "" {
-			log.WarningLog.Printf("createPRAfterApproval: no branch for %q — skipping PR creation", planFile)
-			return nil
-		}
-
-		shared := gitpkg.NewSharedTaskWorktree(repoPath, entry.Branch)
-		if err := shared.Setup(); err != nil {
-			log.WarningLog.Printf("createPRAfterApproval: worktree setup failed for %q: %v", planFile, err)
-			return nil
-		}
-
-		subtasks := []taskstore.SubtaskEntry(nil)
-		if subtasksFromStore, err := store.GetSubtasks(project, planFile); err == nil {
-			subtasks = subtasksFromStore
-		} else {
-			log.WarningLog.Printf("createPRAfterApproval: failed to load subtasks for %q: %v", planFile, err)
-		}
-
-		base := shared.GetBaseCommitSHA()
-		gitChanges, gitCommits, gitStats := "", "", ""
-		if base != "" {
-			if files, err := exec.Command("git", "-C", shared.GetWorktreePath(), "diff", "--name-only", base).CombinedOutput(); err == nil {
-				gitChanges = strings.TrimSpace(string(files))
-			}
-			if commits, err := exec.Command("git", "-C", shared.GetWorktreePath(), "log", "--oneline", base+"..HEAD").CombinedOutput(); err == nil {
-				gitCommits = strings.TrimSpace(string(commits))
-			}
-			if stats, err := exec.Command("git", "-C", shared.GetWorktreePath(), "diff", "--stat", base).CombinedOutput(); err == nil {
-				gitStats = strings.TrimSpace(string(stats))
-			}
-		}
-
-		meta := gitpkg.AssemblePRMetadata(entry, subtasks, reviewBody, entry.ReviewCycle, gitChanges, gitCommits, gitStats)
-		title := gitpkg.BuildPRTitle(entry.Description, planName)
-		body := gitpkg.BuildPRBody(meta)
-		commitMsg := fmt.Sprintf("[kas] implementation of '%s'", planName)
-		if err := shared.CreatePR(title, body, commitMsg); err != nil {
-			log.WarningLog.Printf("createPRAfterApproval: PR creation failed for %q: %v", planFile, err)
-			return nil
-		}
-
-		state, err := shared.QueryPRState()
-		if err != nil {
-			log.WarningLog.Printf("createPRAfterApproval: QueryPRState failed for %q: %v", planFile, err)
-			return nil
-		}
-		if state.URL == "" {
-			log.WarningLog.Printf("createPRAfterApproval: empty URL for %q after PR creation", planFile)
-			return nil
-		}
-
-		if state.Number > 0 {
-			if err := shared.PostGitHubReview(state.Number, body, true); err != nil {
-				log.WarningLog.Printf("createPRAfterApproval: PostGitHubReview failed for %q: %v", planFile, err)
-				// Non-fatal — PR was created, review posting failed.
-			}
-		}
-
-		return prCreatedForPlanMsg{planFile: planFile, url: state.URL}
+		return prCreatedForPlanMsg{planFile: planFile, url: res.URL, outcome: res.Outcome, reason: res.Reason}
 	}
 }
 
@@ -1594,6 +1533,13 @@ func (m *home) updateInfoPaneForPlanHeader() {
 		ExecutionPhase:       strings.TrimSpace(entry.ExecutionState.Phase),
 		ActiveAgentType:      strings.TrimSpace(entry.ExecutionState.ActiveAgentType),
 		ActiveWave:           entry.ExecutionState.ActiveWave,
+	}
+	if m.taskStore != nil {
+		if storeEntry, err := m.taskStore.Get(m.taskStoreProject, planFile); err == nil {
+			data.PRURL = storeEntry.PRURL
+			data.PRCreateState = storeEntry.PRCreateState
+			data.PRCreateError = storeEntry.PRCreateError
+		}
 	}
 	switch taskfsm.NormalizeExecutionPhase(entry.ExecutionState.Phase) {
 	case taskfsm.ExecutionPhaseFixing, taskfsm.ExecutionPhaseReviewing:

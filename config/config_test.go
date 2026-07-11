@@ -596,6 +596,29 @@ func TestAutoReadinessReviewConfig(t *testing.T) {
 	})
 }
 
+func TestAutoCreatePRConfig(t *testing.T) {
+	t.Run("absent key defaults to true", func(t *testing.T) {
+		cfg := configFromTOML(&TOMLConfigResult{Profiles: map[string]AgentProfile{}, PhaseRoles: map[string]string{}})
+		assert.True(t, cfg.AutoCreatePR)
+	})
+
+	t.Run("explicit false loads and survives save round-trip", func(t *testing.T) {
+		falseVal := false
+		cfg := configFromTOML(&TOMLConfigResult{Profiles: map[string]AgentProfile{}, PhaseRoles: map[string]string{}, AutoCreatePR: &falseVal})
+		assert.False(t, cfg.AutoCreatePR)
+
+		path := filepath.Join(t.TempDir(), "config.toml")
+		require.NoError(t, SaveTOMLConfigTo(configToTOML(cfg), path))
+		result, err := LoadTOMLConfigFrom(path)
+		require.NoError(t, err)
+		assert.False(t, configFromTOML(result).AutoCreatePR)
+	})
+
+	t.Run("default config enables automatic PR creation", func(t *testing.T) {
+		assert.True(t, DefaultConfig().AutoCreatePR)
+	})
+}
+
 func TestResolveProfile_ReadinessReviewAlias(t *testing.T) {
 	masterProfile := AgentProfile{Program: "opencode", Enabled: true, ExecutionMode: ExecutionModeTmux}
 

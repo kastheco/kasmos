@@ -24,6 +24,13 @@ type PRMonitorConfig struct {
 	Reactions []string
 }
 
+// PRCreatorConfig holds configuration for retrying transient PR creation failures.
+type PRCreatorConfig struct {
+	Enabled       bool
+	RetryInterval time.Duration
+	MaxAttempts   int
+}
+
 // LinearTriggerMonitorConfig holds configuration for Linear trigger polling.
 type LinearTriggerMonitorConfig struct {
 	// PollInterval is the daemon-level default. Per-repo [linear.triggers] can override it.
@@ -52,8 +59,12 @@ type DaemonConfig struct {
 	MaxReviewFixCycles int `toml:"max_review_fix_cycles"`
 
 	// AutoReadinessReview enables the post-reviewer master-agent readiness gate.
-	// Disabled by default; must be explicitly opted in.
+	// Enabled by default; set to false to opt out.
 	AutoReadinessReview bool `toml:"auto_readiness_review"`
+
+	// AutoCreatePR creates or adopts a pull request after terminal approval.
+	// Enabled by default; set to false to opt out.
+	AutoCreatePR bool `toml:"auto_create_pr"`
 
 	// ReadinessSelfFixMaxLines is the maximum number of net lines the master agent
 	// may change in a self-fix attempt. Defaults to 80.
@@ -64,11 +75,14 @@ type DaemonConfig struct {
 	ReadinessMaxVerifyCycles int `toml:"readiness_max_verify_cycles"`
 
 	// SocketPath is the Unix domain socket path for the control API.
-	// Defaults to ~/.config/kasmos/daemon.sock when empty.
+	// Defaults to $XDG_RUNTIME_DIR/kasmos/kas.sock, with a /tmp fallback.
 	SocketPath string `toml:"socket_path"`
 
 	// PRMonitor holds configuration for the PR monitoring subsystem.
 	PRMonitor PRMonitorConfig `toml:"pr_monitor"`
+
+	// PRCreator holds configuration for the bounded PR creation retry sweep.
+	PRCreator PRCreatorConfig `toml:"pr_creator"`
 
 	// LinearTriggerMonitor holds daemon defaults for Linear trigger polling.
 	LinearTriggerMonitor LinearTriggerMonitorConfig `toml:"linear_trigger_monitor"`
@@ -79,6 +93,12 @@ type tomlPRMonitorConfig struct {
 	Enabled         bool     `toml:"enabled"`
 	PollIntervalSec float64  `toml:"poll_interval_sec"`
 	Reactions       []string `toml:"reactions"`
+}
+
+type tomlPRCreatorConfig struct {
+	Enabled          *bool   `toml:"enabled"`
+	RetryIntervalSec float64 `toml:"retry_interval_sec"`
+	MaxAttempts      int     `toml:"max_attempts"`
 }
 
 // tomlLinearTriggerMonitorConfig is the raw TOML representation of LinearTriggerMonitorConfig.
@@ -96,10 +116,12 @@ type tomlDaemonConfig struct {
 	AutoReviewFix            *bool                          `toml:"auto_review_fix"`
 	MaxReviewFixCycles       int                            `toml:"max_review_fix_cycles"`
 	AutoReadinessReview      *bool                          `toml:"auto_readiness_review"`
+	AutoCreatePR             *bool                          `toml:"auto_create_pr"`
 	ReadinessSelfFixMaxLines *int                           `toml:"readiness_self_fix_max_lines"`
 	ReadinessMaxVerifyCycles *int                           `toml:"readiness_max_verify_cycles"`
 	SocketPath               string                         `toml:"socket_path"`
 	PRMonitor                tomlPRMonitorConfig            `toml:"pr_monitor"`
+	PRCreator                tomlPRCreatorConfig            `toml:"pr_creator"`
 	LinearTriggerMonitor     tomlLinearTriggerMonitorConfig `toml:"linear_trigger_monitor"`
 }
 
@@ -111,12 +133,18 @@ func defaultDaemonConfig() *DaemonConfig {
 		AutoAdvanceWaves:         true,
 		AutoReviewFix:            true,
 		AutoReadinessReview:      true,
+		AutoCreatePR:             true,
 		ReadinessSelfFixMaxLines: 80,
 		ReadinessMaxVerifyCycles: 2,
 		PRMonitor: PRMonitorConfig{
 			Enabled:      false,
 			PollInterval: 60 * time.Second,
 			Reactions:    []string{"eyes"},
+		},
+		PRCreator: PRCreatorConfig{
+			Enabled:       true,
+			RetryInterval: 120 * time.Second,
+			MaxAttempts:   5,
 		},
 		LinearTriggerMonitor: LinearTriggerMonitorConfig{
 			PollInterval: 60 * time.Second,
@@ -170,6 +198,9 @@ func LoadDaemonConfig(path string) (*DaemonConfig, error) {
 	if tc.AutoReadinessReview != nil {
 		cfg.AutoReadinessReview = *tc.AutoReadinessReview
 	}
+	if tc.AutoCreatePR != nil {
+		cfg.AutoCreatePR = *tc.AutoCreatePR
+	}
 	if tc.ReadinessSelfFixMaxLines != nil {
 		if *tc.ReadinessSelfFixMaxLines <= 0 {
 			slog.Warn("daemon config: readiness_self_fix_max_lines is invalid (<= 0); using default 80", "value", *tc.ReadinessSelfFixMaxLines)
@@ -204,6 +235,15 @@ func LoadDaemonConfig(path string) (*DaemonConfig, error) {
 			reactions = []string{"eyes"}
 		}
 		cfg.PRMonitor.Reactions = reactions
+	}
+	if tc.PRCreator.Enabled != nil {
+		cfg.PRCreator.Enabled = *tc.PRCreator.Enabled
+	}
+	if tc.PRCreator.RetryIntervalSec > 0 {
+		cfg.PRCreator.RetryInterval = time.Duration(tc.PRCreator.RetryIntervalSec * float64(time.Second))
+	}
+	if tc.PRCreator.MaxAttempts > 0 {
+		cfg.PRCreator.MaxAttempts = tc.PRCreator.MaxAttempts
 	}
 	if tc.LinearTriggerMonitor.PollIntervalSec > 0 {
 		cfg.LinearTriggerMonitor.PollInterval = time.Duration(tc.LinearTriggerMonitor.PollIntervalSec * float64(time.Second))
