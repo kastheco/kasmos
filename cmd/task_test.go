@@ -15,6 +15,7 @@ import (
 	"github.com/kastheco/kasmos/config/taskstate"
 	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/kastheco/kasmos/daemon/api"
+	"github.com/kastheco/kasmos/session/git"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -930,15 +931,18 @@ func TestExecuteTaskMerge_IntegrationWithRealRepo(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(repo, "feature.go"), []byte("package feature\n"), 0644))
 	runGit("add", ".")
 	runGit("commit", "-m", "add feature")
+	verifiedSHA, err := git.BranchHeadSHA(repo, branch)
+	require.NoError(t, err)
 	runGit("checkout", "main")
 
 	require.NoError(t, store.Create(project, taskstore.TaskEntry{
-		Filename: "int-merge.md",
-		Status:   taskstore.Status("reviewing"),
-		Branch:   branch,
+		Filename:    "int-merge.md",
+		Status:      taskstore.Status("reviewing"),
+		Branch:      branch,
+		VerifiedSHA: verifiedSHA,
 	}))
 
-	err := executeTaskMerge(repo, project, "int-merge.md", store)
+	err = executeTaskMerge(repo, project, "int-merge.md", store)
 	require.NoError(t, err)
 
 	// Verify FSM transitioned to done.
@@ -976,16 +980,19 @@ func TestExecuteTaskMerge_WalksVerifyingToDone(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(repo, "feature.go"), []byte("package feature\n"), 0644))
 	runGit("add", ".")
 	runGit("commit", "-m", "add feature")
+	verifiedSHA, err := git.BranchHeadSHA(repo, branch)
+	require.NoError(t, err)
 	runGit("checkout", "main")
 
 	// Task is already in verifying state — merge should apply only VerifyApproved.
 	require.NoError(t, store.Create(project, taskstore.TaskEntry{
-		Filename: "verifying-merge.md",
-		Status:   taskstore.StatusVerifying,
-		Branch:   branch,
+		Filename:    "verifying-merge.md",
+		Status:      taskstore.StatusVerifying,
+		Branch:      branch,
+		VerifiedSHA: verifiedSHA,
 	}))
 
-	err := executeTaskMerge(repo, project, "verifying-merge.md", store)
+	err = executeTaskMerge(repo, project, "verifying-merge.md", store)
 	require.NoError(t, err)
 
 	ps, _ := taskstate.Load(store, project, "")
