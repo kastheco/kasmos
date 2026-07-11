@@ -1,6 +1,7 @@
 package git
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 	"sort"
@@ -8,6 +9,46 @@ import (
 
 	"github.com/kastheco/kasmos/config/taskstate"
 )
+
+// ErrBranchNotFound reports that a task branch does not exist. Drift detection
+// uses errors.Is to distinguish "merged and deleted, skip" from "git is broken".
+var ErrBranchNotFound = errors.New("task branch not found")
+
+// BranchHeadSHA returns the full 40-char commit SHA that branch points at.
+func BranchHeadSHA(repoPath, branch string) (string, error) {
+	gt := &GitWorktree{repoPath: repoPath, worktreePath: repoPath}
+	out, err := gt.runGitCommand(repoPath, "rev-parse", "--verify", branch+"^{commit}")
+	if err != nil {
+		return "", fmt.Errorf("branch head %s: %w", branch, ErrBranchNotFound)
+	}
+	sha := strings.TrimSpace(out)
+	if sha == "" {
+		return "", fmt.Errorf("branch head %s: empty commit SHA", branch)
+	}
+	return sha, nil
+}
+
+// BranchMergeBaseSHA returns the merge-base of HEAD and branch, from repoPath.
+func BranchMergeBaseSHA(repoPath, branch string) (string, error) {
+	gt := &GitWorktree{repoPath: repoPath, worktreePath: repoPath}
+	out, err := gt.runGitCommand(repoPath, "merge-base", "HEAD", branch)
+	if err != nil {
+		return "", fmt.Errorf("merge-base HEAD %s: %w", branch, err)
+	}
+	sha := strings.TrimSpace(out)
+	if sha == "" {
+		return "", fmt.Errorf("merge-base HEAD %s: empty commit SHA", branch)
+	}
+	return sha, nil
+}
+
+// ShortSHA returns the first 7 chars of sha, or "" when sha is empty.
+func ShortSHA(sha string) string {
+	if len(sha) < 7 {
+		return sha
+	}
+	return sha[:7]
+}
 
 // TaskBranchFromFile derives the git branch name from a plan filename.
 // "auth-refactor" → "plan/auth-refactor"

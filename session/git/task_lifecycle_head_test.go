@@ -1,0 +1,69 @@
+package git
+
+import (
+	"errors"
+	"os/exec"
+	"strings"
+	"testing"
+
+	"github.com/stretchr/testify/require"
+)
+
+func TestBranchHeadSHA(t *testing.T) {
+	dir := t.TempDir()
+	runGit := func(args ...string) string {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+		out, err := cmd.CombinedOutput()
+		require.NoError(t, err, string(out))
+		return strings.TrimSpace(string(out))
+	}
+
+	runGit("init")
+	runGit("config", "user.email", "test@example.com")
+	runGit("config", "user.name", "Test User")
+	runGit("commit", "--allow-empty", "-m", "initial")
+	runGit("branch", "plan/example")
+	want := runGit("rev-parse", "plan/example^{commit}")
+
+	got, err := BranchHeadSHA(dir, "plan/example")
+	require.NoError(t, err)
+	require.Equal(t, want, got)
+	require.Len(t, got, 40)
+
+	_, err = BranchHeadSHA(dir, "plan/missing")
+	require.ErrorIs(t, err, ErrBranchNotFound)
+}
+
+func TestBranchMergeBaseSHA(t *testing.T) {
+	dir := t.TempDir()
+	runGit := func(args ...string) string {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+		out, err := cmd.CombinedOutput()
+		require.NoError(t, err, string(out))
+		return strings.TrimSpace(string(out))
+	}
+
+	runGit("init")
+	runGit("config", "user.email", "test@example.com")
+	runGit("config", "user.name", "Test User")
+	runGit("commit", "--allow-empty", "-m", "base")
+	base := runGit("rev-parse", "HEAD")
+	runGit("branch", "plan/example")
+	runGit("commit", "--allow-empty", "-m", "head")
+
+	got, err := BranchMergeBaseSHA(dir, "plan/example")
+	require.NoError(t, err)
+	require.Equal(t, base, got)
+}
+
+func TestShortSHA(t *testing.T) {
+	require.Equal(t, "", ShortSHA(""))
+	require.Equal(t, "abc", ShortSHA("abc"))
+	require.Equal(t, "1234567", ShortSHA("1234567890"))
+}
+
+func TestErrBranchNotFoundSupportsErrorsIs(t *testing.T) {
+	require.True(t, errors.Is(ErrBranchNotFound, ErrBranchNotFound))
+}
