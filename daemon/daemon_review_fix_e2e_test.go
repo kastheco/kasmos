@@ -13,6 +13,7 @@ import (
 	"github.com/kastheco/kasmos/daemon/api"
 	"github.com/kastheco/kasmos/orchestration"
 	"github.com/kastheco/kasmos/orchestration/loop"
+	prsvc "github.com/kastheco/kasmos/orchestration/pr"
 	"github.com/kastheco/kasmos/session"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -117,7 +118,9 @@ func TestDaemon_TickRepoGateway_ReviewFixLoop_HappyPath(t *testing.T) {
 	assert.Equal(t, taskstore.ExecutionState{}, updated.ExecutionState)
 	assert.Equal(t, 1, updated.ReviewCycle)
 	assert.Equal(t, feedback, updated.LatestReviewFeedback)
-	assertEventKinds(t, drainDaemonEvents(events), "review_approved", "signal_processed")
+	assertEventKinds(t, drainDaemonEvents(events), "review_approved", "signal_processed", "pr_create_skipped")
+	assert.Equal(t, string(prsvc.OutcomeSkipped), updated.PRCreateState)
+	assert.Equal(t, "auto pr disabled by config", updated.PRCreateError)
 
 	doneSignals, err := gw.List(project, taskstore.SignalDone)
 	require.NoError(t, err)

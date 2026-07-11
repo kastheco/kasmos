@@ -103,3 +103,31 @@ func TestDaemon_CreatePRAction_NoBranch_EmitsEvent(t *testing.T) {
 		t.Fatal("timeout waiting for pr_create_failed event")
 	}
 }
+
+func TestDaemon_CreatePRAction_RecordedURLPersistsSkippedOutcome(t *testing.T) {
+	t.Parallel()
+	b := api.NewEventBroadcaster()
+	defer b.Close()
+	sub := b.Subscribe()
+	store := taskstore.NewTestStore(t)
+	const project, planFile = "test-project", "plan.md"
+	require.NoError(t, store.Create(project, taskstore.TaskEntry{
+		Filename: planFile, Status: taskstore.StatusDone,
+		PRURL: "https://example.test/pr/7",
+	}))
+	d := &Daemon{logger: slog.Default(), broadcaster: b}
+	e := RepoEntry{Path: t.TempDir(), Project: project, Store: store, AutoCreatePR: true}
+
+	require.NoError(t, d.executeAction(context.Background(), e, loop.CreatePRAction{PlanFile: planFile}))
+	select {
+	case ev := <-sub:
+		assert.Equal(t, "pr_create_skipped", ev.Kind)
+		assert.Equal(t, "pr already recorded", ev.Detail)
+	case <-time.After(time.Second):
+		t.Fatal("timeout waiting for pr_create_skipped event")
+	}
+	entry, err := store.Get(project, planFile)
+	require.NoError(t, err)
+	assert.Equal(t, string(prsvc.OutcomeSkipped), entry.PRCreateState)
+	assert.Equal(t, "pr already recorded", entry.PRCreateError)
+}

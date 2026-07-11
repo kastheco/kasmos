@@ -37,7 +37,7 @@ type Result struct {
 }
 
 func Eligible(entry taskstore.TaskEntry) bool {
-	return entry.Status == taskstore.StatusDone && entry.PRURL == ""
+	return entry.Status == taskstore.StatusDone
 }
 
 // IsGHUnavailable reports terminal local gh configuration failures.
