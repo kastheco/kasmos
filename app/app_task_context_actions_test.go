@@ -108,7 +108,7 @@ func TestPreparePRBodyUsesTaskMetadata(t *testing.T) {
 		worktree: gitpkg.NewSharedTaskWorktree(h.activeRepoPath, branch),
 		planFile: planFile,
 		branch:   branch,
-	}, "completed task publishing")()
+	}, "completed task publishing", 1)()
 	ready, ok := msg.(prBodyReadyMsg)
 	require.True(t, ok, "message = %T", msg)
 	assert.NotEmpty(t, ready.body)
@@ -116,6 +116,26 @@ func TestPreparePRBodyUsesTaskMetadata(t *testing.T) {
 	assert.Contains(t, ready.body, "keep completed task publishing available")
 	assert.Contains(t, ready.body, "preserve completed task flow")
 	assert.Contains(t, ready.body, "persist pull request metadata")
+}
+
+func TestPRPreparingBodyBlocksInputAndIgnoresStaleResponses(t *testing.T) {
+	h := newTestHome()
+	h.state = statePRPreparingBody
+	h.pendingPRRequestID = 2
+	h.pendingPRSource = &prSource{branch: "plan/current", title: "current"}
+
+	model, cmd := h.handleKeyPress(tea.KeyPressMsg{Code: 'P', Text: "P"})
+	updated := model.(*home)
+	require.Nil(t, cmd)
+	assert.Equal(t, statePRPreparingBody, updated.state)
+	assert.Equal(t, uint64(2), updated.pendingPRRequestID)
+	assert.Equal(t, "plan/current", updated.pendingPRSource.branch)
+
+	model, cmd = updated.Update(prBodyReadyMsg{requestID: 1, title: "stale", body: "stale"})
+	updated = model.(*home)
+	require.Nil(t, cmd)
+	assert.Equal(t, statePRPreparingBody, updated.state)
+	assert.Equal(t, "plan/current", updated.pendingPRSource.branch)
 }
 
 func TestCreatePRKeyOnTaskRowUsesTaskMetadata(t *testing.T) {

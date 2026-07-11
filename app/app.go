@@ -331,6 +331,9 @@ type home struct {
 	pendingPRTitle string
 	// pendingPRSource identifies the task or session branch used by the PR flow.
 	pendingPRSource *prSource
+	// pendingPRRequestID correlates asynchronous body preparation with the
+	// source that initiated it so stale responses cannot replace a newer flow.
+	pendingPRRequestID uint64
 	// pendingSpawnProgram stores the selected harness program during the spawn flow
 	pendingSpawnProgram string
 	// pendingSpawnExecutionMode stores the chosen execution mode during the spawn flow
@@ -990,7 +993,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.pendingPRToastID = ""
 		return m, m.toastTickCmd()
 	case prBodyReadyMsg:
-		if m.pendingPRSource == nil {
+		if msg.requestID != m.pendingPRRequestID || m.state != statePRPreparingBody || m.pendingPRSource == nil {
 			return m, nil
 		}
 		m.pendingPRSource.worktree = msg.worktree
@@ -1004,6 +1007,9 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.overlays.Show(tio)
 		return m, m.toastTickCmd()
 	case prBodyErrorMsg:
+		if msg.requestID != m.pendingPRRequestID || m.state != statePRPreparingBody {
+			return m, nil
+		}
 		m.toastManager.Resolve(msg.id, overlay.ToastError, msg.err.Error())
 		m.pendingPRToastID = ""
 		m.pendingPRTitle = ""
@@ -3278,14 +3284,16 @@ type prCreatedForPlanMsg struct {
 }
 
 type prBodyReadyMsg struct {
-	title    string
-	body     string
-	worktree *gitpkg.GitWorktree
+	requestID uint64
+	title     string
+	body      string
+	worktree  *gitpkg.GitWorktree
 }
 
 type prBodyErrorMsg struct {
-	id  string
-	err error
+	requestID uint64
+	id        string
+	err       error
 }
 
 // prStateUpdateMsg carries updated PR review/check state for a single plan.

@@ -514,7 +514,7 @@ func (m *home) createPRAfterApproval(planFile, reviewBody string) tea.Cmd {
 	}
 }
 
-func (m *home) preparePRBody(src prSource, title string) tea.Cmd {
+func (m *home) preparePRBody(src prSource, title string, requestID uint64) tea.Cmd {
 	repoPath := m.activeRepoPath
 	store := m.taskStore
 	project := m.taskStoreProject
@@ -526,14 +526,14 @@ func (m *home) preparePRBody(src prSource, title string) tea.Cmd {
 			var err error
 			wt, err = gitpkg.EnsureTaskWorktree(repoPath, src.branch)
 			if err != nil {
-				return prBodyErrorMsg{id: id, err: err}
+				return prBodyErrorMsg{requestID: requestID, id: id, err: err}
 			}
 		}
 
 		if src.planFile != "" && store != nil {
 			entry, err := store.Get(project, src.planFile)
 			if err != nil {
-				return prBodyErrorMsg{id: id, err: err}
+				return prBodyErrorMsg{requestID: requestID, id: id, err: err}
 			}
 			subtasks, _ := store.GetSubtasks(project, src.planFile)
 			base := wt.GetBaseCommitSHA()
@@ -550,11 +550,11 @@ func (m *home) preparePRBody(src prSource, title string) tea.Cmd {
 				}
 			}
 			body := gitpkg.BuildPRBody(gitpkg.AssemblePRMetadata(entry, subtasks, "", entry.ReviewCycle, gitChanges, gitCommits, gitStats))
-			return prBodyReadyMsg{title: title, body: body, worktree: wt}
+			return prBodyReadyMsg{requestID: requestID, title: title, body: body, worktree: wt}
 		}
 
 		body, _ := wt.GeneratePRBody()
-		return prBodyReadyMsg{title: title, body: body, worktree: wt}
+		return prBodyReadyMsg{requestID: requestID, title: title, body: body, worktree: wt}
 	}
 }
 
