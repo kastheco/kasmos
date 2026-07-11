@@ -1020,7 +1020,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.toastTickCmd()
 	case prCreatedForPlanMsg:
 		toastID := msg.toastID
-		if toastID == "" {
+		if toastID == "" && m.state != statePRPreparingBody && m.state != statePRTitle && m.state != statePRBody {
 			toastID = m.pendingPRToastID
 		}
 		m.loadTaskState()
