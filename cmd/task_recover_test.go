@@ -102,6 +102,7 @@ func TestExecuteTaskRecover_QueuesSignalActions(t *testing.T) {
 			action:         "verify-approved",
 			planFile:       "review-plan",
 			wantSignalType: "verify_approved",
+			wantPayload:    `{"origin":"operator"}`,
 		},
 		{
 			name:           "verify-failed canonical action queues verify_failed with feedback",
@@ -116,6 +117,7 @@ func TestExecuteTaskRecover_QueuesSignalActions(t *testing.T) {
 			action:         "readiness-approved",
 			planFile:       "review-plan",
 			wantSignalType: "verify_approved",
+			wantPayload:    `{"origin":"operator"}`,
 		},
 		{
 			name:           "readiness-changes alias queues verify_failed with feedback",

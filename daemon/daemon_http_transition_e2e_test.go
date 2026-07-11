@@ -369,7 +369,7 @@ func TestDaemon_TickRepo_HTTPReviewApprovedChainsVerifyApproved(t *testing.T) {
 
 	repoEntry, head := f.gitRepoEntry(t, proc)
 	proc = loop.NewProcessor(loop.ProcessorConfig{
-		Store: f.store, Project: f.project, AutoReadinessReview: true,
+		Store: f.store, Project: f.project,
 		HeadSHA: func(string) (string, error) { return head, nil },
 	})
 	repoEntry.Processor = proc
