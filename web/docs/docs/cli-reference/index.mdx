@@ -44,3 +44,4 @@ Running `kas` with no subcommand launches the interactive terminal UI (Bubble Te
 - Most subcommands resolve the project name from the basename of the repository root (e.g. `/home/user/myproject` → project `myproject`).
 - Task store queries fall back to a local SQLite file at `~/.config/kasmos/taskstore.db` when no remote store is configured.
 - Filenames passed to `kas task` subcommands are normalized: a trailing `.md` extension is stripped automatically.
+- `kas task pr <plan-file>` is idempotent and prints the created, adopted, or previously recorded PR URL.

@@ -85,7 +85,9 @@ func Ensure(ctx context.Context, store taskstore.Store, req Request) (res Result
 		return persist(OutcomeFailed, fmt.Sprintf("load task entry: %v", err))
 	}
 	if entry.PRURL != "" {
-		return persist(OutcomeSkipped, "pr already recorded")
+		result, persistErr := persist(OutcomeSkipped, "pr already recorded")
+		result.URL = entry.PRURL
+		return result, persistErr
 	}
 
 	branch := entry.Branch

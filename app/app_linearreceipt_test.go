@@ -137,10 +137,12 @@ func TestLinearReceiptHook_PRCreatedPostsAfterPRURLPersisted(t *testing.T) {
 	m, client, planFile := newLinearReceiptTestHome(t, true)
 	require.NotNil(t, m.linearReceiptHook)
 	require.NoError(t, m.taskStore.SetPRURL("test", planFile, "https://github.test/pr/1"))
+	m.pendingPRToastID = m.toastManager.Loading("creating PR...")
 
 	_, cmd := m.Update(prCreatedForPlanMsg{planFile: planFile, url: "https://github.test/pr/1", outcome: prsvc.OutcomeCreated})
 	require.NotNil(t, cmd)
 	_ = cmd()
+	assert.Empty(t, m.pendingPRToastID)
 
 	entry, err := m.taskStore.Get("test", planFile)
 	require.NoError(t, err)

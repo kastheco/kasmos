@@ -266,7 +266,7 @@ kas task pr my-feature --title "feat: implement feature X"
 |------|---------|-------------|
 | `--title` | task description | PR title |
 
-On success the command prints the PR URL and persists it in the task store. The PR body is generated from the plan content (goal, architecture, tech stack) and git log (commits, changed files, diff stats) using `gh pr create`.
+On success the command prints the PR URL and persists it in the task store. A trailing `.md` in `<plan-file>` is normalized before lookup, and an idempotent call for a task with a recorded PR prints that existing URL. The PR body is generated from the plan content (goal, architecture, tech stack) and git log (commits, changed files, diff stats) using `gh pr create`.
 
 The command exits non-zero when creation is blocked, including a dirty task worktree, a missing task branch, or an unauthenticated `gh` CLI. Clear the reported condition and run `kas task pr <plan-file>` again. The existing-PR preflight makes retries idempotent.
 

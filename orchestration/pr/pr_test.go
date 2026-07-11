@@ -124,6 +124,7 @@ func TestEnsureCreatedOnceThenRecordedURLSkipped(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, OutcomeSkipped, second.Outcome)
 	assert.Equal(t, "pr already recorded", second.Reason)
+	assert.Equal(t, first.URL, second.URL)
 	assert.Equal(t, 1, fake.countCall("pr create"))
 	entry, err := store.Get(req.Project, req.PlanFile)
 	require.NoError(t, err)

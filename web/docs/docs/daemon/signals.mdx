@@ -179,6 +179,8 @@ the `Claim` operation is a serializable transaction: it updates the row to `proc
 
 > **deprecated aliases:** `readiness_approved` → `verify_approved`; `readiness_changes_requested` / `readiness-changes` / `readiness-changes-requested` / `master_approved` → `verify_failed`. these aliases are accepted at ingress and canonicalized — use `verify_approved` / `verify_failed` in new automation.
 
+Terminal approval can enqueue the daemon's automatic PR action. PR creation and bounded retries are tracked on the task record rather than as additional gateway signals, so replaying the approval signal is not required.
+
 Wave-processing outcomes are also emitted to the audit log and daemon event stream with structured detail. Successful all-complete waves report a success outcome, while blocked or failed waves report the blocking cause and any retry-generation metadata needed by operators.
 
 ### writing a db signal

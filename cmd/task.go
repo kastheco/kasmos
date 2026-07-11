@@ -710,6 +710,11 @@ func executeTaskPR(repoRoot, project, planFile, title string, store taskstore.St
 			return "", err
 		}
 	}
+	ps, err := loadTaskStateByProject(project, store)
+	if err != nil {
+		return "", err
+	}
+	planFile = resolveExistingTaskFilename(ps, planFile)
 
 	res, err := pr.Ensure(context.Background(), store, pr.Request{
 		RepoPath: repoRoot,
