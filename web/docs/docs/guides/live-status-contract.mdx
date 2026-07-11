@@ -63,7 +63,7 @@ Each `AttentionItem` contains `task`, `kind`, and an optional `detail` string. `
 | value | durable source |
 | --- | --- |
 | `needs_decision` | The task's stored execution phase is `wave_waiting`, meaning orchestration is waiting at a persisted decision boundary. |
-| `review_feedback` | The task store records outstanding review feedback for the task. |
+| `review_feedback` | The task is back in `implementing` with stored review feedback, meaning a fixer must address it. Historical feedback is not surfaced during re-review, verification, or terminal states. |
 | `stale_instance` | The daemon reports a non-empty instance health reason; that reason is returned in `detail`. This kind is unavailable without the daemon. |
 
 `stuck` is intentionally not part of v1. Stuck detection belongs to the planned SSE follow-up rather than this polling snapshot.

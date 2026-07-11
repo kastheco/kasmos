@@ -167,7 +167,7 @@ func Assemble(in Input) LiveStatus {
 		if strings.TrimSpace(task.Phase) == string(taskfsm.ExecutionPhaseWaveWaiting) {
 			attention = append(attention, AttentionItem{Task: task.Filename, Kind: KindNeedsDecision})
 		}
-		if task.ReviewFeedback && task.Status != taskstore.StatusDone && task.Status != taskstore.StatusCancelled {
+		if task.ReviewFeedback && task.Status == taskstore.StatusImplementing {
 			attention = append(attention, AttentionItem{Task: task.Filename, Kind: KindReviewFeedback})
 		}
 	}

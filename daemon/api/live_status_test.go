@@ -48,7 +48,7 @@ func TestLiveStatusSurfaceAdapter(t *testing.T) {
 		plans: map[string][]taskstore.TaskEntry{
 			"kasmos": {
 				{Filename: "decision", Status: taskstore.StatusImplementing, ExecutionState: taskstore.ExecutionState{Phase: "wave_waiting"}},
-				{Filename: "review", Status: taskstore.StatusReviewing, LatestReviewFeedback: " changes requested "},
+				{Filename: "review", Status: taskstore.StatusImplementing, LatestReviewFeedback: " changes requested "},
 				{Filename: "ready", Status: taskstore.StatusReady},
 			},
 		},
@@ -64,7 +64,7 @@ func TestLiveStatusSurfaceAdapter(t *testing.T) {
 	assert.Equal(t, "kasmos", got.Project)
 	assert.True(t, got.DaemonRunning)
 	assert.Equal(t, 1, got.RepoCount)
-	assert.Equal(t, livestatus.LifecycleCounts{Ready: 1, Implementing: 1, Reviewing: 1, Total: 3}, got.Lifecycle)
+	assert.Equal(t, livestatus.LifecycleCounts{Ready: 1, Implementing: 2, Total: 3}, got.Lifecycle)
 	assert.Contains(t, got.Attention, livestatus.AttentionItem{Task: "decision", Kind: livestatus.KindNeedsDecision})
 	assert.Contains(t, got.Attention, livestatus.AttentionItem{Task: "review", Kind: livestatus.KindReviewFeedback})
 	assert.Contains(t, got.Attention, livestatus.AttentionItem{Task: "stale", Kind: livestatus.KindStaleInstance, Detail: "no heartbeat"})

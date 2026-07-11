@@ -31,7 +31,7 @@ func TestAssembleCompactnessInvariant(t *testing.T) {
 				agents[i] = AgentInput{Task: fmt.Sprint(i)}
 			}
 			for i := range tasks {
-				tasks[i] = TaskInput{Filename: fmt.Sprint(i), ReviewFeedback: true}
+				tasks[i] = TaskInput{Filename: fmt.Sprint(i), Status: taskstore.StatusImplementing, ReviewFeedback: true}
 			}
 			got := Assemble(Input{Cap: tc.cap, Agents: agents, Tasks: tasks})
 			assert.Len(t, got.ActiveAgents, tc.want)
@@ -54,22 +54,24 @@ func TestAssembleContractShapeInvariant(t *testing.T) {
 }
 
 func TestAssembleAttentionMappingInvariant(t *testing.T) {
-	got := Assemble(Input{Tasks: []TaskInput{{Filename: "decision", Phase: " wave_waiting "}, {Filename: "review", ReviewFeedback: true}, {Filename: "healthy"}}, Agents: []AgentInput{{Task: "stale", HealthReason: "unhealthy"}, {Task: "healthy"}}})
+	got := Assemble(Input{Tasks: []TaskInput{{Filename: "decision", Phase: " wave_waiting "}, {Filename: "review", Status: taskstore.StatusImplementing, ReviewFeedback: true}, {Filename: "healthy"}}, Agents: []AgentInput{{Task: "stale", HealthReason: "unhealthy"}, {Task: "healthy"}}})
 	require.Len(t, got.Attention, 3)
 	assert.Equal(t, AttentionItem{Task: "decision", Kind: KindNeedsDecision}, got.Attention[0])
 	assert.Equal(t, AttentionItem{Task: "review", Kind: KindReviewFeedback}, got.Attention[1])
 	assert.Equal(t, AttentionItem{Task: "stale", Kind: KindStaleInstance, Detail: "unhealthy"}, got.Attention[2])
 }
 
-func TestAssembleReviewFeedbackExcludesTerminalTasks(t *testing.T) {
+func TestAssembleReviewFeedbackOnlyDuringImplementation(t *testing.T) {
 	got := Assemble(Input{Tasks: []TaskInput{
-		{Filename: "active", Status: taskstore.StatusReviewing, ReviewFeedback: true},
+		{Filename: "fixing", Status: taskstore.StatusImplementing, ReviewFeedback: true},
+		{Filename: "reviewing", Status: taskstore.StatusReviewing, ReviewFeedback: true},
+		{Filename: "verifying", Status: taskstore.StatusVerifying, ReviewFeedback: true},
 		{Filename: "done", Status: taskstore.StatusDone, ReviewFeedback: true},
 		{Filename: "cancelled", Status: taskstore.StatusCancelled, ReviewFeedback: true},
 	}})
 
 	require.Len(t, got.Attention, 1)
-	assert.Equal(t, AttentionItem{Task: "active", Kind: KindReviewFeedback}, got.Attention[0])
+	assert.Equal(t, AttentionItem{Task: "fixing", Kind: KindReviewFeedback}, got.Attention[0])
 }
 
 func TestAssembleDeterminismParityInvariant(t *testing.T) {
