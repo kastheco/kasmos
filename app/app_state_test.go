@@ -133,7 +133,7 @@ func TestSpawnMasterBuildsPromptForResolvedRangeWithoutFeedback(t *testing.T) {
 	assert.Empty(t, instances[0].QueuedPrompt, "prompt must not be frozen before asynchronous git resolution")
 	_ = cmd()
 
-	prompt := instances[0].QueuedPrompt
+	prompt := instances[0].DeliveredPrompt()
 	assert.Contains(t, prompt, base)
 	assert.Contains(t, prompt, head)
 	assert.Contains(t, prompt, "37")

@@ -99,10 +99,12 @@ func (i *Instance) transferPromptToCli() {
 		// Keep QueuedPrompt until startup succeeds so SDK bootstrap fallback can
 		// retry in tmux without losing the first task prompt.
 		i.executionSession.SetInitialPrompt(i.QueuedPrompt)
+		i.deliveredPrompt = i.QueuedPrompt
 		return
 	}
 	if programSupportsCliPrompt(i.Program) {
 		i.executionSession.SetInitialPrompt(i.QueuedPrompt)
+		i.deliveredPrompt = i.QueuedPrompt
 		i.QueuedPrompt = ""
 	}
 }

@@ -331,6 +331,14 @@ func (p *Processor) ProcessFSMSignals(signals []taskfsm.Signal) []Action {
 		// would emit side effects inconsistent with the actual persisted state.
 		var pendingRecord *RecordVerificationAction
 		if sig.Event == taskfsm.VerifyApproved && p.config.AutoReadinessReview {
+			entry, entryOK := p.taskEntry(sig.TaskFile)
+			eligible := entryOK && entry.Status == taskstore.StatusVerifying
+			if sig.PreApplied {
+				eligible = entryOK && entry.Status == taskstore.StatusDone
+			}
+			if !eligible {
+				continue
+			}
 			origin := sig.Origin
 			if sig.PreApplied && origin == "" && sig.ReviewedSHA == "" {
 				origin = "operator"
