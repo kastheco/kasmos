@@ -19,7 +19,7 @@ export default function Monitor() {
   const { snapshot, stale } = useMonitorSnapshot(globals, project, task);
 
   useEffect(() => { if (!project && snapshot) setProject(snapshot.project || snapshot.projects?.[0]); }, [project, snapshot]);
-  useEffect(() => { if (!task && snapshot) setTask(snapshot.focus?.filename ?? snapshot.tasks?.[0]?.filename); }, [task, snapshot]);
+  useEffect(() => { if (!task && snapshot && snapshot.project === project) setTask(snapshot.focus?.filename ?? snapshot.tasks?.[0]?.filename); }, [project, task, snapshot]);
   useEffect(() => { window.openai?.setWidgetState?.({ project, task }); }, [project, task]);
   const action = globals.sendFollowUpMessage ? (prompt: string) => { void window.openai?.sendFollowUpMessage?.({ prompt }); } : undefined;
   const blockerCount = snapshot?.attention.length ?? 0;
@@ -43,7 +43,7 @@ export default function Monitor() {
       {mode === "fullscreen" && <>
         {snapshot.focus && <WaveBoard focus={snapshot.focus} action={action} />}
         <AgentList agents={snapshot.active_agents} />
-        {snapshot.focus && <section className={styles.readiness}><h2>readiness</h2><StatusBadge status={snapshot.focus.readiness.status} /><p>{snapshot.focus.readiness.last_verify_outcome || "no verification outcome"}</p>{snapshot.focus.readiness.has_review_feedback && action && <button onClick={() => action(`approve review for ${snapshot.focus?.filename}`)}>approve review</button>}</section>}
+        {snapshot.focus && <section className={styles.readiness}><h2>readiness</h2><StatusBadge status={snapshot.focus.readiness.status} /><p>review cycle {snapshot.focus.readiness.review_cycle ?? 0}</p><p>checks: {snapshot.focus.readiness.pr_check_status || "not reported"}</p><p>review: {snapshot.focus.readiness.pr_review_decision || "not reported"}</p><p>verification: {snapshot.focus.readiness.last_verify_outcome || "not reported"}</p>{snapshot.focus.readiness.has_review_feedback && action && <button onClick={() => action(`approve review for ${snapshot.focus?.filename}`)}>approve review</button>}</section>}
         <EventFeed events={snapshot.events ?? []} />
       </>}
     </>}

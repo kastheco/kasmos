@@ -24,6 +24,7 @@ import (
 	"github.com/kastheco/kasmos/config/configactions"
 	"github.com/kastheco/kasmos/config/taskactions"
 	"github.com/kastheco/kasmos/config/taskstore"
+	"github.com/kastheco/kasmos/internal/appwidget"
 	"github.com/kastheco/kasmos/internal/linearruntime"
 	"github.com/kastheco/kasmos/internal/livepreview"
 	"github.com/kastheco/kasmos/internal/mcpserver"
@@ -195,18 +196,6 @@ func newServeMCPHTTPHandler(next http.Handler) http.Handler {
 		if r.URL.Path != "/mcp" {
 			http.NotFound(w, r)
 			return
-		}
-		// Standalone widget previews are opened from file:// and therefore send
-		// Origin: null. Limit cross-origin MCP access to that preview origin.
-		if r.Header.Get("Origin") == "null" {
-			w.Header().Set("Access-Control-Allow-Origin", "null")
-			w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
-			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Accept, Mcp-Session-Id")
-			w.Header().Set("Access-Control-Expose-Headers", "Mcp-Session-Id")
-			if r.Method == http.MethodOptions {
-				w.WriteHeader(http.StatusNoContent)
-				return
-			}
 		}
 		next.ServeHTTP(w, r)
 	}))
@@ -591,6 +580,17 @@ func NewServeCmd() *cobra.Command {
 			}
 
 			rootMux := newServeAPIRootMux(sharedDB, repoRegs, taskAPI, auditAPI, actionsAPI, previewAPI, configAPI, architectAuditAPI, linearWebhookAPI)
+			fixedProject := ""
+			if len(repoRegs.projects) == 1 {
+				fixedProject = repoRegs.projects[0]
+			}
+			widgetRouting := routing.NewRegisterConfig(fixedProject, repoRegs.projects)
+			if repoRegs.loadProjects != nil {
+				widgetRouting = routing.NewDynamicRegisterConfig(fixedProject, repoRegs.projects, repoRegs.loadProjects)
+			}
+			widgetPreviewAPI := appwidget.NewPreviewHandler(widgetRouting, store, daemonSocketPath(), sharedDB)
+			rootMux.Handle("OPTIONS "+appwidget.PreviewPath, widgetPreviewAPI)
+			rootMux.Handle("POST "+appwidget.PreviewPath, widgetPreviewAPI)
 
 			// Resolve the admin filesystem: --admin-dir flag overrides embedded assets.
 			// Require the directory to contain index.html so users aren't accidentally

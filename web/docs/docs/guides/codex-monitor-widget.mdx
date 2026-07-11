@@ -43,7 +43,7 @@ The supported way to see the real widget today is the browser preview. With `kas
 kas monitor widget --out preview.html
 ```
 
-The generated preview performs the MCP `initialize` handshake, reuses the returned session ID, and then polls `open_monitor`. The MCP listener permits the standalone `file://` preview origin and its POST preflight only; other cross-origin callers remain blocked.
+The generated file polls a dedicated read-only preview bridge at `http://127.0.0.1:7433/v1/widget-preview/open-monitor`. That bridge accepts only the `project` and `task` inputs used to build an `open_monitor` snapshot. It does not expose the shared MCP server or any mutating tool. The full MCP listener remains unavailable to `file://` and other cross-origin callers.
 
 ## authority boundary
 
@@ -57,7 +57,7 @@ The widget polls through `window.openai.callTool("open_monitor", …)`: every 2 
 
 Task state and the event feed come from the same database selected by `kas serve --db`, including custom database paths, so the widget never mixes task and audit history from different stores.
 
-The widget makes no HTTP, WebSocket, or other network calls of its own. Codex rewrites `http://` and `ws://` CSP entries to their secure forms, which prevents a sandboxed widget iframe from fetching a localhost Kasmos server. Sending all data over the MCP bridge avoids that failure mode.
+The Codex-hosted widget makes no HTTP, WebSocket, or other network calls of its own. Codex rewrites `http://` and `ws://` CSP entries to their secure forms, which prevents a sandboxed widget iframe from fetching a localhost Kasmos server. Sending hosted widget data over the MCP bridge avoids that failure mode. The standalone browser preview is the exception: its host shim calls the narrowly scoped read-only preview endpoint described above.
 
 ## known limitations
 

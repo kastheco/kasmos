@@ -4,7 +4,9 @@ package appwidget
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -27,6 +29,9 @@ var appWidgetAuditLogger = func() (auditlog.Logger, func(), error) {
 }
 
 var widgetSnapshots = newSnapshotCache(time.Second)
+
+// PreviewPath is the read-only HTTP bridge used by standalone widget previews.
+const PreviewPath = "/v1/widget-preview/open-monitor"
 
 // RegisterWithRouting registers the monitor resource and its read-only data tool.
 func RegisterWithRouting(srv *server.MCPServer, rc routing.RegisterConfig, store taskstore.Store, socketPath string, sharedDB ...*sql.DB) {
@@ -96,12 +101,65 @@ func makeOpenMonitorHandler(rc routing.RegisterConfig, store taskstore.Store, so
 	}
 }
 
+// NewPreviewHandler exposes only the read-only open_monitor projection to file previews.
+func NewPreviewHandler(rc routing.RegisterConfig, store taskstore.Store, socketPath string, sharedDB ...*sql.DB) http.Handler {
+	openMonitor := makeOpenMonitorHandler(rc, store, socketPath, widgetSnapshots, sharedDB...)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != PreviewPath {
+			http.NotFound(w, r)
+			return
+		}
+		if r.Header.Get("Origin") == "null" {
+			w.Header().Set("Access-Control-Allow-Origin", "null")
+			w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		}
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		if r.Method != http.MethodPost {
+			w.Header().Set("Allow", "POST, OPTIONS")
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		var input struct {
+			Project string `json:"project"`
+			Task    string `json:"task"`
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
+		decoder := json.NewDecoder(r.Body)
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&input); err != nil {
+			http.Error(w, "invalid preview request", http.StatusBadRequest)
+			return
+		}
+		result, err := openMonitor(r.Context(), mcp.CallToolRequest{Params: mcp.CallToolParams{Arguments: map[string]any{
+			"project": input.Project,
+			"task":    input.Task,
+		}}})
+		if err != nil {
+			http.Error(w, "open monitor failed", http.StatusInternalServerError)
+			return
+		}
+		status := http.StatusOK
+		if result.IsError {
+			status = http.StatusBadRequest
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		_ = json.NewEncoder(w).Encode(result)
+	})
+}
+
 func buildSnapshot(project, focus string, projects []string, store taskstore.Store, socketPath string, sharedDB ...*sql.DB) (livestatus.LiveStatus, error) {
 	entries, err := store.List(project)
 	if err != nil {
 		return livestatus.LiveStatus{}, fmt.Errorf("list tasks: %w", err)
 	}
 	inputs := make([]livestatus.TaskInput, 0, len(entries))
+	verifyOutcome := queryVerifyOutcome(project, focus, sharedDB...)
 	var focused *livestatus.FocusInput
 	for _, entry := range entries {
 		task := livestatus.TaskInput{Filename: entry.Filename, Status: entry.Status, Phase: entry.ExecutionState.Phase, Topic: entry.Topic, Branch: entry.Branch, ActiveWave: entry.ExecutionState.ActiveWave, ReviewCycle: entry.ReviewCycle, PRURL: entry.PRURL, PRCheckStatus: entry.PRCheckStatus, PRReviewDecision: entry.PRReviewDecision, ReviewFeedback: strings.TrimSpace(entry.LatestReviewFeedback) != ""}
@@ -118,7 +176,7 @@ func buildSnapshot(project, focus string, projects []string, store taskstore.Sto
 					}
 				}
 				if entry.Filename == focus {
-					focused = focusInput(entry, subtasks)
+					focused = focusInput(entry, subtasks, verifyOutcome)
 				}
 			}
 		}
@@ -126,7 +184,7 @@ func buildSnapshot(project, focus string, projects []string, store taskstore.Sto
 			content, contentErr := store.GetContent(project, entry.Filename)
 			if contentErr == nil {
 				if focused == nil {
-					focused = focusInput(entry, nil)
+					focused = focusInput(entry, nil, verifyOutcome)
 				}
 				focused.Content = content
 			}
@@ -138,8 +196,41 @@ func buildSnapshot(project, focus string, projects []string, store taskstore.Sto
 	return livestatus.Assemble(livestatus.Input{Project: project, Now: time.Now(), Daemon: heartbeat, Tasks: inputs, Agents: agents, Include: livestatus.Include{Projects: true, Tasks: true, Events: true, Focus: focus}, Projects: projects, Events: events, FocusTask: focused}), nil
 }
 
-func focusInput(entry taskstore.TaskEntry, subtasks []taskstore.SubtaskEntry) *livestatus.FocusInput {
-	return &livestatus.FocusInput{Filename: entry.Filename, Goal: entry.Goal, Subtasks: subtasks, ActiveWave: entry.ExecutionState.ActiveWave, Readiness: livestatus.Readiness{Status: string(entry.Status), ReviewCycle: entry.ReviewCycle, HasReviewFeedback: strings.TrimSpace(entry.LatestReviewFeedback) != "", PRCheckStatus: entry.PRCheckStatus, PRReviewDecision: entry.PRReviewDecision}}
+func focusInput(entry taskstore.TaskEntry, subtasks []taskstore.SubtaskEntry, verifyOutcome string) *livestatus.FocusInput {
+	return &livestatus.FocusInput{Filename: entry.Filename, Goal: entry.Goal, Subtasks: subtasks, ActiveWave: entry.ExecutionState.ActiveWave, Readiness: livestatus.Readiness{Status: string(entry.Status), ReviewCycle: entry.ReviewCycle, HasReviewFeedback: strings.TrimSpace(entry.LatestReviewFeedback) != "", PRCheckStatus: entry.PRCheckStatus, PRReviewDecision: entry.PRReviewDecision, LastVerifyOutcome: verifyOutcome}}
+}
+
+func queryVerifyOutcome(project, focus string, sharedDB ...*sql.DB) string {
+	if strings.TrimSpace(focus) == "" {
+		return ""
+	}
+	var gateway taskstore.SignalGateway
+	var err error
+	if len(sharedDB) > 0 && sharedDB[0] != nil {
+		gateway, err = taskstore.NewSQLiteSignalGatewayFromDB(sharedDB[0])
+	} else {
+		gateway, err = taskstore.OpenAuthoritativeSignalGateway(project)
+	}
+	if err != nil {
+		return ""
+	}
+	defer gateway.Close() //nolint:errcheck
+	signals, err := gateway.List(project, taskstore.SignalDone)
+	if err != nil {
+		return ""
+	}
+	for i := len(signals) - 1; i >= 0; i-- {
+		if strings.TrimSuffix(signals[i].PlanFile, ".md") != strings.TrimSuffix(focus, ".md") {
+			continue
+		}
+		switch signals[i].SignalType {
+		case "verify_approved", "master_approved", "readiness_approved":
+			return "approved"
+		case "verify_failed", "readiness_changes", "readiness_changes_requested":
+			return "failed"
+		}
+	}
+	return ""
 }
 
 func queryEvents(project string, sharedDB ...*sql.DB) []livestatus.EventItem {

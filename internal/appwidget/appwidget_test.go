@@ -1,8 +1,12 @@
 package appwidget
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -117,6 +121,30 @@ func TestQueryEventsUsesServedDatabase(t *testing.T) {
 	assert.Equal(t, "from custom db", events[0].Message)
 }
 
+func TestSnapshotProjectsLatestVerifyOutcome(t *testing.T) {
+	db, err := taskstore.OpenSharedDB(filepath.Join(t.TempDir(), "served.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, db.Close()) })
+	store, err := taskstore.NewSQLiteStoreFromDB(db)
+	require.NoError(t, err)
+	require.NoError(t, store.Create("kasmos", taskstore.TaskEntry{Filename: "monitor", Status: taskstore.StatusDone, Content: "## Wave 1\n### Task 1: ship"}))
+	gateway, err := taskstore.NewSQLiteSignalGatewayFromDB(db)
+	require.NoError(t, err)
+	require.NoError(t, gateway.Create("kasmos", taskstore.SignalEntry{PlanFile: "monitor", SignalType: "verify_failed"}))
+	require.NoError(t, gateway.Create("kasmos", taskstore.SignalEntry{PlanFile: "monitor", SignalType: "verify_approved"}))
+	for _, worker := range []string{"first", "second"} {
+		signal, claimErr := gateway.Claim("kasmos", worker)
+		require.NoError(t, claimErr)
+		require.NotNil(t, signal)
+		require.NoError(t, gateway.MarkProcessed(signal.ID, taskstore.SignalDone, "processed"))
+	}
+
+	snapshot, err := buildSnapshot("kasmos", "monitor", []string{"kasmos"}, store, filepath.Join(t.TempDir(), "missing.sock"), db)
+	require.NoError(t, err)
+	require.NotNil(t, snapshot.Focus)
+	assert.Equal(t, "approved", snapshot.Focus.Readiness.LastVerifyOutcome)
+}
+
 func stubAuditLogger(t *testing.T) {
 	original := appWidgetAuditLogger
 	t.Cleanup(func() { appWidgetAuditLogger = original })
@@ -129,8 +157,51 @@ func TestPreviewHTMLIncludesHostShim(t *testing.T) {
 	html := PreviewHTML()
 	assert.Contains(t, html, "window.openai=")
 	assert.Contains(t, html, "callTool:async function")
-	assert.Contains(t, html, `this.post("initialize"`)
-	assert.Contains(t, html, `headers["mcp-session-id"]=this.session`)
-	assert.Contains(t, html, `this.notify("notifications/initialized"`)
+	assert.Contains(t, html, "http://127.0.0.1:7433/v1/widget-preview/open-monitor")
+	assert.NotContains(t, html, "mcp-session-id")
+	assert.NotContains(t, html, `name:name`)
 	assert.Less(t, strings.Index(html, "window.openai="), strings.Index(html, `<script type="module">`))
+}
+
+func TestPreviewHandlerOnlyExposesOpenMonitorSnapshot(t *testing.T) {
+	store := taskstore.NewTestSQLiteStore(t)
+	require.NoError(t, store.Create("kasmos", taskstore.TaskEntry{Filename: "monitor", Status: taskstore.StatusReady}))
+	stubAuditLogger(t)
+	handler := NewPreviewHandler(routing.NewRegisterConfig("kasmos", []string{"kasmos"}), store, filepath.Join(t.TempDir(), "missing.sock"))
+
+	t.Run("file origin preflight is scoped to preview post", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodOptions, PreviewPath, nil)
+		req.Header.Set("Origin", "null")
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		require.Equal(t, http.StatusNoContent, rec.Code)
+		assert.Equal(t, "null", rec.Header().Get("Access-Control-Allow-Origin"))
+		assert.Equal(t, "POST, OPTIONS", rec.Header().Get("Access-Control-Allow-Methods"))
+		assert.Equal(t, "Content-Type", rec.Header().Get("Access-Control-Allow-Headers"))
+	})
+
+	t.Run("returns only the monitor result", func(t *testing.T) {
+		body, err := json.Marshal(map[string]string{"project": "kasmos", "task": "monitor"})
+		require.NoError(t, err)
+		req := httptest.NewRequest(http.MethodPost, PreviewPath, bytes.NewReader(body))
+		req.Header.Set("Origin", "null")
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		require.Equal(t, http.StatusOK, rec.Code)
+		assert.Equal(t, "null", rec.Header().Get("Access-Control-Allow-Origin"))
+		var result struct {
+			StructuredContent livestatus.LiveStatus `json:"structuredContent"`
+		}
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &result))
+		assert.Equal(t, "kasmos", result.StructuredContent.Project)
+		require.NotNil(t, result.StructuredContent.Focus)
+		assert.Equal(t, "monitor", result.StructuredContent.Focus.Filename)
+	})
+
+	t.Run("rejects methods outside the read-only bridge", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPut, PreviewPath, nil)
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		assert.Equal(t, http.StatusMethodNotAllowed, rec.Code)
+	})
 }

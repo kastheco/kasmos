@@ -35,35 +35,48 @@ export function useOpenAiGlobal(): OpenAiGlobals {
 function snapshotFrom(result: unknown): MonitorSnapshot | undefined {
   if (!result || typeof result !== "object") return undefined;
   const value = result as { structuredContent?: unknown; structured_content?: unknown };
-  return (value.structuredContent ?? value.structured_content ?? result) as MonitorSnapshot;
+  const candidate = value.structuredContent ?? value.structured_content ?? result;
+  if (!candidate || typeof candidate !== "object") return undefined;
+  const snapshot = candidate as Partial<MonitorSnapshot>;
+  if (snapshot.schema_version !== 2 || typeof snapshot.project !== "string" || typeof snapshot.daemon_running !== "boolean" || !snapshot.lifecycle || typeof snapshot.lifecycle !== "object" || !Array.isArray(snapshot.active_agents) || !Array.isArray(snapshot.attention) || !snapshot.truncated || typeof snapshot.truncated !== "object") return undefined;
+  return snapshot as MonitorSnapshot;
 }
 
 export function useMonitorSnapshot(globals: OpenAiGlobals, project?: string, task?: string) {
-  const [snapshot, setSnapshot] = useState<MonitorSnapshot | undefined>(() => globals.toolOutput);
+  const [snapshot, setSnapshot] = useState<MonitorSnapshot | undefined>(() => snapshotFrom(globals.toolOutput));
   const [stale, setStale] = useState(false);
-  const inFlight = useRef(false);
+  const scopeKey = `${project ?? ""}\u0000${task ?? ""}`;
+  const latestScope = useRef(scopeKey);
+  latestScope.current = scopeKey;
+  const inFlight = useRef<string | undefined>(undefined);
   const failures = useRef(0);
   const timer = useRef<number | undefined>(undefined);
   const mounted = useRef(true);
   const baseDelay = globals.displayMode === "pip" || globals.displayMode === "fullscreen" ? 2000 : 3000;
 
-  useEffect(() => { if (globals.toolOutput) setSnapshot(globals.toolOutput); }, [globals.toolOutput]);
+  useEffect(() => { const next = snapshotFrom(globals.toolOutput); if (next) setSnapshot(next); }, [globals.toolOutput]);
+  useEffect(() => () => { mounted.current = false; }, []);
   const refresh = useCallback(async () => {
-    if (inFlight.current || document.visibilityState !== "visible" || !window.openai?.callTool) return;
-    inFlight.current = true;
+    const requestScope = scopeKey;
+    if (inFlight.current === requestScope || document.visibilityState !== "visible" || !window.openai?.callTool) return;
+    inFlight.current = requestScope;
     try {
       const next = snapshotFrom(await window.openai.callTool("open_monitor", { project, task }));
-      if (next && mounted.current) setSnapshot(next);
-      failures.current = 0;
-      if (mounted.current) setStale(false);
+      if (!next) throw new Error("open_monitor returned an invalid snapshot");
+      if (mounted.current && latestScope.current === requestScope) {
+        setSnapshot(next);
+        failures.current = 0;
+        setStale(false);
+      }
     } catch {
-      failures.current += 1;
-      if (mounted.current) setStale(true);
-    } finally { inFlight.current = false; }
-  }, [project, task]);
+      if (mounted.current && latestScope.current === requestScope) {
+        failures.current += 1;
+        setStale(true);
+      }
+    } finally { if (inFlight.current === requestScope) inFlight.current = undefined; }
+  }, [project, scopeKey, task]);
 
   useEffect(() => {
-    mounted.current = true;
     const schedule = () => {
       window.clearInterval(timer.current);
       const delay = Math.min(baseDelay * 2 ** failures.current, 30000);
@@ -75,7 +88,8 @@ export function useMonitorSnapshot(globals: OpenAiGlobals, project?: string, tas
     };
     schedule();
     document.addEventListener("visibilitychange", visibility);
-    return () => { mounted.current = false; window.clearInterval(timer.current); document.removeEventListener("visibilitychange", visibility); };
+    return () => { window.clearInterval(timer.current); document.removeEventListener("visibilitychange", visibility); };
   }, [baseDelay, refresh]);
-  return { snapshot, stale, refresh };
+  const visibleSnapshot = !project || snapshot?.project === project ? snapshot : undefined;
+  return { snapshot: visibleSnapshot, stale, refresh };
 }
