@@ -246,6 +246,8 @@ func (a *daemonStateAdapter) ListInstances(project string) []api.InstanceStatus 
 				Ready:           ready,
 				Title:           inst.Title,
 				Branch:          inst.Branch,
+				Worktree:        inst.Path,
+				Paused:          inst.Paused(),
 				Program:         inst.Program,
 				CreatedAt:       createdAt,
 				TaskNumber:      inst.TaskNumber,

@@ -79,6 +79,8 @@ type InstanceStatus struct {
 	Ready         bool       `json:"ready,omitempty"`
 	Title         string     `json:"title,omitempty"`
 	Branch        string     `json:"branch,omitempty"`
+	Worktree      string     `json:"worktree,omitempty"`
+	Paused        bool       `json:"paused,omitempty"`
 	Program       string     `json:"program,omitempty"`
 	CreatedAt     *time.Time `json:"created_at,omitempty"`
 	TaskNumber    int        `json:"task_number,omitempty"`
