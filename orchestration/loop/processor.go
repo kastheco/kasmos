@@ -8,6 +8,7 @@ import (
 	"github.com/kastheco/kasmos/config/taskparser"
 	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/kastheco/kasmos/orchestration"
+	prsvc "github.com/kastheco/kasmos/orchestration/pr"
 	"github.com/kastheco/kasmos/session"
 )
 
@@ -348,7 +349,7 @@ func (p *Processor) ProcessFSMSignals(signals []taskfsm.Signal) []Action {
 				})
 				if p.config.Store != nil {
 					if entry, err := p.config.Store.Get(p.config.Project, sig.TaskFile); err == nil {
-						if shouldCreatePR(entry) {
+						if prsvc.Eligible(entry) {
 							actions = append(actions, CreatePRAction{
 								PlanFile:   sig.TaskFile,
 								ReviewBody: sig.Body,
@@ -368,7 +369,7 @@ func (p *Processor) ProcessFSMSignals(signals []taskfsm.Signal) []Action {
 			})
 			if p.config.Store != nil {
 				if entry, err := p.config.Store.Get(p.config.Project, sig.TaskFile); err == nil {
-					if shouldCreatePR(entry) {
+					if prsvc.Eligible(entry) {
 						actions = append(actions, CreatePRAction{
 							PlanFile:   sig.TaskFile,
 							ReviewBody: sig.Body,
@@ -866,11 +867,4 @@ func (p *Processor) seedDraftAggFromCache(agg *plannerDraftAgg, planFile string)
 			agg.receivedProfiles[entry.Profile] = true
 		}
 	}
-}
-
-// shouldCreatePR returns true when a plan entry is eligible for automatic PR
-// creation: the review has been approved, the plan is on a branch, and no PR
-// has been opened yet.
-func shouldCreatePR(entry taskstore.TaskEntry) bool {
-	return entry.Status == taskstore.StatusDone && entry.Branch != "" && entry.PRURL == ""
 }

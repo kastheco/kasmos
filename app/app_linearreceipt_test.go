@@ -16,6 +16,7 @@ import (
 	"github.com/kastheco/kasmos/config/taskstate"
 	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/kastheco/kasmos/internal/linear"
+	prsvc "github.com/kastheco/kasmos/orchestration/pr"
 	"github.com/kastheco/kasmos/ui"
 	"github.com/kastheco/kasmos/ui/overlay"
 	"github.com/stretchr/testify/assert"
@@ -135,8 +136,9 @@ func TestLinearReceiptHook_PRCreatedPostsAfterPRURLPersisted(t *testing.T) {
 	t.Parallel()
 	m, client, planFile := newLinearReceiptTestHome(t, true)
 	require.NotNil(t, m.linearReceiptHook)
+	require.NoError(t, m.taskStore.SetPRURL("test", planFile, "https://github.test/pr/1"))
 
-	_, cmd := m.Update(prCreatedForPlanMsg{planFile: planFile, url: "https://github.test/pr/1"})
+	_, cmd := m.Update(prCreatedForPlanMsg{planFile: planFile, url: "https://github.test/pr/1", outcome: prsvc.OutcomeCreated})
 	require.NotNil(t, cmd)
 	_ = cmd()
 

@@ -14,6 +14,7 @@ import (
 	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/kastheco/kasmos/daemon/api"
 	"github.com/kastheco/kasmos/orchestration/loop"
+	prsvc "github.com/kastheco/kasmos/orchestration/pr"
 	"github.com/kastheco/kasmos/session"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -345,10 +346,10 @@ func TestDaemon_TickRepo_HTTPReviewApprovedChainsVerifyApproved(t *testing.T) {
 			t.Fatalf("review_approved must not spawn a master agent when AutoReadinessReview is disabled")
 			return nil
 		},
-		createPR: func(_ RepoEntry, planFile, _ string) error {
+		createPR: func(_ RepoEntry, planFile, _ string) (prsvc.Result, error) {
 			prCount++
 			prPlanFile = planFile
-			return nil
+			return prsvc.Result{Outcome: prsvc.OutcomeCreated, URL: "https://example.test/pr/1"}, nil
 		},
 	}
 	t.Cleanup(func() { d.broadcaster.Close() })
@@ -453,11 +454,11 @@ func TestDaemon_TickRepo_HTTPVerifyApprovedCreatesPR(t *testing.T) {
 		spawner:     NewTmuxSpawner(),
 		logger:      slog.Default(),
 		broadcaster: api.NewEventBroadcaster(),
-		createPR: func(_ RepoEntry, planFile, reviewBody string) error {
+		createPR: func(_ RepoEntry, planFile, reviewBody string) (prsvc.Result, error) {
 			prCount++
 			prPlanFile = planFile
 			prReviewBody = reviewBody
-			return nil
+			return prsvc.Result{Outcome: prsvc.OutcomeCreated, URL: "https://example.test/pr/1"}, nil
 		},
 	}
 	t.Cleanup(func() { d.broadcaster.Close() })

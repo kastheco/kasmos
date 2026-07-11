@@ -609,7 +609,7 @@ func TestAutoCreatePRConfig(t *testing.T) {
 
 		path := filepath.Join(t.TempDir(), "config.toml")
 		require.NoError(t, SaveTOMLConfigTo(configToTOML(cfg), path))
-		result, err := LoadTOMLConfig(path)
+		result, err := LoadTOMLConfigFrom(path)
 		require.NoError(t, err)
 		assert.False(t, configFromTOML(result).AutoCreatePR)
 	})

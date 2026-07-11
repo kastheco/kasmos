@@ -90,7 +90,7 @@ func TestProcessor_ProcessFSMSignals_ReviewApproved_NoBranch(t *testing.T) {
 		}
 	}
 	assert.True(t, foundApproved, "expected ReviewApprovedAction regardless of branch")
-	assert.False(t, foundPR, "expected no CreatePRAction when plan has no branch")
+	assert.True(t, foundPR, "expected CreatePRAction so the handler records a blocked outcome")
 }
 
 func TestProcessor_ProcessFSMSignals_ReviewChangesRequested(t *testing.T) {

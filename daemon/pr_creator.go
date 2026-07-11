@@ -9,6 +9,7 @@ import (
 
 	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/kastheco/kasmos/orchestration/loop"
+	prsvc "github.com/kastheco/kasmos/orchestration/pr"
 )
 
 // PRCreator retries transient PR creation failures with bounded exponential backoff.
@@ -56,7 +57,7 @@ func (c *PRCreator) Run(ctx context.Context) error {
 
 func (c *PRCreator) sweepOnce(ctx context.Context) {
 	if err := c.checkGH(ctx); err != nil {
-		if isGHUnavailable(err) && c.ghUnavailableLogged.CompareAndSwap(false, true) {
+		if prsvc.IsGHUnavailable(err) && c.ghUnavailableLogged.CompareAndSwap(false, true) {
 			c.logger.Warn("pr_creator: gh unavailable, skipping retry cycle", "err", err)
 		}
 		return
@@ -82,7 +83,7 @@ func (c *PRCreator) sweepOnce(ctx context.Context) {
 				continue
 			}
 			if err := c.dispatch(ctx, repo, loop.CreatePRAction{PlanFile: entry.Filename}); err != nil {
-				if isGHUnavailable(err) {
+				if prsvc.IsGHUnavailable(err) {
 					return
 				}
 				c.logger.Warn("pr_creator: retry dispatch failed", "plan", entry.Filename, "err", err)

@@ -31,6 +31,7 @@ import (
 	"github.com/kastheco/kasmos/log"
 	"github.com/kastheco/kasmos/orchestration"
 	"github.com/kastheco/kasmos/orchestration/loop"
+	prsvc "github.com/kastheco/kasmos/orchestration/pr"
 	"github.com/kastheco/kasmos/session"
 	gitpkg "github.com/kastheco/kasmos/session/git"
 	sessionsdk "github.com/kastheco/kasmos/session/sdk"
@@ -1024,15 +1025,19 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.pendingPRToastID = ""
 			}
 		}
-		if msg.url != "" && m.taskStore != nil {
-			if err := m.taskStore.SetPRURL(m.taskStoreProject, msg.planFile, msg.url); err != nil {
-				log.WarningLog.Printf("prCreatedForPlanMsg: could not persist PR URL for %q: %v", msg.planFile, err)
-			} else if m.linearReceiptHook != nil {
-				go m.linearReceiptHook.NotifyPRCreated(context.Background(), msg.planFile, msg.url)
-			}
-		}
 		m.loadTaskState()
 		m.updateInfoPane()
+		if msg.outcome == prsvc.OutcomeFailed || msg.outcome == prsvc.OutcomeBlocked {
+			m.toastManager.Error("pr creation failed: " + msg.reason)
+			return m, m.toastTickCmd()
+		}
+		if msg.outcome == prsvc.OutcomeSkipped {
+			m.toastManager.Info("pr creation skipped: " + msg.reason)
+			return m, m.toastTickCmd()
+		}
+		if msg.url != "" && m.linearReceiptHook != nil {
+			go m.linearReceiptHook.NotifyPRCreated(context.Background(), msg.planFile, msg.url)
+		}
 		planName := taskstate.DisplayName(msg.planFile)
 		m.audit(auditlog.EventPRCreated, fmt.Sprintf("pr created: %s", planName), auditlog.WithPlan(msg.planFile))
 		m.toastManager.Success(fmt.Sprintf("pr created for '%s'", planName))
@@ -1808,7 +1813,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						}
 						if m.taskStore != nil {
 							if entry, err := m.taskStore.Get(m.taskStoreProject, sig.TaskFile); err == nil {
-								if shouldCreatePR(entry) {
+								if prsvc.Eligible(entry) {
 									signalCmds = append(signalCmds, m.createPRAfterApproval(sig.TaskFile, sig.Body))
 								}
 							}
@@ -3285,6 +3290,8 @@ type prCreatedForPlanMsg struct {
 	planFile string
 	url      string
 	toastID  string
+	outcome  prsvc.Outcome
+	reason   string
 }
 
 type prBodyReadyMsg struct {

@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestBuildCLIPRMetadata(t *testing.T) {
+func TestSharedPRMetadataForCLI(t *testing.T) {
 	entry := taskstore.TaskEntry{
 		Description: "Auth Middleware",
 		Goal:        "add JWT auth to all routes",
@@ -19,7 +19,7 @@ func TestBuildCLIPRMetadata(t *testing.T) {
 		{TaskNumber: 1, Title: "JWT middleware", Status: taskstore.SubtaskStatusComplete},
 	}
 
-	meta := buildCLIPRMetadata(entry, subtasks, "file1.go", "abc123 fix: auth", "1 file changed")
+	meta := git.AssemblePRMetadata(entry, subtasks, "", entry.ReviewCycle, "file1.go", "abc123 fix: auth", "1 file changed")
 	assert.Equal(t, "Auth Middleware", meta.Description)
 	assert.Equal(t, "add JWT auth to all routes", meta.Goal)
 	assert.Equal(t, "middleware chain", meta.Architecture)
@@ -28,12 +28,12 @@ func TestBuildCLIPRMetadata(t *testing.T) {
 	assert.Equal(t, "file1.go", meta.GitChanges)
 }
 
-func TestBuildCLIPRMetadata_EmptyContent(t *testing.T) {
+func TestSharedPRMetadataForCLI_EmptyContent(t *testing.T) {
 	entry := taskstore.TaskEntry{
 		Description: "quick fix",
 		Goal:        "fix the bug",
 	}
-	meta := buildCLIPRMetadata(entry, nil, "", "", "")
+	meta := git.AssemblePRMetadata(entry, nil, "", entry.ReviewCycle, "", "", "")
 	assert.Equal(t, "quick fix", meta.Description)
 	assert.Equal(t, "fix the bug", meta.Goal)
 	assert.Empty(t, meta.Architecture)
