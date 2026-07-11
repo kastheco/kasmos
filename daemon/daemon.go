@@ -611,7 +611,7 @@ func NewDaemon(cfg *DaemonConfig) (*Daemon, error) {
 	if cfg.PRMonitor.Enabled {
 		d.prMonitor = NewPRMonitor(cfg.PRMonitor, cfg.MaxReviewFixCycles, repos, d.broadcaster, logger, d.executeAction)
 	}
-	if cfg.PRCreator.Enabled && cfg.AutoCreatePR {
+	if cfg.PRCreator.Enabled {
 		d.prCreator = NewPRCreator(cfg.PRCreator, repos, logger, d.executeAction)
 	}
 	for _, repo := range repos.List() {

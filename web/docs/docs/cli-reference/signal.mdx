@@ -34,7 +34,7 @@ Signals describe lifecycle progress only. Permission and resource-control behavi
 
 > **Deprecated aliases:** `readiness_approved` → `verify_approved` (aliases: `readiness-approved`, `master_approved`); `readiness_changes_requested` → `verify_failed` (aliases: `readiness-changes`, `readiness-changes-requested`). These are accepted and canonicalized at ingress — use `verify_approved` / `verify_failed` in new automation.
 
-After terminal approval, the processor may dispatch automatic PR creation as a separate idempotent action. That action does not create another signal row; its persisted outcome and PR URL live on the task entry.
+After terminal approval, the processor may dispatch automatic PR creation as a separate idempotent action. That action does not create another signal row; its persisted latest outcome, attempt count, and PR URL live on the task entry. Successful `created` and `adopted` outcomes are retained for observability rather than cleared.
 
 > **Planner drafts:** `planner_draft_finished` is not an FSM event and has no filesystem sentinel form. It is a gateway-only coordination signal for multi-planner mode. The processor aggregates one signal per configured planner profile and internally advances planning when all expected drafts are done. Keep `planner_finished` for legacy single-planner runs and manual recovery.
 

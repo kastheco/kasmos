@@ -25,8 +25,8 @@ const (
 )
 
 type Request struct {
-	RepoPath, Project, PlanFile, ReviewBody, Title string
-	Enabled, Manual                                bool
+	RepoPath, Project, PlanFile, ReviewBody, BodyOverride, Title string
+	Enabled, Manual                                              bool
 }
 
 type Result struct {
@@ -105,7 +105,7 @@ func Ensure(ctx context.Context, store taskstore.Store, req Request) (res Result
 		return persist(classify(queryErr), queryErr.Error())
 	}
 	if state.URL != "" {
-		return adopt(store, req, state)
+		return adopt(store, req, state, entry.PRCreateAttempts+1)
 	}
 
 	wt, setupErr := gitpkg.EnsureTaskWorktree(req.RepoPath, branch)
@@ -125,7 +125,10 @@ func Ensure(ctx context.Context, store taskstore.Store, req Request) (res Result
 	if title == "" {
 		title = gitpkg.BuildPRTitle(entry.Description, taskstate.DisplayName(req.PlanFile))
 	}
-	body := gitpkg.BuildPRBody(meta)
+	body := strings.TrimSpace(req.BodyOverride)
+	if body == "" {
+		body = gitpkg.BuildPRBody(meta)
+	}
 	createErr := wt.CreatePR(title, body)
 	if createErr != nil && !errors.Is(createErr, gitpkg.ErrPRAlreadyExists) {
 		return persist(classify(createErr), createErr.Error())
@@ -140,22 +143,25 @@ func Ensure(ctx context.Context, store taskstore.Store, req Request) (res Result
 	if saveErr := store.SetPRURL(req.Project, req.PlanFile, state.URL); saveErr != nil {
 		return persist(OutcomeFailed, saveErr.Error())
 	}
-	if clearErr := store.ClearPRCreateOutcome(req.Project, req.PlanFile); clearErr != nil {
-		return Result{}, clearErr
+	created, persistErr := persist(OutcomeCreated, "")
+	if persistErr != nil {
+		return Result{}, persistErr
 	}
 	if state.Number > 0 {
 		if reviewErr := wt.PostGitHubReview(state.Number, body, true); reviewErr != nil {
 			log.Printf("post approving review: %v", reviewErr)
 		}
 	}
-	return Result{Outcome: OutcomeCreated, URL: state.URL, Number: state.Number}, nil
+	created.URL = state.URL
+	created.Number = state.Number
+	return created, nil
 }
 
-func adopt(store taskstore.Store, req Request, state gitpkg.PRState) (Result, error) {
+func adopt(store taskstore.Store, req Request, state gitpkg.PRState, attempts int) (Result, error) {
 	if err := store.SetPRURL(req.Project, req.PlanFile, state.URL); err != nil {
 		return Result{}, err
 	}
-	if err := store.ClearPRCreateOutcome(req.Project, req.PlanFile); err != nil {
+	if err := store.SetPRCreateOutcome(req.Project, req.PlanFile, taskstore.PRCreateOutcome{State: string(OutcomeAdopted), Attempts: attempts, AttemptedAt: time.Now()}); err != nil {
 		return Result{}, err
 	}
 	return Result{Outcome: OutcomeAdopted, URL: state.URL, Number: state.Number, Reason: "existing pr adopted"}, nil

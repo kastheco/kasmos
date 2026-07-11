@@ -120,6 +120,11 @@ func TestEnsureCreatedOnceThenRecordedURLSkipped(t *testing.T) {
 	first, err := Ensure(context.Background(), store, req)
 	require.NoError(t, err)
 	assert.Equal(t, OutcomeCreated, first.Outcome)
+	createdEntry, err := store.Get(req.Project, req.PlanFile)
+	require.NoError(t, err)
+	assert.Equal(t, string(OutcomeCreated), createdEntry.PRCreateState)
+	assert.Empty(t, createdEntry.PRCreateError)
+	assert.Equal(t, 1, createdEntry.PRCreateAttempts)
 	second, err := Ensure(context.Background(), store, req)
 	require.NoError(t, err)
 	assert.Equal(t, OutcomeSkipped, second.Outcome)
@@ -146,6 +151,9 @@ func TestEnsureAdoptsExistingPRWithoutCreatingWorktree(t *testing.T) {
 	entry, err := store.Get(req.Project, req.PlanFile)
 	require.NoError(t, err)
 	assert.Equal(t, res.URL, entry.PRURL)
+	assert.Equal(t, string(OutcomeAdopted), entry.PRCreateState)
+	assert.Empty(t, entry.PRCreateError)
+	assert.Equal(t, 1, entry.PRCreateAttempts)
 }
 
 func TestEnsureClassifiesTransientDirtyAndEmptyURL(t *testing.T) {
@@ -190,6 +198,7 @@ func TestEnsureManualOverridesDisabledConfig(t *testing.T) {
 	req := createDoneTask(t, store, "plan/manual")
 	req.Enabled = false
 	req.Manual = true
+	req.BodyOverride = "# edited body\n\nkeep this verbatim"
 	fake := &scriptedGHExecutor{queryOutput: prJSON("https://example.test/pr/7"), queryErr: errors.New("exit status 1"), queryStderr: "no pull requests found"}
 	t.Cleanup(gitpkg.SetGHExec(fake))
 
@@ -197,6 +206,15 @@ func TestEnsureManualOverridesDisabledConfig(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, OutcomeCreated, res.Outcome)
 	assert.Equal(t, 1, fake.countCall("pr create"))
+	var createCall []string
+	for _, call := range fake.calls {
+		if len(call) >= 2 && call[0] == "pr" && call[1] == "create" {
+			createCall = call
+			break
+		}
+	}
+	require.NotEmpty(t, createCall)
+	assert.Contains(t, strings.Join(createCall, "\x00"), "--body\x00# edited body\n\nkeep this verbatim")
 }
 
 func TestEnsurePersistsNonSuccessOutcomes(t *testing.T) {
