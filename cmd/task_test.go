@@ -830,18 +830,22 @@ func TestExecuteTaskPR_TaskNotFound(t *testing.T) {
 	assert.Contains(t, err.Error(), "not found")
 }
 
-func TestExecuteTaskPR_DefaultTitle(t *testing.T) {
+func TestExecuteTaskPR_BranchlessTaskReturnsBlockedReason(t *testing.T) {
 	store := taskstore.NewTestSQLiteStore(t)
 	project := "pr-test"
 	require.NoError(t, store.Create(project, taskstore.TaskEntry{
-		Filename:    "my-feature",
-		Status:      taskstore.StatusImplementing,
-		Description: "add dark mode toggle",
-		Branch:      "plan/my-feature",
+		Filename: "branchless",
+		Status:   taskstore.StatusImplementing,
 	}))
-	// Will fail on git/gh ops but tests the title derivation logic.
-	_, err := executeTaskPR("", project, "my-feature", "", store)
-	require.Error(t, err) // expected: git error (no real repo)
+
+	_, err := executeTaskPR(t.TempDir(), project, "branchless", "", store)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "branch")
+
+	entry, getErr := store.Get(project, "branchless")
+	require.NoError(t, getErr)
+	assert.Equal(t, "blocked", entry.PRCreateState)
+	assert.NotEmpty(t, entry.PRCreateError)
 }
 
 func TestExecuteTaskMerge_TaskNotFound(t *testing.T) {
