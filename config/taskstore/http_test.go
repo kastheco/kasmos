@@ -71,6 +71,29 @@ func TestHTTPStore_RoundTrip(t *testing.T) {
 	assert.Equal(t, taskstore.StatusImplementing, plans[0].Status)
 }
 
+func TestHTTPStore_VerificationRoundTrip(t *testing.T) {
+	store := newTestHTTPStore(t)
+	require.NoError(t, store.Create("proj", taskstore.TaskEntry{Filename: "verification", Status: taskstore.StatusDone, StaleVerificationReason: "old"}))
+	at := time.Now().UTC().Truncate(time.Second)
+	require.NoError(t, store.SetVerification("proj", "verification", taskstore.VerificationRecord{SHA: "head", BaseSHA: "base", By: "master", At: at}))
+	got, err := store.Get("proj", "verification")
+	require.NoError(t, err)
+	assert.Equal(t, "head", got.VerifiedSHA)
+	assert.Equal(t, "base", got.VerifiedBaseSHA)
+	assert.Equal(t, at, got.VerifiedAt)
+	assert.Equal(t, "master", got.VerifiedBy)
+	assert.Empty(t, got.StaleVerificationReason)
+
+	require.NoError(t, store.ClearVerification("proj", "verification", "head drifted"))
+	got, err = store.Get("proj", "verification")
+	require.NoError(t, err)
+	assert.Empty(t, got.VerifiedSHA)
+	assert.Empty(t, got.VerifiedBaseSHA)
+	assert.True(t, got.VerifiedAt.IsZero())
+	assert.Empty(t, got.VerifiedBy)
+	assert.Equal(t, "head drifted", got.StaleVerificationReason)
+}
+
 func TestHTTPStore_Delete(t *testing.T) {
 	backend := newTestStore(t)
 	srv := httptest.NewServer(taskstore.NewHandler(backend))

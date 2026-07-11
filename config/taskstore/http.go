@@ -129,6 +129,11 @@ func (s *HTTPStore) taskPRStateURL(project, filename string) string {
 	return fmt.Sprintf("%s/v1/projects/%s/tasks/%s/pr-state", s.baseURL, url.PathEscape(project), url.PathEscape(filename))
 }
 
+func (s *HTTPStore) taskVerificationURL(project, filename string) string {
+	project = s.resolveProject(project)
+	return fmt.Sprintf("%s/v1/projects/%s/tasks/%s/verification", s.baseURL, url.PathEscape(project), url.PathEscape(filename))
+}
+
 // prReviewsURL builds the base URL for a task's pr-reviews endpoint.
 func (s *HTTPStore) prReviewsURL(project, filename string) string {
 	project = s.resolveProject(project)
@@ -967,6 +972,44 @@ func (s *HTTPStore) SetPRState(project, filename, reviewDecision, checkStatus st
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode == http.StatusNotFound {
+		return newNotFoundError("task store: plan not found: %s", filename)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return decodeError(resp)
+	}
+	return nil
+}
+
+func (s *HTTPStore) SetVerification(project, filename string, v VerificationRecord) error {
+	body, err := json.Marshal(v)
+	if err != nil {
+		return fmt.Errorf("task store: marshal verification payload: %w", err)
+	}
+	return s.doVerificationRequest(http.MethodPut, project, filename, body)
+}
+
+func (s *HTTPStore) ClearVerification(project, filename, reason string) error {
+	body, err := json.Marshal(struct {
+		Reason string `json:"reason"`
+	}{reason})
+	if err != nil {
+		return fmt.Errorf("task store: marshal clear verification payload: %w", err)
+	}
+	return s.doVerificationRequest(http.MethodDelete, project, filename, body)
+}
+
+func (s *HTTPStore) doVerificationRequest(method, project, filename string, body []byte) error {
+	req, err := http.NewRequest(method, s.taskVerificationURL(project, filename), bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("task store: build request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := s.do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusNotFound {
 		return newNotFoundError("task store: plan not found: %s", filename)
 	}

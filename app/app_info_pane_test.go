@@ -488,6 +488,12 @@ func (f *failingSubtaskStore) ClearPRCreateOutcome(project, filename string) err
 func (f *failingSubtaskStore) SetPRState(project, filename, reviewDecision, checkStatus string) error {
 	return f.inner.SetPRState(project, filename, reviewDecision, checkStatus)
 }
+func (f *failingSubtaskStore) SetVerification(project, filename string, v taskstore.VerificationRecord) error {
+	return f.inner.SetVerification(project, filename, v)
+}
+func (f *failingSubtaskStore) ClearVerification(project, filename, reason string) error {
+	return f.inner.ClearVerification(project, filename, reason)
+}
 func (f *failingSubtaskStore) RecordPRReview(project, filename string, reviewID int, state, body, reviewer string) error {
 	return f.inner.RecordPRReview(project, filename, reviewID, state, body, reviewer)
 }

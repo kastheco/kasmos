@@ -282,6 +282,36 @@ func TestSQLiteStore_UpdatePreservesContent(t *testing.T) {
 	assert.Equal(t, "# My Plan\n\n## Wave 1\n", content, "content must survive a metadata-only Update")
 }
 
+func TestSQLiteStore_VerificationRoundTripAndUpdatePreservesBinding(t *testing.T) {
+	store := newTestStore(t)
+	entry := taskstore.TaskEntry{Filename: "verification", Status: taskstore.StatusDone, StaleVerificationReason: "old"}
+	require.NoError(t, store.Create("kasmos", entry))
+	at := time.Now().UTC().Truncate(time.Second)
+	require.NoError(t, store.SetVerification("kasmos", entry.Filename, taskstore.VerificationRecord{SHA: "head", BaseSHA: "base", By: "master", At: at}))
+	got, err := store.Get("kasmos", entry.Filename)
+	require.NoError(t, err)
+	assert.Equal(t, "head", got.VerifiedSHA)
+	assert.Equal(t, "base", got.VerifiedBaseSHA)
+	assert.Equal(t, "master", got.VerifiedBy)
+	assert.Equal(t, at, got.VerifiedAt)
+	assert.Empty(t, got.StaleVerificationReason)
+
+	entry.Status = taskstore.StatusReady
+	require.NoError(t, store.Update("kasmos", entry.Filename, entry))
+	got, err = store.Get("kasmos", entry.Filename)
+	require.NoError(t, err)
+	assert.Equal(t, "head", got.VerifiedSHA)
+
+	require.NoError(t, store.ClearVerification("kasmos", entry.Filename, "head drifted"))
+	got, err = store.Get("kasmos", entry.Filename)
+	require.NoError(t, err)
+	assert.Empty(t, got.VerifiedSHA)
+	assert.Empty(t, got.VerifiedBaseSHA)
+	assert.True(t, got.VerifiedAt.IsZero())
+	assert.Empty(t, got.VerifiedBy)
+	assert.Equal(t, "head drifted", got.StaleVerificationReason)
+}
+
 func TestSQLiteStore_Rename(t *testing.T) {
 	store := newTestStore(t)
 	entry := taskstore.TaskEntry{
