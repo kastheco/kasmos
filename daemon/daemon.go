@@ -586,6 +586,7 @@ func NewDaemon(cfg *DaemonConfig) (*Daemon, error) {
 	repos.autoAdvance = cfg.AutoAdvance
 	repos.autoReviewFix = cfg.AutoReviewFix
 	repos.autoReadinessReview = cfg.AutoReadinessReview
+	repos.autoCreatePR = cfg.AutoCreatePR
 	repos.maxReviewFixCycles = cfg.MaxReviewFixCycles
 	repos.readinessSelfFixMaxLines = cfg.ReadinessSelfFixMaxLines
 	repos.readinessMaxVerifyCycles = cfg.ReadinessMaxVerifyCycles

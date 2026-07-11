@@ -34,6 +34,8 @@ type RepoEntry struct {
 	// It may be nil when the store has not yet been opened or is unavailable.
 	// Per-repo data is namespaced by the project column inside the global DB.
 	Store taskstore.Store
+	// AutoCreatePR controls automatic pull request creation after verification approval.
+	AutoCreatePR bool
 	// SignalGateway is the global DB-backed signal gateway shared by all registered repos.
 	// It may be nil when the gateway has not yet been opened or is unavailable.
 	SignalGateway taskstore.SignalGateway
@@ -118,6 +120,7 @@ type RepoManager struct {
 	autoAdvance              bool
 	autoReviewFix            bool
 	autoReadinessReview      bool
+	autoCreatePR             bool
 	maxReviewFixCycles       int
 	readinessSelfFixMaxLines int
 	readinessMaxVerifyCycles int
@@ -246,7 +249,7 @@ func (m *RepoManager) Add(path string) error {
 	linearTriggerPoller, linearTriggerConfig := m.loadLinearTriggerPoller(path, project, m.globalStore, m.globalGateway)
 
 	// Load per-repo TOML overrides once and derive effective config values.
-	autoAdvance, autoReadinessReview, maxReviewFixCycles, selfFixMaxLines, maxVerifyCycles, plannerProfiles, plannerDraftMode, sdkCfg, resourceControls, err := m.resolveRepoConfig(path)
+	autoAdvance, autoReadinessReview, autoCreatePR, maxReviewFixCycles, selfFixMaxLines, maxVerifyCycles, plannerProfiles, plannerDraftMode, sdkCfg, resourceControls, err := m.resolveRepoConfig(path)
 	if err != nil {
 		return err
 	}
@@ -273,6 +276,7 @@ func (m *RepoManager) Add(path string) error {
 		Path:                       path,
 		Project:                    project,
 		Store:                      m.globalStore,
+		AutoCreatePR:               autoCreatePR,
 		SignalGateway:              m.globalGateway,
 		SignalsDir:                 signalsDir,
 		Processor:                  proc,
@@ -490,9 +494,10 @@ func (m *RepoManager) Get(path string) (RepoEntry, error) {
 // daemon-level defaults for the other fields.
 // SDK limits default to config.DefaultConfig().SDK values when absent from the TOML file.
 // Resource controls default to the normal/no-op profile when [resources] is absent.
-func (m *RepoManager) resolveRepoConfig(path string) (autoAdvance bool, autoReadinessReview bool, maxReviewFixCycles int, selfFixMaxLines int, maxVerifyCycles int, plannerProfiles []string, plannerDraftMode bool, sdkCfg config.SDKConfig, resourceControls config.ResolvedResourceControls, err error) {
+func (m *RepoManager) resolveRepoConfig(path string) (autoAdvance bool, autoReadinessReview bool, autoCreatePR bool, maxReviewFixCycles int, selfFixMaxLines int, maxVerifyCycles int, plannerProfiles []string, plannerDraftMode bool, sdkCfg config.SDKConfig, resourceControls config.ResolvedResourceControls, err error) {
 	autoAdvance = m.autoAdvance
 	autoReadinessReview = m.autoReadinessReview
+	autoCreatePR = m.autoCreatePR
 	maxReviewFixCycles = m.maxReviewFixCycles
 	selfFixMaxLines = m.readinessSelfFixMaxLines
 	maxVerifyCycles = m.readinessMaxVerifyCycles
@@ -514,6 +519,9 @@ func (m *RepoManager) resolveRepoConfig(path string) (autoAdvance bool, autoRead
 	}
 	if result.AutoReadinessReview != nil {
 		autoReadinessReview = *result.AutoReadinessReview
+	}
+	if result.AutoCreatePR != nil {
+		autoCreatePR = *result.AutoCreatePR
 	}
 	if result.MaxReviewFixCycles != nil {
 		if *result.MaxReviewFixCycles >= 0 {
