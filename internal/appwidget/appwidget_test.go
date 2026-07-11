@@ -34,7 +34,8 @@ func TestWidgetResourceIsSelfContained(t *testing.T) {
 	content, ok := contents[0].(mcp.TextResourceContents)
 	require.True(t, ok)
 	assert.Equal(t, ResourceMIMEType(), content.MIMEType)
-	assert.Contains(t, content.Text, `<div id="kasmos-monitor-root"></div>`)
+	assert.Contains(t, content.Text, `<div id="root"></div>`)
+	assert.Contains(t, content.Text, `getElementById("root")`)
 	assert.Contains(t, content.Text, "<style>")
 	assert.Contains(t, content.Text, `<script type="module">`)
 	for _, forbidden := range []string{`src="http`, `href="http`, "@import"} {

@@ -20,7 +20,7 @@ func ResourceMIMEType() string {
 // WidgetHTML returns the fully inlined widget document.
 func WidgetHTML() string {
 	js, css := webassets.MonitorBundle()
-	return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><div id="kasmos-monitor-root"></div><style>` + css + `</style><script type="module">` + js + `</script></body></html>`
+	return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><div id="root"></div><style>` + css + `</style><script type="module">` + js + `</script></body></html>`
 }
 
 const previewShim = `<script>

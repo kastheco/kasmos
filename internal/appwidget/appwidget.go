@@ -35,6 +35,10 @@ func RegisterWithRouting(srv *server.MCPServer, rc routing.RegisterConfig, store
 	srv.AddResource(mcp.NewResource(WidgetURI, "kasmos monitor", mcp.WithMIMEType(ResourceMIMEType())), resourceHandler)
 	srv.AddTool(mcp.NewTool("open_monitor",
 		mcp.WithDescription("open the live kasmos orchestration monitor"),
+		mcp.WithReadOnlyHintAnnotation(true),
+		mcp.WithDestructiveHintAnnotation(false),
+		mcp.WithIdempotentHintAnnotation(true),
+		mcp.WithOpenWorldHintAnnotation(false),
 		mcp.WithString("project", mcp.Description("target project name (required in multi-repo mode)")),
 		mcp.WithString("task", mcp.Description("optional task filename to focus")),
 		withToolMeta(map[string]any{

@@ -45,7 +45,7 @@ kas monitor widget --out preview.html
 
 ## authority boundary
 
-The widget is read-only. `open_monitor` is the only MCP tool the widget can call. Its action buttons do not invoke lifecycle transitions or mutate Kasmos state; each sends a follow-up message into the conversation instead.
+The widget is read-only. `open_monitor` is the only MCP tool the widget can call, and its MCP descriptor explicitly marks it read-only, non-destructive, idempotent, and closed-world so compatible hosts do not gate polling as a mutation. Its action buttons do not invoke lifecycle transitions or mutate Kasmos state; each sends a follow-up message into the conversation instead.
 
 This keeps the `coordinate-kasmos` approval gate in authority. The coordinating agent must still obtain the required approval before `implement_start`, merges, pushes, or destructive operations. Users can verify this boundary by observing that a widget action creates a chat request for the agent rather than directly changing task state.
 

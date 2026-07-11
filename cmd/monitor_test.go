@@ -33,7 +33,7 @@ func TestMonitorWidgetWritesPreview(t *testing.T) {
 	require.NoError(t, cmd.Execute())
 	content, err := os.ReadFile(outPath)
 	require.NoError(t, err)
-	assert.Contains(t, string(content), "kasmos-monitor-root")
+	assert.Contains(t, string(content), `id="root"`)
 	assert.Contains(t, string(content), "callTool:async function")
 }
 

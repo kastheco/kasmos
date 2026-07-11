@@ -113,6 +113,12 @@ func mcpToolsList(t *testing.T, h http.Handler) []string {
 type mcpToolDescriptor struct {
 	Name        string         `json:"name"`
 	Meta        map[string]any `json:"_meta"`
+	Annotations struct {
+		ReadOnlyHint    *bool `json:"readOnlyHint"`
+		DestructiveHint *bool `json:"destructiveHint"`
+		IdempotentHint  *bool `json:"idempotentHint"`
+		OpenWorldHint   *bool `json:"openWorldHint"`
+	} `json:"annotations"`
 	InputSchema struct {
 		Properties map[string]any `json:"properties"`
 		Required   []string       `json:"required"`
@@ -135,6 +141,14 @@ func TestConfiguredMCPServersRegisterWidgetTool(t *testing.T) {
 					widgetTools++
 					assert.Equal(t, "open_monitor", tool.Name)
 					assert.Equal(t, appwidget.WidgetURI, tool.Meta["openai/outputTemplate"])
+					require.NotNil(t, tool.Annotations.ReadOnlyHint)
+					assert.True(t, *tool.Annotations.ReadOnlyHint)
+					require.NotNil(t, tool.Annotations.DestructiveHint)
+					assert.False(t, *tool.Annotations.DestructiveHint)
+					require.NotNil(t, tool.Annotations.IdempotentHint)
+					assert.True(t, *tool.Annotations.IdempotentHint)
+					require.NotNil(t, tool.Annotations.OpenWorldHint)
+					assert.False(t, *tool.Annotations.OpenWorldHint)
 				}
 			}
 			assert.Equal(t, 1, widgetTools)
