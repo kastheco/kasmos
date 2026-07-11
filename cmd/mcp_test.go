@@ -13,6 +13,7 @@ import (
 	"github.com/kastheco/kasmos/config/taskstore"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 )
 
 func TestMCPCmd_Exists(t *testing.T) {
@@ -87,6 +88,29 @@ func TestNewConfiguredMCPServer_RegistersSymbolsTool(t *testing.T) {
 	assert.Contains(t, names, "grep")
 	assert.Contains(t, names, "read_file")
 	assert.Contains(t, names, "live_status")
+}
+
+func TestMonitorSkillToolBudget_NamesRegisteredTools(t *testing.T) {
+	skill, err := os.ReadFile(filepath.Join("..", "integrations", "codex", "skills", "monitor-kasmos-task", "SKILL.md"))
+	require.NoError(t, err)
+	_, rest, found := strings.Cut(string(skill), "```yaml")
+	require.True(t, found, "SKILL.md must contain a ```yaml contract-pin block")
+	body, _, found := strings.Cut(rest, "```")
+	require.True(t, found, "contract-pin block must be closed")
+	var pin struct {
+		IdleTools       []string `yaml:"idle_tools"`
+		EscalationTools []string `yaml:"escalation_tools"`
+	}
+	require.NoError(t, yaml.Unmarshal([]byte(body), &pin))
+
+	srv, err := newConfiguredMCPServer(nil, nil, nil, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, srv.Close()) })
+
+	names := mcpToolsList(t, srv.Handler())
+	for _, tool := range append(pin.IdleTools, pin.EscalationTools...) {
+		assert.Containsf(t, names, tool, "monitor-kasmos-task names %q, which the MCP server does not register", tool)
+	}
 }
 
 // makeTempGitRepo creates a temp dir with a .git marker directory so

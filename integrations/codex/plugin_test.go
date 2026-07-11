@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/kastheco/kasmos/internal/livestatus"
 	"github.com/kastheco/kasmos/internal/mcpclient"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -67,22 +68,43 @@ func TestPluginBundleContract(t *testing.T) {
 		assert.Equal(t, mcpclient.SharedEndpointURL, server.URL)
 	})
 
-	t.Run("coordination skill is valid and synchronized", func(t *testing.T) {
+	bundledSkills := []string{"coordinate-kasmos", "monitor-kasmos-task"}
+
+	t.Run("bundled skills are valid and synchronized", func(t *testing.T) {
 		var manifest struct {
 			Skills string `json:"skills"`
 		}
 		readJSON(t, ".codex-plugin/plugin.json", &manifest)
-		skillPath := filepath.Join(manifest.Skills, "coordinate-kasmos", "SKILL.md")
-		codexSkill, err := os.ReadFile(skillPath)
+
+		for _, skill := range bundledSkills {
+			t.Run(skill, func(t *testing.T) {
+				for _, file := range []string{"SKILL.md", filepath.Join("agents", "openai.yaml")} {
+					codexBytes, err := os.ReadFile(filepath.Join(manifest.Skills, skill, file))
+					require.NoError(t, err)
+					openclawBytes, err := os.ReadFile(filepath.Join("..", "openclaw", "skills", skill, file))
+					require.NoError(t, err)
+					assert.Truef(t, bytes.Equal(codexBytes, openclawBytes),
+						"Codex and OpenClaw copies of %s/%s must be byte-identical", skill, file)
+				}
+
+				skillBytes, err := os.ReadFile(filepath.Join(manifest.Skills, skill, "SKILL.md"))
+				require.NoError(t, err)
+				frontmatter := parseFrontmatter(t, skillBytes)
+				assert.Equal(t, skill, frontmatter.Name)
+				assert.NotEmpty(t, frontmatter.Description)
+			})
+		}
+	})
+
+	t.Run("monitor skill pins the live-status contract", func(t *testing.T) {
+		skillBytes, err := os.ReadFile(filepath.Join("skills", "monitor-kasmos-task", "SKILL.md"))
 		require.NoError(t, err)
 
-		frontmatter := parseFrontmatter(t, codexSkill)
-		assert.Equal(t, "coordinate-kasmos", frontmatter.Name)
-		assert.NotEmpty(t, frontmatter.Description)
-
-		openclawSkill, err := os.ReadFile("../openclaw/skills/coordinate-kasmos/SKILL.md")
-		require.NoError(t, err)
-		assert.True(t, bytes.Equal(codexSkill, openclawSkill), "Codex and OpenClaw coordination skills must be byte-identical")
+		pin := monitorSkillPin(t, skillBytes)
+		assert.Equal(t, livestatus.SchemaVersion, pin.LiveStatusSchemaVersion)
+		assert.ElementsMatch(t, []string{"live_status", "task_list"}, pin.IdleTools)
+		assert.Contains(t, string(skillBytes), "## Retirement")
+		assert.Regexp(t, `(?s)## Retirement.*monitor`, string(skillBytes))
 	})
 
 	t.Run("marketplace names the plugin and its source", func(t *testing.T) {
@@ -112,6 +134,27 @@ func TestPluginBundleContract(t *testing.T) {
 		require.NoError(t, err)
 		assert.False(t, info.IsDir())
 	})
+}
+
+// monitorSkillPin extracts the first ```yaml fenced block from SKILL.md.
+func monitorSkillPin(t *testing.T, skill []byte) struct {
+	LiveStatusSchemaVersion int      `yaml:"live_status_schema_version"`
+	IdleTools               []string `yaml:"idle_tools"`
+	EscalationTools         []string `yaml:"escalation_tools"`
+} {
+	t.Helper()
+	_, rest, found := strings.Cut(string(skill), "```yaml")
+	require.True(t, found, "SKILL.md must contain a ```yaml contract-pin block")
+	body, _, found := strings.Cut(rest, "```")
+	require.True(t, found, "contract-pin block must be closed")
+
+	var pin struct {
+		LiveStatusSchemaVersion int      `yaml:"live_status_schema_version"`
+		IdleTools               []string `yaml:"idle_tools"`
+		EscalationTools         []string `yaml:"escalation_tools"`
+	}
+	require.NoError(t, yaml.Unmarshal([]byte(body), &pin))
+	return pin
 }
 
 func readJSON(t *testing.T, path string, target any) {
