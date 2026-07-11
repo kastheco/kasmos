@@ -205,6 +205,26 @@ type SpawnMasterAction struct {
 func (SpawnMasterAction) Kind() string  { return "spawn_master" }
 func (SpawnMasterAction) sealedAction() {}
 
+type RecordVerificationAction struct {
+	PlanFile string
+	SHA      string
+	BaseSHA  string
+	By       string
+}
+
+func (RecordVerificationAction) Kind() string  { return "record_verification" }
+func (RecordVerificationAction) sealedAction() {}
+
+type StaleVerificationAction struct {
+	PlanFile    string
+	ReviewedSHA string
+	CurrentSHA  string
+	Reason      string
+}
+
+func (StaleVerificationAction) Kind() string  { return "stale_verification" }
+func (StaleVerificationAction) sealedAction() {}
+
 // VerifyApprovedAction is emitted when a VerifyApproved FSM signal is
 // processed (verifying → done). It signals that the verification phase passed
 // and the task is done. CreatePRAction is emitted immediately after when

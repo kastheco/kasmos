@@ -2,6 +2,7 @@ package loop
 
 import (
 	"fmt"
+	"log"
 	"strings"
 
 	"github.com/kastheco/kasmos/config/taskfsm"
@@ -10,6 +11,7 @@ import (
 	"github.com/kastheco/kasmos/orchestration"
 	prsvc "github.com/kastheco/kasmos/orchestration/pr"
 	"github.com/kastheco/kasmos/session"
+	gitpkg "github.com/kastheco/kasmos/session/git"
 )
 
 // plannerDraftAgg tracks aggregation state for one plan file in a multi-planner run.
@@ -88,6 +90,11 @@ type ProcessorConfig struct {
 	// When true, a reviewer approval (non-master origin) is intercepted and converted
 	// into a SpawnMasterAction instead of flowing directly to ReviewApprovedAction.
 	AutoReadinessReview bool
+	// HeadSHA resolves the live HEAD SHA of a task branch. When AutoReadinessReview
+	// is true and this is nil, the gate fails closed.
+	HeadSHA func(branch string) (string, error)
+	// MergeBaseSHA resolves the merge-base of a task branch.
+	MergeBaseSHA func(branch string) (string, error)
 	// PlannerProfiles is the ordered list of agent profile names that should
 	// be spawned in parallel when PlannerDraftMode is true. Each entry must
 	// reference a configured [agents.<profile>] section. When empty, the
@@ -118,6 +125,45 @@ type ProcessorConfig struct {
 	// non-empty it is attached to the FSM so hooks fire after every successful
 	// state write.
 	Hooks *taskfsm.HookRegistry
+}
+
+// bindVerification resolves live HEAD for the task branch and decides whether
+// an approval may be admitted. by is empty when the approval must be rejected.
+func (p *Processor) bindVerification(planFile, origin, reviewedSHA string) (rec RecordVerificationAction, stale StaleVerificationAction, ok bool) {
+	rec.PlanFile = planFile
+	stale = StaleVerificationAction{PlanFile: planFile, ReviewedSHA: reviewedSHA}
+	entry, _ := p.taskEntry(planFile)
+	if p.config.HeadSHA == nil {
+		stale.Reason = "unbound_verification: head resolver unavailable"
+		return rec, stale, false
+	}
+	head, err := p.config.HeadSHA(entry.Branch)
+	if err != nil {
+		stale.Reason = fmt.Sprintf("head_unresolvable: %v", err)
+		return rec, stale, false
+	}
+	stale.CurrentSHA = head
+	if origin == "operator" || origin == "force_promoted" || origin == "auto" {
+		rec.SHA, rec.By = head, origin
+	} else {
+		if reviewedSHA == "" {
+			stale.Reason = "unbound_master_approval: master approved without reviewed_sha"
+			return rec, stale, false
+		}
+		if !strings.EqualFold(reviewedSHA, head) {
+			stale.Reason = fmt.Sprintf("stale_master_approval: master reviewed %s but head is %s", gitpkg.ShortSHA(reviewedSHA), gitpkg.ShortSHA(head))
+			return rec, stale, false
+		}
+		rec.SHA, rec.By = head, "master"
+	}
+	if p.config.MergeBaseSHA != nil {
+		if base, err := p.config.MergeBaseSHA(entry.Branch); err == nil {
+			rec.BaseSHA = base
+		} else {
+			log.Printf("resolve verification merge-base for %s: %v", planFile, err)
+		}
+	}
+	return rec, stale, true
 }
 
 // Processor converts signal scan results into typed Action values without
@@ -283,11 +329,34 @@ func (p *Processor) ProcessFSMSignals(signals []taskfsm.Signal) []Action {
 		// has already been applied by the signal's originator (e.g. the HTTP
 		// admin handler) for the original event, so rewriting the event here
 		// would emit side effects inconsistent with the actual persisted state.
+		var pendingRecord *RecordVerificationAction
+		if sig.Event == taskfsm.VerifyApproved && p.config.AutoReadinessReview {
+			origin := sig.Origin
+			if sig.PreApplied && origin == "" && sig.ReviewedSHA == "" {
+				origin = "operator"
+			}
+			rec, stale, ok := p.bindVerification(sig.TaskFile, origin, sig.ReviewedSHA)
+			if !ok {
+				p.setGatewaySignalOutcome(sig.GatewayEntryID, taskstore.SignalFailed, stale.Reason)
+				actions = append(actions, stale,
+					PausePlanAgentAction{PlanFile: sig.TaskFile, AgentType: session.AgentTypeMaster},
+					SpawnMasterAction{PlanFile: sig.TaskFile})
+				continue
+			}
+			pendingRecord = &rec
+		}
+
 		eventToApply := sig.Event
 		forcePromotedVerify := false
 		if sig.Event == taskfsm.VerifyFailed && !sig.PreApplied && p.shouldForcePromoteVerify(sig.TaskFile) {
 			eventToApply = taskfsm.VerifyApproved
 			forcePromotedVerify = true
+			rec, stale, ok := p.bindVerification(sig.TaskFile, "force_promoted", "")
+			if !ok {
+				p.setGatewaySignalOutcome(sig.GatewayEntryID, taskstore.SignalFailed, stale.Reason)
+				continue
+			}
+			pendingRecord = &rec
 		}
 
 		alreadyApplied := false
@@ -343,6 +412,9 @@ func (p *Processor) ProcessFSMSignals(signals []taskfsm.Signal) []Action {
 			// No readiness gate: chain verify_approved immediately so the task moves
 			// from verifying → done inside the processor (single FSM driver).
 			if err := p.fsm.Transition(sig.TaskFile, taskfsm.VerifyApproved); err == nil {
+				if rec, _, ok := p.bindVerification(sig.TaskFile, "auto", ""); ok {
+					actions = append(actions, rec)
+				}
 				actions = append(actions, VerifyApprovedAction{
 					PlanFile:   sig.TaskFile,
 					ReviewBody: sig.Body,
@@ -362,6 +434,9 @@ func (p *Processor) ProcessFSMSignals(signals []taskfsm.Signal) []Action {
 		case taskfsm.VerifyApproved:
 			// VerifyApproved transitions verifying → done (emitted by master agent),
 			// or synthesized locally when the readiness verify-loop cap is reached.
+			if pendingRecord != nil {
+				actions = append(actions, *pendingRecord)
+			}
 			actions = append(actions, VerifyApprovedAction{
 				PlanFile:      sig.TaskFile,
 				ReviewBody:    sig.Body,

@@ -657,9 +657,12 @@ func TestProcessor_VerifyApprovedDroppedOutsideVerifyingStatus(t *testing.T) {
 		Branch:   "plan/my-plan",
 	})
 
-	p := NewProcessor(ProcessorConfig{Store: store, Project: "test", AutoReadinessReview: true})
+	p := NewProcessor(ProcessorConfig{
+		Store: store, Project: "test", AutoReadinessReview: true,
+		HeadSHA: func(string) (string, error) { return "abcdef1234567890", nil },
+	})
 	signals := []taskfsm.Signal{
-		{Event: taskfsm.VerifyApproved, TaskFile: "my-plan.md", Body: "ready"},
+		{Event: taskfsm.VerifyApproved, TaskFile: "my-plan.md", Body: "ready", ReviewedSHA: "abcdef1234567890"},
 	}
 
 	actions := p.ProcessFSMSignals(signals)
@@ -678,9 +681,12 @@ func TestProcessor_VerifyApprovedProcessedInVerifyingStatus(t *testing.T) {
 		},
 	})
 
-	p := NewProcessor(ProcessorConfig{Store: store, Project: "test", AutoReadinessReview: true})
+	p := NewProcessor(ProcessorConfig{
+		Store: store, Project: "test", AutoReadinessReview: true,
+		HeadSHA: func(string) (string, error) { return "abcdef1234567890", nil },
+	})
 	signals := []taskfsm.Signal{
-		{Event: taskfsm.VerifyApproved, TaskFile: "my-plan.md", Body: "ready"},
+		{Event: taskfsm.VerifyApproved, TaskFile: "my-plan.md", Body: "ready", ReviewedSHA: "abcdef1234567890"},
 	}
 
 	actions := p.ProcessFSMSignals(signals)
