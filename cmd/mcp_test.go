@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/kastheco/kasmos/config/taskstore"
+	"github.com/kastheco/kasmos/internal/appwidget"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -110,11 +111,35 @@ func mcpToolsList(t *testing.T, h http.Handler) []string {
 }
 
 type mcpToolDescriptor struct {
-	Name        string `json:"name"`
+	Name        string         `json:"name"`
+	Meta        map[string]any `json:"_meta"`
 	InputSchema struct {
 		Properties map[string]any `json:"properties"`
 		Required   []string       `json:"required"`
 	} `json:"inputSchema"`
+}
+
+func TestConfiguredMCPServersRegisterWidgetTool(t *testing.T) {
+	tests := map[string][]string{
+		"single root": {makeTempGitRepo(t, "single")},
+		"multi root":  {makeTempGitRepo(t, "alpha-widget"), makeTempGitRepo(t, "beta-widget")},
+	}
+	for name, roots := range tests {
+		t.Run(name, func(t *testing.T) {
+			srv, err := newConfiguredMCPServer(nil, nil, nil, roots)
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, srv.Close()) })
+			var widgetTools int
+			for _, tool := range mcpToolsListDetails(t, srv.Handler()) {
+				if accessible, _ := tool.Meta["openai/widgetAccessible"].(bool); accessible {
+					widgetTools++
+					assert.Equal(t, "open_monitor", tool.Name)
+					assert.Equal(t, appwidget.WidgetURI, tool.Meta["openai/outputTemplate"])
+				}
+			}
+			assert.Equal(t, 1, widgetTools)
+		})
+	}
 }
 
 func mcpToolsListDetails(t *testing.T, h http.Handler) []mcpToolDescriptor {

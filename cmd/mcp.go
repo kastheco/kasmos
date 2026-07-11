@@ -10,6 +10,7 @@ import (
 
 	"github.com/kastheco/kasmos/config"
 	"github.com/kastheco/kasmos/config/taskstore"
+	"github.com/kastheco/kasmos/internal/appwidget"
 	"github.com/kastheco/kasmos/internal/mcpserver"
 	"github.com/kastheco/kasmos/internal/mcpserver/cache"
 	"github.com/kastheco/kasmos/internal/mcpserver/docstools"
@@ -225,6 +226,7 @@ func newConfiguredMCPServerSingleRoot(mcpSrv *mcpserver.Server, sharedDB *sql.DB
 		daemonSocketPath(),
 	)
 	statustools.RegisterToolsWithRouting(mcpSrv.MCPServer(), routingConfig, mcpSrv.Store(), daemonSocketPath())
+	appwidget.RegisterWithRouting(mcpSrv.MCPServer(), routingConfig, mcpSrv.Store(), daemonSocketPath())
 	return mcpSrv, nil
 }
 
@@ -328,5 +330,6 @@ func newConfiguredMCPServerMultiRoot(mcpSrv *mcpserver.Server, repoRoots []strin
 		daemonSocketPath(),
 	)
 	statustools.RegisterToolsWithRouting(mcpSrv.MCPServer(), routingConfig, mcpSrv.Store(), daemonSocketPath())
+	appwidget.RegisterWithRouting(mcpSrv.MCPServer(), routingConfig, mcpSrv.Store(), daemonSocketPath())
 	return mcpSrv, nil
 }

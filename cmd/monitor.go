@@ -7,9 +7,12 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/kastheco/kasmos/daemon/api"
+	"github.com/kastheco/kasmos/internal/appwidget"
 	"github.com/spf13/cobra"
 )
 
@@ -46,7 +49,29 @@ raw JSON suitable for piping to jq.`,
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "output raw JSON event stream (for piping to jq)")
 
 	cmd.AddCommand(newMonitorStatusCmd(&socketPath))
+	cmd.AddCommand(newMonitorWidgetCmd())
 
+	return cmd
+}
+
+func newMonitorWidgetCmd() *cobra.Command {
+	var outPath string
+	cmd := &cobra.Command{
+		Use:   "widget",
+		Short: "write a standalone monitor widget preview",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			path, err := filepath.Abs(outPath)
+			if err != nil {
+				return fmt.Errorf("resolve output path: %w", err)
+			}
+			if err := os.WriteFile(path, []byte(appwidget.PreviewHTML()), 0o644); err != nil {
+				return fmt.Errorf("write widget preview: %w", err)
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "%s\nopen this in a browser with `kas serve` running\n", path)
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&outPath, "out", "./kasmos-monitor-preview.html", "output html path")
 	return cmd
 }
 

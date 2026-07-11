@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net"
 	"net/http"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -22,6 +24,17 @@ func startMonitorTestDaemon(t *testing.T, handler http.Handler) string {
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(func() { _ = server.Close() })
 	return socket
+}
+
+func TestMonitorWidgetWritesPreview(t *testing.T) {
+	outPath := filepath.Join(t.TempDir(), "preview.html")
+	cmd := NewMonitorCmd()
+	cmd.SetArgs([]string{"widget", "--out", outPath})
+	require.NoError(t, cmd.Execute())
+	content, err := os.ReadFile(outPath)
+	require.NoError(t, err)
+	assert.Contains(t, string(content), "kasmos-monitor-root")
+	assert.Contains(t, string(content), "callTool:async function")
 }
 
 func TestMonitorCmd_HasSubcommands(t *testing.T) {

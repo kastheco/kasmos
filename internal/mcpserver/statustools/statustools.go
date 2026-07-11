@@ -73,7 +73,7 @@ func makeLiveStatusHandler(rc routing.RegisterConfig, store taskstore.Store, soc
 			})
 		}
 
-		heartbeat, agents := daemonStatus(socketPath, project)
+		heartbeat, agents := DaemonStatus(socketPath, project)
 		out := livestatus.Assemble(livestatus.Input{
 			Project: project,
 			Now:     time.Now(),
@@ -90,7 +90,8 @@ func makeLiveStatusHandler(rc routing.RegisterConfig, store taskstore.Store, soc
 	}
 }
 
-func daemonStatus(socketPath, project string) (livestatus.DaemonHeartbeat, []livestatus.AgentInput) {
+// DaemonStatus returns the daemon heartbeat and project agents over its Unix socket.
+func DaemonStatus(socketPath, project string) (livestatus.DaemonHeartbeat, []livestatus.AgentInput) {
 	client := &http.Client{
 		Transport: &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 			return (&net.Dialer{}).DialContext(ctx, "unix", socketPath)
@@ -116,7 +117,8 @@ func daemonStatus(socketPath, project string) (livestatus.DaemonHeartbeat, []liv
 		agents = append(agents, livestatus.AgentInput{
 			Task: instance.Plan, Role: instance.Role, Wave: instance.WaveNumber,
 			Ready: instance.Ready, Active: instance.Active, Loading: instance.Loading,
-			HealthReason: instance.HealthReason,
+			HealthReason: instance.HealthReason, Worktree: instance.Worktree, Branch: instance.Branch,
+			TaskNumber: instance.TaskNumber, LastActivity: instance.LastActivity, Paused: instance.Paused,
 		})
 	}
 	return heartbeat, agents
