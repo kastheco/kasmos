@@ -332,14 +332,14 @@ kas task recover my-feature --action verify-failed --feedback "spec section 3 is
 | `review-approved` | `review_approved` | |
 | `review-changes` | `review_changes_requested` | requires `--feedback` |
 | `advance-review-cycle` | `review_changes_requested` | requires `--feedback`; alias for `review-changes` |
-| `verify-approved` | `verify_approved` | only valid while task is in `verifying`; carries `origin: operator` and binds approval to live HEAD |
+| `verify-approved` | `verify_approved` | only valid while task is in `verifying`; resolves and submits both the live task HEAD and default-branch SHA |
 | `verify-failed` | `verify_failed` | only valid while task is in `verifying` status; requires `--feedback` |
 | `advance-wave` | `advance_wave` | advance a stuck multi-wave task to the next wave |
 | `retry-wave` | `retry_wave` | replace stale wave agents and re-run every unresolved task in the current wave; completed tasks stay complete |
 
 `verify-approved` and `verify-failed` are the manual recovery path for the master agent gate. Use them when the master agent session ended before it could emit a signal. The `kas status` command shows these hints automatically when a task is stuck in the `verifying` status.
 
-Unlike a master signal, `recover --action verify-approved` does not accept a caller-supplied reviewed SHA. It records operator origin and binds the approval to the branch's live HEAD at admission time.
+Unlike a raw master signal, `recover --action verify-approved` does not accept caller-supplied SHAs. It resolves the task HEAD and default-branch SHA locally, then submits the same two-SHA admission proof required from the master.
 
 Note: under normal operation with `readiness_max_verify_cycles` set, repeated `verify_failed` signals cause the daemon to automatically force-promote to `verify_approved` after the cap is reached — you do not need to intervene manually in that case.
 

@@ -3,6 +3,7 @@ package cmd
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -338,7 +339,31 @@ func executeTaskRecover(project, planFile, action, feedback string, store taskst
 	}
 	payload := feedback
 	if recoverAction.signalType == "verify_approved" {
-		payload = `{"origin":"operator"}`
+		entry, err := store.Get(project, planFile)
+		if err != nil {
+			return fmt.Errorf("load task for verification recovery: %w", err)
+		}
+		branch := entry.Branch
+		if branch == "" {
+			branch = git.TaskBranchFromFile(planFile)
+		}
+		repoRoot, err := resolveRepoRoot(".")
+		if err != nil {
+			return fmt.Errorf("resolve repository for verification recovery: %w", err)
+		}
+		head, err := git.BranchHeadSHA(repoRoot, branch)
+		if err != nil {
+			return fmt.Errorf("resolve verification recovery head: %w", err)
+		}
+		base, err := git.DefaultBranchHeadSHA(repoRoot)
+		if err != nil {
+			return fmt.Errorf("resolve verification recovery base: %w", err)
+		}
+		encoded, err := json.Marshal(map[string]string{"reviewed_sha": head, "reviewed_base_sha": base})
+		if err != nil {
+			return err
+		}
+		payload = string(encoded)
 	}
 	if err := executeSignalEmit(gateway, project, recoverAction.signalType, planFile, payload); err != nil {
 		return fmt.Errorf("queue recovery action %q for %s: %w", recoverAction.name, planFile, err)
@@ -629,12 +654,11 @@ func executeTaskMerge(repoRoot, project, planFile string, store taskstore.Store)
 		return fmt.Errorf("invalid repo root %q: %w", repoRoot, serr)
 	}
 
-	head, err := git.BranchHeadSHA(repoRoot, branch)
+	head, base, reason, err := git.ValidateVerification(repoRoot, branch, entry.VerifiedSHA, entry.VerifiedBaseSHA)
 	if err != nil {
-		return fmt.Errorf("resolve branch head for %s: %w", planFile, err)
+		return fmt.Errorf("validate verification for %s: %w", planFile, err)
 	}
-	if entry.VerifiedSHA == "" || !strings.EqualFold(entry.VerifiedSHA, head) {
-		reason := taskVerificationStaleReason(entry.VerifiedSHA, head)
+	if reason != "" {
 		if err := store.ClearVerification(project, planFile, reason); err != nil {
 			return err
 		}
@@ -647,7 +671,7 @@ func executeTaskMerge(repoRoot, project, planFile string, store taskstore.Store)
 	}
 
 	// Git merge first — only advance the FSM on success.
-	if err := git.MergeTaskBranch(repoRoot, branch); err != nil {
+	if err := git.MergeTaskBranchAtSHA(repoRoot, branch, head, base); err != nil {
 		return err
 	}
 
@@ -736,34 +760,6 @@ func executeTaskPR(repoRoot, project, planFile, title string, store taskstore.St
 		return "", err
 	}
 	planFile = resolveExistingTaskFilename(ps, planFile)
-	entry, err := store.Get(project, planFile)
-	if err != nil {
-		return "", fmt.Errorf("task not found: %s (%w)", planFile, err)
-	}
-	branch := entry.Branch
-	if branch == "" {
-		branch = git.TaskBranchFromFile(planFile)
-	}
-	if entry.PRURL == "" {
-		head, err := git.BranchHeadSHA(repoRoot, branch)
-		if err != nil {
-			_ = store.SetPRCreateOutcome(project, planFile, taskstore.PRCreateOutcome{State: string(pr.OutcomeBlocked), Error: err.Error(), AttemptedAt: time.Now().UTC()})
-			return "", fmt.Errorf("resolve branch head for %s: %w", planFile, err)
-		}
-		if entry.VerifiedSHA == "" || !strings.EqualFold(entry.VerifiedSHA, head) {
-			reason := taskVerificationStaleReason(entry.VerifiedSHA, head)
-			if err := store.ClearVerification(project, planFile, reason); err != nil {
-				return "", err
-			}
-			if taskstate.Status(entry.Status) == taskstate.StatusDone {
-				if err := newFSMByProject(project, store).Transition(planFile, taskfsm.VerificationStale); err != nil {
-					return "", err
-				}
-			}
-			return "", fmt.Errorf("verification stale: %s; re-verify before PR", reason)
-		}
-	}
-
 	res, err := pr.Ensure(context.Background(), store, pr.Request{
 		RepoPath: repoRoot,
 		Project:  project,

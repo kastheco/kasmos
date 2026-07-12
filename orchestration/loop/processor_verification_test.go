@@ -17,14 +17,14 @@ func verificationProcessor(t *testing.T, head func(string) (string, error)) (*Pr
 	t.Helper()
 	store := taskstore.NewTestStore(t)
 	require.NoError(t, store.Create("test", taskstore.TaskEntry{Filename: "plan", Status: taskstore.StatusVerifying, Branch: "plan/branch"}))
-	return NewProcessor(ProcessorConfig{Store: store, Project: "test", AutoReadinessReview: true, HeadSHA: head}), store
+	return NewProcessor(ProcessorConfig{Store: store, Project: "test", AutoReadinessReview: true, HeadSHA: head, MergeBaseSHA: testVerificationBase}), store
 }
 
 func TestProcessor_HEADBoundVerificationAdmission(t *testing.T) {
 	head := func(string) (string, error) { return verificationHead, nil }
 	t.Run("matching master approval", func(t *testing.T) {
 		p, store := verificationProcessor(t, head)
-		actions := p.ProcessFSMSignals([]taskfsm.Signal{{Event: taskfsm.VerifyApproved, TaskFile: "plan", Origin: "master", ReviewedSHA: verificationHead}})
+		actions := p.ProcessFSMSignals([]taskfsm.Signal{{Event: taskfsm.VerifyApproved, TaskFile: "plan", Origin: "master", ReviewedSHA: verificationHead, ReviewedBaseSHA: verificationHead}})
 		require.IsType(t, RecordVerificationAction{}, actions[0])
 		assert.Equal(t, "master", actions[0].(RecordVerificationAction).By)
 		require.IsType(t, VerifyApprovedAction{}, actions[1])
@@ -53,7 +53,7 @@ func TestProcessor_HEADBoundVerificationAdmission(t *testing.T) {
 
 	t.Run("operator approval binds head", func(t *testing.T) {
 		p, _ := verificationProcessor(t, head)
-		actions := p.ProcessFSMSignals([]taskfsm.Signal{{Event: taskfsm.VerifyApproved, TaskFile: "plan", Origin: "operator"}})
+		actions := p.ProcessFSMSignals([]taskfsm.Signal{{Event: taskfsm.VerifyApproved, TaskFile: "plan", Origin: "operator", ReviewedSHA: verificationHead, ReviewedBaseSHA: verificationHead}})
 		rec := actions[0].(RecordVerificationAction)
 		assert.Equal(t, "operator", rec.By)
 		assert.Equal(t, verificationHead, rec.SHA)
@@ -65,7 +65,7 @@ func TestProcessor_HEADBoundVerificationAdmission(t *testing.T) {
 	}{{"resolver error", func(string) (string, error) { return "", errors.New("git failed") }}, {"missing resolver", nil}} {
 		t.Run(tc.name, func(t *testing.T) {
 			p, store := verificationProcessor(t, tc.head)
-			actions := p.ProcessFSMSignals([]taskfsm.Signal{{Event: taskfsm.VerifyApproved, TaskFile: "plan", Origin: "master", ReviewedSHA: verificationHead}})
+			actions := p.ProcessFSMSignals([]taskfsm.Signal{{Event: taskfsm.VerifyApproved, TaskFile: "plan", Origin: "master", ReviewedSHA: verificationHead, ReviewedBaseSHA: verificationHead}})
 			require.Len(t, actions, 3)
 			entry, _ := store.Get("test", "plan")
 			assert.Equal(t, taskstore.StatusVerifying, entry.Status)
@@ -79,13 +79,14 @@ func TestProcessor_HEADBoundVerificationDerivesMissingBranch(t *testing.T) {
 	var resolvedBranch string
 	p := NewProcessor(ProcessorConfig{
 		Store: store, Project: "test", AutoReadinessReview: true,
+		MergeBaseSHA: testVerificationBase,
 		HeadSHA: func(branch string) (string, error) {
 			resolvedBranch = branch
 			return verificationHead, nil
 		},
 	})
 	actions := p.ProcessFSMSignals([]taskfsm.Signal{{
-		Event: taskfsm.VerifyApproved, TaskFile: "legacy-plan", Origin: "master", ReviewedSHA: verificationHead,
+		Event: taskfsm.VerifyApproved, TaskFile: "legacy-plan", Origin: "master", ReviewedSHA: verificationHead, ReviewedBaseSHA: verificationHead,
 	}})
 	require.NotEmpty(t, actions)
 	assert.Equal(t, "plan/legacy-plan", resolvedBranch)
@@ -97,7 +98,7 @@ func TestProcessor_HEADBoundVerificationAlternateAdmissions(t *testing.T) {
 	t.Run("readiness off self chain", func(t *testing.T) {
 		store := taskstore.NewTestStore(t)
 		require.NoError(t, store.Create("test", taskstore.TaskEntry{Filename: "plan", Status: taskstore.StatusReviewing, Branch: "plan/branch"}))
-		p := NewProcessor(ProcessorConfig{Store: store, Project: "test", HeadSHA: head})
+		p := NewProcessor(ProcessorConfig{Store: store, Project: "test", HeadSHA: head, MergeBaseSHA: testVerificationBase})
 		actions := p.ProcessFSMSignals([]taskfsm.Signal{{Event: taskfsm.ReviewApproved, TaskFile: "plan"}})
 		require.IsType(t, RecordVerificationAction{}, actions[1])
 		assert.Equal(t, "auto", actions[1].(RecordVerificationAction).By)
@@ -106,7 +107,7 @@ func TestProcessor_HEADBoundVerificationAlternateAdmissions(t *testing.T) {
 	t.Run("readiness off resolver failure stays verifying", func(t *testing.T) {
 		store := taskstore.NewTestStore(t)
 		require.NoError(t, store.Create("test", taskstore.TaskEntry{Filename: "plan", Status: taskstore.StatusReviewing, Branch: "plan/branch"}))
-		p := NewProcessor(ProcessorConfig{Store: store, Project: "test", HeadSHA: func(string) (string, error) { return "", errors.New("git failed") }})
+		p := NewProcessor(ProcessorConfig{Store: store, Project: "test", HeadSHA: func(string) (string, error) { return "", errors.New("git failed") }, MergeBaseSHA: testVerificationBase})
 		actions := p.ProcessFSMSignals([]taskfsm.Signal{{Event: taskfsm.ReviewApproved, TaskFile: "plan"}})
 		require.Len(t, actions, 4)
 		require.IsType(t, ReviewApprovedAction{}, actions[0])
@@ -120,8 +121,18 @@ func TestProcessor_HEADBoundVerificationAlternateAdmissions(t *testing.T) {
 	t.Run("pre-applied admin approval", func(t *testing.T) {
 		p, _ := verificationProcessor(t, head)
 		require.NoError(t, p.fsm.Transition("plan", taskfsm.VerifyApproved))
-		actions := p.ProcessFSMSignals([]taskfsm.Signal{{Event: taskfsm.VerifyApproved, TaskFile: "plan", PreApplied: true}})
+		actions := p.ProcessFSMSignals([]taskfsm.Signal{{Event: taskfsm.VerifyApproved, TaskFile: "plan", PreApplied: true, Origin: "operator", ReviewedSHA: verificationHead, ReviewedBaseSHA: verificationHead}})
 		assert.Equal(t, "operator", actions[0].(RecordVerificationAction).By)
+	})
+
+	t.Run("gateway pre-applied approval cannot bypass sha", func(t *testing.T) {
+		p, store := verificationProcessor(t, head)
+		require.NoError(t, p.fsm.Transition("plan", taskfsm.VerifyApproved))
+		actions := p.ProcessFSMSignals([]taskfsm.Signal{{Event: taskfsm.VerifyApproved, TaskFile: "plan", PreApplied: true, GatewayEntryID: 42}})
+		require.IsType(t, StaleVerificationAction{}, actions[0])
+		entry, err := store.Get("test", "plan")
+		require.NoError(t, err)
+		assert.Equal(t, taskstore.StatusDone, entry.Status, "processor action executor reopens the pre-applied task")
 	})
 
 	t.Run("force promotion", func(t *testing.T) {

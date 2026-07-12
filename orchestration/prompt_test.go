@@ -214,11 +214,14 @@ func TestBuildMasterReviewPrompt(t *testing.T) {
 func TestBuildMasterReviewPromptForRange(t *testing.T) {
 	baseSHA := "1111111111111111111111111111111111111111"
 	headSHA := "2222222222222222222222222222222222222222"
-	prompt := BuildMasterReviewPromptForRange("my-feature", "myproject", 80, 2, baseSHA, headSHA)
+	targetBaseSHA := "3333333333333333333333333333333333333333"
+	prompt := BuildMasterReviewPromptForRange("my-feature", "myproject", 80, 2, baseSHA, headSHA, targetBaseSHA)
 
 	assert.Contains(t, prompt, baseSHA)
 	assert.Contains(t, prompt, headSHA)
+	assert.Contains(t, prompt, targetBaseSHA)
 	assert.Contains(t, prompt, "reviewed_sha")
+	assert.Contains(t, prompt, "reviewed_base_sha")
 	assert.Contains(t, prompt, "Re-resolve `git rev-parse HEAD` after committing")
 	assert.Contains(t, prompt, "current primary platform documentation")
 	assert.NotContains(t, prompt, "reviewer already completed")

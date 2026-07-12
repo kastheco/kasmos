@@ -230,7 +230,8 @@ func newReviewFixHarness(t *testing.T, task taskstore.TaskEntry) (taskstore.Stor
 		SignalsDir: filepath.Join(repoDir, ".kasmos", "signals"),
 		Processor: loop.NewProcessor(loop.ProcessorConfig{
 			Store: store, Project: project, AutoReviewFix: true, MaxReviewFixCycles: 2,
-			HeadSHA: func(string) (string, error) { return "0123456789abcdef0123456789abcdef01234567", nil },
+			HeadSHA:      func(string) (string, error) { return "0123456789abcdef0123456789abcdef01234567", nil },
+			MergeBaseSHA: func(string) (string, error) { return "89abcdef0123456789abcdef0123456789abcdef", nil },
 		}),
 		SignalGateway: gw,
 	}

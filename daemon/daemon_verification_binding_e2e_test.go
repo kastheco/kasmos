@@ -81,6 +81,13 @@ func (f *verificationBindingE2EFixture) head(t *testing.T) string {
 	return sha
 }
 
+func (f *verificationBindingE2EFixture) base(t *testing.T) string {
+	t.Helper()
+	sha, err := gitpkg.DefaultBranchHeadSHA(f.repo)
+	require.NoError(t, err)
+	return sha
+}
+
 func (f *verificationBindingE2EFixture) commit(t *testing.T, message string) string {
 	t.Helper()
 	cmd := exec.Command("git", "-C", f.repo, "commit", "--allow-empty", "-m", message)
@@ -124,7 +131,7 @@ func TestDaemonVerificationBindingE2E_ApprovalRaceAndSelfFix(t *testing.T) {
 	t.Run("master self-fix must report post-fix head", func(t *testing.T) {
 		f := newVerificationBindingE2EFixture(t, taskstore.StatusVerifying, true)
 		z := f.commit(t, "master self fix")
-		f.signal(t, fmt.Sprintf(`{"origin":"master","reviewed_sha":%q}`, z))
+		f.signal(t, fmt.Sprintf(`{"origin":"master","reviewed_sha":%q,"reviewed_base_sha":%q}`, z, f.base(t)))
 		entry, err := f.store.Get(f.project, f.plan)
 		require.NoError(t, err)
 		assert.Equal(t, taskstore.StatusDone, entry.Status)
@@ -136,7 +143,7 @@ func TestDaemonVerificationBindingE2E_ApprovalRaceAndSelfFix(t *testing.T) {
 func TestDaemonVerificationBindingE2E_PostApprovalDriftAndPRGate(t *testing.T) {
 	f := newVerificationBindingE2EFixture(t, taskstore.StatusVerifying, true)
 	x := f.head(t)
-	f.signal(t, fmt.Sprintf(`{"origin":"master","reviewed_sha":%q}`, x))
+	f.signal(t, fmt.Sprintf(`{"origin":"master","reviewed_sha":%q,"reviewed_base_sha":%q}`, x, f.base(t)))
 	y := f.commit(t, "after approval")
 	f.d.tickRepo(context.Background(), f.entry)
 	entry, err := f.store.Get(f.project, f.plan)

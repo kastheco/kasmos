@@ -168,7 +168,7 @@ the `Claim` operation is a serializable transaction: it updates the row to `proc
 | `review_changes_requested` | reviewer | FSM transition → `implementing`, spawn fixer |
 | `planner_finished` | planner | legacy/manual FSM transition → `ready` |
 | `planner_draft_finished` | draft-mode planner | gateway-only planner draft aggregation; payload must be `{"planner_id":"<profile>"}` |
-| `verify_approved` | master agent / operator | FSM transition `verifying → done`. Master payloads carry `reviewed_sha`; operator recovery carries `origin`. **No loop-cap signal is ever written to the gateway.** |
+| `verify_approved` | master agent / manual recovery | FSM transition `verifying → done`. Gateway payloads carry `reviewed_sha` and `reviewed_base_sha`; manual recovery resolves and submits that same proof. **No loop-cap signal is ever written to the gateway.** |
 | `verify_failed` | master agent | FSM transition `verifying → implementing`, spawn fixer. when `readiness_max_verify_cycles` is reached, the processor consumes the `verify_failed` signal but applies the `verifying → done` transition instead — no new `verify_approved` signal row is created, and the original `verify_failed` row is still marked processed. callers distinguish the in-memory force-promotion via the `ForcePromoted` flag on the emitted `VerifyApprovedAction`. |
 
 > **architect completion:** the canonical internal event is `architect_finished`, but the persisted gateway signal wire name is `elaborator_finished` (a legacy alias preserved for compatibility). `kas signal emit architect_finished` is accepted and normalized to `elaborator_finished` transparently.
@@ -183,15 +183,16 @@ Terminal approval can enqueue the daemon's automatic PR action. PR creation and 
 
 ### verification approval admission
 
-Master approval is strict: a `verify_approved` payload must include `reviewed_sha`, and it is admitted only when that SHA still equals the branch's live HEAD. A mismatch rejects approval and keeps verification active. Operator and internal override paths carry an `origin` instead: `operator`, `force_promoted`, or `auto`. These paths bind approval to live HEAD at admission time. The task records `verified_by` as `master`, `operator`, `force_promoted`, or `auto`.
+Gateway approval is strict: a `verify_approved` payload must include `reviewed_sha` and `reviewed_base_sha`, and it is admitted only when both still equal the reviewed task HEAD and default-branch snapshot. A mismatch rejects approval and keeps verification active. Manual recovery resolves and submits the same bound payload; it does not receive privileged provenance merely because it came from the CLI or TUI. Internal `force_promoted` and `auto` admissions are synthesized in-process.
 
-Gateway payloads are agent-controlled, so they cannot establish operator or internal provenance. An `origin` value supplied through `signal_create` is not accepted as an override; gateway master approvals still require a matching `reviewed_sha`. Terminal and PR side effects stop if the verification record cannot be persisted.
+Gateway payloads are agent-controlled, so they cannot establish operator or internal provenance. An `origin` value supplied through `signal_create` is not accepted as an override; gateway master approvals still require matching head and base proofs. Terminal and PR side effects stop if the verification record cannot be persisted.
 
 Legacy or imported tasks without a stored branch use the canonical `plan/<task>` branch consistently for verification admission, drift detection, master startup, PR creation, and merge checks. Git/repository failures remain blocking errors; only a confirmed missing branch is treated as a deleted task branch.
 
+Verification binds both the task commit and the default-branch commit. A change to either invalidates approval. Merge and PR creation pass the reviewed task object ID into the final git operation, so a branch ref that moves after the initial check is rejected instead of being merged or pushed.
+
 ```json
-{"reviewed_sha":"<full-head-sha>"}
-{"origin":"operator"}
+{"reviewed_sha":"<full-head-sha>","reviewed_base_sha":"<default-branch-sha>"}
 ```
 
 Wave-processing outcomes are also emitted to the audit log and daemon event stream with structured detail. Successful all-complete waves report a success outcome, while blocked or failed waves report the blocking cause and any retry-generation metadata needed by operators.

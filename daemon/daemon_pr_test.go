@@ -104,7 +104,7 @@ func TestDaemon_CreatePRAction_NoBranch_EmitsEvent(t *testing.T) {
 	}
 }
 
-func TestDaemon_CreatePRAction_RecordedURLPersistsSkippedOutcome(t *testing.T) {
+func TestDaemon_CreatePRAction_UnverifiableRecordedURLPersistsBlockedOutcome(t *testing.T) {
 	t.Parallel()
 	b := api.NewEventBroadcaster()
 	defer b.Close()
@@ -121,13 +121,13 @@ func TestDaemon_CreatePRAction_RecordedURLPersistsSkippedOutcome(t *testing.T) {
 	require.NoError(t, d.executeAction(context.Background(), e, loop.CreatePRAction{PlanFile: planFile}))
 	select {
 	case ev := <-sub:
-		assert.Equal(t, "pr_create_skipped", ev.Kind)
-		assert.Equal(t, "pr already recorded", ev.Detail)
+		assert.Equal(t, "pr_create_failed", ev.Kind)
+		assert.Contains(t, ev.Detail, "branch")
 	case <-time.After(time.Second):
 		t.Fatal("timeout waiting for pr_create_skipped event")
 	}
 	entry, err := store.Get(project, planFile)
 	require.NoError(t, err)
-	assert.Equal(t, string(prsvc.OutcomeSkipped), entry.PRCreateState)
-	assert.Equal(t, "pr already recorded", entry.PRCreateError)
+	assert.Equal(t, string(prsvc.OutcomeBlocked), entry.PRCreateState)
+	assert.Contains(t, entry.PRCreateError, "branch")
 }

@@ -831,7 +831,7 @@ func TestExecuteTaskPR_TaskNotFound(t *testing.T) {
 	assert.Contains(t, err.Error(), "not found")
 }
 
-func TestExecuteTaskPR_NormalizesMarkdownSuffixAndReturnsRecordedURL(t *testing.T) {
+func TestExecuteTaskPR_NormalizesMarkdownSuffixAndRejectsUnverifiableRecordedURL(t *testing.T) {
 	store := taskstore.NewTestSQLiteStore(t)
 	project := "pr-recorded"
 	const wantURL = "https://example.test/pull/42"
@@ -842,9 +842,9 @@ func TestExecuteTaskPR_NormalizesMarkdownSuffixAndReturnsRecordedURL(t *testing.
 		PRURL:    wantURL,
 	}))
 
-	url, err := executeTaskPR(t.TempDir(), project, "recorded.md", "", store)
-	require.NoError(t, err)
-	assert.Equal(t, wantURL, url)
+	_, err := executeTaskPR(t.TempDir(), project, "recorded.md", "", store)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "branch head")
 }
 
 func TestExecuteTaskPR_BranchlessTaskReturnsBlockedReason(t *testing.T) {

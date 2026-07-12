@@ -20,13 +20,14 @@ var (
 )
 
 // PRState holds the current state of a GitHub pull request as returned by
-// `gh pr view --json url,reviewDecision,statusCheckRollup,isDraft,number`.
+// `gh pr view --json url,reviewDecision,statusCheckRollup,isDraft,number,headRefOid`.
 type PRState struct {
 	URL            string
 	ReviewDecision string
 	CheckStatus    string
 	IsDraft        bool
 	Number         int
+	HeadSHA        string
 }
 
 // ParsePRViewJSON parses the JSON output of `gh pr view --json ...` into a PRState.
@@ -38,8 +39,9 @@ func ParsePRViewJSON(data []byte) (PRState, error) {
 		StatusCheckRollup *struct {
 			State string `json:"state"`
 		} `json:"statusCheckRollup"`
-		IsDraft bool `json:"isDraft"`
-		Number  int  `json:"number"`
+		IsDraft bool   `json:"isDraft"`
+		Number  int    `json:"number"`
+		HeadSHA string `json:"headRefOid"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return PRState{}, fmt.Errorf("parse pr view json: %w", err)
@@ -49,6 +51,7 @@ func ParsePRViewJSON(data []byte) (PRState, error) {
 		ReviewDecision: raw.ReviewDecision,
 		IsDraft:        raw.IsDraft,
 		Number:         raw.Number,
+		HeadSHA:        raw.HeadSHA,
 	}
 	if raw.StatusCheckRollup != nil {
 		state.CheckStatus = raw.StatusCheckRollup.State
@@ -65,7 +68,7 @@ func ParsePRViewJSON(data []byte) (PRState, error) {
 // have been cleaned up after the plan completed.
 func (g *GitWorktree) QueryPRState() (PRState, error) {
 	out, err := ghOutput(g.repoPath, "pr", "view", g.branchName,
-		"--json", "url,reviewDecision,statusCheckRollup,isDraft,number")
+		"--json", "url,reviewDecision,statusCheckRollup,isDraft,number,headRefOid")
 	if err != nil {
 		if strings.Contains(err.Error(), "no pull requests found") {
 			return PRState{}, nil
@@ -179,11 +182,31 @@ func (g *GitWorktree) CreatePR(title, body string) error {
 	if err := g.requireCleanForPR(); err != nil {
 		return err
 	}
-	if err := g.Push(false); err != nil {
+	head, err := BranchHeadSHA(g.repoPath, g.branchName)
+	if err != nil {
+		return err
+	}
+	return g.CreatePRAtSHA(title, body, head)
+}
+
+// CreatePRAtSHA pushes exactly expectedSHA and refuses to create the PR if the
+// local task branch moved after verification.
+func (g *GitWorktree) CreatePRAtSHA(title, body, expectedSHA string) error {
+	if err := g.requireCleanForPR(); err != nil {
+		return err
+	}
+	current, err := BranchHeadSHA(g.repoPath, g.branchName)
+	if err != nil {
+		return err
+	}
+	if !strings.EqualFold(current, expectedSHA) {
+		return fmt.Errorf("branch %s moved after verification: expected %s, current %s", g.branchName, ShortSHA(expectedSHA), ShortSHA(current))
+	}
+	if _, err := g.runGitCommand(g.worktreePath, "push", "-u", "origin", expectedSHA+":refs/heads/"+g.branchName); err != nil {
 		return fmt.Errorf("failed to push branch: %w", err)
 	}
 
-	_, err := ghOutput(g.worktreePath, "pr", "create", "--title", title, "--body", body, "--head", g.branchName)
+	_, err = ghOutput(g.worktreePath, "pr", "create", "--title", title, "--body", body, "--head", g.branchName)
 	if err != nil {
 		if strings.Contains(err.Error(), "already exists") {
 			return fmt.Errorf("%w: %s", ErrPRAlreadyExists, err)

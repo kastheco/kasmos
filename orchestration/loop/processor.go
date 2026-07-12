@@ -2,7 +2,6 @@ package loop
 
 import (
 	"fmt"
-	"log"
 	"strings"
 
 	"github.com/kastheco/kasmos/config/taskfsm"
@@ -128,7 +127,7 @@ type ProcessorConfig struct {
 
 // bindVerification resolves live HEAD for the task branch and decides whether
 // an approval may be admitted. by is empty when the approval must be rejected.
-func (p *Processor) bindVerification(planFile, origin, reviewedSHA string) (rec RecordVerificationAction, stale StaleVerificationAction, ok bool) {
+func (p *Processor) bindVerification(planFile, origin, reviewedSHA, reviewedBaseSHA string) (rec RecordVerificationAction, stale StaleVerificationAction, ok bool) {
 	rec.PlanFile = planFile
 	stale = StaleVerificationAction{PlanFile: planFile, ReviewedSHA: reviewedSHA}
 	entry, _ := p.taskEntry(planFile)
@@ -146,7 +145,13 @@ func (p *Processor) bindVerification(planFile, origin, reviewedSHA string) (rec 
 		return rec, stale, false
 	}
 	stale.CurrentSHA = head
-	if origin == "operator" || origin == "force_promoted" || origin == "auto" {
+	if origin == "operator" {
+		if reviewedSHA == "" || !strings.EqualFold(reviewedSHA, head) {
+			stale.Reason = "unbound_operator_approval: operator approval requires current reviewed_sha"
+			return rec, stale, false
+		}
+		rec.SHA, rec.By = head, origin
+	} else if origin == "force_promoted" || origin == "auto" {
 		rec.SHA, rec.By = head, origin
 	} else {
 		if reviewedSHA == "" {
@@ -159,13 +164,26 @@ func (p *Processor) bindVerification(planFile, origin, reviewedSHA string) (rec 
 		}
 		rec.SHA, rec.By = head, "master"
 	}
-	if p.config.MergeBaseSHA != nil {
-		if base, err := p.config.MergeBaseSHA(branch); err == nil {
-			rec.BaseSHA = base
-		} else {
-			log.Printf("resolve verification merge-base for %s: %v", planFile, err)
+	if p.config.MergeBaseSHA == nil {
+		stale.Reason = "unbound_verification: default-base resolver unavailable"
+		return rec, stale, false
+	}
+	base, err := p.config.MergeBaseSHA(branch)
+	if err != nil || base == "" {
+		stale.Reason = fmt.Sprintf("base_unresolvable: %v", err)
+		return rec, stale, false
+	}
+	if origin != "force_promoted" && origin != "auto" {
+		if reviewedBaseSHA == "" {
+			stale.Reason = "unbound_master_approval: master approved without reviewed_base_sha"
+			return rec, stale, false
+		}
+		if !strings.EqualFold(reviewedBaseSHA, base) {
+			stale.Reason = fmt.Sprintf("stale_master_base: master reviewed base %s but default branch is %s", gitpkg.ShortSHA(reviewedBaseSHA), gitpkg.ShortSHA(base))
+			return rec, stale, false
 		}
 	}
+	rec.BaseSHA = base
 	return rec, stale, true
 }
 
@@ -348,10 +366,7 @@ func (p *Processor) ProcessFSMSignals(signals []taskfsm.Signal) []Action {
 			if sig.GatewayEntryID != 0 && origin != "master" {
 				origin = ""
 			}
-			if sig.PreApplied && origin == "" && sig.ReviewedSHA == "" {
-				origin = "operator"
-			}
-			rec, stale, ok := p.bindVerification(sig.TaskFile, origin, sig.ReviewedSHA)
+			rec, stale, ok := p.bindVerification(sig.TaskFile, origin, sig.ReviewedSHA, sig.ReviewedBaseSHA)
 			if !ok {
 				p.setGatewaySignalOutcome(sig.GatewayEntryID, taskstore.SignalFailed, stale.Reason)
 				actions = append(actions, stale,
@@ -367,7 +382,7 @@ func (p *Processor) ProcessFSMSignals(signals []taskfsm.Signal) []Action {
 		if sig.Event == taskfsm.VerifyFailed && !sig.PreApplied && p.shouldForcePromoteVerify(sig.TaskFile) {
 			eventToApply = taskfsm.VerifyApproved
 			forcePromotedVerify = true
-			rec, stale, ok := p.bindVerification(sig.TaskFile, "force_promoted", "")
+			rec, stale, ok := p.bindVerification(sig.TaskFile, "force_promoted", "", "")
 			if !ok {
 				p.setGatewaySignalOutcome(sig.GatewayEntryID, taskstore.SignalFailed, stale.Reason)
 				continue
@@ -427,7 +442,7 @@ func (p *Processor) ProcessFSMSignals(signals []taskfsm.Signal) []Action {
 			}
 			// No readiness gate: chain verify_approved immediately so the task moves
 			// from verifying → done inside the processor (single FSM driver).
-			rec, stale, ok := p.bindVerification(sig.TaskFile, "auto", "")
+			rec, stale, ok := p.bindVerification(sig.TaskFile, "auto", "", "")
 			if !ok {
 				p.setGatewaySignalOutcome(sig.GatewayEntryID, taskstore.SignalFailed, stale.Reason)
 				actions = append(actions, stale,

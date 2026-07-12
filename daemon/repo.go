@@ -265,7 +265,7 @@ func (m *RepoManager) Add(path string) error {
 		Store:                    m.globalStore,
 		Project:                  project,
 		HeadSHA:                  func(branch string) (string, error) { return gitpkg.BranchHeadSHA(path, branch) },
-		MergeBaseSHA:             func(branch string) (string, error) { return gitpkg.BranchMergeBaseSHA(path, branch) },
+		MergeBaseSHA:             func(string) (string, error) { return gitpkg.DefaultBranchHeadSHA(path) },
 		MaxReviewFixCycles:       maxReviewFixCycles,
 		ReadinessSelfFixMaxLines: selfFixMaxLines,
 		ReadinessMaxVerifyCycles: maxVerifyCycles,

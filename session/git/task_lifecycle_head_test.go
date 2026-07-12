@@ -68,6 +68,55 @@ func TestBranchMergeBaseSHA(t *testing.T) {
 	require.Equal(t, base, got)
 }
 
+func TestValidateVerificationDetectsDefaultBranchMovement(t *testing.T) {
+	dir := t.TempDir()
+	runGit := func(args ...string) string {
+		t.Helper()
+		out, err := exec.Command("git", append([]string{"-C", dir}, args...)...).CombinedOutput()
+		require.NoError(t, err, string(out))
+		return strings.TrimSpace(string(out))
+	}
+	runGit("init", "-b", "main")
+	runGit("config", "user.email", "test@example.com")
+	runGit("config", "user.name", "Test User")
+	runGit("commit", "--allow-empty", "-m", "base")
+	base := runGit("rev-parse", "HEAD")
+	runGit("checkout", "-b", "plan/example")
+	runGit("commit", "--allow-empty", "-m", "task")
+	head := runGit("rev-parse", "HEAD")
+	runGit("checkout", "main")
+	runGit("commit", "--allow-empty", "-m", "main moved")
+
+	_, _, reason, err := ValidateVerification(dir, "plan/example", head, base)
+	require.NoError(t, err)
+	require.Contains(t, reason, "base_changed_after_verification")
+}
+
+func TestMergeTaskBranchAtSHARejectsMovedBranch(t *testing.T) {
+	dir := t.TempDir()
+	runGit := func(args ...string) string {
+		t.Helper()
+		out, err := exec.Command("git", append([]string{"-C", dir}, args...)...).CombinedOutput()
+		require.NoError(t, err, string(out))
+		return strings.TrimSpace(string(out))
+	}
+	runGit("init", "-b", "main")
+	runGit("config", "user.email", "test@example.com")
+	runGit("config", "user.name", "Test User")
+	runGit("commit", "--allow-empty", "-m", "base")
+	runGit("checkout", "-b", "plan/example")
+	runGit("commit", "--allow-empty", "-m", "reviewed")
+	expected := runGit("rev-parse", "HEAD")
+	runGit("commit", "--allow-empty", "-m", "moved")
+	runGit("checkout", "main")
+
+	base, err := DefaultBranchHeadSHA(dir)
+	require.NoError(t, err)
+	err = MergeTaskBranchAtSHA(dir, "plan/example", expected, base)
+	require.ErrorContains(t, err, "moved after verification")
+	require.Equal(t, runGit("rev-parse", "main"), runGit("rev-parse", "HEAD"))
+}
+
 func TestShortSHA(t *testing.T) {
 	require.Equal(t, "", ShortSHA(""))
 	require.Equal(t, "abc", ShortSHA("abc"))

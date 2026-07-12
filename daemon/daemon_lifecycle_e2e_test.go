@@ -81,11 +81,12 @@ Complete the last implementation task and transition into review.
 	hooks.Add(receiptHook, []taskfsm.Event{taskfsm.ImplementFinished})
 
 	proc := loop.NewProcessor(loop.ProcessorConfig{
-		Store:       store,
-		Project:     project,
-		AutoAdvance: true,
-		Hooks:       hooks,
-		HeadSHA:     func(string) (string, error) { return "0123456789abcdef0123456789abcdef01234567", nil },
+		Store:        store,
+		Project:      project,
+		AutoAdvance:  true,
+		Hooks:        hooks,
+		HeadSHA:      func(string) (string, error) { return "0123456789abcdef0123456789abcdef01234567", nil },
+		MergeBaseSHA: func(string) (string, error) { return "89abcdef0123456789abcdef0123456789abcdef", nil },
 	})
 
 	repo := RepoEntry{

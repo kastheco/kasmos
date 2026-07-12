@@ -104,14 +104,18 @@ func NormalizeGatewaySignalPayload(signalType, payload string) (string, error) {
 			return string(b), nil
 		}
 		var p struct {
-			ReviewedSHA string `json:"reviewed_sha"`
-			Origin      string `json:"origin"`
+			ReviewedSHA     string `json:"reviewed_sha"`
+			ReviewedBaseSHA string `json:"reviewed_base_sha"`
+			Origin          string `json:"origin"`
 		}
 		if err := json.Unmarshal([]byte(payload), &p); err != nil {
 			return "", fmt.Errorf("%s: decode payload: %w", canonicalType, err)
 		}
 		if p.ReviewedSHA != "" && !reviewedSHARegexp.MatchString(p.ReviewedSHA) {
 			return "", fmt.Errorf("%s: reviewed_sha must be 40 lowercase hexadecimal characters", canonicalType)
+		}
+		if p.ReviewedBaseSHA != "" && !reviewedSHARegexp.MatchString(p.ReviewedBaseSHA) {
+			return "", fmt.Errorf("%s: reviewed_base_sha must be 40 lowercase hexadecimal characters", canonicalType)
 		}
 		if p.Origin != "" && p.Origin != "master" && p.Origin != "operator" && p.Origin != "force_promoted" && p.Origin != "auto" {
 			return "", fmt.Errorf("%s: invalid origin %q", canonicalType, p.Origin)

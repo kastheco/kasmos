@@ -122,11 +122,11 @@ When it finishes, it emits one of the verifying signals:
 
 **Emit these with the MCP tool** (preferred):
 ```json
-{"signal_type": "verify_approved", "plan_file": "<plan>", "project": "<project>", "payload": "{\"reviewed_sha\":\"<full-head-sha>\"}"}
+{"signal_type": "verify_approved", "plan_file": "<plan>", "project": "<project>", "payload": "{\"reviewed_sha\":\"<full-head-sha>\",\"reviewed_base_sha\":\"<default-branch-sha>\"}"}
 ```
 or with the CLI:
 ```bash
-kas signal emit verify_approved <plan>
+kas signal emit verify_approved <plan> --payload '{"reviewed_sha":"<full-head-sha>","reviewed_base_sha":"<default-branch-sha>"}'
 kas signal emit verify_failed <plan>
 ```
 
@@ -185,7 +185,7 @@ Once the plan is `done` and its approval still matches branch HEAD, merge the im
 
 The merge preflight checks that the branch exists, is not currently checked out on main, and has no unresolved conflicts before proceeding.
 
-Both the TUI merge action and `kas task merge` enforce the HEAD-bound verification gate immediately before merging. `done` is therefore revocable: any later branch commit reopens verification. A pre-upgrade `done` task with no `verified_sha` is not reopened by the periodic drift check, but both PR and merge gates block it until re-verification. Approvals record `verified_by` as `master`, `operator`, `force_promoted`, or `auto`.
+Both the TUI merge action and `kas task merge` enforce the HEAD-bound verification gate immediately before merging. `done` is therefore revocable: any later branch commit reopens verification. A pre-upgrade `done` task with no `verified_sha` is not reopened by the periodic drift check, but both PR and merge gates block it until re-verification. Gateway and manual approvals use the same SHA-bound admission; only in-process force-promotion and automatic paths receive special provenance.
 
 ## checking merge status manually
 

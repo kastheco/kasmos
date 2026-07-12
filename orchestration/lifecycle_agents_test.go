@@ -89,11 +89,13 @@ func TestBuildMasterAgentSpec(t *testing.T) {
 func TestBuildMasterAgentSpecForRange(t *testing.T) {
 	baseSHA := "1111111111111111111111111111111111111111"
 	headSHA := "2222222222222222222222222222222222222222"
-	spec := BuildMasterAgentSpecForRange("feature", "myproject", 2, 80, 2, baseSHA, headSHA)
+	targetBaseSHA := "3333333333333333333333333333333333333333"
+	spec := BuildMasterAgentSpecForRange("feature", "myproject", 2, 80, 2, baseSHA, headSHA, targetBaseSHA)
 
 	assert.Equal(t, "feature-verify-3", spec.Title)
 	assert.Contains(t, spec.Prompt, baseSHA)
 	assert.Contains(t, spec.Prompt, headSHA)
+	assert.Contains(t, spec.Prompt, targetBaseSHA)
 }
 
 func TestBuildLifecycleAgentTitle_Master(t *testing.T) {

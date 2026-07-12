@@ -261,7 +261,7 @@ func (m *home) ensureProcessor() *loop.Processor {
 			return gitpkg.BranchHeadSHA(m.activeRepoPath, branch)
 		},
 		MergeBaseSHA: func(branch string) (string, error) {
-			return gitpkg.BranchMergeBaseSHA(m.activeRepoPath, branch)
+			return gitpkg.DefaultBranchHeadSHA(m.activeRepoPath)
 		},
 		Store:              m.taskStore,
 		Project:            m.taskStoreProject,
@@ -451,6 +451,24 @@ func (m *home) createPRAfterApproval(planFile, reviewBody string) tea.Cmd {
 	}
 
 	return func() tea.Msg {
+		entry, err := store.Get(project, planFile)
+		if err != nil {
+			return prCreatedForPlanMsg{planFile: planFile, outcome: prsvc.OutcomeBlocked, reason: err.Error()}
+		}
+		branch := entry.Branch
+		if branch == "" {
+			branch = gitpkg.TaskBranchFromFile(planFile)
+		}
+		_, _, reason, err := gitpkg.ValidateVerification(repoPath, branch, entry.VerifiedSHA, entry.VerifiedBaseSHA)
+		if err != nil {
+			return prCreatedForPlanMsg{planFile: planFile, outcome: prsvc.OutcomeBlocked, reason: err.Error()}
+		}
+		if reason != "" {
+			reason = "verification stale: " + reason
+			_ = store.ClearVerification(project, planFile, reason)
+			_ = store.SetPRCreateOutcome(project, planFile, taskstore.PRCreateOutcome{State: string(prsvc.OutcomeBlocked), Error: reason, AttemptedAt: time.Now().UTC()})
+			return prCreatedForPlanMsg{planFile: planFile, outcome: prsvc.OutcomeBlocked, reason: reason}
+		}
 		res, err := prsvc.Ensure(context.Background(), store, prsvc.Request{RepoPath: repoPath, Project: project, PlanFile: planFile, ReviewBody: reviewBody, Enabled: enabled})
 		if err != nil && res.Reason == "" {
 			res.Reason = err.Error()
@@ -2127,9 +2145,7 @@ func (m *home) spawnMaster(planFile string) tea.Cmd {
 		if err := shared.Setup(); err != nil {
 			return instanceStartedMsg{instance: masterInst, err: err}
 		}
-		base, _ := gitpkg.BranchMergeBaseSHA(repoPath, branch)
-		head, _ := gitpkg.BranchHeadSHA(repoPath, branch)
-		spec := orchestration.BuildMasterAgentSpecForRange(planFile, project, reviewCycle, selfFixMaxLines, maxVerifyCycles, base, head)
+		spec := buildMasterSpecForBranch(repoPath, branch, planFile, project, reviewCycle, selfFixMaxLines, maxVerifyCycles)
 		masterInst.QueuedPrompt = spec.Prompt
 		if err := m.syncSharedWorktreeScaffold(shared.GetWorktreePath()); err != nil {
 			return instanceStartedMsg{instance: masterInst, err: err}
@@ -2137,6 +2153,13 @@ func (m *home) spawnMaster(planFile string) tea.Cmd {
 		err := masterInst.StartInSharedWorktree(shared, branch)
 		return instanceStartedMsg{instance: masterInst, err: err}
 	}
+}
+
+func buildMasterSpecForBranch(repoPath, branch, planFile, project string, reviewCycle, selfFixMaxLines, maxVerifyCycles int) orchestration.LifecycleAgentSpec {
+	base, _ := gitpkg.BranchMergeBaseSHA(repoPath, branch)
+	head, _ := gitpkg.BranchHeadSHA(repoPath, branch)
+	targetBase, _ := gitpkg.DefaultBranchHeadSHA(repoPath)
+	return orchestration.BuildMasterAgentSpecForRange(planFile, project, reviewCycle, selfFixMaxLines, maxVerifyCycles, base, head, targetBase)
 }
 
 func withOpenCodeModelFlag(program, model string) string {

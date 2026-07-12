@@ -848,20 +848,19 @@ func (m *home) mergeTaskToMain(planFile string) (tea.Model, tea.Cmd) {
 	}
 	planName := taskstate.DisplayName(planFile)
 	mergeAction := func() tea.Msg {
-		fresh, ok := m.taskState.Entry(planFile)
-		if !ok {
-			return fmt.Errorf("task not found: %s", planFile)
+		fresh, err := m.taskStore.Get(m.taskStoreProject, planFile)
+		if err != nil {
+			return fmt.Errorf("load task %s: %w", planFile, err)
 		}
 		freshBranch := fresh.Branch
 		if freshBranch == "" {
 			freshBranch = branch
 		}
-		head, err := gitpkg.BranchHeadSHA(m.activeRepoPath, freshBranch)
+		head, base, reason, err := gitpkg.ValidateVerification(m.activeRepoPath, freshBranch, fresh.VerifiedSHA, fresh.VerifiedBaseSHA)
 		if err != nil {
 			return err
 		}
-		if fresh.VerifiedSHA == "" || !strings.EqualFold(fresh.VerifiedSHA, head) {
-			reason := fmt.Sprintf("head_changed_after_verification: verified %s, head is now %s", gitpkg.ShortSHA(fresh.VerifiedSHA), gitpkg.ShortSHA(head))
+		if reason != "" {
 			if err := m.taskStore.ClearVerification(m.taskStoreProject, planFile, reason); err != nil {
 				return err
 			}
@@ -884,7 +883,7 @@ func (m *home) mergeTaskToMain(planFile string) (tea.Model, tea.Cmd) {
 				m.allInstances = append(m.allInstances[:i], m.allInstances[i+1:]...)
 			}
 		}
-		if err := gitpkg.MergeTaskBranch(m.activeRepoPath, freshBranch); err != nil {
+		if err := gitpkg.MergeTaskBranchAtSHA(m.activeRepoPath, freshBranch, head, base); err != nil {
 			return err
 		}
 		// Walk through FSM to done if not already there.
@@ -1610,9 +1609,26 @@ func (m *home) prepareSelectedInstanceSignal(selected *session.Instance, event t
 		return "", "", err
 	}
 	if event == taskfsm.VerifyApproved {
+		entry, ok := m.taskState.Entry(selected.TaskFile)
+		if !ok {
+			return "", "", fmt.Errorf("task not found: %s", selected.TaskFile)
+		}
+		branch := entry.Branch
+		if branch == "" {
+			branch = gitpkg.TaskBranchFromFile(selected.TaskFile)
+		}
+		head, err := gitpkg.BranchHeadSHA(m.activeRepoPath, branch)
+		if err != nil {
+			return "", "", err
+		}
+		base, err := gitpkg.DefaultBranchHeadSHA(m.activeRepoPath)
+		if err != nil {
+			return "", "", err
+		}
 		payload, err := json.Marshal(map[string]string{
-			"body":   m.reviewFeedbackPayload(selected),
-			"origin": "operator",
+			"body":              m.reviewFeedbackPayload(selected),
+			"reviewed_sha":      head,
+			"reviewed_base_sha": base,
 		})
 		if err != nil {
 			return "", "", err

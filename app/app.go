@@ -1629,9 +1629,8 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						if entry, ok := m.taskState.Entry(a.PlanFile); ok && entry.Status == taskstate.StatusDone {
 							_ = m.fsm.Transition(a.PlanFile, taskfsm.VerificationStale)
 						}
-						if cmd := m.spawnMaster(a.PlanFile); cmd != nil {
-							signalCmds = append(signalCmds, cmd)
-						}
+					case loop.PausePlanAgentAction:
+						m.killExistingPlanAgent(a.PlanFile, a.AgentType)
 					case loop.VerifyFailedAction:
 						m.audit(auditlog.EventPlanTransition, "verifying → implementing (verify failed)",
 							auditlog.WithPlan(a.PlanFile))

@@ -167,12 +167,14 @@ func TestNormalizeGatewaySignalPayload_VerifyMetadataValidation(t *testing.T) {
 		payload string
 		wantErr bool
 	}{
-		{"valid sha and master origin", `{"reviewed_sha":"` + validSHA + `","origin":"master"}`, false},
+		{"valid head and base with master origin", `{"reviewed_sha":"` + validSHA + `","reviewed_base_sha":"` + validSHA + `","origin":"master"}`, false},
 		{"operator origin without sha", `{"origin":"operator"}`, false},
 		{"force promoted origin", `{"origin":"force_promoted"}`, false},
 		{"auto origin", `{"origin":"auto"}`, false},
 		{"short sha", `{"reviewed_sha":"abc123"}`, true},
 		{"uppercase sha", `{"reviewed_sha":"` + strings.Repeat("A", 40) + `"}`, true},
+		{"short base sha", `{"reviewed_base_sha":"abc123"}`, true},
+		{"uppercase base sha", `{"reviewed_base_sha":"` + strings.Repeat("A", 40) + `"}`, true},
 		{"non hex sha", `{"reviewed_sha":"` + strings.Repeat("g", 40) + `"}`, true},
 		{"branch name", `{"reviewed_sha":"main"}`, true},
 		{"git describe", `{"reviewed_sha":"v1.2.3-4-gabcdef"}`, true},

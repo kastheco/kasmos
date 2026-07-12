@@ -76,7 +76,7 @@ func TestConvertSignalEntry_VerifySignals(t *testing.T) {
 		entry := &taskstore.SignalEntry{
 			PlanFile:   "feature-plan",
 			SignalType: "verify_approved",
-			Payload:    `{"body":"ship it","reviewed_sha":"0123456789abcdef0123456789abcdef01234567","origin":"master"}`,
+			Payload:    `{"body":"ship it","reviewed_sha":"0123456789abcdef0123456789abcdef01234567","reviewed_base_sha":"89abcdef0123456789abcdef0123456789abcdef","origin":"master"}`,
 		}
 		require.NoError(t, ConvertSignalEntry(entry, &result))
 		require.Len(t, result.FSMSignals, 1)
@@ -85,6 +85,7 @@ func TestConvertSignalEntry_VerifySignals(t *testing.T) {
 		assert.Equal(t, "feature-plan", sig.TaskFile)
 		assert.Equal(t, "ship it", sig.Body)
 		assert.Equal(t, "0123456789abcdef0123456789abcdef01234567", sig.ReviewedSHA)
+		assert.Equal(t, "89abcdef0123456789abcdef0123456789abcdef", sig.ReviewedBaseSHA)
 		assert.Equal(t, "master", sig.Origin)
 	})
 

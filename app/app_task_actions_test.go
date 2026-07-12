@@ -1056,15 +1056,17 @@ func TestExecuteContextAction_MergePlanPreflightStopsBeforeKillingInstances(t *t
 	require.NoError(t, err)
 
 	h := &home{
-		taskState:      ps,
-		taskStateDir:   plansDir,
-		nav:            ui.NewNavigationPanel(&spin),
-		menu:           ui.NewMenu(),
-		tabbedWindow:   ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewInfoPane()),
-		toastManager:   overlay.NewToastManager(&spin),
-		overlays:       overlay.NewManager(),
-		activeRepoPath: dir,
-		allInstances:   []*session.Instance{inst},
+		taskState:        ps,
+		taskStore:        storeForDir(t, plansDir),
+		taskStoreProject: "test",
+		taskStateDir:     plansDir,
+		nav:              ui.NewNavigationPanel(&spin),
+		menu:             ui.NewMenu(),
+		tabbedWindow:     ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewInfoPane()),
+		toastManager:     overlay.NewToastManager(&spin),
+		overlays:         overlay.NewManager(),
+		activeRepoPath:   dir,
+		allInstances:     []*session.Instance{inst},
 	}
 
 	h.updateSidebarTasks()
@@ -2486,6 +2488,20 @@ func TestExecuteContextAction_MarkReadinessApproved(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	dir := t.TempDir()
 	t.Chdir(dir)
+	runGit := func(args ...string) string {
+		t.Helper()
+		out, err := exec.Command("git", append([]string{"-C", dir}, args...)...).CombinedOutput()
+		require.NoError(t, err, string(out))
+		return strings.TrimSpace(string(out))
+	}
+	runGit("init", "-b", "main")
+	runGit("config", "user.email", "test@test.com")
+	runGit("config", "user.name", "Test")
+	runGit("commit", "--allow-empty", "-m", "base")
+	runGit("checkout", "-b", "plan/feature")
+	runGit("commit", "--allow-empty", "-m", "feature")
+	head := runGit("rev-parse", "HEAD")
+	runGit("checkout", "main")
 	plansDir := filepath.Join(dir, "docs", "plans")
 	require.NoError(t, os.MkdirAll(plansDir, 0o755))
 	ps, err := newTestPlanState(t, plansDir)
@@ -2526,7 +2542,8 @@ func TestExecuteContextAction_MarkReadinessApproved(t *testing.T) {
 	assert.Equal(t, "verify_approved", signals[0].SignalType)
 	var payload map[string]string
 	require.NoError(t, json.Unmarshal([]byte(signals[0].Payload), &payload))
-	assert.Equal(t, "operator", payload["origin"])
+	assert.Empty(t, payload["origin"])
+	assert.Equal(t, head, payload["reviewed_sha"])
 	assert.Equal(t, "operator readiness feedback", payload["body"])
 }
 

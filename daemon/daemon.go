@@ -1971,13 +1971,12 @@ func (d *Daemon) ensurePRForApprovedTask(e RepoEntry, planFile, reviewBody strin
 		branch = gitpkg.TaskBranchFromFile(planFile)
 	}
 	if entry.PRURL == "" {
-		head, err := gitpkg.BranchHeadSHA(e.Path, branch)
+		_, _, reason, err := gitpkg.ValidateVerification(e.Path, branch, entry.VerifiedSHA, entry.VerifiedBaseSHA)
 		if err != nil {
 			_ = e.Store.SetPRCreateOutcome(e.Project, planFile, taskstore.PRCreateOutcome{State: string(prsvc.OutcomeBlocked), Error: err.Error(), AttemptedAt: time.Now().UTC()})
 			return prsvc.Result{Outcome: prsvc.OutcomeBlocked, Reason: err.Error()}, nil
 		}
-		if entry.VerifiedSHA == "" || !strings.EqualFold(entry.VerifiedSHA, head) {
-			reason := staleReason(entry.VerifiedSHA, head)
+		if reason != "" {
 			if err := e.Store.ClearVerification(e.Project, planFile, reason); err != nil {
 				return prsvc.Result{}, err
 			}
@@ -2516,7 +2515,8 @@ func masterSpawnOpts(e RepoEntry, entry taskstore.TaskEntry) loop.SpawnOpts {
 	base, baseErr := gitpkg.BranchMergeBaseSHA(e.Path, branch)
 	head, headErr := gitpkg.BranchHeadSHA(e.Path, branch)
 	if baseErr == nil && headErr == nil {
-		spec = orchestration.BuildMasterAgentSpecForRange(entry.Filename, e.Project, entry.ReviewCycle, e.ReadinessSelfFixMaxLines, e.ReadinessMaxVerifyCycles, base, head)
+		targetBase, _ := gitpkg.DefaultBranchHeadSHA(e.Path)
+		spec = orchestration.BuildMasterAgentSpecForRange(entry.Filename, e.Project, entry.ReviewCycle, e.ReadinessSelfFixMaxLines, e.ReadinessMaxVerifyCycles, base, head, targetBase)
 	}
 	return withSDKTranscriptRetention(e, loop.SpawnOpts{
 		PlanFile:        entry.Filename,

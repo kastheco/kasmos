@@ -117,25 +117,9 @@ func TestSpawnMasterBuildsPromptForResolvedRangeWithoutFeedback(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, ps.Register("range-prompt", "test", "plan/range-prompt", time.Now()))
 
-	h := newTestHome()
-	h.activeRepoPath = dir
-	h.taskState = ps
-	h.taskStoreProject = "test"
-	h.appConfig = config.DefaultConfig()
-	h.appConfig.ReadinessSelfFixMaxLines = 37
-	h.appConfig.ReadinessMaxVerifyCycles = 5
-	fakeProgram := filepath.Join(dir, "opencode")
-	require.NoError(t, os.WriteFile(fakeProgram, []byte("#!/bin/sh\nexit 0\n"), 0o755))
-	h.program = fakeProgram
-
-	cmd := h.spawnMaster("range-prompt")
-	require.NotNil(t, cmd)
-	instances := h.nav.GetInstances()
-	require.Len(t, instances, 1)
-	assert.Empty(t, instances[0].QueuedPrompt, "prompt must not be frozen before asynchronous git resolution")
-	_ = cmd()
-
-	prompt := instances[0].DeliveredPrompt()
+	_ = ps
+	spec := buildMasterSpecForBranch(dir, "plan/range-prompt", "range-prompt", "test", 0, 37, 5)
+	prompt := spec.Prompt
 	assert.Contains(t, prompt, base)
 	assert.Contains(t, prompt, head)
 	assert.Contains(t, prompt, "37")

@@ -18,6 +18,7 @@ import (
 	"github.com/kastheco/kasmos/orchestration/loop"
 	prsvc "github.com/kastheco/kasmos/orchestration/pr"
 	"github.com/kastheco/kasmos/session"
+	gitpkg "github.com/kastheco/kasmos/session/git"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -370,7 +371,8 @@ func TestDaemon_TickRepo_HTTPReviewApprovedChainsVerifyApproved(t *testing.T) {
 	repoEntry, head := f.gitRepoEntry(t, proc)
 	proc = loop.NewProcessor(loop.ProcessorConfig{
 		Store: f.store, Project: f.project,
-		HeadSHA: func(string) (string, error) { return head, nil },
+		HeadSHA:      func(string) (string, error) { return head, nil },
+		MergeBaseSHA: func(string) (string, error) { return gitpkg.DefaultBranchHeadSHA(repoEntry.Path) },
 	})
 	repoEntry.Processor = proc
 	d.tickRepo(context.Background(), repoEntry)
@@ -447,10 +449,9 @@ func TestDaemon_TickRepo_HTTPReviewChangesRequestedSpawnsFixer(t *testing.T) {
 	assert.Len(t, doneRows, 1, "the review_changes_requested gateway row must be marked done")
 }
 
-// TestDaemon_TickRepo_HTTPVerifyApprovedCreatesPR proves a verify_approved
-// signal from the HTTP handler clears the master execution state and fires
-// CreatePRAction via the daemon tick loop.
-func TestDaemon_TickRepo_HTTPVerifyApprovedCreatesPR(t *testing.T) {
+// TestDaemon_TickRepo_HTTPVerifyApprovedRequiresSHA proves a pre-applied HTTP
+// transition cannot bypass SHA-bound master approval.
+func TestDaemon_TickRepo_HTTPVerifyApprovedRequiresSHA(t *testing.T) {
 	t.Parallel()
 
 	f := newHTTPTransitionE2EFixture(t, taskstore.StatusVerifying)
@@ -469,6 +470,7 @@ func TestDaemon_TickRepo_HTTPVerifyApprovedCreatesPR(t *testing.T) {
 		spawner:     NewTmuxSpawner(),
 		logger:      slog.Default(),
 		broadcaster: api.NewEventBroadcaster(),
+		spawnMaster: func(context.Context, loop.SpawnOpts) error { return nil },
 		createPR: func(_ RepoEntry, planFile, reviewBody string) (prsvc.Result, error) {
 			prCount++
 			prPlanFile = planFile
@@ -481,21 +483,22 @@ func TestDaemon_TickRepo_HTTPVerifyApprovedCreatesPR(t *testing.T) {
 	repoEntry, head := f.gitRepoEntry(t, proc)
 	proc = loop.NewProcessor(loop.ProcessorConfig{
 		Store: f.store, Project: f.project, AutoReadinessReview: true,
-		HeadSHA: func(string) (string, error) { return head, nil },
+		HeadSHA:      func(string) (string, error) { return head, nil },
+		MergeBaseSHA: func(string) (string, error) { return gitpkg.DefaultBranchHeadSHA(repoEntry.Path) },
 	})
 	repoEntry.Processor = proc
 	d.tickRepo(context.Background(), repoEntry)
 
-	assert.Equal(t, 1, prCount, "createPR must fire once for HTTP verify_approved")
-	assert.Equal(t, f.planFile, prPlanFile)
-	assert.Empty(t, prReviewBody, "reviewBody from HTTP verify_approved is empty (payload carries no body)")
+	assert.Zero(t, prCount, "unbound HTTP verify_approved must not create a PR")
+	assert.Empty(t, prPlanFile)
+	assert.Empty(t, prReviewBody)
 
 	entry, err := f.store.Get(f.project, f.planFile)
 	require.NoError(t, err)
-	assert.Equal(t, taskstore.StatusDone, entry.Status, "task must reach done after verify_approved")
-	assert.Equal(t, head, entry.VerifiedSHA, "pre-applied admin approval must bind live HEAD")
-	assert.Equal(t, "operator", entry.VerifiedBy)
-	assert.Equal(t, taskstore.ExecutionState{}, entry.ExecutionState, "execution state must be cleared by VerifyApprovedAction")
+	assert.Equal(t, taskstore.StatusVerifying, entry.Status, "unbound pre-applied approval must reopen verification")
+	assert.Empty(t, entry.VerifiedSHA)
+	assert.Empty(t, entry.VerifiedBy)
+	assert.Equal(t, session.AgentTypeMaster, entry.ExecutionState.ActiveAgentType, "replacement verification must remain active")
 
 	remainingPending, err := f.gw.List(f.project, taskstore.SignalPending)
 	require.NoError(t, err)
