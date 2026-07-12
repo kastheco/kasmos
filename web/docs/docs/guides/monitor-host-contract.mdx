@@ -83,7 +83,7 @@ interface MonitorBadge {
 | `collapsed` | 15 s |
 | `hidden` or hidden document | paused |
 
-failures back off exponentially to 30 s, and refreshes remain single-flight. host-reported `visibility` exists because `document.visibilityState` describes the window, not the pane. without it, a collapsed sidebar in a focused window would poll every 2 s forever.
+failures back off exponentially to 30 s, and refreshes remain single-flight. when the document becomes hidden, the monitor cancels its pending timer and does not schedule another wakeup until visibility returns. host-reported `visibility` exists because `document.visibilityState` describes the window, not the pane. without it, a collapsed sidebar in a focused window would poll every 2 s forever.
 
 that excess polling amplifies `SQLITE_BUSY` contention across panes and processes. the 1 s ttl plus singleflight guard in `internal/appwidget/cache.go` protects snapshot assembly from bursts; preserve that protection when changing cadence.
 

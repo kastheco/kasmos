@@ -77,7 +77,7 @@ export function useMonitorSnapshot(host: KasmosMonitorHost, project?: string, ta
   useEffect(() => { if (!coldStarted.current && !host.snapshot && phase === "loading") { coldStarted.current = true; void refresh(); } }, [host.snapshot, phase, refresh]);
   useEffect(() => {
     let cancelled = false;
-    const schedule = () => { window.clearTimeout(timer.current); if (cancelled || effectiveVisibility === "hidden" || phase === "incompatible") return; const delay = Math.min(baseDelay * 2 ** failures.current, 30000); timer.current = window.setTimeout(async () => { await refresh(); schedule(); }, delay); };
+    const schedule = () => { window.clearTimeout(timer.current); if (cancelled || document.visibilityState !== "visible" || host.visibility === "hidden" || phase === "incompatible") return; const delay = Math.min(baseDelay * 2 ** failures.current, 30000); timer.current = window.setTimeout(async () => { await refresh(); schedule(); }, delay); };
     const visibility = () => { if (document.visibilityState === "visible" && host.visibility !== "hidden") void refresh(); schedule(); };
     const becameExpanded = previousEffectiveVisibility.current !== "expanded" && effectiveVisibility === "expanded";
     previousEffectiveVisibility.current = effectiveVisibility;
