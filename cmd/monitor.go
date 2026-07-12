@@ -51,7 +51,29 @@ raw JSON suitable for piping to jq.`,
 
 	cmd.AddCommand(newMonitorStatusCmd(&socketPath))
 	cmd.AddCommand(newMonitorWidgetCmd())
+	cmd.AddCommand(newMonitorBundleCmd())
 
+	return cmd
+}
+
+func newMonitorBundleCmd() *cobra.Command {
+	var outPath string
+	cmd := &cobra.Command{
+		Use: "bundle", Short: "export the host-agnostic monitor bundle",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			path, err := filepath.Abs(outPath)
+			if err != nil {
+				return fmt.Errorf("resolve output path: %w", err)
+			}
+			manifest, err := appwidget.Export(path)
+			if err != nil {
+				return fmt.Errorf("export monitor bundle: %w", err)
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "%s\ncontract version: %d\nlive-status schema version: %d\n", path, manifest.ContractVersion, manifest.LiveStatusSchemaVersion)
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&outPath, "out", "./kasmos-monitor", "output bundle directory")
 	return cmd
 }
 

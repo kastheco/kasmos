@@ -588,9 +588,11 @@ func NewServeCmd() *cobra.Command {
 			if repoRegs.loadProjects != nil {
 				widgetRouting = routing.NewDynamicRegisterConfig(fixedProject, repoRegs.projects, repoRegs.loadProjects)
 			}
-			widgetPreviewAPI := appwidget.NewPreviewHandler(widgetRouting, store, daemonSocketPath(), sharedDB)
-			rootMux.Handle("OPTIONS "+appwidget.PreviewPath, widgetPreviewAPI)
-			rootMux.Handle("POST "+appwidget.PreviewPath, widgetPreviewAPI)
+			widgetSnapshotAPI := appwidget.NewSnapshotHandler(widgetRouting, store, daemonSocketPath(), sharedDB)
+			rootMux.Handle("OPTIONS "+appwidget.PreviewPath, widgetSnapshotAPI)
+			rootMux.Handle("POST "+appwidget.PreviewPath, widgetSnapshotAPI)
+			rootMux.Handle("OPTIONS "+appwidget.SnapshotPath, widgetSnapshotAPI)
+			rootMux.Handle("POST "+appwidget.SnapshotPath, widgetSnapshotAPI)
 
 			// Resolve the admin filesystem: --admin-dir flag overrides embedded assets.
 			// Require the directory to contain index.html so users aren't accidentally

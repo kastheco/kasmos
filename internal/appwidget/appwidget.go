@@ -123,11 +123,11 @@ func makeOpenMonitorHandler(rc routing.RegisterConfig, store taskstore.Store, so
 	}
 }
 
-// NewPreviewHandler exposes only the read-only open_monitor projection to file previews.
-func NewPreviewHandler(rc routing.RegisterConfig, store taskstore.Store, socketPath string, sharedDB ...*sql.DB) http.Handler {
+// NewSnapshotHandler exposes only the read-only open_monitor projection over HTTP.
+func NewSnapshotHandler(rc routing.RegisterConfig, store taskstore.Store, socketPath string, sharedDB ...*sql.DB) http.Handler {
 	openMonitor := makeOpenMonitorHandler(rc, store, socketPath, widgetSnapshots, sharedDB...)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != PreviewPath {
+		if r.URL.Path != PreviewPath && r.URL.Path != SnapshotPath {
 			http.NotFound(w, r)
 			return
 		}
@@ -173,6 +173,11 @@ func NewPreviewHandler(rc routing.RegisterConfig, store taskstore.Store, socketP
 		w.WriteHeader(status)
 		_ = json.NewEncoder(w).Encode(result)
 	})
+}
+
+// NewPreviewHandler is retained for compatibility; it is NewSnapshotHandler.
+func NewPreviewHandler(rc routing.RegisterConfig, store taskstore.Store, socketPath string, sharedDB ...*sql.DB) http.Handler {
+	return NewSnapshotHandler(rc, store, socketPath, sharedDB...)
 }
 
 func buildSnapshot(project, focus string, projects []string, store taskstore.Store, socketPath string, sharedDB ...*sql.DB) (livestatus.LiveStatus, error) {

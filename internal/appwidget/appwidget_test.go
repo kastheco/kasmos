@@ -218,41 +218,56 @@ func TestPreviewHandlerOnlyExposesOpenMonitorSnapshot(t *testing.T) {
 	store := taskstore.NewTestSQLiteStore(t)
 	require.NoError(t, store.Create("kasmos", taskstore.TaskEntry{Filename: "monitor", Status: taskstore.StatusReady}))
 	stubAuditLogger(t)
-	handler := NewPreviewHandler(routing.NewRegisterConfig("kasmos", []string{"kasmos"}), store, filepath.Join(t.TempDir(), "missing.sock"))
+	handler := NewSnapshotHandler(routing.NewRegisterConfig("kasmos", []string{"kasmos"}), store, filepath.Join(t.TempDir(), "missing.sock"))
+	paths := []string{PreviewPath, SnapshotPath}
 
-	t.Run("file origin preflight is scoped to preview post", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodOptions, PreviewPath, nil)
-		req.Header.Set("Origin", "null")
-		rec := httptest.NewRecorder()
-		handler.ServeHTTP(rec, req)
-		require.Equal(t, http.StatusNoContent, rec.Code)
-		assert.Equal(t, "null", rec.Header().Get("Access-Control-Allow-Origin"))
-		assert.Equal(t, "POST, OPTIONS", rec.Header().Get("Access-Control-Allow-Methods"))
-		assert.Equal(t, "Content-Type", rec.Header().Get("Access-Control-Allow-Headers"))
-	})
+	for _, path := range paths {
+		t.Run("file origin preflight "+path, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodOptions, path, nil)
+			req.Header.Set("Origin", "null")
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+			require.Equal(t, http.StatusNoContent, rec.Code)
+			assert.Equal(t, "null", rec.Header().Get("Access-Control-Allow-Origin"))
+			assert.Equal(t, "POST, OPTIONS", rec.Header().Get("Access-Control-Allow-Methods"))
+			assert.Equal(t, "Content-Type", rec.Header().Get("Access-Control-Allow-Headers"))
+		})
 
-	t.Run("returns only the monitor result", func(t *testing.T) {
-		body, err := json.Marshal(map[string]string{"project": "kasmos", "task": "monitor"})
-		require.NoError(t, err)
-		req := httptest.NewRequest(http.MethodPost, PreviewPath, bytes.NewReader(body))
-		req.Header.Set("Origin", "null")
-		rec := httptest.NewRecorder()
-		handler.ServeHTTP(rec, req)
-		require.Equal(t, http.StatusOK, rec.Code)
-		assert.Equal(t, "null", rec.Header().Get("Access-Control-Allow-Origin"))
-		var result struct {
-			StructuredContent livestatus.LiveStatus `json:"structuredContent"`
-		}
-		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &result))
-		assert.Equal(t, "kasmos", result.StructuredContent.Project)
-		require.NotNil(t, result.StructuredContent.Focus)
-		assert.Equal(t, "monitor", result.StructuredContent.Focus.Filename)
-	})
+		t.Run("returns only the monitor result "+path, func(t *testing.T) {
+			body, err := json.Marshal(map[string]string{"project": "kasmos", "task": "monitor"})
+			require.NoError(t, err)
+			req := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(body))
+			req.Header.Set("Origin", "null")
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+			require.Equal(t, http.StatusOK, rec.Code)
+			assert.Equal(t, "null", rec.Header().Get("Access-Control-Allow-Origin"))
+			var result struct {
+				StructuredContent livestatus.LiveStatus `json:"structuredContent"`
+			}
+			require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &result))
+			assert.Equal(t, "kasmos", result.StructuredContent.Project)
+			require.NotNil(t, result.StructuredContent.Focus)
+			assert.Equal(t, "monitor", result.StructuredContent.Focus.Filename)
+		})
 
-	t.Run("rejects methods outside the read-only bridge", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodPut, PreviewPath, nil)
-		rec := httptest.NewRecorder()
-		handler.ServeHTTP(rec, req)
-		assert.Equal(t, http.StatusMethodNotAllowed, rec.Code)
-	})
+		t.Run("rejects narrow input and methods "+path, func(t *testing.T) {
+			bad := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"project":"kasmos","extra":true}`))
+			badRec := httptest.NewRecorder()
+			handler.ServeHTTP(badRec, bad)
+			assert.Equal(t, http.StatusBadRequest, badRec.Code)
+			for _, method := range []string{http.MethodGet, http.MethodPut, http.MethodDelete} {
+				req := httptest.NewRequest(method, path, nil)
+				rec := httptest.NewRecorder()
+				handler.ServeHTTP(rec, req)
+				assert.Equal(t, http.StatusMethodNotAllowed, rec.Code)
+				assert.Equal(t, "POST, OPTIONS", rec.Header().Get("Allow"))
+			}
+			evil := httptest.NewRequest(http.MethodOptions, path, nil)
+			evil.Header.Set("Origin", "https://evil.example")
+			evilRec := httptest.NewRecorder()
+			handler.ServeHTTP(evilRec, evil)
+			assert.Empty(t, evilRec.Header().Get("Access-Control-Allow-Origin"))
+		})
+	}
 }

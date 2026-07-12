@@ -37,6 +37,22 @@ func TestMonitorWidgetWritesPreview(t *testing.T) {
 	assert.Contains(t, string(content), "callTool:async function")
 }
 
+func TestMonitorBundleWritesExport(t *testing.T) {
+	outPath := filepath.Join(t.TempDir(), "bundle")
+	cmd := NewMonitorCmd()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetArgs([]string{"bundle", "--out", outPath})
+	require.NoError(t, cmd.Execute())
+	for _, name := range []string{"monitor.js", "monitor.css", "index.html", "kasmos-monitor.manifest.json"} {
+		_, err := os.Stat(filepath.Join(outPath, name))
+		require.NoError(t, err)
+	}
+	abs, err := filepath.Abs(outPath)
+	require.NoError(t, err)
+	assert.Contains(t, out.String(), abs)
+}
+
 func TestMonitorWidgetSeedsMultiProjectPreview(t *testing.T) {
 	outPath := filepath.Join(t.TempDir(), "preview.html")
 	cmd := NewMonitorCmd()
