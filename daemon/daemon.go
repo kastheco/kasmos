@@ -2509,8 +2509,12 @@ func fixerSpawnOpts(e RepoEntry, planFile, branch, feedback string) loop.SpawnOp
 
 func masterSpawnOpts(e RepoEntry, entry taskstore.TaskEntry) loop.SpawnOpts {
 	spec := orchestration.BuildMasterAgentSpecWithConfig(entry.Filename, e.Project, entry.ReviewCycle, e.ReadinessSelfFixMaxLines, e.ReadinessMaxVerifyCycles)
-	base, baseErr := gitpkg.BranchMergeBaseSHA(e.Path, entry.Branch)
-	head, headErr := gitpkg.BranchHeadSHA(e.Path, entry.Branch)
+	branch := entry.Branch
+	if branch == "" {
+		branch = gitpkg.TaskBranchFromFile(entry.Filename)
+	}
+	base, baseErr := gitpkg.BranchMergeBaseSHA(e.Path, branch)
+	head, headErr := gitpkg.BranchHeadSHA(e.Path, branch)
 	if baseErr == nil && headErr == nil {
 		spec = orchestration.BuildMasterAgentSpecForRange(entry.Filename, e.Project, entry.ReviewCycle, e.ReadinessSelfFixMaxLines, e.ReadinessMaxVerifyCycles, base, head)
 	}
@@ -2518,7 +2522,7 @@ func masterSpawnOpts(e RepoEntry, entry taskstore.TaskEntry) loop.SpawnOpts {
 		PlanFile:        entry.Filename,
 		RepoPath:        e.Path,
 		Project:         e.Project,
-		Branch:          entry.Branch,
+		Branch:          branch,
 		Program:         programForAgent(e.Path, session.AgentTypeMaster),
 		Prompt:          spec.Prompt,
 		ReviewCycle:     entry.ReviewCycle + 1,

@@ -73,6 +73,25 @@ func TestProcessor_HEADBoundVerificationAdmission(t *testing.T) {
 	}
 }
 
+func TestProcessor_HEADBoundVerificationDerivesMissingBranch(t *testing.T) {
+	store := taskstore.NewTestStore(t)
+	require.NoError(t, store.Create("test", taskstore.TaskEntry{Filename: "legacy-plan", Status: taskstore.StatusVerifying}))
+	var resolvedBranch string
+	p := NewProcessor(ProcessorConfig{
+		Store: store, Project: "test", AutoReadinessReview: true,
+		HeadSHA: func(branch string) (string, error) {
+			resolvedBranch = branch
+			return verificationHead, nil
+		},
+	})
+	actions := p.ProcessFSMSignals([]taskfsm.Signal{{
+		Event: taskfsm.VerifyApproved, TaskFile: "legacy-plan", Origin: "master", ReviewedSHA: verificationHead,
+	}})
+	require.NotEmpty(t, actions)
+	assert.Equal(t, "plan/legacy-plan", resolvedBranch)
+	require.IsType(t, RecordVerificationAction{}, actions[0])
+}
+
 func TestProcessor_HEADBoundVerificationAlternateAdmissions(t *testing.T) {
 	head := func(string) (string, error) { return verificationHead, nil }
 	t.Run("readiness off self chain", func(t *testing.T) {

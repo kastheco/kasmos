@@ -132,11 +132,15 @@ func (p *Processor) bindVerification(planFile, origin, reviewedSHA string) (rec 
 	rec.PlanFile = planFile
 	stale = StaleVerificationAction{PlanFile: planFile, ReviewedSHA: reviewedSHA}
 	entry, _ := p.taskEntry(planFile)
+	branch := entry.Branch
+	if branch == "" {
+		branch = gitpkg.TaskBranchFromFile(planFile)
+	}
 	if p.config.HeadSHA == nil {
 		stale.Reason = "unbound_verification: head resolver unavailable"
 		return rec, stale, false
 	}
-	head, err := p.config.HeadSHA(entry.Branch)
+	head, err := p.config.HeadSHA(branch)
 	if err != nil {
 		stale.Reason = fmt.Sprintf("head_unresolvable: %v", err)
 		return rec, stale, false
@@ -156,7 +160,7 @@ func (p *Processor) bindVerification(planFile, origin, reviewedSHA string) (rec 
 		rec.SHA, rec.By = head, "master"
 	}
 	if p.config.MergeBaseSHA != nil {
-		if base, err := p.config.MergeBaseSHA(entry.Branch); err == nil {
+		if base, err := p.config.MergeBaseSHA(branch); err == nil {
 			rec.BaseSHA = base
 		} else {
 			log.Printf("resolve verification merge-base for %s: %v", planFile, err)

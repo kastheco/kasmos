@@ -31,7 +31,7 @@ func TestCheckVerificationDrift(t *testing.T) {
 	require.NoError(t, err)
 
 	store := taskstore.NewTestStore(t)
-	require.NoError(t, store.Create("project", taskstore.TaskEntry{Filename: "drift", Branch: "plan/drift", Status: taskstore.StatusDone}))
+	require.NoError(t, store.Create("project", taskstore.TaskEntry{Filename: "drift", Status: taskstore.StatusDone}))
 	require.NoError(t, store.SetVerification("project", "drift", taskstore.VerificationRecord{SHA: verified}))
 	d := &Daemon{logger: slog.Default()}
 	e := RepoEntry{Path: repo, Project: "project", Store: store}

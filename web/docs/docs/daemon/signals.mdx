@@ -187,6 +187,8 @@ Master approval is strict: a `verify_approved` payload must include `reviewed_sh
 
 Gateway payloads are agent-controlled, so they cannot establish operator or internal provenance. An `origin` value supplied through `signal_create` is not accepted as an override; gateway master approvals still require a matching `reviewed_sha`. Terminal and PR side effects stop if the verification record cannot be persisted.
 
+Legacy or imported tasks without a stored branch use the canonical `plan/<task>` branch consistently for verification admission, drift detection, master startup, PR creation, and merge checks. Git/repository failures remain blocking errors; only a confirmed missing branch is treated as a deleted task branch.
+
 ```json
 {"reviewed_sha":"<full-head-sha>"}
 {"origin":"operator"}

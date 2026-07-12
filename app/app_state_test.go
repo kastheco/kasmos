@@ -124,7 +124,9 @@ func TestSpawnMasterBuildsPromptForResolvedRangeWithoutFeedback(t *testing.T) {
 	h.appConfig = config.DefaultConfig()
 	h.appConfig.ReadinessSelfFixMaxLines = 37
 	h.appConfig.ReadinessMaxVerifyCycles = 5
-	h.program = "true"
+	fakeProgram := filepath.Join(dir, "opencode")
+	require.NoError(t, os.WriteFile(fakeProgram, []byte("#!/bin/sh\nexit 0\n"), 0o755))
+	h.program = fakeProgram
 
 	cmd := h.spawnMaster("range-prompt")
 	require.NotNil(t, cmd)

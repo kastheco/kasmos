@@ -2882,8 +2882,8 @@ func TestDaemon_ExecuteAction_SpawnMaster_BranchEmpty_Fails(t *testing.T) {
 	e := RepoEntry{Path: t.TempDir(), Project: project, Store: store}
 
 	err := d.executeAction(context.Background(), e, loop.SpawnMasterAction{PlanFile: "master-plan.md"})
-	require.Error(t, err, "executeAction must propagate spawn error when branch is empty")
-	assert.Contains(t, err.Error(), "Branch is required")
+	require.Error(t, err, "executeAction must propagate spawn error when the derived branch cannot start")
+	assert.Contains(t, err.Error(), "repository does not exist")
 }
 
 func TestReapStuckSignals(t *testing.T) {

@@ -30,10 +30,14 @@ func (d *Daemon) checkVerificationDrift(_ context.Context, e RepoEntry) []loop.A
 	}
 	var actions []loop.Action
 	for _, entry := range entries {
-		if entry.Status != taskstore.StatusDone || entry.Branch == "" || entry.VerifiedSHA == "" {
+		if entry.Status != taskstore.StatusDone || entry.VerifiedSHA == "" {
 			continue
 		}
-		head, err := gitpkg.BranchHeadSHA(e.Path, entry.Branch)
+		branch := entry.Branch
+		if branch == "" {
+			branch = gitpkg.TaskBranchFromFile(entry.Filename)
+		}
+		head, err := gitpkg.BranchHeadSHA(e.Path, branch)
 		if errors.Is(err, gitpkg.ErrBranchNotFound) {
 			continue
 		}

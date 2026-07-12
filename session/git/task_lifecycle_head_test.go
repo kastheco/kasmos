@@ -3,6 +3,7 @@ package git
 import (
 	"errors"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -33,6 +34,10 @@ func TestBranchHeadSHA(t *testing.T) {
 
 	_, err = BranchHeadSHA(dir, "plan/missing")
 	require.ErrorIs(t, err, ErrBranchNotFound)
+
+	_, err = BranchHeadSHA(filepath.Join(dir, "missing-repo"), "plan/example")
+	require.Error(t, err)
+	require.NotErrorIs(t, err, ErrBranchNotFound)
 }
 
 func TestBranchMergeBaseSHA(t *testing.T) {

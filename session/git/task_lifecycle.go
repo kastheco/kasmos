@@ -3,6 +3,7 @@ package git
 import (
 	"errors"
 	"fmt"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -17,9 +18,16 @@ var ErrBranchNotFound = errors.New("task branch not found")
 // BranchHeadSHA returns the full 40-char commit SHA that branch points at.
 func BranchHeadSHA(repoPath, branch string) (string, error) {
 	gt := &GitWorktree{repoPath: repoPath, worktreePath: repoPath}
+	if _, err := gt.runGitCommand(repoPath, "show-ref", "--verify", "--quiet", "refs/heads/"+branch); err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+			return "", fmt.Errorf("branch head %s: %w", branch, ErrBranchNotFound)
+		}
+		return "", fmt.Errorf("check branch head %s: %w", branch, err)
+	}
 	out, err := gt.runGitCommand(repoPath, "rev-parse", "--verify", branch+"^{commit}")
 	if err != nil {
-		return "", fmt.Errorf("branch head %s: %w", branch, ErrBranchNotFound)
+		return "", fmt.Errorf("resolve branch head %s: %w", branch, err)
 	}
 	sha := strings.TrimSpace(out)
 	if sha == "" {

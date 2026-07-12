@@ -96,7 +96,7 @@ func TestDaemon_CreatePRAction_NoBranch_EmitsEvent(t *testing.T) {
 	select {
 	case ev := <-sub:
 		assert.Equal(t, "pr_create_failed", ev.Kind)
-		assert.Contains(t, ev.Detail, "task branch not found")
+		assert.Contains(t, ev.Detail, "not a git repository")
 		assert.Equal(t, planFile, ev.PlanFile)
 		assert.Equal(t, e.Path, ev.Repo)
 	case <-time.After(time.Second):

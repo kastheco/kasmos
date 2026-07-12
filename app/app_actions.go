@@ -842,8 +842,9 @@ func (m *home) mergeTaskToMain(planFile string) (tea.Model, tea.Cmd) {
 	if !ok {
 		return m, m.handleError(fmt.Errorf("task not found: %s", planFile))
 	}
-	if entry.Branch == "" {
-		return m, m.handleError(fmt.Errorf("plan has no branch to merge"))
+	branch := entry.Branch
+	if branch == "" {
+		branch = gitpkg.TaskBranchFromFile(planFile)
 	}
 	planName := taskstate.DisplayName(planFile)
 	mergeAction := func() tea.Msg {
@@ -851,7 +852,11 @@ func (m *home) mergeTaskToMain(planFile string) (tea.Model, tea.Cmd) {
 		if !ok {
 			return fmt.Errorf("task not found: %s", planFile)
 		}
-		head, err := gitpkg.BranchHeadSHA(m.activeRepoPath, fresh.Branch)
+		freshBranch := fresh.Branch
+		if freshBranch == "" {
+			freshBranch = branch
+		}
+		head, err := gitpkg.BranchHeadSHA(m.activeRepoPath, freshBranch)
 		if err != nil {
 			return err
 		}
@@ -867,7 +872,7 @@ func (m *home) mergeTaskToMain(planFile string) (tea.Model, tea.Cmd) {
 			}
 			return verificationStaleMsg{planFile: planFile}
 		}
-		if err := gitpkg.PreflightMergeTaskBranch(m.activeRepoPath, fresh.Branch); err != nil {
+		if err := gitpkg.PreflightMergeTaskBranch(m.activeRepoPath, freshBranch); err != nil {
 			return err
 		}
 		// Kill all instances bound to this plan.
@@ -879,7 +884,7 @@ func (m *home) mergeTaskToMain(planFile string) (tea.Model, tea.Cmd) {
 				m.allInstances = append(m.allInstances[:i], m.allInstances[i+1:]...)
 			}
 		}
-		if err := gitpkg.MergeTaskBranch(m.activeRepoPath, fresh.Branch); err != nil {
+		if err := gitpkg.MergeTaskBranch(m.activeRepoPath, freshBranch); err != nil {
 			return err
 		}
 		// Walk through FSM to done if not already there.
