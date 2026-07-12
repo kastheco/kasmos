@@ -1,4 +1,4 @@
-export type DisplayMode = "pip" | "inline" | "fullscreen";
+export type DisplayMode = "pip" | "inline" | "fullscreen" | "sidebar";
 
 export interface LifecycleCounts { planning: number; ready: number; implementing: number; reviewing: number; verifying: number; total: number }
 export interface ActiveAgent { task: string; role: string; wave?: number; stage?: string; ready?: boolean; active?: boolean; worktree?: string; branch?: string; task_number?: number; last_activity?: string; paused?: boolean }

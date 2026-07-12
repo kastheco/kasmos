@@ -49,6 +49,7 @@ const sidebars: SidebarsConfig = {
         "guides/codex-plugin",
         "guides/live-status-contract",
         "guides/codex-monitor-widget",
+        "guides/monitor-host-contract",
       ],
     },
     {

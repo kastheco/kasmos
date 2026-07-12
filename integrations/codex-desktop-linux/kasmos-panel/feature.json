@@ -1,0 +1,11 @@
+{
+  "id": "kasmos-panel",
+  "title": "Kasmos Panel",
+  "description": "Mount the exported Kasmos monitor as a persistent Codex Desktop Linux sidebar pane.",
+  "defaultEnabled": false,
+  "contract_version": 1,
+  "entrypoints": {
+    "patchDescriptors": "./patch.js",
+    "stageHook": "./stage.sh"
+  }
+}

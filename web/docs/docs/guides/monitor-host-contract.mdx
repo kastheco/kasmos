@@ -1,0 +1,130 @@
+---
+title: "monitor host contract"
+---
+
+# monitor host contract
+
+the exported monitor bundle is mounted by assigning a `KasmosMonitorHost` to `window.kasmosMonitorHost` before `monitor.js` runs. this is the canonical contract for hosts that embed the monitor outside the codex apps sdk.
+
+## host interface
+
+the manifest splits host capabilities into required and optional lists.
+
+required members:
+
+| member | contract |
+| --- | --- |
+| `contractVersion` | numeric host api version; it must equal `1` |
+| `displayMode` | one of `pip`, `inline`, `fullscreen`, or `sidebar` |
+| `visibility` | pane visibility: `expanded`, `collapsed`, or `hidden` |
+| `theme` | `light` or `dark` |
+| `refresh(scope)` | returns a promise containing a live-status snapshot for optional `{project, task}` scope |
+| `subscribe(listener)` | subscribes to host property changes and returns an unsubscribe function |
+
+optional input members:
+
+| member | contract |
+| --- | --- |
+| `snapshot` | initial live-status snapshot, avoiding a cold-mount loading state |
+| `input` | initial `{project, task}` supplied by the invocation |
+| `state` | host-restored durable `{project, task}` selection |
+| `maxHeight` | maximum inline height in css pixels |
+
+optional capabilities:
+
+| member | contract |
+| --- | --- |
+| `saveState(scope)` | asks the host to persist `{project, task}` durably |
+| `setBadge(badge)` | publishes collapsed-entry status when the derived badge changes |
+| `requestDisplayMode(mode)` | asks the host to change display mode |
+| `sendPrompt(prompt)` | writes text to the user's composer; it never writes to kasmos |
+
+`subscribe` must notify after any mutable host property changes. the bundle reads the current host object again after notification.
+
+## versioning
+
+there are two independent versions:
+
+- `contract_version` is `1` and versions the host api.
+- `live_status_schema_version` is `2` and versions the wire payload from `internal/livestatus`.
+
+a ui-only release bumps neither. a wire-format change bumps only `live_status_schema_version`. the contract version is declared in four handoff surfaces: `MONITOR_CONTRACT_VERSION` in `web/admin/src/widget/host.ts`, `MonitorContractVersion` in `internal/appwidget/contract.go`, `contract_version` in `kasmos-monitor.manifest.json`, and `contract_version` in `integrations/codex-desktop-linux/kasmos-panel/feature.json`. a mismatch produces an explicit incompatible-contract state, never silent degradation.
+
+## persistence
+
+the host owns durable `{project, task}` state. kasmos does not persist pane state. restore it through `state`, and persist changes received by `saveState` in host-owned storage.
+
+apps sdk `widgetState` is per-message and is not durable. a host that maps `saveState` onto it will lose focus across restarts. that is the host's choice, not a kasmos bug.
+
+## badge channel
+
+`setBadge` receives this payload only when its derived value changes:
+
+```ts
+interface MonitorBadge {
+  level: "idle" | "running" | "attention" | "offline";
+  running_agents: number;
+  blocked: number;
+  implementing: number;
+  reviewing: number;
+  project?: string;
+  task?: string;
+}
+```
+
+`idle` means the daemon is available with no active agent or attention item. `running` means at least one agent is active. `attention` means an attention item exists. `offline` means no snapshot is available or the daemon is unavailable.
+
+## polling cadence
+
+| pane state | base cadence |
+| --- | --- |
+| `expanded` + `inline` | 3 s |
+| `expanded` + `pip`, `fullscreen`, or `sidebar` | 2 s |
+| `collapsed` | 15 s |
+| `hidden` or hidden document | paused |
+
+failures back off exponentially to 30 s, and refreshes remain single-flight. when the document becomes hidden, the monitor cancels its pending timer and does not schedule another wakeup until visibility returns. host-reported `visibility` exists because `document.visibilityState` describes the window, not the pane. without it, a collapsed sidebar in a focused window would poll every 2 s forever.
+
+that excess polling amplifies `SQLITE_BUSY` contention across panes and processes. the 1 s ttl plus singleflight guard in `internal/appwidget/cache.go` protects snapshot assembly from bursts; preserve that protection when changing cadence.
+
+## authority boundary
+
+the pane is read-only. `refresh_monitor` is the only tool it calls. `open_monitor` is the model-visible render tool and is not host-callable. `sendPrompt` writes to the user's composer, never to kasmos. hosts must not wire a mutating tool into `refresh`.
+
+## data path
+
+the host's privileged process calls `POST /v1/monitor/snapshot` on `kas serve`. the loopback default is `http://127.0.0.1:7433`. the request body contains optional `project` and `task` strings and the response is the same read-only snapshot returned by `refresh_monitor`.
+
+the pane renderer performs no network i/o. the endpoint's cors grant is deliberately limited to the `null` origin; a privileged host process does not depend on browser cors.
+
+## bundle export and integrity
+
+create the exported files with:
+
+```sh
+kas monitor bundle --out DIR
+```
+
+`kasmos-monitor.manifest.json` contains:
+
+- `name`: bundle name, `kasmos-monitor`
+- `contract_version`: required host api version
+- `live_status_schema_version`: required snapshot schema version
+- `root_element_id`: element where the renderer mounts
+- `host_global`: global containing the host adapter
+- `snapshot_endpoint`: `method`, `path`, and `default_origin` for the supported bridge
+- `required_capabilities`: required interface member names
+- `optional_capabilities`: optional interface member names
+- `files`: each emitted file's relative `path`, lowercase hex `sha256`, and byte count
+
+verify every declared digest from the export directory:
+
+```sh
+jq -r '.files[] | "\(.sha256)  \(.path)"' kasmos-monitor.manifest.json | sha256sum -c -
+```
+
+the exporter writes `monitor.js`, `monitor.css`, and `index.html`, and refuses to overwrite foreign directory entries.
+
+## reference host
+
+`integrations/codex-desktop-linux/kasmos-panel/` contains the tested reference adapter and disabled-by-default feature template. the codex desktop linux fork patch is a separate task against a separate repository; this package documents and tests the handoff but does not apply that patch.
