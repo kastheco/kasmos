@@ -1,35 +1,41 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Skeleton from "../components/Skeleton";
 import StatusBadge from "../components/StatusBadge";
 import AgentList from "./AgentList";
 import AttentionList from "./AttentionList";
 import EventFeed from "./EventFeed";
 import LifecycleRail from "./LifecycleRail";
-import { useMonitorSnapshot, useOpenAiGlobal } from "./openai";
+import { deriveBadge } from "./badge";
+import { useMonitorHost } from "./host";
+import { useMonitorSnapshot } from "./openai";
 import WaveBoard from "./WaveBoard";
 import styles from "./widget.module.css";
 
 export default function Monitor() {
-  const globals = useOpenAiGlobal();
-  const mode = globals.displayMode ?? "inline";
-  const initialProject = globals.widgetState?.project ?? globals.toolInput?.project ?? globals.toolOutput?.project ?? globals.toolOutput?.projects?.[0];
-  const initialTask = globals.widgetState?.task ?? globals.toolInput?.task ?? globals.toolOutput?.focus?.filename ?? globals.toolOutput?.tasks?.[0]?.filename;
+  const host = useMonitorHost();
+  const mode = host.displayMode;
+  const initialProject = host.state?.project ?? host.input?.project ?? host.snapshot?.project ?? host.snapshot?.projects?.[0];
+  const initialTask = host.state?.task ?? host.input?.task ?? host.snapshot?.focus?.filename ?? host.snapshot?.tasks?.[0]?.filename;
   const [project, setProject] = useState(initialProject);
   const [task, setTask] = useState(initialTask);
-  const { snapshot, stale } = useMonitorSnapshot(globals, project, task);
+  const { snapshot, stale, phase, refresh } = useMonitorSnapshot(host, project, task);
 
   useEffect(() => { if (!project && snapshot) setProject(snapshot.project || snapshot.projects?.[0]); }, [project, snapshot]);
   useEffect(() => { if (!task && snapshot && snapshot.project === project) setTask(snapshot.focus?.filename ?? snapshot.tasks?.[0]?.filename); }, [project, task, snapshot]);
-  useEffect(() => { window.openai?.setWidgetState?.({ project, task }); }, [project, task]);
-  const action = globals.sendFollowUpMessage ? (prompt: string) => { void window.openai?.sendFollowUpMessage?.({ prompt }); } : undefined;
+  useEffect(() => { void host.saveState?.({ project, task }); }, [host.saveState, project, task]);
+  const lastBadge = useRef<string | undefined>(undefined);
+  useEffect(() => { if (!snapshot && phase === "loading") return; const badge = deriveBadge(snapshot, { project: project ?? snapshot?.project, task: task ?? snapshot?.focus?.filename }); const serialized = JSON.stringify(badge); if (serialized !== lastBadge.current) { lastBadge.current = serialized; host.setBadge?.(badge); } }, [host.setBadge, phase, project, snapshot, task]);
+  const action = host.sendPrompt ? (prompt: string) => { void host.sendPrompt?.(prompt); } : undefined;
   const blockerCount = snapshot?.attention.length ?? 0;
   const runningAgents = useMemo(() => snapshot?.active_agents.filter((agent) => agent.active && !agent.paused).length ?? 0, [snapshot]);
 
-  if (!snapshot) return <main className={styles.root}><Skeleton variant="text" lines={4} /></main>;
-  return <main className={`${styles.root} ${globals.theme === "light" ? styles.light : styles.dark} ${mode === "pip" ? styles.pip : mode === "fullscreen" ? styles.fullscreen : styles.inlineMode}`} style={mode === "inline" && globals.maxHeight ? { maxHeight: globals.maxHeight } : undefined}>
+  if (!snapshot && phase === "loading") return <main className={styles.root}><Skeleton variant="text" lines={4} /></main>;
+  if (!snapshot && phase === "incompatible") return <main className={styles.root}>monitor bundle / host version mismatch</main>;
+  if (!snapshot) return <main className={styles.root}><p>monitor offline</p><button onClick={() => void refresh()}>retry</button></main>;
+  return <main className={`${styles.root} ${host.theme === "light" ? styles.light : styles.dark} ${mode === "pip" ? styles.pip : mode === "fullscreen" ? styles.fullscreen : mode === "sidebar" ? styles.sidebar : styles.inlineMode}`} style={mode === "inline" && host.maxHeight ? { maxHeight: host.maxHeight } : undefined}>
     <header className={styles.header}><div><strong>kasmos monitor</strong><span className={styles.connection}>{snapshot.daemon_running ? "● live" : "○ daemon offline"}</span></div><div className={styles.controls}>
-      {globals.requestDisplayMode && mode !== "pip" && <button aria-label="pin as picture in picture" onClick={() => void window.openai?.requestDisplayMode?.({ mode: "pip" })}>pin</button>}
-      {globals.requestDisplayMode && mode !== "fullscreen" && <button aria-label="expand monitor" onClick={() => void window.openai?.requestDisplayMode?.({ mode: "fullscreen" })}>expand</button>}
+      {host.requestDisplayMode && mode !== "sidebar" && mode !== "pip" && <button aria-label="pin as picture in picture" onClick={() => void host.requestDisplayMode?.("pip")}>pin</button>}
+      {host.requestDisplayMode && mode !== "sidebar" && mode !== "fullscreen" && <button aria-label="expand monitor" onClick={() => void host.requestDisplayMode?.("fullscreen")}>expand</button>}
     </div></header>
     <div className={styles.stale} aria-live="polite">{stale ? "stale · retrying with last known state" : ""}</div>
     {mode === "pip" ? <div className={styles.pipRail}><LifecycleRail lifecycle={snapshot.lifecycle} /><span>{runningAgents} running</span><StatusBadge status={blockerCount ? `${blockerCount} blocked` : "ready"} /></div> : <>
