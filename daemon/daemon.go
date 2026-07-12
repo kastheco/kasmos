@@ -1071,6 +1071,11 @@ func (d *Daemon) tickRepo(ctx context.Context, e RepoEntry) {
 		// Processor requires a store; skip repos whose store is unavailable.
 		return
 	}
+	for _, action := range d.checkVerificationDrift(ctx, e) {
+		if err := d.executeAction(ctx, e, action); err != nil {
+			d.logger.Warn("execute verification drift action failed", "kind", action.Kind(), "repo", e.Path, "err", err)
+		}
+	}
 
 	if e.SignalGateway == nil {
 		// Filesystem-only path for repos without a usable signal gateway.
@@ -1237,6 +1242,7 @@ func (d *Daemon) tickRepo(ctx context.Context, e RepoEntry) {
 			if err := d.executeAction(ctx, e, action); err != nil {
 				d.logger.Error("execute action failed", "kind", action.Kind(), "repo", e.Path, "err", err)
 				actionErrs = append(actionErrs, fmt.Errorf("%s: %w", action.Kind(), err))
+				break
 			}
 		}
 		if len(actionErrs) > 0 {
@@ -1790,7 +1796,11 @@ func (d *Daemon) executeAction(ctx context.Context, e RepoEntry, action loop.Act
 		})
 		return nil
 	case loop.PausePlanAgentAction:
-		if err := d.spawner.KillAgent(e.Path, a.PlanFile, a.AgentType); err != nil {
+		killAgent := d.killAgent
+		if killAgent == nil {
+			killAgent = d.spawner.KillAgent
+		}
+		if err := killAgent(e.Path, a.PlanFile, a.AgentType); err != nil {
 			d.logger.Error("kill agent failed", "plan", a.PlanFile, "type", a.AgentType, "err", err)
 			return err
 		}
@@ -1854,6 +1864,36 @@ func (d *Daemon) executeAction(ctx context.Context, e RepoEntry, action loop.Act
 			Repo:     e.Path,
 			PlanFile: a.PlanFile,
 		})
+		return nil
+	case loop.RecordVerificationAction:
+		if err := e.Store.SetVerification(e.Project, a.PlanFile, taskstore.VerificationRecord{
+			SHA: a.SHA, BaseSHA: a.BaseSHA, By: a.By, At: time.Now().UTC(),
+		}); err != nil {
+			if transitionErr := e.newFSMWithHooks().Transition(a.PlanFile, taskfsm.VerificationStale); transitionErr != nil {
+				return fmt.Errorf("record verification for %s: %v; reopen verification: %w", a.PlanFile, err, transitionErr)
+			}
+			return fmt.Errorf("record verification for %s: %w", a.PlanFile, err)
+		}
+		d.broadcaster.Emit(api.Event{Kind: "verification_recorded", Repo: e.Path, PlanFile: a.PlanFile})
+		return nil
+	case loop.StaleVerificationAction:
+		if err := e.Store.ClearVerification(e.Project, a.PlanFile, a.Reason); err != nil {
+			return fmt.Errorf("clear stale verification for %s: %w", a.PlanFile, err)
+		}
+		entry, err := e.Store.Get(e.Project, a.PlanFile)
+		if err != nil {
+			return fmt.Errorf("reload stale verification task %s: %w", a.PlanFile, err)
+		}
+		if entry.Status == taskstore.StatusDone {
+			if err := e.newFSMWithHooks().Transition(a.PlanFile, taskfsm.VerificationStale); err != nil {
+				return fmt.Errorf("reopen stale verification for %s: %w", a.PlanFile, err)
+			}
+		}
+		if err := clearRepoExecutionState(e, a.PlanFile); err != nil {
+			return fmt.Errorf("clear stale verification execution state: %w", err)
+		}
+		d.logger.Warn("verification stale", "plan", a.PlanFile, "reviewed_sha", a.ReviewedSHA, "current_sha", a.CurrentSHA)
+		d.broadcaster.Emit(api.Event{Kind: "verification_stale", Repo: e.Path, PlanFile: a.PlanFile, Detail: fmt.Sprintf("verified %s, head %s", a.ReviewedSHA, a.CurrentSHA)})
 		return nil
 	case loop.VerifyFailedAction:
 		// Persist latest feedback so fixer agents receive it via SpawnFixer opts.
@@ -1919,6 +1959,35 @@ func (d *Daemon) executeAction(ctx context.Context, e RepoEntry, action loop.Act
 }
 
 func (d *Daemon) ensurePRForApprovedTask(e RepoEntry, planFile, reviewBody string) (prsvc.Result, error) {
+	if e.Store == nil {
+		return prsvc.Result{}, fmt.Errorf("task store unavailable for %s", planFile)
+	}
+	entry, err := e.Store.Get(e.Project, planFile)
+	if err != nil {
+		return prsvc.Result{}, fmt.Errorf("load task entry for %s: %w", planFile, err)
+	}
+	branch := entry.Branch
+	if branch == "" {
+		branch = gitpkg.TaskBranchFromFile(planFile)
+	}
+	if entry.PRURL == "" {
+		_, _, reason, err := gitpkg.ValidateVerification(e.Path, branch, entry.VerifiedSHA, entry.VerifiedBaseSHA)
+		if err != nil {
+			_ = e.Store.SetPRCreateOutcome(e.Project, planFile, taskstore.PRCreateOutcome{State: string(prsvc.OutcomeBlocked), Error: err.Error(), AttemptedAt: time.Now().UTC()})
+			return prsvc.Result{Outcome: prsvc.OutcomeBlocked, Reason: err.Error()}, nil
+		}
+		if reason != "" {
+			if err := e.Store.ClearVerification(e.Project, planFile, reason); err != nil {
+				return prsvc.Result{}, err
+			}
+			if entry.Status == taskstore.StatusDone {
+				if err := e.newFSMWithHooks().Transition(planFile, taskfsm.VerificationStale); err != nil {
+					return prsvc.Result{}, err
+				}
+			}
+			return prsvc.Result{Outcome: prsvc.OutcomeBlocked, Reason: "verification stale: " + reason}, nil
+		}
+	}
 	return prsvc.Ensure(context.Background(), e.Store, prsvc.Request{RepoPath: e.Path, Project: e.Project, PlanFile: planFile, ReviewBody: reviewBody, Enabled: e.AutoCreatePR})
 }
 
@@ -2439,11 +2508,21 @@ func fixerSpawnOpts(e RepoEntry, planFile, branch, feedback string) loop.SpawnOp
 
 func masterSpawnOpts(e RepoEntry, entry taskstore.TaskEntry) loop.SpawnOpts {
 	spec := orchestration.BuildMasterAgentSpecWithConfig(entry.Filename, e.Project, entry.ReviewCycle, e.ReadinessSelfFixMaxLines, e.ReadinessMaxVerifyCycles)
+	branch := entry.Branch
+	if branch == "" {
+		branch = gitpkg.TaskBranchFromFile(entry.Filename)
+	}
+	base, baseErr := gitpkg.BranchMergeBaseSHA(e.Path, branch)
+	head, headErr := gitpkg.BranchHeadSHA(e.Path, branch)
+	if baseErr == nil && headErr == nil {
+		targetBase, _ := gitpkg.DefaultBranchHeadSHA(e.Path)
+		spec = orchestration.BuildMasterAgentSpecForRange(entry.Filename, e.Project, entry.ReviewCycle, e.ReadinessSelfFixMaxLines, e.ReadinessMaxVerifyCycles, base, head, targetBase)
+	}
 	return withSDKTranscriptRetention(e, loop.SpawnOpts{
 		PlanFile:        entry.Filename,
 		RepoPath:        e.Path,
 		Project:         e.Project,
-		Branch:          entry.Branch,
+		Branch:          branch,
 		Program:         programForAgent(e.Path, session.AgentTypeMaster),
 		Prompt:          spec.Prompt,
 		ReviewCycle:     entry.ReviewCycle + 1,

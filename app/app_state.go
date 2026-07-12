@@ -257,14 +257,20 @@ func (m *home) ensureProcessor() *loop.Processor {
 	m.processor = loop.NewProcessor(loop.ProcessorConfig{
 		AutoReviewFix:       autoReviewFix,
 		AutoReadinessReview: autoReadinessReview,
-		Store:               m.taskStore,
-		Project:             m.taskStoreProject,
-		Dir:                 m.taskStateDir,
-		MaxReviewFixCycles:  maxCycles,
-		Hooks:               hooks,
-		PlannerProfiles:     plannerProfiles,
-		PlannerDraftMode:    plannerDraftMode,
-		CacheDir:            filepath.Join(m.activeRepoPath, ".kasmos", "cache"),
+		HeadSHA: func(branch string) (string, error) {
+			return gitpkg.BranchHeadSHA(m.activeRepoPath, branch)
+		},
+		MergeBaseSHA: func(branch string) (string, error) {
+			return gitpkg.DefaultBranchHeadSHA(m.activeRepoPath)
+		},
+		Store:              m.taskStore,
+		Project:            m.taskStoreProject,
+		Dir:                m.taskStateDir,
+		MaxReviewFixCycles: maxCycles,
+		Hooks:              hooks,
+		PlannerProfiles:    plannerProfiles,
+		PlannerDraftMode:   plannerDraftMode,
+		CacheDir:           filepath.Join(m.activeRepoPath, ".kasmos", "cache"),
 	})
 	return m.processor
 }
@@ -445,6 +451,24 @@ func (m *home) createPRAfterApproval(planFile, reviewBody string) tea.Cmd {
 	}
 
 	return func() tea.Msg {
+		entry, err := store.Get(project, planFile)
+		if err != nil {
+			return prCreatedForPlanMsg{planFile: planFile, outcome: prsvc.OutcomeBlocked, reason: err.Error()}
+		}
+		branch := entry.Branch
+		if branch == "" {
+			branch = gitpkg.TaskBranchFromFile(planFile)
+		}
+		_, _, reason, err := gitpkg.ValidateVerification(repoPath, branch, entry.VerifiedSHA, entry.VerifiedBaseSHA)
+		if err != nil {
+			return prCreatedForPlanMsg{planFile: planFile, outcome: prsvc.OutcomeBlocked, reason: err.Error()}
+		}
+		if reason != "" {
+			reason = "verification stale: " + reason
+			_ = store.ClearVerification(project, planFile, reason)
+			_ = store.SetPRCreateOutcome(project, planFile, taskstore.PRCreateOutcome{State: string(prsvc.OutcomeBlocked), Error: reason, AttemptedAt: time.Now().UTC()})
+			return prCreatedForPlanMsg{planFile: planFile, outcome: prsvc.OutcomeBlocked, reason: reason}
+		}
 		res, err := prsvc.Ensure(context.Background(), store, prsvc.Request{RepoPath: repoPath, Project: project, PlanFile: planFile, ReviewBody: reviewBody, Enabled: enabled})
 		if err != nil && res.Reason == "" {
 			res.Reason = err.Error()
@@ -1570,6 +1594,10 @@ func (m *home) updateInfoPaneForPlanHeader() {
 	data.ReviewingAt = entry.ReviewingAt
 	data.VerifyingAt = entry.VerifyingAt
 	data.DoneAt = entry.DoneAt
+	data.VerifiedSHA = entry.VerifiedSHA
+	data.VerifiedBy = entry.VerifiedBy
+	data.VerifiedAt = entry.VerifiedAt
+	data.StaleVerificationReason = entry.StaleVerificationReason
 
 	// Include wave progress if an orchestrator exists for this plan.
 	var orch *orchestration.WaveOrchestrator
@@ -1693,6 +1721,10 @@ func (m *home) updateInfoPane() {
 				data.ReviewingAt = entry.ReviewingAt
 				data.VerifyingAt = entry.VerifyingAt
 				data.DoneAt = entry.DoneAt
+				data.VerifiedSHA = entry.VerifiedSHA
+				data.VerifiedBy = entry.VerifiedBy
+				data.VerifiedAt = entry.VerifiedAt
+				data.StaleVerificationReason = entry.StaleVerificationReason
 				// Review outcome — shown when the plan has been approved.
 				if entry.Status == taskstate.StatusDone {
 					data.ReviewOutcome = "approved"
@@ -1790,15 +1822,16 @@ func (m *home) updateSidebarTasks() {
 				activeRound = entry.ReviewCycle + 1
 			}
 			planDisplays = append(planDisplays, ui.PlanDisplay{
-				Filename:    p.Filename,
-				Status:      string(p.Status),
-				Description: p.Description,
-				Branch:      p.Branch,
-				Topic:       p.Topic,
-				Phase:       strings.TrimSpace(entry.ExecutionState.Phase),
-				AgentType:   strings.TrimSpace(entry.ExecutionState.ActiveAgentType),
-				ActiveWave:  entry.ExecutionState.ActiveWave,
-				ActiveRound: activeRound,
+				Filename:                p.Filename,
+				Status:                  string(p.Status),
+				Description:             p.Description,
+				Branch:                  p.Branch,
+				Topic:                   p.Topic,
+				Phase:                   strings.TrimSpace(entry.ExecutionState.Phase),
+				AgentType:               strings.TrimSpace(entry.ExecutionState.ActiveAgentType),
+				ActiveWave:              entry.ExecutionState.ActiveWave,
+				ActiveRound:             activeRound,
+				StaleVerificationReason: entry.StaleVerificationReason,
 			})
 		}
 		if len(planDisplays) > 0 {
@@ -1820,14 +1853,15 @@ func (m *home) updateSidebarTasks() {
 			activeRound = entry.ReviewCycle + 1
 		}
 		ungrouped = append(ungrouped, ui.PlanDisplay{
-			Filename:    p.Filename,
-			Status:      string(p.Status),
-			Description: p.Description,
-			Branch:      p.Branch,
-			Phase:       strings.TrimSpace(entry.ExecutionState.Phase),
-			AgentType:   strings.TrimSpace(entry.ExecutionState.ActiveAgentType),
-			ActiveWave:  entry.ExecutionState.ActiveWave,
-			ActiveRound: activeRound,
+			Filename:                p.Filename,
+			Status:                  string(p.Status),
+			Description:             p.Description,
+			Branch:                  p.Branch,
+			Phase:                   strings.TrimSpace(entry.ExecutionState.Phase),
+			AgentType:               strings.TrimSpace(entry.ExecutionState.ActiveAgentType),
+			ActiveWave:              entry.ExecutionState.ActiveWave,
+			ActiveRound:             activeRound,
+			StaleVerificationReason: entry.StaleVerificationReason,
 		})
 	}
 
@@ -2048,7 +2082,12 @@ func (m *home) spawnMaster(planFile string) tea.Cmd {
 	if m.taskState != nil {
 		reviewCycle, _ = m.taskState.ReviewCycle(planFile)
 	}
-	spec := orchestration.BuildMasterAgentSpec(planFile, m.taskStoreProject, reviewCycle)
+	selfFixMaxLines, maxVerifyCycles := 80, 2
+	if m.appConfig != nil {
+		selfFixMaxLines = m.appConfig.ReadinessSelfFixMaxLines
+		maxVerifyCycles = m.appConfig.ReadinessMaxVerifyCycles
+	}
+	spec := orchestration.BuildMasterAgentSpecWithConfig(planFile, m.taskStoreProject, reviewCycle, selfFixMaxLines, maxVerifyCycles)
 	title := spec.Title
 	if m.hasLiveOrPendingInstance(planFile, session.AgentTypeMaster, title) {
 		return nil
@@ -2086,7 +2125,6 @@ func (m *home) spawnMaster(planFile string) tea.Cmd {
 		log.WarningLog.Printf("could not create master instance for %q: %v", planFile, err)
 		return nil
 	}
-	masterInst.QueuedPrompt = spec.Prompt
 	masterInst.SetStatus(session.Loading)
 
 	m.addInstanceFinalizer(masterInst, m.nav.AddInstance(masterInst))
@@ -2101,16 +2139,27 @@ func (m *home) spawnMaster(planFile string) tea.Cmd {
 	m.toastManager.Info(fmt.Sprintf("review approved → readiness check started for %s", planName))
 
 	shared := gitpkg.NewSharedTaskWorktree(m.activeRepoPath, branch)
+	repoPath := m.activeRepoPath
+	project := m.taskStoreProject
 	return func() tea.Msg {
 		if err := shared.Setup(); err != nil {
 			return instanceStartedMsg{instance: masterInst, err: err}
 		}
+		spec := buildMasterSpecForBranch(repoPath, branch, planFile, project, reviewCycle, selfFixMaxLines, maxVerifyCycles)
+		masterInst.QueuedPrompt = spec.Prompt
 		if err := m.syncSharedWorktreeScaffold(shared.GetWorktreePath()); err != nil {
 			return instanceStartedMsg{instance: masterInst, err: err}
 		}
 		err := masterInst.StartInSharedWorktree(shared, branch)
 		return instanceStartedMsg{instance: masterInst, err: err}
 	}
+}
+
+func buildMasterSpecForBranch(repoPath, branch, planFile, project string, reviewCycle, selfFixMaxLines, maxVerifyCycles int) orchestration.LifecycleAgentSpec {
+	base, _ := gitpkg.BranchMergeBaseSHA(repoPath, branch)
+	head, _ := gitpkg.BranchHeadSHA(repoPath, branch)
+	targetBase, _ := gitpkg.DefaultBranchHeadSHA(repoPath)
+	return orchestration.BuildMasterAgentSpecForRange(planFile, project, reviewCycle, selfFixMaxLines, maxVerifyCycles, base, head, targetBase)
 }
 
 func withOpenCodeModelFlag(program, model string) string {

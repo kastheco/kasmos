@@ -118,7 +118,7 @@ func TestDaemon_TickRepoGateway_ReviewFixLoop_HappyPath(t *testing.T) {
 	assert.Equal(t, taskstore.ExecutionState{}, updated.ExecutionState)
 	assert.Equal(t, 1, updated.ReviewCycle)
 	assert.Equal(t, feedback, updated.LatestReviewFeedback)
-	assertEventKinds(t, drainDaemonEvents(events), "review_approved", "signal_processed", "pr_create_skipped")
+	assertEventKinds(t, drainDaemonEvents(events), "review_approved", "verification_recorded", "signal_processed", "pr_create_skipped")
 	assert.Equal(t, string(prsvc.OutcomeSkipped), updated.PRCreateState)
 	assert.Equal(t, "auto pr disabled by config", updated.PRCreateError)
 
@@ -224,11 +224,15 @@ func newReviewFixHarness(t *testing.T, task taskstore.TaskEntry) (taskstore.Stor
 	}
 
 	entry := RepoEntry{
-		Path:          repoDir,
-		Project:       project,
-		Store:         store,
-		SignalsDir:    filepath.Join(repoDir, ".kasmos", "signals"),
-		Processor:     loop.NewProcessor(loop.ProcessorConfig{Store: store, Project: project, AutoReviewFix: true, MaxReviewFixCycles: 2}),
+		Path:       repoDir,
+		Project:    project,
+		Store:      store,
+		SignalsDir: filepath.Join(repoDir, ".kasmos", "signals"),
+		Processor: loop.NewProcessor(loop.ProcessorConfig{
+			Store: store, Project: project, AutoReviewFix: true, MaxReviewFixCycles: 2,
+			HeadSHA:      func(string) (string, error) { return "0123456789abcdef0123456789abcdef01234567", nil },
+			MergeBaseSHA: func(string) (string, error) { return "89abcdef0123456789abcdef0123456789abcdef", nil },
+		}),
 		SignalGateway: gw,
 	}
 

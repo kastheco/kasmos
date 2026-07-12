@@ -18,7 +18,10 @@ type bodyPayload struct {
 	// The processor gates its "already applied" fast-path on this flag so
 	// stale MCP / filesystem signals that happen to land while the task is in
 	// the post-event target state do not trigger duplicate side effects.
-	FsmApplied bool `json:"fsm_applied,omitempty"`
+	FsmApplied      bool   `json:"fsm_applied,omitempty"`
+	ReviewedSHA     string `json:"reviewed_sha,omitempty"`
+	ReviewedBaseSHA string `json:"reviewed_base_sha,omitempty"`
+	Origin          string `json:"origin,omitempty"`
 }
 
 type taskPayload struct {
@@ -89,7 +92,7 @@ func ConvertSignalEntry(entry *taskstore.SignalEntry, result *ScanResult) error 
 
 	switch internalType {
 	case "plan_start":
-		body, preApplied, err := decodeBody(entry.Payload)
+		body, preApplied, _, _, _, err := decodeBody(entry.Payload)
 		if err != nil {
 			return err
 		}
@@ -102,7 +105,7 @@ func ConvertSignalEntry(entry *taskstore.SignalEntry, result *ScanResult) error 
 		})
 
 	case "implement_start":
-		body, preApplied, err := decodeBody(entry.Payload)
+		body, preApplied, _, _, _, err := decodeBody(entry.Payload)
 		if err != nil {
 			return err
 		}
@@ -115,7 +118,7 @@ func ConvertSignalEntry(entry *taskstore.SignalEntry, result *ScanResult) error 
 		})
 
 	case "planner_finished":
-		body, preApplied, err := decodeBody(entry.Payload)
+		body, preApplied, _, _, _, err := decodeBody(entry.Payload)
 		if err != nil {
 			return err
 		}
@@ -128,7 +131,7 @@ func ConvertSignalEntry(entry *taskstore.SignalEntry, result *ScanResult) error 
 		})
 
 	case "implement_finished":
-		body, preApplied, err := decodeBody(entry.Payload)
+		body, preApplied, _, _, _, err := decodeBody(entry.Payload)
 		if err != nil {
 			return err
 		}
@@ -141,7 +144,7 @@ func ConvertSignalEntry(entry *taskstore.SignalEntry, result *ScanResult) error 
 		})
 
 	case "review_approved":
-		body, preApplied, err := decodeBody(entry.Payload)
+		body, preApplied, _, _, _, err := decodeBody(entry.Payload)
 		if err != nil {
 			return err
 		}
@@ -154,7 +157,7 @@ func ConvertSignalEntry(entry *taskstore.SignalEntry, result *ScanResult) error 
 		})
 
 	case "review_changes_requested":
-		body, preApplied, err := decodeBody(entry.Payload)
+		body, preApplied, _, _, _, err := decodeBody(entry.Payload)
 		if err != nil {
 			return err
 		}
@@ -167,29 +170,35 @@ func ConvertSignalEntry(entry *taskstore.SignalEntry, result *ScanResult) error 
 		})
 
 	case string(taskfsm.VerifyApproved):
-		body, preApplied, err := decodeBody(entry.Payload)
+		body, preApplied, reviewedSHA, reviewedBaseSHA, origin, err := decodeBody(entry.Payload)
 		if err != nil {
 			return err
 		}
 		result.FSMSignals = append(result.FSMSignals, taskfsm.Signal{
-			Event:          taskfsm.VerifyApproved,
-			TaskFile:       entry.PlanFile,
-			Body:           body,
-			PreApplied:     preApplied,
-			GatewayEntryID: entry.ID,
+			Event:           taskfsm.VerifyApproved,
+			TaskFile:        entry.PlanFile,
+			Body:            body,
+			PreApplied:      preApplied,
+			ReviewedSHA:     reviewedSHA,
+			ReviewedBaseSHA: reviewedBaseSHA,
+			Origin:          origin,
+			GatewayEntryID:  entry.ID,
 		})
 
 	case string(taskfsm.VerifyFailed):
-		body, preApplied, err := decodeBody(entry.Payload)
+		body, preApplied, reviewedSHA, reviewedBaseSHA, origin, err := decodeBody(entry.Payload)
 		if err != nil {
 			return err
 		}
 		result.FSMSignals = append(result.FSMSignals, taskfsm.Signal{
-			Event:          taskfsm.VerifyFailed,
-			TaskFile:       entry.PlanFile,
-			Body:           body,
-			PreApplied:     preApplied,
-			GatewayEntryID: entry.ID,
+			Event:           taskfsm.VerifyFailed,
+			TaskFile:        entry.PlanFile,
+			Body:            body,
+			PreApplied:      preApplied,
+			ReviewedSHA:     reviewedSHA,
+			ReviewedBaseSHA: reviewedBaseSHA,
+			Origin:          origin,
+			GatewayEntryID:  entry.ID,
 		})
 
 	case "implement_task_finished":
@@ -319,13 +328,13 @@ func GatewayNoopOutcome(entry *taskstore.SignalEntry) (taskstore.SignalStatus, s
 // decodeBody extracts the optional "body" and "fsm_applied" fields from a JSON
 // payload string. An empty payload string is treated as valid and returns an
 // empty body with fsm_applied=false.
-func decodeBody(payload string) (body string, fsmApplied bool, err error) {
+func decodeBody(payload string) (body string, fsmApplied bool, reviewedSHA, reviewedBaseSHA, origin string, err error) {
 	if payload == "" {
-		return "", false, nil
+		return "", false, "", "", "", nil
 	}
 	var p bodyPayload
 	if err := json.Unmarshal([]byte(payload), &p); err != nil {
-		return "", false, fmt.Errorf("decode body payload: %w", err)
+		return "", false, "", "", "", fmt.Errorf("decode body payload: %w", err)
 	}
-	return p.Body, p.FsmApplied, nil
+	return p.Body, p.FsmApplied, p.ReviewedSHA, p.ReviewedBaseSHA, p.Origin, nil
 }

@@ -19,7 +19,7 @@ func TestProcessor_ProcessFSMSignals_ImplementFinished(t *testing.T) {
 		Branch:   "plan/my-plan",
 	})
 
-	p := NewProcessor(ProcessorConfig{Store: store, Project: "test", AutoReviewFix: true})
+	p := NewProcessor(ProcessorConfig{Store: store, Project: "test", AutoReviewFix: true, HeadSHA: func(string) (string, error) { return verificationHead, nil }, MergeBaseSHA: testVerificationBase})
 	signals := []taskfsm.Signal{
 		{Event: taskfsm.ImplementFinished, TaskFile: "my-plan.md"},
 	}
@@ -39,7 +39,7 @@ func TestProcessor_ProcessFSMSignals_ReviewApproved(t *testing.T) {
 		Branch:   "plan/my-plan",
 	})
 
-	p := NewProcessor(ProcessorConfig{Store: store, Project: "test", AutoReviewFix: true})
+	p := NewProcessor(ProcessorConfig{Store: store, Project: "test", AutoReviewFix: true, HeadSHA: func(string) (string, error) { return verificationHead, nil }, MergeBaseSHA: testVerificationBase})
 	signals := []taskfsm.Signal{
 		{Event: taskfsm.ReviewApproved, TaskFile: "my-plan.md", Body: "LGTM"},
 	}
@@ -72,7 +72,7 @@ func TestProcessor_ProcessFSMSignals_ReviewApproved_NoBranch(t *testing.T) {
 		Branch:   "", // no branch — PR not eligible
 	})
 
-	p := NewProcessor(ProcessorConfig{Store: store, Project: "test", AutoReviewFix: true})
+	p := NewProcessor(ProcessorConfig{Store: store, Project: "test", AutoReviewFix: true, HeadSHA: func(string) (string, error) { return verificationHead, nil }, MergeBaseSHA: testVerificationBase})
 	signals := []taskfsm.Signal{
 		{Event: taskfsm.ReviewApproved, TaskFile: "my-plan.md", Body: "LGTM"},
 	}
@@ -99,7 +99,7 @@ func TestProcessor_ProcessFSMSignals_ReviewApproved_RecordedPRStillEmitsCreateAc
 		Filename: "plan", Status: taskstore.StatusReviewing, Branch: "plan/test",
 		PRURL: "https://example.test/pr/7",
 	}))
-	p := NewProcessor(ProcessorConfig{Store: store, Project: "test", AutoReviewFix: true})
+	p := NewProcessor(ProcessorConfig{Store: store, Project: "test", AutoReviewFix: true, HeadSHA: func(string) (string, error) { return verificationHead, nil }, MergeBaseSHA: testVerificationBase})
 	actions := p.ProcessFSMSignals([]taskfsm.Signal{{
 		Event: taskfsm.ReviewApproved, TaskFile: "plan",
 	}})
@@ -657,9 +657,13 @@ func TestProcessor_VerifyApprovedDroppedOutsideVerifyingStatus(t *testing.T) {
 		Branch:   "plan/my-plan",
 	})
 
-	p := NewProcessor(ProcessorConfig{Store: store, Project: "test", AutoReadinessReview: true})
+	p := NewProcessor(ProcessorConfig{
+		Store: store, Project: "test", AutoReadinessReview: true,
+		HeadSHA:      func(string) (string, error) { return "abcdef1234567890", nil },
+		MergeBaseSHA: testVerificationBase,
+	})
 	signals := []taskfsm.Signal{
-		{Event: taskfsm.VerifyApproved, TaskFile: "my-plan.md", Body: "ready"},
+		{Event: taskfsm.VerifyApproved, TaskFile: "my-plan.md", Body: "ready", ReviewedSHA: "abcdef1234567890", ReviewedBaseSHA: verificationHead},
 	}
 
 	actions := p.ProcessFSMSignals(signals)
@@ -678,9 +682,13 @@ func TestProcessor_VerifyApprovedProcessedInVerifyingStatus(t *testing.T) {
 		},
 	})
 
-	p := NewProcessor(ProcessorConfig{Store: store, Project: "test", AutoReadinessReview: true})
+	p := NewProcessor(ProcessorConfig{
+		Store: store, Project: "test", AutoReadinessReview: true,
+		HeadSHA:      func(string) (string, error) { return "abcdef1234567890", nil },
+		MergeBaseSHA: testVerificationBase,
+	})
 	signals := []taskfsm.Signal{
-		{Event: taskfsm.VerifyApproved, TaskFile: "my-plan.md", Body: "ready"},
+		{Event: taskfsm.VerifyApproved, TaskFile: "my-plan.md", Body: "ready", ReviewedSHA: "abcdef1234567890", ReviewedBaseSHA: verificationHead},
 	}
 
 	actions := p.ProcessFSMSignals(signals)
@@ -785,6 +793,8 @@ func TestProcessor_VerifyFailed_ReadinessLoopCapForcePromotes(t *testing.T) {
 				Project:                  "test",
 				AutoReviewFix:            true,
 				AutoReadinessReview:      true,
+				HeadSHA:                  func(string) (string, error) { return verificationHead, nil },
+				MergeBaseSHA:             testVerificationBase,
 				ReadinessMaxVerifyCycles: tc.cap,
 			})
 			actions := p.ProcessFSMSignals([]taskfsm.Signal{
@@ -819,6 +829,7 @@ func TestProcessor_VerifyFailed_ReadinessLoopCapForcePromotes(t *testing.T) {
 				entry, err := store.Get("test", "my-plan.md")
 				require.NoError(t, err)
 				assert.Equal(t, taskstore.StatusDone, entry.Status, "task must transition to done")
+				assert.Equal(t, verificationHead, actions[0].(RecordVerificationAction).SHA)
 			} else {
 				assert.False(t, foundApproved, "must not promote below cap")
 				assert.True(t, foundFailed, "expected VerifyFailedAction below cap")
@@ -932,7 +943,7 @@ func TestProcessor_ProcessFSMSignals_PreAppliedHTTPSignals(t *testing.T) {
 			Branch:   "plan/my-plan",
 		}))
 
-		p := NewProcessor(ProcessorConfig{Store: store, Project: "test"})
+		p := NewProcessor(ProcessorConfig{Store: store, Project: "test", HeadSHA: func(string) (string, error) { return verificationHead, nil }, MergeBaseSHA: testVerificationBase})
 		actions := p.ProcessFSMSignals([]taskfsm.Signal{{
 			Event:      taskfsm.ImplementFinished,
 			TaskFile:   "my-plan.md",
@@ -952,7 +963,7 @@ func TestProcessor_ProcessFSMSignals_PreAppliedHTTPSignals(t *testing.T) {
 			Branch:   "plan/my-plan",
 		}))
 
-		p := NewProcessor(ProcessorConfig{Store: store, Project: "test"})
+		p := NewProcessor(ProcessorConfig{Store: store, Project: "test", HeadSHA: func(string) (string, error) { return verificationHead, nil }, MergeBaseSHA: testVerificationBase})
 		actions := p.ProcessFSMSignals([]taskfsm.Signal{{
 			Event:      taskfsm.ReviewApproved,
 			TaskFile:   "my-plan.md",
@@ -1695,3 +1706,4 @@ func TestProcessor_ProcessFSMSignals_PlanStart_DraftModeWithSingleProfile(t *tes
 	assert.True(t, spawn.Primary)
 	assert.True(t, spawn.DraftMode)
 }
+func testVerificationBase(string) (string, error) { return verificationHead, nil }

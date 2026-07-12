@@ -22,7 +22,7 @@ The file is loaded by `daemon.LoadDaemonConfig()`. If the file is absent, all de
 | `auto_advance_waves` | bool | `true` | when `true`, the daemon automatically starts the next wave after all tasks in the current wave complete |
 | `auto_review_fix` | bool | `true` | when `true`, the daemon automatically dispatches a fixer agent when a review comes back with change requests |
 | `max_review_fix_cycles` | int | `0` (unlimited) | cap on automatic review→fix iterations; `0` means no cap |
-| `auto_readiness_review` | bool | `true` | when `true`, reviewer approval transitions the task to `verifying` status and the daemon spawns the master agent for a holistic readiness check before `done`. When `false`, `review_approved` flows directly to `done` — no master agent is spawned and no `verifying` status is entered. |
+| `auto_readiness_review` | bool | `true` | when `true`, reviewer approval transitions to `verifying` and the daemon spawns an independent master review that binds task HEAD and default-branch SHA. When `false`, approval flows directly to `done` with `verified_by = "auto"`. Movement of either bound ref makes approval stale and reopens verification. |
 | `auto_create_pr` | bool | `true` | create or adopt a GitHub pull request after terminal approval |
 | `readiness_self_fix_max_lines` | int | `80` | maximum number of net lines the master agent may change in a single self-fix attempt; findings that require more are escalated via `verify_failed` |
 | `readiness_max_verify_cycles` | int | `2` | maximum number of verify-round attempts before the daemon force-promotes `verify_failed` to `verify_approved`; project-local `config.toml` overrides this value when set |

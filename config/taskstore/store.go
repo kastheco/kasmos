@@ -119,36 +119,41 @@ const (
 
 // TaskEntry holds the persisted metadata for a single plan.
 type TaskEntry struct {
-	ExecutionState       ExecutionState `json:"execution_state,omitempty"`
-	Filename             string         `json:"filename"`
-	Status               Status         `json:"status"`
-	Description          string         `json:"description,omitempty"`
-	Branch               string         `json:"branch,omitempty"`
-	Topic                string         `json:"topic,omitempty"`
-	CreatedAt            time.Time      `json:"created_at,omitempty"`
-	Implemented          string         `json:"implemented,omitempty"`
-	PlanningAt           time.Time      `json:"planning_at,omitempty"`
-	ImplementingAt       time.Time      `json:"implementing_at,omitempty"`
-	ReviewingAt          time.Time      `json:"reviewing_at,omitempty"`
-	VerifyingAt          time.Time      `json:"verifying_at,omitempty"`
-	DoneAt               time.Time      `json:"done_at,omitempty"`
-	Goal                 string         `json:"goal,omitempty"`
-	Content              string         `json:"content,omitempty"`
-	ClickUpTaskID        string         `json:"clickup_task_id,omitempty"`
-	LinearIssueID        string         `json:"linear_issue_id,omitempty"`
-	LinearIdentifier     string         `json:"linear_identifier,omitempty"`
-	LinearURL            string         `json:"linear_url,omitempty"`
-	LinearTeamKey        string         `json:"linear_team_key,omitempty"`
-	LinearProjectID      string         `json:"linear_project_id,omitempty"`
-	ReviewCycle          int            `json:"review_cycle,omitempty"`
-	LatestReviewFeedback string         `json:"latest_review_feedback,omitempty"`
-	PRURL                string         `json:"pr_url,omitempty"`
-	PRReviewDecision     string         `json:"pr_review_decision,omitempty"`
-	PRCheckStatus        string         `json:"pr_check_status,omitempty"`
-	PRCreateState        string         `json:"pr_create_state,omitempty"`
-	PRCreateError        string         `json:"pr_create_error,omitempty"`
-	PRCreateAttempts     int            `json:"pr_create_attempts,omitempty"`
-	PRCreateAttemptedAt  time.Time      `json:"pr_create_attempted_at,omitempty"`
+	ExecutionState          ExecutionState `json:"execution_state,omitempty"`
+	Filename                string         `json:"filename"`
+	Status                  Status         `json:"status"`
+	Description             string         `json:"description,omitempty"`
+	Branch                  string         `json:"branch,omitempty"`
+	Topic                   string         `json:"topic,omitempty"`
+	CreatedAt               time.Time      `json:"created_at,omitempty"`
+	Implemented             string         `json:"implemented,omitempty"`
+	PlanningAt              time.Time      `json:"planning_at,omitempty"`
+	ImplementingAt          time.Time      `json:"implementing_at,omitempty"`
+	ReviewingAt             time.Time      `json:"reviewing_at,omitempty"`
+	VerifyingAt             time.Time      `json:"verifying_at,omitempty"`
+	DoneAt                  time.Time      `json:"done_at,omitempty"`
+	Goal                    string         `json:"goal,omitempty"`
+	Content                 string         `json:"content,omitempty"`
+	ClickUpTaskID           string         `json:"clickup_task_id,omitempty"`
+	LinearIssueID           string         `json:"linear_issue_id,omitempty"`
+	LinearIdentifier        string         `json:"linear_identifier,omitempty"`
+	LinearURL               string         `json:"linear_url,omitempty"`
+	LinearTeamKey           string         `json:"linear_team_key,omitempty"`
+	LinearProjectID         string         `json:"linear_project_id,omitempty"`
+	ReviewCycle             int            `json:"review_cycle,omitempty"`
+	LatestReviewFeedback    string         `json:"latest_review_feedback,omitempty"`
+	PRURL                   string         `json:"pr_url,omitempty"`
+	PRReviewDecision        string         `json:"pr_review_decision,omitempty"`
+	PRCheckStatus           string         `json:"pr_check_status,omitempty"`
+	PRCreateState           string         `json:"pr_create_state,omitempty"`
+	PRCreateError           string         `json:"pr_create_error,omitempty"`
+	PRCreateAttempts        int            `json:"pr_create_attempts,omitempty"`
+	PRCreateAttemptedAt     time.Time      `json:"pr_create_attempted_at,omitempty"`
+	VerifiedSHA             string         `json:"verified_sha,omitempty"`
+	VerifiedBaseSHA         string         `json:"verified_base_sha,omitempty"`
+	VerifiedAt              time.Time      `json:"verified_at,omitempty"`
+	VerifiedBy              string         `json:"verified_by,omitempty"`
+	StaleVerificationReason string         `json:"stale_verification_reason,omitempty"`
 }
 
 type PRCreateOutcome struct {
@@ -156,6 +161,13 @@ type PRCreateOutcome struct {
 	Error       string
 	Attempts    int
 	AttemptedAt time.Time
+}
+
+type VerificationRecord struct {
+	SHA     string    `json:"sha"`
+	BaseSHA string    `json:"base_sha"`
+	By      string    `json:"by"`
+	At      time.Time `json:"at"`
 }
 
 // LinearLink holds the persisted Linear issue coordinates for a task.
@@ -297,6 +309,8 @@ type Store interface {
 	SetPRCreateOutcome(project, filename string, outcome PRCreateOutcome) error
 	ClearPRCreateOutcome(project, filename string) error
 	SetPRState(project, filename, reviewDecision, checkStatus string) error
+	SetVerification(project, filename string, v VerificationRecord) error
+	ClearVerification(project, filename, reason string) error
 
 	// PR reviews
 	RecordPRReview(project, filename string, reviewID int, state, body, reviewer string) error

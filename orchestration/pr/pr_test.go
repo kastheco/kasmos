@@ -104,17 +104,29 @@ func createDoneTask(t *testing.T, store taskstore.Store, branch string) Request 
 	t.Helper()
 	req := Request{RepoPath: newEnsureRepo(t, branch), Project: "test", PlanFile: "plan", Enabled: true}
 	require.NoError(t, store.Create(req.Project, taskstore.TaskEntry{Filename: req.PlanFile, Status: taskstore.StatusDone, Branch: branch, Description: "test pr"}))
+	head, err := gitpkg.BranchHeadSHA(req.RepoPath, branch)
+	require.NoError(t, err)
+	base, err := gitpkg.BranchMergeBaseSHA(req.RepoPath, branch)
+	require.NoError(t, err)
+	require.NoError(t, store.SetVerification(req.Project, req.PlanFile, taskstore.VerificationRecord{SHA: head, BaseSHA: base, By: "master"}))
 	return req
 }
 
-func prJSON(url string) []byte {
-	return []byte(`{"url":"` + url + `","reviewDecision":"","statusCheckRollup":{"state":""},"isDraft":false,"number":7}`)
+func prJSON(url, head string) []byte {
+	return []byte(`{"url":"` + url + `","reviewDecision":"","statusCheckRollup":{"state":""},"isDraft":false,"number":7,"headRefOid":"` + head + `"}`)
+}
+
+func verifiedHead(t *testing.T, store taskstore.Store, req Request) string {
+	t.Helper()
+	entry, err := store.Get(req.Project, req.PlanFile)
+	require.NoError(t, err)
+	return entry.VerifiedSHA
 }
 
 func TestEnsureCreatedOnceThenRecordedURLSkipped(t *testing.T) {
 	store := taskstore.NewTestStore(t)
 	req := createDoneTask(t, store, "plan/test")
-	fake := &scriptedGHExecutor{queryOutput: prJSON("https://example.test/pr/7"), queryErr: errors.New("exit status 1"), queryStderr: "no pull requests found"}
+	fake := &scriptedGHExecutor{queryOutput: prJSON("https://example.test/pr/7", verifiedHead(t, store, req)), queryErr: errors.New("exit status 1"), queryStderr: "no pull requests found"}
 	t.Cleanup(gitpkg.SetGHExec(fake))
 
 	first, err := Ensure(context.Background(), store, req)
@@ -140,7 +152,7 @@ func TestEnsureCreatedOnceThenRecordedURLSkipped(t *testing.T) {
 func TestEnsureAdoptsExistingPRWithoutCreatingWorktree(t *testing.T) {
 	store := taskstore.NewTestStore(t)
 	req := createDoneTask(t, store, "plan/adopt")
-	fake := &scriptedGHExecutor{queryOutput: prJSON("https://example.test/pr/7")}
+	fake := &scriptedGHExecutor{queryOutput: prJSON("https://example.test/pr/7", verifiedHead(t, store, req))}
 	t.Cleanup(gitpkg.SetGHExec(fake))
 
 	res, err := Ensure(context.Background(), store, req)
@@ -154,6 +166,43 @@ func TestEnsureAdoptsExistingPRWithoutCreatingWorktree(t *testing.T) {
 	assert.Equal(t, string(OutcomeAdopted), entry.PRCreateState)
 	assert.Empty(t, entry.PRCreateError)
 	assert.Equal(t, 1, entry.PRCreateAttempts)
+}
+
+func TestEnsureRejectsExistingPRAtUnverifiedHead(t *testing.T) {
+	store := taskstore.NewTestStore(t)
+	req := createDoneTask(t, store, "plan/adopt-stale")
+	fake := &scriptedGHExecutor{queryOutput: prJSON("https://example.test/pr/7", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")}
+	t.Cleanup(gitpkg.SetGHExec(fake))
+
+	res, err := Ensure(context.Background(), store, req)
+	require.NoError(t, err)
+	assert.Equal(t, OutcomeBlocked, res.Outcome)
+	assert.Contains(t, res.Reason, "pull request head moved")
+	entry, getErr := store.Get(req.Project, req.PlanFile)
+	require.NoError(t, getErr)
+	assert.Empty(t, entry.VerifiedSHA)
+}
+
+func TestEnsureRejectsRemoteOnlyBranchAdvance(t *testing.T) {
+	store := taskstore.NewTestStore(t)
+	req := createDoneTask(t, store, "plan/remote-stale")
+	run := func(args ...string) {
+		t.Helper()
+		out, err := exec.Command("git", append([]string{"-C", req.RepoPath}, args...)...).CombinedOutput()
+		require.NoErrorf(t, err, "git %v failed: %s", args, out)
+	}
+	run("checkout", "-b", "remote-advance", "plan/remote-stale")
+	run("commit", "--allow-empty", "-m", "external advance")
+	run("push", "origin", "HEAD:refs/heads/plan/remote-stale")
+	run("checkout", "main")
+	fake := &scriptedGHExecutor{}
+	t.Cleanup(gitpkg.SetGHExec(fake))
+
+	res, err := Ensure(context.Background(), store, req)
+	require.NoError(t, err)
+	assert.Equal(t, OutcomeBlocked, res.Outcome)
+	assert.Contains(t, res.Reason, "remote branch moved")
+	assert.Empty(t, fake.calls, "GitHub must not be queried after remote drift")
 }
 
 func TestEnsureClassifiesTransientDirtyAndEmptyURL(t *testing.T) {
@@ -199,7 +248,7 @@ func TestEnsureManualOverridesDisabledConfig(t *testing.T) {
 	req.Enabled = false
 	req.Manual = true
 	req.BodyOverride = "# edited body\n\nkeep this verbatim"
-	fake := &scriptedGHExecutor{queryOutput: prJSON("https://example.test/pr/7"), queryErr: errors.New("exit status 1"), queryStderr: "no pull requests found"}
+	fake := &scriptedGHExecutor{queryOutput: prJSON("https://example.test/pr/7", verifiedHead(t, store, req)), queryErr: errors.New("exit status 1"), queryStderr: "no pull requests found"}
 	t.Cleanup(gitpkg.SetGHExec(fake))
 
 	res, err := Ensure(context.Background(), store, req)

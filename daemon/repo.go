@@ -22,6 +22,7 @@ import (
 	"github.com/kastheco/kasmos/internal/linearruntime"
 	theme "github.com/kastheco/kasmos/internal/theme"
 	"github.com/kastheco/kasmos/orchestration/loop"
+	gitpkg "github.com/kastheco/kasmos/session/git"
 )
 
 // RepoEntry holds per-repo registration metadata.
@@ -263,6 +264,8 @@ func (m *RepoManager) Add(path string) error {
 		AutoReadinessReview:      autoReadinessReview,
 		Store:                    m.globalStore,
 		Project:                  project,
+		HeadSHA:                  func(branch string) (string, error) { return gitpkg.BranchHeadSHA(path, branch) },
+		MergeBaseSHA:             func(string) (string, error) { return gitpkg.DefaultBranchHeadSHA(path) },
 		MaxReviewFixCycles:       maxReviewFixCycles,
 		ReadinessSelfFixMaxLines: selfFixMaxLines,
 		ReadinessMaxVerifyCycles: maxVerifyCycles,

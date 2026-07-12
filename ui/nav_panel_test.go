@@ -1548,6 +1548,16 @@ func TestNavPlanRowLabel_VerifyingStatus(t *testing.T) {
 		"sidebar row label must be '<name> · verifying' when status is verifying and phase is empty")
 }
 
+func TestNavPlanRowLabel_VerifyingStaleApproval(t *testing.T) {
+	p := PlanDisplay{
+		Filename:                "feature-auth",
+		Status:                  "verifying",
+		AgentType:               "master",
+		StaleVerificationReason: "head drifted",
+	}
+	assert.Equal(t, "feature-auth · readiness review (re-verify)", navPlanRowLabel(p))
+}
+
 func TestNavPlanSortKey_VerifyingIsActive(t *testing.T) {
 	p := PlanDisplay{
 		Filename: "auth-feature",

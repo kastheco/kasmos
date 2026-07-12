@@ -81,10 +81,12 @@ Complete the last implementation task and transition into review.
 	hooks.Add(receiptHook, []taskfsm.Event{taskfsm.ImplementFinished})
 
 	proc := loop.NewProcessor(loop.ProcessorConfig{
-		Store:       store,
-		Project:     project,
-		AutoAdvance: true,
-		Hooks:       hooks,
+		Store:        store,
+		Project:      project,
+		AutoAdvance:  true,
+		Hooks:        hooks,
+		HeadSHA:      func(string) (string, error) { return "0123456789abcdef0123456789abcdef01234567", nil },
+		MergeBaseSHA: func(string) (string, error) { return "89abcdef0123456789abcdef0123456789abcdef", nil },
 	})
 
 	repo := RepoEntry{
@@ -301,10 +303,11 @@ Complete the last implementation task and transition into review.
 	assert.Empty(t, beforeApproval.PRURL)
 
 	reviewApprovedActions := proc.ProcessFSMSignals([]taskfsm.Signal{{TaskFile: planFile, Event: taskfsm.ReviewApproved, Body: "lgtm"}})
-	require.Len(t, reviewApprovedActions, 3)
+	require.Len(t, reviewApprovedActions, 4)
 	assert.Equal(t, "review_approved", reviewApprovedActions[0].Kind())
-	assert.Equal(t, "verify_approved", reviewApprovedActions[1].Kind())
-	assert.Equal(t, "create_pr", reviewApprovedActions[2].Kind())
+	assert.Equal(t, "record_verification", reviewApprovedActions[1].Kind())
+	assert.Equal(t, "verify_approved", reviewApprovedActions[2].Kind())
+	assert.Equal(t, "create_pr", reviewApprovedActions[3].Kind())
 
 	execActions(reviewApprovedActions[:1])
 	// ReviewApprovedAction is lightweight — it does not clear execution state.

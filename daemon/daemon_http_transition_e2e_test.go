@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os/exec"
+	"strings"
 	"testing"
 
 	"github.com/kastheco/kasmos/config/taskactions"
@@ -16,6 +18,7 @@ import (
 	"github.com/kastheco/kasmos/orchestration/loop"
 	prsvc "github.com/kastheco/kasmos/orchestration/pr"
 	"github.com/kastheco/kasmos/session"
+	gitpkg "github.com/kastheco/kasmos/session/git"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -252,6 +255,23 @@ func (f *httpTransitionE2EFixture) repoEntry(t *testing.T, proc *loop.Processor)
 	}
 }
 
+func (f *httpTransitionE2EFixture) gitRepoEntry(t *testing.T, proc *loop.Processor) (RepoEntry, string) {
+	t.Helper()
+	repo := t.TempDir()
+	run := func(args ...string) string {
+		out, err := exec.Command("git", append([]string{"-C", repo}, args...)...).CombinedOutput()
+		require.NoErrorf(t, err, "git %v: %s", args, out)
+		return strings.TrimSpace(string(out))
+	}
+	run("init", "-b", "main")
+	run("config", "user.email", "test@example.com")
+	run("config", "user.name", "Test User")
+	run("commit", "--allow-empty", "-m", "base")
+	run("checkout", "-b", f.branch)
+	run("commit", "--allow-empty", "-m", "feature")
+	return RepoEntry{Path: repo, Project: f.project, Store: f.store, SignalGateway: f.gw, Processor: proc}, run("rev-parse", "HEAD")
+}
+
 // TestDaemon_TickRepo_HTTPImplementFinishedSpawnsReviewer proves an
 // implement_finished signal originating from the HTTP handler — which applies
 // the FSM transition itself before emitting the gateway row — still reaches
@@ -262,10 +282,7 @@ func TestDaemon_TickRepo_HTTPImplementFinishedSpawnsReviewer(t *testing.T) {
 	f := newHTTPTransitionE2EFixture(t, taskstore.StatusImplementing)
 	f.postTransition(t, "implement_finished")
 
-	proc := loop.NewProcessor(loop.ProcessorConfig{
-		Store:   f.store,
-		Project: f.project,
-	})
+	proc := loop.NewProcessor(loop.ProcessorConfig{Store: f.store, Project: f.project})
 
 	var spawnedOpts loop.SpawnOpts
 	spawnCount := 0
@@ -325,10 +342,7 @@ func TestDaemon_TickRepo_HTTPReviewApprovedChainsVerifyApproved(t *testing.T) {
 	}))
 	f.postTransition(t, "review_approved")
 
-	proc := loop.NewProcessor(loop.ProcessorConfig{
-		Store:   f.store,
-		Project: f.project,
-	})
+	proc := loop.NewProcessor(loop.ProcessorConfig{Store: f.store, Project: f.project})
 
 	prCount := 0
 	var prPlanFile string
@@ -354,7 +368,13 @@ func TestDaemon_TickRepo_HTTPReviewApprovedChainsVerifyApproved(t *testing.T) {
 	}
 	t.Cleanup(func() { d.broadcaster.Close() })
 
-	repoEntry := f.repoEntry(t, proc)
+	repoEntry, head := f.gitRepoEntry(t, proc)
+	proc = loop.NewProcessor(loop.ProcessorConfig{
+		Store: f.store, Project: f.project,
+		HeadSHA:      func(string) (string, error) { return head, nil },
+		MergeBaseSHA: func(string) (string, error) { return gitpkg.DefaultBranchHeadSHA(repoEntry.Path) },
+	})
+	repoEntry.Processor = proc
 	d.tickRepo(context.Background(), repoEntry)
 
 	assert.Equal(t, 1, prCount, "createPR must fire once after chained verify_approved")
@@ -429,10 +449,9 @@ func TestDaemon_TickRepo_HTTPReviewChangesRequestedSpawnsFixer(t *testing.T) {
 	assert.Len(t, doneRows, 1, "the review_changes_requested gateway row must be marked done")
 }
 
-// TestDaemon_TickRepo_HTTPVerifyApprovedCreatesPR proves a verify_approved
-// signal from the HTTP handler clears the master execution state and fires
-// CreatePRAction via the daemon tick loop.
-func TestDaemon_TickRepo_HTTPVerifyApprovedCreatesPR(t *testing.T) {
+// TestDaemon_TickRepo_HTTPVerifyApprovedRequiresSHA proves a pre-applied HTTP
+// transition cannot bypass SHA-bound master approval.
+func TestDaemon_TickRepo_HTTPVerifyApprovedRequiresSHA(t *testing.T) {
 	t.Parallel()
 
 	f := newHTTPTransitionE2EFixture(t, taskstore.StatusVerifying)
@@ -441,10 +460,7 @@ func TestDaemon_TickRepo_HTTPVerifyApprovedCreatesPR(t *testing.T) {
 	}))
 	f.postTransition(t, "verify_approved")
 
-	proc := loop.NewProcessor(loop.ProcessorConfig{
-		Store:   f.store,
-		Project: f.project,
-	})
+	proc := loop.NewProcessor(loop.ProcessorConfig{Store: f.store, Project: f.project})
 
 	prCount := 0
 	var prPlanFile, prReviewBody string
@@ -454,6 +470,7 @@ func TestDaemon_TickRepo_HTTPVerifyApprovedCreatesPR(t *testing.T) {
 		spawner:     NewTmuxSpawner(),
 		logger:      slog.Default(),
 		broadcaster: api.NewEventBroadcaster(),
+		spawnMaster: func(context.Context, loop.SpawnOpts) error { return nil },
 		createPR: func(_ RepoEntry, planFile, reviewBody string) (prsvc.Result, error) {
 			prCount++
 			prPlanFile = planFile
@@ -463,17 +480,25 @@ func TestDaemon_TickRepo_HTTPVerifyApprovedCreatesPR(t *testing.T) {
 	}
 	t.Cleanup(func() { d.broadcaster.Close() })
 
-	repoEntry := f.repoEntry(t, proc)
+	repoEntry, head := f.gitRepoEntry(t, proc)
+	proc = loop.NewProcessor(loop.ProcessorConfig{
+		Store: f.store, Project: f.project, AutoReadinessReview: true,
+		HeadSHA:      func(string) (string, error) { return head, nil },
+		MergeBaseSHA: func(string) (string, error) { return gitpkg.DefaultBranchHeadSHA(repoEntry.Path) },
+	})
+	repoEntry.Processor = proc
 	d.tickRepo(context.Background(), repoEntry)
 
-	assert.Equal(t, 1, prCount, "createPR must fire once for HTTP verify_approved")
-	assert.Equal(t, f.planFile, prPlanFile)
-	assert.Empty(t, prReviewBody, "reviewBody from HTTP verify_approved is empty (payload carries no body)")
+	assert.Zero(t, prCount, "unbound HTTP verify_approved must not create a PR")
+	assert.Empty(t, prPlanFile)
+	assert.Empty(t, prReviewBody)
 
 	entry, err := f.store.Get(f.project, f.planFile)
 	require.NoError(t, err)
-	assert.Equal(t, taskstore.StatusDone, entry.Status, "task must reach done after verify_approved")
-	assert.Equal(t, taskstore.ExecutionState{}, entry.ExecutionState, "execution state must be cleared by VerifyApprovedAction")
+	assert.Equal(t, taskstore.StatusVerifying, entry.Status, "unbound pre-applied approval must reopen verification")
+	assert.Empty(t, entry.VerifiedSHA)
+	assert.Empty(t, entry.VerifiedBy)
+	assert.Equal(t, session.AgentTypeMaster, entry.ExecutionState.ActiveAgentType, "replacement verification must remain active")
 
 	remainingPending, err := f.gw.List(f.project, taskstore.SignalPending)
 	require.NoError(t, err)

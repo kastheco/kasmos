@@ -1,10 +1,12 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http/httptest"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -68,6 +70,20 @@ func setupTaskRecoverStore(t *testing.T) (taskstore.Store, string) {
 
 func TestExecuteTaskRecover_QueuesSignalActions(t *testing.T) {
 	store, project := setupTaskRecoverStore(t)
+	repo := t.TempDir()
+	runGit := func(args ...string) string {
+		t.Helper()
+		out, err := exec.Command("git", append([]string{"-C", repo}, args...)...).CombinedOutput()
+		require.NoError(t, err, string(out))
+		return string(out)
+	}
+	runGit("init", "-b", "main")
+	runGit("config", "user.email", "test@test.com")
+	runGit("config", "user.name", "Test")
+	runGit("commit", "--allow-empty", "-m", "base")
+	runGit("branch", "plan/review-plan")
+	head := strings.TrimSpace(runGit("rev-parse", "plan/review-plan"))
+	t.Chdir(repo)
 
 	tests := []struct {
 		name           string
@@ -102,6 +118,7 @@ func TestExecuteTaskRecover_QueuesSignalActions(t *testing.T) {
 			action:         "verify-approved",
 			planFile:       "review-plan",
 			wantSignalType: "verify_approved",
+			wantPayload:    "operator-verification",
 		},
 		{
 			name:           "verify-failed canonical action queues verify_failed with feedback",
@@ -116,6 +133,7 @@ func TestExecuteTaskRecover_QueuesSignalActions(t *testing.T) {
 			action:         "readiness-approved",
 			planFile:       "review-plan",
 			wantSignalType: "verify_approved",
+			wantPayload:    "operator-verification",
 		},
 		{
 			name:           "readiness-changes alias queues verify_failed with feedback",
@@ -153,7 +171,14 @@ func TestExecuteTaskRecover_QueuesSignalActions(t *testing.T) {
 			require.Len(t, signals, 1)
 			assert.Equal(t, tt.planFile, signals[0].PlanFile)
 			assert.Equal(t, tt.wantSignalType, signals[0].SignalType)
-			assert.Equal(t, tt.wantPayload, signals[0].Payload)
+			if tt.wantPayload == "operator-verification" {
+				var payload map[string]string
+				require.NoError(t, json.Unmarshal([]byte(signals[0].Payload), &payload))
+				assert.Empty(t, payload["origin"])
+				assert.Equal(t, head, payload["reviewed_sha"])
+			} else {
+				assert.Equal(t, tt.wantPayload, signals[0].Payload)
+			}
 		})
 	}
 }

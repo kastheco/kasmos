@@ -84,12 +84,6 @@ func Ensure(ctx context.Context, store taskstore.Store, req Request) (res Result
 	if err != nil {
 		return persist(OutcomeFailed, fmt.Sprintf("load task entry: %v", err))
 	}
-	if entry.PRURL != "" {
-		result, persistErr := persist(OutcomeSkipped, "pr already recorded")
-		result.URL = entry.PRURL
-		return result, persistErr
-	}
-
 	branch := entry.Branch
 	if branch == "" {
 		derived := gitpkg.TaskBranchFromFile(req.PlanFile)
@@ -99,13 +93,52 @@ func Ensure(ctx context.Context, store taskstore.Store, req Request) (res Result
 		}
 		branch = derived
 	}
+	expectedHead, _, staleReason, verifyErr := gitpkg.ValidateVerification(req.RepoPath, branch, entry.VerifiedSHA, entry.VerifiedBaseSHA)
+	if verifyErr != nil {
+		return persist(OutcomeBlocked, verifyErr.Error())
+	}
+	if staleReason != "" {
+		_ = store.ClearVerification(req.Project, req.PlanFile, staleReason)
+		return persist(OutcomeBlocked, "verification stale: "+staleReason)
+	}
+	remoteHead, remoteErr := gitpkg.RemoteBranchHeadSHA(req.RepoPath, branch)
+	if remoteErr != nil && !errors.Is(remoteErr, gitpkg.ErrBranchNotFound) {
+		return persist(OutcomeBlocked, remoteErr.Error())
+	}
+	if remoteErr == nil && !strings.EqualFold(remoteHead, expectedHead) {
+		reason := fmt.Sprintf("remote branch moved after verification: expected %s, current %s", gitpkg.ShortSHA(expectedHead), gitpkg.ShortSHA(remoteHead))
+		_ = store.ClearVerification(req.Project, req.PlanFile, reason)
+		return persist(OutcomeBlocked, "verification stale: "+reason)
+	}
+	remoteBase, remoteBaseErr := gitpkg.RemoteDefaultBranchHeadSHA(req.RepoPath)
+	if remoteBaseErr != nil {
+		return persist(OutcomeBlocked, remoteBaseErr.Error())
+	}
+	if !strings.EqualFold(remoteBase, entry.VerifiedBaseSHA) {
+		reason := fmt.Sprintf("remote default branch moved after verification: expected %s, current %s", gitpkg.ShortSHA(entry.VerifiedBaseSHA), gitpkg.ShortSHA(remoteBase))
+		_ = store.ClearVerification(req.Project, req.PlanFile, reason)
+		return persist(OutcomeBlocked, "verification stale: "+reason)
+	}
 	handle := gitpkg.NewSharedTaskWorktree(req.RepoPath, branch)
 	state, queryErr := handle.QueryPRState()
 	if queryErr != nil {
 		return persist(classify(queryErr), queryErr.Error())
 	}
 	if state.URL != "" {
+		if state.HeadSHA == "" || !strings.EqualFold(state.HeadSHA, expectedHead) {
+			reason := fmt.Sprintf("pull request head moved after verification: expected %s, current %s", gitpkg.ShortSHA(expectedHead), gitpkg.ShortSHA(state.HeadSHA))
+			_ = store.ClearVerification(req.Project, req.PlanFile, reason)
+			return persist(OutcomeBlocked, "verification stale: "+reason)
+		}
+		if entry.PRURL != "" {
+			result, persistErr := persist(OutcomeSkipped, "pr already recorded")
+			result.URL = entry.PRURL
+			return result, persistErr
+		}
 		return adopt(store, req, state, entry.PRCreateAttempts+1)
+	}
+	if entry.PRURL != "" {
+		return persist(OutcomeBlocked, "recorded pull request could not be resolved for verified branch")
 	}
 
 	wt, setupErr := gitpkg.EnsureTaskWorktree(req.RepoPath, branch)
@@ -129,7 +162,32 @@ func Ensure(ctx context.Context, store taskstore.Store, req Request) (res Result
 	if body == "" {
 		body = gitpkg.BuildPRBody(meta)
 	}
-	createErr := wt.CreatePR(title, body)
+	// Revalidate immediately before pushing and create from the reviewed object.
+	latest, latestErr := store.Get(req.Project, req.PlanFile)
+	if latestErr != nil {
+		return persist(OutcomeFailed, latestErr.Error())
+	}
+	currentHead, _, staleReason, verifyErr := gitpkg.ValidateVerification(req.RepoPath, branch, latest.VerifiedSHA, latest.VerifiedBaseSHA)
+	if verifyErr != nil {
+		return persist(OutcomeBlocked, verifyErr.Error())
+	}
+	if staleReason != "" || !strings.EqualFold(currentHead, expectedHead) {
+		if staleReason == "" {
+			staleReason = "head changed while preparing pull request"
+		}
+		_ = store.ClearVerification(req.Project, req.PlanFile, staleReason)
+		return persist(OutcomeBlocked, "verification stale: "+staleReason)
+	}
+	latestRemoteBase, remoteBaseErr := gitpkg.RemoteDefaultBranchHeadSHA(req.RepoPath)
+	if remoteBaseErr != nil {
+		return persist(OutcomeBlocked, remoteBaseErr.Error())
+	}
+	if !strings.EqualFold(latestRemoteBase, latest.VerifiedBaseSHA) {
+		reason := fmt.Sprintf("remote default branch moved while preparing pull request: expected %s, current %s", gitpkg.ShortSHA(latest.VerifiedBaseSHA), gitpkg.ShortSHA(latestRemoteBase))
+		_ = store.ClearVerification(req.Project, req.PlanFile, reason)
+		return persist(OutcomeBlocked, "verification stale: "+reason)
+	}
+	createErr := wt.CreatePRAtSHA(title, body, expectedHead)
 	if createErr != nil && !errors.Is(createErr, gitpkg.ErrPRAlreadyExists) {
 		return persist(classify(createErr), createErr.Error())
 	}

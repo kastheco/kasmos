@@ -94,6 +94,9 @@ type Instance struct {
 	Exited bool
 	// QueuedPrompt is delivered to the session on first transition to Ready. Cleared after delivery.
 	QueuedPrompt string
+	// deliveredPrompt records the prompt handed to the execution backend. It is
+	// retained for diagnostics after QueuedPrompt ownership transfers.
+	deliveredPrompt string
 
 	// sharedWorktree indicates the instance shares a topic worktree and should not clean it up.
 	sharedWorktree bool
@@ -184,6 +187,11 @@ type Instance struct {
 	executionSession ExecutionSession
 	// gitWorktree manages the git worktree associated with this instance.
 	gitWorktree *git.GitWorktree
+}
+
+// DeliveredPrompt returns the prompt handed to the execution backend during startup.
+func (i *Instance) DeliveredPrompt() string {
+	return i.deliveredPrompt
 }
 
 // ToInstanceData converts an Instance to its JSON-serialisable form for persistence.

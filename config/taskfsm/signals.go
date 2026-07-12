@@ -8,9 +8,12 @@ import (
 
 // Signal represents a parsed sentinel file from an agent.
 type Signal struct {
-	Event    Event
-	TaskFile string
-	Body     string // file contents (e.g. review feedback)
+	Event           Event
+	TaskFile        string
+	Body            string // file contents (e.g. review feedback)
+	ReviewedSHA     string
+	ReviewedBaseSHA string
+	Origin          string
 	// PreApplied is true when the signal's originator already applied the FSM
 	// transition before emitting the gateway row (for example, the HTTP admin
 	// handler calls TaskStateMachine.Transition itself and then emits the

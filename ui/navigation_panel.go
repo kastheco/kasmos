@@ -24,15 +24,16 @@ const (
 
 // PlanDisplay holds display metadata for a single plan entry in the sidebar.
 type PlanDisplay struct {
-	Filename    string
-	Status      string
-	Description string
-	Branch      string
-	Topic       string
-	Phase       string
-	AgentType   string
-	ActiveWave  int
-	ActiveRound int
+	Filename                string
+	Status                  string
+	Description             string
+	Branch                  string
+	Topic                   string
+	Phase                   string
+	AgentType               string
+	ActiveWave              int
+	ActiveRound             int
+	StaleVerificationReason string
 }
 
 // TopicStatus captures aggregate run/notification state for a plan.
@@ -743,6 +744,9 @@ func navPlanPhaseLabel(phase string, activeWave, activeRound int) string {
 func navPlanRowLabel(p PlanDisplay) string {
 	label := taskstate.DisplayName(p.Filename)
 	stage := navPlanPhaseLabel(p.Phase, p.ActiveWave, p.ActiveRound)
+	if p.Status == "verifying" && strings.TrimSpace(p.StaleVerificationReason) != "" {
+		stage = "readiness review (re-verify)"
+	}
 	if stage == "" {
 		if p.Status == "verifying" && p.AgentType == "master" {
 			if p.ActiveRound > 0 {

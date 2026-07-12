@@ -38,6 +38,11 @@ CREATE TABLE IF NOT EXISTS tasks (
 	pr_create_error TEXT NOT NULL DEFAULT '',
 	pr_create_attempts INTEGER NOT NULL DEFAULT 0,
 	pr_create_attempted_at TEXT NOT NULL DEFAULT '',
+	verified_sha TEXT NOT NULL DEFAULT '',
+	verified_base_sha TEXT NOT NULL DEFAULT '',
+	verified_at TEXT NOT NULL DEFAULT '',
+	verified_by TEXT NOT NULL DEFAULT '',
+	stale_verification_reason TEXT NOT NULL DEFAULT '',
 	UNIQUE(project, filename)
 );
 
@@ -201,6 +206,11 @@ const prCreateStateMigration = `ALTER TABLE tasks ADD COLUMN pr_create_state TEX
 const prCreateErrorMigration = `ALTER TABLE tasks ADD COLUMN pr_create_error TEXT NOT NULL DEFAULT ''`
 const prCreateAttemptsMigration = `ALTER TABLE tasks ADD COLUMN pr_create_attempts INTEGER NOT NULL DEFAULT 0`
 const prCreateAttemptedAtMigration = `ALTER TABLE tasks ADD COLUMN pr_create_attempted_at TEXT NOT NULL DEFAULT ''`
+const verifiedSHAMigration = `ALTER TABLE tasks ADD COLUMN verified_sha TEXT NOT NULL DEFAULT ''`
+const verifiedBaseSHAMigration = `ALTER TABLE tasks ADD COLUMN verified_base_sha TEXT NOT NULL DEFAULT ''`
+const verifiedAtMigration = `ALTER TABLE tasks ADD COLUMN verified_at TEXT NOT NULL DEFAULT ''`
+const verifiedByMigration = `ALTER TABLE tasks ADD COLUMN verified_by TEXT NOT NULL DEFAULT ''`
+const staleVerificationReasonMigration = `ALTER TABLE tasks ADD COLUMN stale_verification_reason TEXT NOT NULL DEFAULT ''`
 
 // SQLiteStore is a Store implementation backed by a SQLite database.
 type SQLiteStore struct {
@@ -327,6 +337,15 @@ func runStoreMigrations(db *sql.DB) error {
 	for _, m := range []struct{ name, query string }{{"pr_create_state", prCreateStateMigration}, {"pr_create_error", prCreateErrorMigration}, {"pr_create_attempts", prCreateAttemptsMigration}, {"pr_create_attempted_at", prCreateAttemptedAtMigration}} {
 		if err := migrateAddColumn(db, m.name, m.query); err != nil {
 			return fmt.Errorf("migrate %s column: %w", m.name, err)
+		}
+	}
+	for _, migration := range []struct{ column, query string }{
+		{"verified_sha", verifiedSHAMigration}, {"verified_base_sha", verifiedBaseSHAMigration},
+		{"verified_at", verifiedAtMigration}, {"verified_by", verifiedByMigration},
+		{"stale_verification_reason", staleVerificationReasonMigration},
+	} {
+		if err := migrateAddColumn(db, migration.column, migration.query); err != nil {
+			return fmt.Errorf("migrate %s column: %w", migration.column, err)
 		}
 	}
 	if _, err := db.Exec(subtasksTableMigration); err != nil {
@@ -509,8 +528,8 @@ func (s *SQLiteStore) Ping() error {
 // Returns an error if a task with the same filename already exists in the project.
 func (s *SQLiteStore) Create(project string, entry TaskEntry) error {
 	const q = `
-			INSERT INTO tasks (project, filename, status, description, branch, topic, created_at, implemented, planning_at, implementing_at, reviewing_at, verifying_at, done_at, execution_phase, active_agent_type, active_wave, goal, content, clickup_task_id, linear_issue_id, linear_identifier, linear_url, linear_team_key, linear_project_id, review_cycle, latest_review_feedback, pr_url, pr_review_decision, pr_check_status, pr_create_state, pr_create_error, pr_create_attempts, pr_create_attempted_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			INSERT INTO tasks (project, filename, status, description, branch, topic, created_at, implemented, planning_at, implementing_at, reviewing_at, verifying_at, done_at, execution_phase, active_agent_type, active_wave, goal, content, clickup_task_id, linear_issue_id, linear_identifier, linear_url, linear_team_key, linear_project_id, review_cycle, latest_review_feedback, pr_url, pr_review_decision, pr_check_status, pr_create_state, pr_create_error, pr_create_attempts, pr_create_attempted_at, verified_sha, verified_base_sha, verified_at, verified_by, stale_verification_reason)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 	_, err := s.db.Exec(q,
 		project,
@@ -543,6 +562,7 @@ func (s *SQLiteStore) Create(project string, entry TaskEntry) error {
 		entry.PRReviewDecision,
 		entry.PRCheckStatus,
 		entry.PRCreateState, entry.PRCreateError, entry.PRCreateAttempts, formatTime(entry.PRCreateAttemptedAt),
+		entry.VerifiedSHA, entry.VerifiedBaseSHA, formatTime(entry.VerifiedAt), entry.VerifiedBy, entry.StaleVerificationReason,
 	)
 	if err != nil {
 		if isUniqueConstraintError(err) {
@@ -557,7 +577,7 @@ func (s *SQLiteStore) Create(project string, entry TaskEntry) error {
 // Returns an error if the task is not found.
 func (s *SQLiteStore) Get(project, filename string) (TaskEntry, error) {
 	const q = `
-			SELECT filename, status, description, branch, topic, created_at, implemented, planning_at, implementing_at, reviewing_at, verifying_at, done_at, execution_phase, active_agent_type, active_wave, goal, content, clickup_task_id, linear_issue_id, linear_identifier, linear_url, linear_team_key, linear_project_id, review_cycle, latest_review_feedback, pr_url, pr_review_decision, pr_check_status, pr_create_state, pr_create_error, pr_create_attempts, pr_create_attempted_at
+			SELECT filename, status, description, branch, topic, created_at, implemented, planning_at, implementing_at, reviewing_at, verifying_at, done_at, execution_phase, active_agent_type, active_wave, goal, content, clickup_task_id, linear_issue_id, linear_identifier, linear_url, linear_team_key, linear_project_id, review_cycle, latest_review_feedback, pr_url, pr_review_decision, pr_check_status, pr_create_state, pr_create_error, pr_create_attempts, pr_create_attempted_at, verified_sha, verified_base_sha, verified_at, verified_by, stale_verification_reason
 		FROM tasks
 		WHERE project = ? AND filename = ?
 	`
@@ -694,7 +714,7 @@ func (s *SQLiteStore) Delete(project, filename string) error {
 // List returns all task entries for the given project, sorted by filename.
 func (s *SQLiteStore) List(project string) ([]TaskEntry, error) {
 	const q = `
-			SELECT filename, status, description, branch, topic, created_at, implemented, planning_at, implementing_at, reviewing_at, verifying_at, done_at, execution_phase, active_agent_type, active_wave, goal, content, clickup_task_id, linear_issue_id, linear_identifier, linear_url, linear_team_key, linear_project_id, review_cycle, latest_review_feedback, pr_url, pr_review_decision, pr_check_status, pr_create_state, pr_create_error, pr_create_attempts, pr_create_attempted_at
+			SELECT filename, status, description, branch, topic, created_at, implemented, planning_at, implementing_at, reviewing_at, verifying_at, done_at, execution_phase, active_agent_type, active_wave, goal, content, clickup_task_id, linear_issue_id, linear_identifier, linear_url, linear_team_key, linear_project_id, review_cycle, latest_review_feedback, pr_url, pr_review_decision, pr_check_status, pr_create_state, pr_create_error, pr_create_attempts, pr_create_attempted_at, verified_sha, verified_base_sha, verified_at, verified_by, stale_verification_reason
 		FROM tasks
 		WHERE project = ?
 		ORDER BY filename ASC
@@ -723,7 +743,7 @@ func (s *SQLiteStore) ListByStatus(project string, statuses ...Status) ([]TaskEn
 	}
 
 	q := fmt.Sprintf(`
-			SELECT filename, status, description, branch, topic, created_at, implemented, planning_at, implementing_at, reviewing_at, verifying_at, done_at, execution_phase, active_agent_type, active_wave, goal, content, clickup_task_id, linear_issue_id, linear_identifier, linear_url, linear_team_key, linear_project_id, review_cycle, latest_review_feedback, pr_url, pr_review_decision, pr_check_status, pr_create_state, pr_create_error, pr_create_attempts, pr_create_attempted_at
+			SELECT filename, status, description, branch, topic, created_at, implemented, planning_at, implementing_at, reviewing_at, verifying_at, done_at, execution_phase, active_agent_type, active_wave, goal, content, clickup_task_id, linear_issue_id, linear_identifier, linear_url, linear_team_key, linear_project_id, review_cycle, latest_review_feedback, pr_url, pr_review_decision, pr_check_status, pr_create_state, pr_create_error, pr_create_attempts, pr_create_attempted_at, verified_sha, verified_base_sha, verified_at, verified_by, stale_verification_reason
 		FROM tasks
 		WHERE project = ? AND status IN (%s)
 		ORDER BY filename ASC
@@ -741,7 +761,7 @@ func (s *SQLiteStore) ListByStatus(project string, statuses ...Status) ([]TaskEn
 // sorted by filename.
 func (s *SQLiteStore) ListByTopic(project, topic string) ([]TaskEntry, error) {
 	const q = `
-			SELECT filename, status, description, branch, topic, created_at, implemented, planning_at, implementing_at, reviewing_at, verifying_at, done_at, execution_phase, active_agent_type, active_wave, goal, content, clickup_task_id, linear_issue_id, linear_identifier, linear_url, linear_team_key, linear_project_id, review_cycle, latest_review_feedback, pr_url, pr_review_decision, pr_check_status, pr_create_state, pr_create_error, pr_create_attempts, pr_create_attempted_at
+			SELECT filename, status, description, branch, topic, created_at, implemented, planning_at, implementing_at, reviewing_at, verifying_at, done_at, execution_phase, active_agent_type, active_wave, goal, content, clickup_task_id, linear_issue_id, linear_identifier, linear_url, linear_team_key, linear_project_id, review_cycle, latest_review_feedback, pr_url, pr_review_decision, pr_check_status, pr_create_state, pr_create_error, pr_create_attempts, pr_create_attempted_at, verified_sha, verified_base_sha, verified_at, verified_by, stale_verification_reason
 		FROM tasks
 		WHERE project = ? AND topic = ?
 		ORDER BY filename ASC
@@ -1242,6 +1262,38 @@ func (s *SQLiteStore) SetPRState(project, filename, reviewDecision, checkStatus 
 	return nil
 }
 
+func (s *SQLiteStore) SetVerification(project, filename string, v VerificationRecord) error {
+	const q = `UPDATE tasks SET verified_sha = ?, verified_base_sha = ?, verified_at = ?, verified_by = ?, stale_verification_reason = '' WHERE project = ? AND filename = ?`
+	result, err := s.db.Exec(q, v.SHA, v.BaseSHA, formatTime(v.At), v.By, project, filename)
+	if err != nil {
+		return fmt.Errorf("set verification: %w", err)
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("set verification rows affected: %w", err)
+	}
+	if n == 0 {
+		return newNotFoundError("plan not found: %s/%s", project, filename)
+	}
+	return nil
+}
+
+func (s *SQLiteStore) ClearVerification(project, filename, reason string) error {
+	const q = `UPDATE tasks SET verified_sha = '', verified_base_sha = '', verified_at = '', verified_by = '', stale_verification_reason = ? WHERE project = ? AND filename = ?`
+	result, err := s.db.Exec(q, reason, project, filename)
+	if err != nil {
+		return fmt.Errorf("clear verification: %w", err)
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("clear verification rows affected: %w", err)
+	}
+	if n == 0 {
+		return newNotFoundError("plan not found: %s/%s", project, filename)
+	}
+	return nil
+}
+
 // RecordPRReview inserts a new PR review record. INSERT OR IGNORE ensures
 // repeated polls for the same review ID are idempotent — only the first record wins.
 func (s *SQLiteStore) RecordPRReview(project, filename string, reviewID int, state, body, reviewer string) error {
@@ -1720,6 +1772,7 @@ func scanTaskEntry(row *sql.Row) (TaskEntry, error) {
 	var prURL, prReviewDecision, prCheckStatus string
 	var prCreateState, prCreateError, prCreateAttemptedAt string
 	var prCreateAttempts int
+	var verifiedSHA, verifiedBaseSHA, verifiedAt, verifiedBy, staleVerificationReason string
 	if err := row.Scan(
 		&filename,
 		&status,
@@ -1750,6 +1803,7 @@ func scanTaskEntry(row *sql.Row) (TaskEntry, error) {
 		&prReviewDecision,
 		&prCheckStatus,
 		&prCreateState, &prCreateError, &prCreateAttempts, &prCreateAttemptedAt,
+		&verifiedSHA, &verifiedBaseSHA, &verifiedAt, &verifiedBy, &staleVerificationReason,
 	); err != nil {
 		if err == sql.ErrNoRows {
 			return TaskEntry{}, newNotFoundError("plan not found")
@@ -1788,6 +1842,7 @@ func scanTaskEntry(row *sql.Row) (TaskEntry, error) {
 		PRReviewDecision:     prReviewDecision,
 		PRCheckStatus:        prCheckStatus,
 		PRCreateState:        prCreateState, PRCreateError: prCreateError, PRCreateAttempts: prCreateAttempts, PRCreateAttemptedAt: parseTime(prCreateAttemptedAt),
+		VerifiedSHA: verifiedSHA, VerifiedBaseSHA: verifiedBaseSHA, VerifiedAt: parseTime(verifiedAt), VerifiedBy: verifiedBy, StaleVerificationReason: staleVerificationReason,
 	}, nil
 }
 
@@ -1801,6 +1856,7 @@ func scanTaskEntries(rows *sql.Rows) ([]TaskEntry, error) {
 		var prURL, prReviewDecision, prCheckStatus string
 		var prCreateState, prCreateError, prCreateAttemptedAt string
 		var prCreateAttempts int
+		var verifiedSHA, verifiedBaseSHA, verifiedAt, verifiedBy, staleVerificationReason string
 		if err := rows.Scan(
 			&filename,
 			&status,
@@ -1831,6 +1887,7 @@ func scanTaskEntries(rows *sql.Rows) ([]TaskEntry, error) {
 			&prReviewDecision,
 			&prCheckStatus,
 			&prCreateState, &prCreateError, &prCreateAttempts, &prCreateAttemptedAt,
+			&verifiedSHA, &verifiedBaseSHA, &verifiedAt, &verifiedBy, &staleVerificationReason,
 		); err != nil {
 			return nil, fmt.Errorf("scan plan: %w", err)
 		}
@@ -1866,6 +1923,7 @@ func scanTaskEntries(rows *sql.Rows) ([]TaskEntry, error) {
 			PRReviewDecision:     prReviewDecision,
 			PRCheckStatus:        prCheckStatus,
 			PRCreateState:        prCreateState, PRCreateError: prCreateError, PRCreateAttempts: prCreateAttempts, PRCreateAttemptedAt: parseTime(prCreateAttemptedAt),
+			VerifiedSHA: verifiedSHA, VerifiedBaseSHA: verifiedBaseSHA, VerifiedAt: parseTime(verifiedAt), VerifiedBy: verifiedBy, StaleVerificationReason: staleVerificationReason,
 		})
 	}
 	if err := rows.Err(); err != nil {

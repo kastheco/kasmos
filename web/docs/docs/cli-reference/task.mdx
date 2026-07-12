@@ -270,6 +270,8 @@ On success the command prints the PR URL and persists it in the task store. A tr
 
 The command exits non-zero when creation is blocked, including a dirty task worktree, a missing task branch, or an unauthenticated `gh` CLI. Clear the reported condition and run `kas task pr <plan-file>` again. The existing-PR preflight makes retries idempotent.
 
+PR creation is gated by HEAD-bound verification. The task must be `done`, have a non-empty `verified_sha`, and that SHA must equal the branch's live HEAD. If HEAD drifted, kasmos reopens the task to `verifying`, stops the stale master, and starts fresh verification instead of creating the PR. Legacy `done` tasks without a `verified_sha` must be re-verified first.
+
 ---
 
 ### merge
@@ -284,7 +286,7 @@ kas task merge <plan-file>
 kas task merge my-feature
 ```
 
-Runs `git merge` in the repo root, then applies `review_approved` via the FSM. If the task is not already in `reviewing`, it is advanced through `implement_finished` first.
+Before merging, the CLI requires `done` with a non-empty `verified_sha` equal to live branch HEAD. Drift reopens the task to `verifying` and starts fresh verification; no merge occurs. The TUI merge action applies the same gate. Legacy `done` tasks without a bound SHA must be re-verified first.
 
 ---
 
@@ -330,12 +332,14 @@ kas task recover my-feature --action verify-failed --feedback "spec section 3 is
 | `review-approved` | `review_approved` | |
 | `review-changes` | `review_changes_requested` | requires `--feedback` |
 | `advance-review-cycle` | `review_changes_requested` | requires `--feedback`; alias for `review-changes` |
-| `verify-approved` | `verify_approved` | only valid while task is in `verifying` status |
+| `verify-approved` | `verify_approved` | only valid while task is in `verifying`; resolves and submits both the live task HEAD and default-branch SHA |
 | `verify-failed` | `verify_failed` | only valid while task is in `verifying` status; requires `--feedback` |
 | `advance-wave` | `advance_wave` | advance a stuck multi-wave task to the next wave |
 | `retry-wave` | `retry_wave` | replace stale wave agents and re-run every unresolved task in the current wave; completed tasks stay complete |
 
 `verify-approved` and `verify-failed` are the manual recovery path for the master agent gate. Use them when the master agent session ended before it could emit a signal. The `kas status` command shows these hints automatically when a task is stuck in the `verifying` status.
+
+Unlike a raw master signal, `recover --action verify-approved` does not accept caller-supplied SHAs. It resolves the task HEAD and default-branch SHA locally, then submits the same two-SHA admission proof required from the master.
 
 Note: under normal operation with `readiness_max_verify_cycles` set, repeated `verify_failed` signals cause the daemon to automatically force-promote to `verify_approved` after the cap is reached — you do not need to intervene manually in that case.
 
@@ -401,3 +405,4 @@ kas task unlink-linear my-feature --reason "issue moved back to planning"
 | `--project` | override project name (default: derived from current directory) |
 
 unlinking updates only kasmos task metadata and audit history. it does not edit the Linear issue or drive any kasmos lifecycle transition.
+PR creation resolves legacy tasks without a stored branch using the canonical `plan/<task>` branch, then applies the same HEAD-bound verification gate before creating or adopting a pull request.

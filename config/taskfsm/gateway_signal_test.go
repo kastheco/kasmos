@@ -1,6 +1,7 @@
 package taskfsm
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/kastheco/kasmos/config/taskstore"
@@ -155,6 +156,39 @@ func TestNormalizeGatewaySignalPayload_VerifySignals(t *testing.T) {
 			} else {
 				assert.JSONEq(t, tt.wantPayload, got)
 			}
+		})
+	}
+}
+
+func TestNormalizeGatewaySignalPayload_VerifyMetadataValidation(t *testing.T) {
+	validSHA := strings.Repeat("a", 40)
+	tests := []struct {
+		name    string
+		payload string
+		wantErr bool
+	}{
+		{"valid head and base with master origin", `{"reviewed_sha":"` + validSHA + `","reviewed_base_sha":"` + validSHA + `","origin":"master"}`, false},
+		{"operator origin without sha", `{"origin":"operator"}`, false},
+		{"force promoted origin", `{"origin":"force_promoted"}`, false},
+		{"auto origin", `{"origin":"auto"}`, false},
+		{"short sha", `{"reviewed_sha":"abc123"}`, true},
+		{"uppercase sha", `{"reviewed_sha":"` + strings.Repeat("A", 40) + `"}`, true},
+		{"short base sha", `{"reviewed_base_sha":"abc123"}`, true},
+		{"uppercase base sha", `{"reviewed_base_sha":"` + strings.Repeat("A", 40) + `"}`, true},
+		{"non hex sha", `{"reviewed_sha":"` + strings.Repeat("g", 40) + `"}`, true},
+		{"branch name", `{"reviewed_sha":"main"}`, true},
+		{"git describe", `{"reviewed_sha":"v1.2.3-4-gabcdef"}`, true},
+		{"invalid origin", `{"origin":"reviewer"}`, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := NormalizeGatewaySignalPayload("verify_approved", tt.payload)
+			if tt.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			assert.JSONEq(t, tt.payload, got)
 		})
 	}
 }

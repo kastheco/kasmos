@@ -42,7 +42,7 @@ func TestProcessor_LifecycleSignalMatrix(t *testing.T) {
 			entry:      taskstore.TaskEntry{Filename: "plan.md", Status: taskstore.StatusReviewing, Branch: "plan/plan"},
 			signal:     taskfsm.Signal{TaskFile: "plan.md", Event: taskfsm.ReviewApproved, Body: "lgtm"},
 			wantStatus: taskstore.StatusDone,
-			wantKinds:  []string{"review_approved", "verify_approved", "create_pr"},
+			wantKinds:  []string{"review_approved", "record_verification", "verify_approved", "create_pr"},
 		},
 		{
 			name:          "review approved transitions to verifying and spawns master when readiness enabled",
@@ -55,10 +55,10 @@ func TestProcessor_LifecycleSignalMatrix(t *testing.T) {
 		{
 			name:          "verify approved from master transitions to done",
 			entry:         taskstore.TaskEntry{Filename: "plan.md", Status: taskstore.StatusVerifying, Branch: "plan/plan", ExecutionState: taskstore.ExecutionState{ActiveAgentType: session.AgentTypeMaster}},
-			signal:        taskfsm.Signal{TaskFile: "plan.md", Event: taskfsm.VerifyApproved, Body: "ready"},
+			signal:        taskfsm.Signal{TaskFile: "plan.md", Event: taskfsm.VerifyApproved, Body: "ready", Origin: "master", ReviewedSHA: verificationHead, ReviewedBaseSHA: verificationHead},
 			autoReadiness: true,
 			wantStatus:    taskstore.StatusDone,
-			wantKinds:     []string{"verify_approved", "create_pr"},
+			wantKinds:     []string{"record_verification", "verify_approved", "create_pr"},
 		},
 		{
 			name:          "verify failed transitions verifying to implementing",
@@ -87,7 +87,7 @@ func TestProcessor_LifecycleSignalMatrix(t *testing.T) {
 
 			const project = "proj"
 			require.NoError(t, store.Create(project, tt.entry))
-			p := NewProcessor(ProcessorConfig{Store: store, Project: project, AutoReviewFix: tt.autoFix, AutoReadinessReview: tt.autoReadiness})
+			p := NewProcessor(ProcessorConfig{Store: store, Project: project, AutoReviewFix: tt.autoFix, AutoReadinessReview: tt.autoReadiness, HeadSHA: func(string) (string, error) { return verificationHead, nil }, MergeBaseSHA: testVerificationBase})
 
 			actions := p.ProcessFSMSignals([]taskfsm.Signal{tt.signal})
 			gotKinds := make([]string, 0, len(actions))

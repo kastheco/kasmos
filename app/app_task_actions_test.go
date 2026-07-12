@@ -1035,6 +1035,16 @@ func TestExecuteContextAction_MergePlanPreflightStopsBeforeKillingInstances(t *t
 	const planFile = "merge-guard"
 	require.NoError(t, ps.Register(planFile, "merge guard", "plan/merge-guard", time.Now()))
 	seedPlanStatus(t, ps, planFile, taskstate.StatusReviewing)
+	branchHeadOutput, err := exec.Command("git", "-C", dir, "rev-parse", "plan/merge-guard").Output()
+	require.NoError(t, err)
+	branchHead := strings.TrimSpace(string(branchHeadOutput))
+	require.NoError(t, storeForDir(t, plansDir).SetVerification("test", planFile, taskstore.VerificationRecord{
+		SHA: branchHead,
+		By:  "master",
+		At:  time.Now(),
+	}))
+	ps, err = taskstate.Load(storeForDir(t, plansDir), "test", plansDir)
+	require.NoError(t, err)
 
 	spin := spinner.New(spinner.WithSpinner(spinner.Dot))
 	inst, err := session.NewInstance(session.InstanceOptions{
@@ -1046,15 +1056,17 @@ func TestExecuteContextAction_MergePlanPreflightStopsBeforeKillingInstances(t *t
 	require.NoError(t, err)
 
 	h := &home{
-		taskState:      ps,
-		taskStateDir:   plansDir,
-		nav:            ui.NewNavigationPanel(&spin),
-		menu:           ui.NewMenu(),
-		tabbedWindow:   ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewInfoPane()),
-		toastManager:   overlay.NewToastManager(&spin),
-		overlays:       overlay.NewManager(),
-		activeRepoPath: dir,
-		allInstances:   []*session.Instance{inst},
+		taskState:        ps,
+		taskStore:        storeForDir(t, plansDir),
+		taskStoreProject: "test",
+		taskStateDir:     plansDir,
+		nav:              ui.NewNavigationPanel(&spin),
+		menu:             ui.NewMenu(),
+		tabbedWindow:     ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewInfoPane()),
+		toastManager:     overlay.NewToastManager(&spin),
+		overlays:         overlay.NewManager(),
+		activeRepoPath:   dir,
+		allInstances:     []*session.Instance{inst},
 	}
 
 	h.updateSidebarTasks()
@@ -1075,6 +1087,74 @@ func TestExecuteContextAction_MergePlanPreflightStopsBeforeKillingInstances(t *t
 	entry, ok := updated.taskState.Entry(planFile)
 	require.True(t, ok)
 	assert.Equal(t, taskstate.StatusReviewing, entry.Status)
+}
+
+func TestExecuteContextAction_MergePlanRejectsDriftedVerification(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	runGit := func(args ...string) string {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+		out, err := cmd.CombinedOutput()
+		require.NoErrorf(t, err, "git %v failed: %s", args, string(out))
+		return strings.TrimSpace(string(out))
+	}
+
+	runGit("init")
+	runGit("config", "user.email", "test@test.com")
+	runGit("config", "user.name", "Test")
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "tracked.txt"), []byte("base\n"), 0o644))
+	runGit("add", "tracked.txt")
+	runGit("commit", "-m", "init")
+	baseSHA := runGit("rev-parse", "HEAD")
+	runGit("checkout", "-b", "plan/drifted-verification")
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "tracked.txt"), []byte("branch change\n"), 0o644))
+	runGit("add", "tracked.txt")
+	runGit("commit", "-m", "branch change")
+	branchSHA := runGit("rev-parse", "HEAD")
+	runGit("checkout", "-")
+
+	plansDir := filepath.Join(dir, "docs", "plans")
+	require.NoError(t, os.MkdirAll(plansDir, 0o755))
+	store, _, fsm := newSharedStoreForTest(t, plansDir)
+	const planFile = "drifted-verification"
+	require.NoError(t, store.Create("test", taskstore.TaskEntry{
+		Filename: planFile,
+		Status:   taskstore.StatusDone,
+		Branch:   "plan/drifted-verification",
+	}))
+	require.NoError(t, store.SetVerification("test", planFile, taskstore.VerificationRecord{
+		SHA: baseSHA,
+		By:  "master",
+		At:  time.Now(),
+	}))
+	ps, err := taskstate.Load(store, "test", plansDir)
+	require.NoError(t, err)
+
+	h := newTestHome()
+	h.taskState = ps
+	h.taskStore = store
+	h.taskStoreProject = "test"
+	h.taskStateDir = plansDir
+	h.fsm = fsm
+	h.activeRepoPath = dir
+	h.updateSidebarTasks()
+
+	_, cmd := h.mergeTaskToMain(planFile)
+	require.Nil(t, cmd)
+	require.NotNil(t, h.pendingConfirmAction)
+	msg := h.pendingConfirmAction()
+	require.IsType(t, verificationStaleMsg{}, msg)
+	assert.Equal(t, baseSHA, runGit("rev-parse", "HEAD"), "drifted task branch must not be merged")
+
+	reloaded, err := taskstate.Load(store, "test", plansDir)
+	require.NoError(t, err)
+	entry, exists := reloaded.Entry(planFile)
+	require.True(t, exists)
+	assert.Equal(t, taskstate.StatusVerifying, entry.Status)
+	assert.Empty(t, entry.VerifiedSHA)
+	assert.Contains(t, entry.StaleVerificationReason, gitpkg.ShortSHA(baseSHA))
+	assert.Contains(t, entry.StaleVerificationReason, gitpkg.ShortSHA(branchSHA))
 }
 
 // TestFSM_PlanLifecycleStages verifies that the FSM produces the correct status for
@@ -1490,6 +1570,9 @@ func TestMergeInstance_UsesSelectedInstanceTask(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "tracked.txt"), []byte("branch change\n"), 0o644))
 	runGit("add", "tracked.txt")
 	runGit("commit", "-m", "branch change")
+	verifiedOut, err := exec.Command("git", "-C", dir, "rev-parse", "HEAD").Output()
+	require.NoError(t, err)
+	verifiedSHA := strings.TrimSpace(string(verifiedOut))
 	runGit("checkout", "-")
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "tracked.txt"), []byte("dirty local change\n"), 0o644))
 
@@ -1501,6 +1584,10 @@ func TestMergeInstance_UsesSelectedInstanceTask(t *testing.T) {
 	const planFile = "merge-instance"
 	require.NoError(t, ps.Register(planFile, "merge instance", "plan/merge-instance", time.Now()))
 	seedPlanStatus(t, ps, planFile, taskstate.StatusReviewing)
+	store := storeForDir(t, plansDir)
+	require.NoError(t, store.SetVerification("test", planFile, taskstore.VerificationRecord{SHA: verifiedSHA, By: "master", At: time.Now()}))
+	ps, err = taskstate.Load(store, "test", plansDir)
+	require.NoError(t, err)
 
 	spin := spinner.New(spinner.WithSpinner(spinner.Dot))
 	inst, err := session.NewInstance(session.InstanceOptions{
@@ -1513,15 +1600,17 @@ func TestMergeInstance_UsesSelectedInstanceTask(t *testing.T) {
 	require.NoError(t, err)
 
 	h := &home{
-		taskState:      ps,
-		taskStateDir:   plansDir,
-		nav:            ui.NewNavigationPanel(&spin),
-		menu:           ui.NewMenu(),
-		tabbedWindow:   ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewInfoPane()),
-		toastManager:   overlay.NewToastManager(&spin),
-		overlays:       overlay.NewManager(),
-		activeRepoPath: dir,
-		allInstances:   []*session.Instance{inst},
+		taskState:        ps,
+		taskStore:        store,
+		taskStoreProject: "test",
+		taskStateDir:     plansDir,
+		nav:              ui.NewNavigationPanel(&spin),
+		menu:             ui.NewMenu(),
+		tabbedWindow:     ui.NewTabbedWindow(ui.NewPreviewPane(), ui.NewInfoPane()),
+		toastManager:     overlay.NewToastManager(&spin),
+		overlays:         overlay.NewManager(),
+		activeRepoPath:   dir,
+		allInstances:     []*session.Instance{inst},
 	}
 
 	h.nav.AddInstance(inst)
@@ -2399,6 +2488,20 @@ func TestExecuteContextAction_MarkReadinessApproved(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	dir := t.TempDir()
 	t.Chdir(dir)
+	runGit := func(args ...string) string {
+		t.Helper()
+		out, err := exec.Command("git", append([]string{"-C", dir}, args...)...).CombinedOutput()
+		require.NoError(t, err, string(out))
+		return strings.TrimSpace(string(out))
+	}
+	runGit("init", "-b", "main")
+	runGit("config", "user.email", "test@test.com")
+	runGit("config", "user.name", "Test")
+	runGit("commit", "--allow-empty", "-m", "base")
+	runGit("checkout", "-b", "plan/feature")
+	runGit("commit", "--allow-empty", "-m", "feature")
+	head := runGit("rev-parse", "HEAD")
+	runGit("checkout", "main")
 	plansDir := filepath.Join(dir, "docs", "plans")
 	require.NoError(t, os.MkdirAll(plansDir, 0o755))
 	ps, err := newTestPlanState(t, plansDir)
@@ -2416,11 +2519,12 @@ func TestExecuteContextAction_MarkReadinessApproved(t *testing.T) {
 	h.taskStoreProject = "test"
 	h.pendingReviewFeedback = make(map[string]string)
 	master := &session.Instance{
-		Title:     "my-plan-verify-1",
-		Path:      dir,
-		Program:   "opencode",
-		TaskFile:  planFile,
-		AgentType: session.AgentTypeMaster,
+		Title:         "my-plan-verify-1",
+		Path:          dir,
+		Program:       "opencode",
+		TaskFile:      planFile,
+		AgentType:     session.AgentTypeMaster,
+		CachedContent: "operator readiness feedback",
 	}
 	h.nav.AddInstance(master)
 	h.updateSidebarTasks()
@@ -2436,6 +2540,11 @@ func TestExecuteContextAction_MarkReadinessApproved(t *testing.T) {
 	signals := listPendingAuthoritativeSignals(t, "test")
 	require.Len(t, signals, 1)
 	assert.Equal(t, "verify_approved", signals[0].SignalType)
+	var payload map[string]string
+	require.NoError(t, json.Unmarshal([]byte(signals[0].Payload), &payload))
+	assert.Empty(t, payload["origin"])
+	assert.Equal(t, head, payload["reviewed_sha"])
+	assert.Equal(t, "operator readiness feedback", payload["body"])
 }
 
 func TestExecuteContextAction_MarkReadinessChangesRequested(t *testing.T) {

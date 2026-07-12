@@ -1,13 +1,130 @@
 package git
 
 import (
+	"errors"
 	"fmt"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
 
 	"github.com/kastheco/kasmos/config/taskstate"
 )
+
+// ErrBranchNotFound reports that a task branch does not exist. Drift detection
+// uses errors.Is to distinguish "merged and deleted, skip" from "git is broken".
+var ErrBranchNotFound = errors.New("task branch not found")
+
+// BranchHeadSHA returns the full 40-char commit SHA that branch points at.
+func BranchHeadSHA(repoPath, branch string) (string, error) {
+	gt := &GitWorktree{repoPath: repoPath, worktreePath: repoPath}
+	if _, err := gt.runGitCommand(repoPath, "show-ref", "--verify", "--quiet", "refs/heads/"+branch); err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+			return "", fmt.Errorf("branch head %s: %w", branch, ErrBranchNotFound)
+		}
+		return "", fmt.Errorf("check branch head %s: %w", branch, err)
+	}
+	out, err := gt.runGitCommand(repoPath, "rev-parse", "--verify", branch+"^{commit}")
+	if err != nil {
+		return "", fmt.Errorf("resolve branch head %s: %w", branch, err)
+	}
+	sha := strings.TrimSpace(out)
+	if sha == "" {
+		return "", fmt.Errorf("branch head %s: empty commit SHA", branch)
+	}
+	return sha, nil
+}
+
+// RemoteBranchHeadSHA resolves the authoritative origin branch without relying
+// on a potentially stale remote-tracking ref.
+func RemoteBranchHeadSHA(repoPath, branch string) (string, error) {
+	gt := &GitWorktree{repoPath: repoPath, worktreePath: repoPath}
+	out, err := gt.runGitCommand(repoPath, "ls-remote", "--heads", "origin", "refs/heads/"+branch)
+	if err != nil {
+		return "", fmt.Errorf("resolve remote branch %s: %w", branch, err)
+	}
+	fields := strings.Fields(out)
+	if len(fields) == 0 {
+		return "", ErrBranchNotFound
+	}
+	if len(fields) < 2 || fields[1] != "refs/heads/"+branch {
+		return "", fmt.Errorf("unexpected ls-remote output for branch %s", branch)
+	}
+	return fields[0], nil
+}
+
+// RemoteDefaultBranchHeadSHA resolves the default branch on origin.
+func RemoteDefaultBranchHeadSHA(repoPath string) (string, error) {
+	gt := &GitWorktree{repoPath: repoPath, worktreePath: repoPath}
+	ref, err := defaultBranchRef(gt, repoPath)
+	if err != nil {
+		return "", err
+	}
+	return RemoteBranchHeadSHA(repoPath, strings.TrimPrefix(ref, "origin/"))
+}
+
+// BranchMergeBaseSHA returns the merge-base of the repository's default branch
+// and branch. It does not depend on whichever branch the root worktree happens
+// to have checked out.
+func BranchMergeBaseSHA(repoPath, branch string) (string, error) {
+	gt := &GitWorktree{repoPath: repoPath, worktreePath: repoPath}
+	base, err := defaultBranchRef(gt, repoPath)
+	if err != nil {
+		return "", err
+	}
+	out, err := gt.runGitCommand(repoPath, "merge-base", base, branch)
+	if err != nil {
+		return "", fmt.Errorf("merge-base %s %s: %w", base, branch, err)
+	}
+	sha := strings.TrimSpace(out)
+	if sha == "" {
+		return "", fmt.Errorf("merge-base %s %s: empty commit SHA", base, branch)
+	}
+	return sha, nil
+}
+
+// DefaultBranchHeadSHA returns the current commit of the repository's default
+// branch. Verification binds this separately from the task branch head.
+func DefaultBranchHeadSHA(repoPath string) (string, error) {
+	gt := &GitWorktree{repoPath: repoPath, worktreePath: repoPath}
+	base, err := defaultBranchRef(gt, repoPath)
+	if err != nil {
+		return "", err
+	}
+	out, err := gt.runGitCommand(repoPath, "rev-parse", "--verify", base+"^{commit}")
+	if err != nil {
+		return "", fmt.Errorf("resolve default branch head %s: %w", base, err)
+	}
+	return strings.TrimSpace(out), nil
+}
+
+func defaultBranchRef(gt *GitWorktree, repoPath string) (string, error) {
+	base := ""
+	if out, err := gt.runGitCommand(repoPath, "symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"); err == nil {
+		base = strings.TrimSpace(out)
+	}
+	if base == "" {
+		for _, candidate := range []string{"main", "master"} {
+			if _, err := gt.runGitCommand(repoPath, "rev-parse", "--verify", candidate+"^{commit}"); err == nil {
+				base = candidate
+				break
+			}
+		}
+	}
+	if base == "" {
+		return "", fmt.Errorf("resolve default branch: neither origin/HEAD, main, nor master exists")
+	}
+	return base, nil
+}
+
+// ShortSHA returns the first 7 chars of sha, or "" when sha is empty.
+func ShortSHA(sha string) string {
+	if len(sha) < 7 {
+		return sha
+	}
+	return sha[:7]
+}
 
 // TaskBranchFromFile derives the git branch name from a plan filename.
 // "auth-refactor" → "plan/auth-refactor"
@@ -130,6 +247,20 @@ func EnsureTaskBranch(repoPath, branch string) error {
 // MergeTaskBranch merges the plan branch into the current branch (typically main),
 // removes the worktree, and deletes the plan branch.
 func MergeTaskBranch(repoPath, branch string) error {
+	head, err := BranchHeadSHA(repoPath, branch)
+	if err != nil {
+		return err
+	}
+	base, err := DefaultBranchHeadSHA(repoPath)
+	if err != nil {
+		return err
+	}
+	return MergeTaskBranchAtSHA(repoPath, branch, head, base)
+}
+
+// MergeTaskBranchAtSHA merges exactly expectedSHA and refuses the operation if
+// either the task branch or target branch moved after verification.
+func MergeTaskBranchAtSHA(repoPath, branch, expectedSHA, expectedBaseSHA string) error {
 	gt := &GitWorktree{repoPath: repoPath, worktreePath: repoPath}
 	worktreePath := TaskWorktreePath(repoPath, branch)
 
@@ -149,9 +280,23 @@ func MergeTaskBranch(repoPath, branch string) error {
 			return fmt.Errorf("branch %s not found locally or on remote", branch)
 		}
 	}
+	current, err := BranchHeadSHA(repoPath, branch)
+	if err != nil {
+		return err
+	}
+	if !strings.EqualFold(current, expectedSHA) {
+		return fmt.Errorf("branch %s moved after verification: expected %s, current %s", branch, ShortSHA(expectedSHA), ShortSHA(current))
+	}
+	base, err := DefaultBranchHeadSHA(repoPath)
+	if err != nil {
+		return err
+	}
+	if !strings.EqualFold(base, expectedBaseSHA) {
+		return fmt.Errorf("default branch moved after verification: expected %s, current %s", ShortSHA(expectedBaseSHA), ShortSHA(base))
+	}
 
-	// Merge the plan branch into the current branch.
-	if _, err := gt.runGitCommand(repoPath, "merge", branch, "--no-ff", "-m",
+	// Merge the verified commit object, not a movable branch name.
+	if _, err := gt.runGitCommand(repoPath, "merge", expectedSHA, "--no-ff", "-m",
 		fmt.Sprintf("merge plan branch %s", branch)); err != nil {
 		return fmt.Errorf("merge %s: %w", branch, err)
 	}

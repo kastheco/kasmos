@@ -192,14 +192,14 @@ func TestBuildMasterReviewPrompt(t *testing.T) {
 	// MCP-first verify signal emission (canonical underscore form)
 	assert.Contains(t, prompt, "signal_create` (signal_type: \"verify_approved\"")
 	assert.Contains(t, prompt, "signal_create` (signal_type: \"verify_failed\"")
-	assert.Contains(t, prompt, "Do not repeat the reviewer's full branch review")
+	assert.NotContains(t, prompt, "Do not repeat the reviewer's full branch review")
 	assert.Contains(t, prompt, "Self-fix ceiling: 80 net lines")
 	assert.Contains(t, prompt, "Verify-round cap: 2")
 	assert.NotContains(t, prompt, "kas signal emit")
 	assert.NotContains(t, prompt, "MERGE_BASE")
 	assert.NotContains(t, prompt, compactFailuresOnlyGoTestCmd)
 	assert.NotContains(t, prompt, "git restore")
-	assert.Less(t, len(prompt), 2500, "managed master prompt must remain a compact dynamic envelope")
+	assert.Less(t, len(prompt), 4000, "managed master prompt must remain a compact dynamic envelope")
 	assert.Contains(t, prompt, "verify_failed")
 	// No readiness-specific signal types (now uses verify-*)
 	assert.NotContains(t, prompt, "readiness-approved")
@@ -209,6 +209,28 @@ func TestBuildMasterReviewPrompt(t *testing.T) {
 	// No pre-computed diff arguments
 	assert.NotContains(t, prompt, "## Diff")
 	assert.NotContains(t, prompt, "## Test Results")
+}
+
+func TestBuildMasterReviewPromptForRange(t *testing.T) {
+	baseSHA := "1111111111111111111111111111111111111111"
+	headSHA := "2222222222222222222222222222222222222222"
+	targetBaseSHA := "3333333333333333333333333333333333333333"
+	prompt := BuildMasterReviewPromptForRange("my-feature", "myproject", 80, 2, baseSHA, headSHA, targetBaseSHA)
+
+	assert.Contains(t, prompt, baseSHA)
+	assert.Contains(t, prompt, headSHA)
+	assert.Contains(t, prompt, targetBaseSHA)
+	assert.Contains(t, prompt, "reviewed_sha")
+	assert.Contains(t, prompt, "reviewed_base_sha")
+	assert.Contains(t, prompt, "Re-resolve `git rev-parse HEAD` after committing")
+	assert.Contains(t, prompt, "current primary platform documentation")
+	assert.NotContains(t, prompt, "reviewer already completed")
+	assert.NotContains(t, prompt, "Do not repeat the reviewer's full branch review")
+	assert.NotContains(t, prompt, "verification evidence only")
+
+	legacyPrompt := BuildMasterReviewPromptWithConfig("my-feature", "myproject", 80, 2)
+	assert.NotContains(t, legacyPrompt, "Base (merge-base) SHA")
+	assert.NotContains(t, legacyPrompt, "Head SHA under review")
 }
 
 func TestBuildElaborationPrompt(t *testing.T) {

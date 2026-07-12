@@ -155,27 +155,32 @@ func normalizeExecutionState(status Status, state taskstore.ExecutionState) task
 }
 
 type TaskEntry struct {
-	Status               Status                   `json:"status"`
-	ExecutionState       taskstore.ExecutionState `json:"execution_state,omitempty"`
-	Description          string                   `json:"description,omitempty"`
-	Branch               string                   `json:"branch,omitempty"`
-	Topic                string                   `json:"topic,omitempty"`
-	CreatedAt            time.Time                `json:"created_at,omitempty"`
-	Implemented          string                   `json:"implemented,omitempty"`
-	PlanningAt           time.Time                `json:"planning_at,omitempty"`
-	ImplementingAt       time.Time                `json:"implementing_at,omitempty"`
-	ReviewingAt          time.Time                `json:"reviewing_at,omitempty"`
-	VerifyingAt          time.Time                `json:"verifying_at,omitempty"`
-	DoneAt               time.Time                `json:"done_at,omitempty"`
-	Goal                 string                   `json:"goal,omitempty"`
-	ClickUpTaskID        string                   `json:"clickup_task_id,omitempty"`
-	LinearIssueID        string                   `json:"linear_issue_id,omitempty"`
-	LinearIdentifier     string                   `json:"linear_identifier,omitempty"`
-	LinearURL            string                   `json:"linear_url,omitempty"`
-	LinearTeamKey        string                   `json:"linear_team_key,omitempty"`
-	LinearProjectID      string                   `json:"linear_project_id,omitempty"`
-	ReviewCycle          int                      `json:"review_cycle,omitempty"`
-	LatestReviewFeedback string                   `json:"latest_review_feedback,omitempty"`
+	Status                  Status                   `json:"status"`
+	ExecutionState          taskstore.ExecutionState `json:"execution_state,omitempty"`
+	Description             string                   `json:"description,omitempty"`
+	Branch                  string                   `json:"branch,omitempty"`
+	Topic                   string                   `json:"topic,omitempty"`
+	CreatedAt               time.Time                `json:"created_at,omitempty"`
+	Implemented             string                   `json:"implemented,omitempty"`
+	PlanningAt              time.Time                `json:"planning_at,omitempty"`
+	ImplementingAt          time.Time                `json:"implementing_at,omitempty"`
+	ReviewingAt             time.Time                `json:"reviewing_at,omitempty"`
+	VerifyingAt             time.Time                `json:"verifying_at,omitempty"`
+	DoneAt                  time.Time                `json:"done_at,omitempty"`
+	Goal                    string                   `json:"goal,omitempty"`
+	ClickUpTaskID           string                   `json:"clickup_task_id,omitempty"`
+	LinearIssueID           string                   `json:"linear_issue_id,omitempty"`
+	LinearIdentifier        string                   `json:"linear_identifier,omitempty"`
+	LinearURL               string                   `json:"linear_url,omitempty"`
+	LinearTeamKey           string                   `json:"linear_team_key,omitempty"`
+	LinearProjectID         string                   `json:"linear_project_id,omitempty"`
+	ReviewCycle             int                      `json:"review_cycle,omitempty"`
+	LatestReviewFeedback    string                   `json:"latest_review_feedback,omitempty"`
+	VerifiedSHA             string                   `json:"verified_sha,omitempty"`
+	VerifiedBaseSHA         string                   `json:"verified_base_sha,omitempty"`
+	VerifiedAt              time.Time                `json:"verified_at,omitempty"`
+	VerifiedBy              string                   `json:"verified_by,omitempty"`
+	StaleVerificationReason string                   `json:"stale_verification_reason,omitempty"`
 }
 
 type TopicEntry struct {
@@ -255,6 +260,7 @@ func taskEntryFromStoreEntry(entry taskstore.TaskEntry, goal string) TaskEntry {
 		LinearProjectID:      entry.LinearProjectID,
 		ReviewCycle:          entry.ReviewCycle,
 		LatestReviewFeedback: entry.LatestReviewFeedback,
+		VerifiedSHA:          entry.VerifiedSHA, VerifiedBaseSHA: entry.VerifiedBaseSHA, VerifiedAt: entry.VerifiedAt, VerifiedBy: entry.VerifiedBy, StaleVerificationReason: entry.StaleVerificationReason,
 	}
 }
 
@@ -905,6 +911,7 @@ func (ps *TaskState) toTaskstoreEntry(filename string, e TaskEntry) taskstore.Ta
 		LinearProjectID:      e.LinearProjectID,
 		ReviewCycle:          e.ReviewCycle,
 		LatestReviewFeedback: e.LatestReviewFeedback,
+		VerifiedSHA:          e.VerifiedSHA, VerifiedBaseSHA: e.VerifiedBaseSHA, VerifiedAt: e.VerifiedAt, VerifiedBy: e.VerifiedBy, StaleVerificationReason: e.StaleVerificationReason,
 	}
 }
 
