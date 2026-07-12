@@ -16,5 +16,23 @@ describe("monitor host adapter", () => {
   it("host-agnostic invariant", async () => { const setBadge = vi.fn(); const host = embedded({ setBadge }); window.kasmosMonitorHost = host; render(<Monitor />); await act(async () => {}); expect(host.refresh).toHaveBeenCalledTimes(1); expect(screen.getByText("kasmos monitor")).toBeTruthy(); expect(setBadge).toHaveBeenCalledTimes(1); });
   it("cold-mount invariant", async () => { const refresh = vi.fn().mockRejectedValue(new Error("offline")); window.kasmosMonitorHost = embedded({ refresh }); render(<Monitor />); await act(async () => {}); expect(screen.getByRole("button", { name: "retry" })).toBeTruthy(); screen.getByRole("button", { name: "retry" }).click(); await act(async () => {}); expect(refresh).toHaveBeenCalledTimes(2); });
   it("schema-fail-closed invariant", async () => { vi.useFakeTimers(); const refresh = vi.fn().mockResolvedValue({ schema_version: 3 }); window.kasmosMonitorHost = embedded({ refresh }); render(<Monitor />); await act(async () => {}); expect(screen.getByText(/version mismatch/)).toBeTruthy(); await act(async () => vi.advanceTimersByTimeAsync(60000)); expect(refresh).toHaveBeenCalledTimes(1); });
+  it("visibility cadence pauses while collapsed or hidden and refreshes immediately on expansion", async () => {
+    vi.useFakeTimers();
+    let visibility: KasmosMonitorHost["visibility"] = "collapsed";
+    let listener = () => {};
+    const refresh = vi.fn().mockResolvedValue(snapshot);
+    const host = embedded({ snapshot, refresh, subscribe: (next) => { listener = next; return () => {}; } });
+    Object.defineProperty(host, "visibility", { get: () => visibility });
+    window.kasmosMonitorHost = host;
+    render(<Monitor />);
+    await act(async () => vi.advanceTimersByTimeAsync(14_999));
+    expect(refresh).not.toHaveBeenCalled();
+    visibility = "hidden"; await act(async () => listener());
+    await act(async () => vi.advanceTimersByTimeAsync(30_000));
+    expect(refresh).not.toHaveBeenCalled();
+    visibility = "expanded"; await act(async () => listener());
+    await act(async () => {});
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
   it("badge invariant", () => { expect(deriveBadge(undefined, {}).level).toBe("offline"); expect(deriveBadge(snapshot, {}).level).toBe("idle"); expect(deriveBadge({ ...snapshot, attention: [{ task: "x", kind: "blocked" }] }, {}).level).toBe("attention"); expect(deriveBadge({ ...snapshot, active_agents: [{ task: "x", role: "coder", active: true }] }, {}).level).toBe("running"); });
 });

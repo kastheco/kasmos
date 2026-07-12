@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import hostModule from "./host.js";
 
-const { REFRESH_CHANNEL, createKasmosMonitorHost, pollingCadence } = hostModule;
+const { REFRESH_CHANNEL, STATE_KEY, createKasmosMonitorHost, pollingCadence } = hostModule;
 const snapshot = {
   schema_version: 2, generated_at: "2026-07-11T00:00:00Z", project: "kasmos",
   daemon_running: true, lifecycle: { planning: 0, ready: 0, implementing: 1, reviewing: 0, verifying: 0, total: 1 },
@@ -54,4 +54,16 @@ test("subscriptions observe visibility, theme, and restored state", async () => 
   unsubscribe();
   host.updateEnvironment({ visibility: "hidden" });
   assert.equal(changes, 2);
+});
+
+test("a fresh host restores the durable scope without prior input", async () => {
+  const values = new Map();
+  const store = { get: async (key) => values.get(key), set: async (key, value) => values.set(key, value) };
+  const firstHost = createKasmosMonitorHost({ manifest, ipc: { invoke: async () => snapshot }, store });
+  await firstHost.saveState({ project: "kasmos", task: "panel" });
+
+  const freshHost = createKasmosMonitorHost({ manifest, ipc: { invoke: async () => snapshot }, store });
+  assert.deepEqual(await freshHost.restoreState(), { project: "kasmos", task: "panel" });
+  assert.deepEqual(values.get(STATE_KEY), { project: "kasmos", task: "panel" });
+  assert.equal(values.size, 1);
 });

@@ -1,12 +1,8 @@
 "use strict";
 
-const STATE_PREFIX = "kasmos-panel:";
+const STATE_KEY = "kasmos-panel:scope";
 const REFRESH_CHANNEL = "kasmos-panel:refresh";
 const VISIBILITY_CADENCE_MS = Object.freeze({ expanded: 2_000, collapsed: 15_000, hidden: null });
-
-function stateKey(scope = {}) {
-  return `${STATE_PREFIX}${scope.project || ""}:${scope.task || ""}`;
-}
 
 function createKasmosMonitorHost({ manifest, ipc, store, sidebar, composer, initial = {} }) {
   if (!manifest || !Number.isInteger(manifest.contract_version)) {
@@ -43,7 +39,7 @@ function createKasmosMonitorHost({ manifest, ipc, store, sidebar, composer, init
     },
     async saveState(scope = {}) {
       current.state = { ...scope };
-      if (store && typeof store.set === "function") await store.set(stateKey(scope), current.state);
+      if (store && typeof store.set === "function") await store.set(STATE_KEY, current.state);
       notify();
     },
     setBadge(badge) {
@@ -54,8 +50,8 @@ function createKasmosMonitorHost({ manifest, ipc, store, sidebar, composer, init
     },
   };
 
-  host.restoreState = async (scope = {}) => {
-    if (store && typeof store.get === "function") current.state = await store.get(stateKey(scope));
+  host.restoreState = async () => {
+    if (store && typeof store.get === "function") current.state = await store.get(STATE_KEY);
     notify();
     return current.state;
   };
@@ -73,4 +69,4 @@ function pollingCadence(visibility) {
 
 if (typeof window !== "undefined") window.createKasmosMonitorHost = createKasmosMonitorHost;
 
-module.exports = { REFRESH_CHANNEL, VISIBILITY_CADENCE_MS, createKasmosMonitorHost, pollingCadence, stateKey };
+module.exports = { REFRESH_CHANNEL, STATE_KEY, VISIBILITY_CADENCE_MS, createKasmosMonitorHost, pollingCadence };

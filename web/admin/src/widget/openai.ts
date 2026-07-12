@@ -59,6 +59,7 @@ export function useMonitorSnapshot(host: KasmosMonitorHost, project?: string, ta
   const scopeKey = `${project ?? ""}\u0000${task ?? ""}`; const latestScope = useRef(scopeKey); latestScope.current = scopeKey;
   const inFlight = useRef(false); const queued = useRef(false); const refreshRef = useRef<() => Promise<void>>(async () => {}); const coldStarted = useRef(false); const failures = useRef(0); const timer = useRef<number | undefined>(undefined); const mounted = useRef(true);
   const effectiveVisibility = document.visibilityState !== "visible" ? "hidden" : host.visibility;
+  const previousEffectiveVisibility = useRef(effectiveVisibility);
   const baseDelay = effectiveVisibility === "collapsed" ? 15000 : host.displayMode === "inline" ? 3000 : 2000;
   useEffect(() => { if (host.snapshot) { setSnapshot(host.snapshot); setPhase("ready"); } }, [host.snapshot]);
   useEffect(() => () => { mounted.current = false; }, []);
@@ -78,6 +79,9 @@ export function useMonitorSnapshot(host: KasmosMonitorHost, project?: string, ta
     let cancelled = false;
     const schedule = () => { window.clearTimeout(timer.current); if (cancelled || effectiveVisibility === "hidden" || phase === "incompatible") return; const delay = Math.min(baseDelay * 2 ** failures.current, 30000); timer.current = window.setTimeout(async () => { await refresh(); schedule(); }, delay); };
     const visibility = () => { if (document.visibilityState === "visible" && host.visibility !== "hidden") void refresh(); schedule(); };
+    const becameExpanded = previousEffectiveVisibility.current !== "expanded" && effectiveVisibility === "expanded";
+    previousEffectiveVisibility.current = effectiveVisibility;
+    if (becameExpanded) void refresh();
     schedule(); document.addEventListener("visibilitychange", visibility);
     return () => { cancelled = true; window.clearTimeout(timer.current); document.removeEventListener("visibilitychange", visibility); };
   }, [baseDelay, effectiveVisibility, host.visibility, phase, refresh]);
