@@ -117,6 +117,31 @@ func TestMergeTaskBranchAtSHARejectsMovedBranch(t *testing.T) {
 	require.Equal(t, runGit("rev-parse", "main"), runGit("rev-parse", "HEAD"))
 }
 
+func TestMergeTaskBranchAtSHARejectsWrongCheckedOutTarget(t *testing.T) {
+	dir := t.TempDir()
+	runGit := func(args ...string) string {
+		t.Helper()
+		out, err := exec.Command("git", append([]string{"-C", dir}, args...)...).CombinedOutput()
+		require.NoError(t, err, string(out))
+		return strings.TrimSpace(string(out))
+	}
+	runGit("init", "-b", "main")
+	runGit("config", "user.email", "test@example.com")
+	runGit("config", "user.name", "Test User")
+	runGit("commit", "--allow-empty", "-m", "base")
+	base := runGit("rev-parse", "HEAD")
+	runGit("checkout", "-b", "plan/example")
+	runGit("commit", "--allow-empty", "-m", "reviewed")
+	reviewed := runGit("rev-parse", "HEAD")
+	runGit("checkout", "-b", "other", "main")
+	runGit("commit", "--allow-empty", "-m", "unrelated target")
+	other := runGit("rev-parse", "HEAD")
+
+	err := MergeTaskBranchAtSHA(dir, "plan/example", reviewed, base)
+	require.ErrorContains(t, err, "current merge target differs from verified base")
+	require.Equal(t, other, runGit("rev-parse", "HEAD"))
+}
+
 func TestShortSHA(t *testing.T) {
 	require.Equal(t, "", ShortSHA(""))
 	require.Equal(t, "abc", ShortSHA("abc"))

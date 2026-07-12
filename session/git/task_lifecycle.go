@@ -263,6 +263,13 @@ func MergeTaskBranch(repoPath, branch string) error {
 func MergeTaskBranchAtSHA(repoPath, branch, expectedSHA, expectedBaseSHA string) error {
 	gt := &GitWorktree{repoPath: repoPath, worktreePath: repoPath}
 	worktreePath := TaskWorktreePath(repoPath, branch)
+	targetHead, err := gt.runGitCommand(repoPath, "rev-parse", "--verify", "HEAD^{commit}")
+	if err != nil {
+		return fmt.Errorf("resolve current merge target: %w", err)
+	}
+	if !strings.EqualFold(strings.TrimSpace(targetHead), expectedBaseSHA) {
+		return fmt.Errorf("current merge target differs from verified base: expected %s, current %s", ShortSHA(expectedBaseSHA), ShortSHA(strings.TrimSpace(targetHead)))
+	}
 
 	// Remove worktree first so the branch isn't "checked out" elsewhere.
 	_, _ = gt.runGitCommand(repoPath, "worktree", "remove", "-f", worktreePath)

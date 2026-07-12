@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kastheco/kasmos/config/taskfsm"
 	"github.com/kastheco/kasmos/config/taskstate"
 	"github.com/kastheco/kasmos/config/taskstore"
 	gitpkg "github.com/kastheco/kasmos/session/git"
@@ -74,6 +75,21 @@ func Ensure(ctx context.Context, store taskstore.Store, req Request) (res Result
 		}
 		return res, nil
 	}
+	blockStale := func(reason string) (Result, error) {
+		if clearErr := store.ClearVerification(req.Project, req.PlanFile, reason); clearErr != nil {
+			return persist(OutcomeFailed, fmt.Sprintf("clear stale verification: %v", clearErr))
+		}
+		current, getErr := store.Get(req.Project, req.PlanFile)
+		if getErr != nil {
+			return persist(OutcomeFailed, fmt.Sprintf("reload stale task: %v", getErr))
+		}
+		if current.Status == taskstore.StatusDone {
+			if transitionErr := taskfsm.New(store, req.Project, "").Transition(req.PlanFile, taskfsm.VerificationStale); transitionErr != nil {
+				return persist(OutcomeFailed, fmt.Sprintf("reopen stale verification: %v", transitionErr))
+			}
+		}
+		return persist(OutcomeBlocked, "verification stale: "+reason)
+	}
 	if store == nil {
 		return Result{Outcome: OutcomeFailed, Reason: "task store unavailable"}, fmt.Errorf("task store unavailable")
 	}
@@ -98,8 +114,7 @@ func Ensure(ctx context.Context, store taskstore.Store, req Request) (res Result
 		return persist(OutcomeBlocked, verifyErr.Error())
 	}
 	if staleReason != "" {
-		_ = store.ClearVerification(req.Project, req.PlanFile, staleReason)
-		return persist(OutcomeBlocked, "verification stale: "+staleReason)
+		return blockStale(staleReason)
 	}
 	remoteHead, remoteErr := gitpkg.RemoteBranchHeadSHA(req.RepoPath, branch)
 	if remoteErr != nil && !errors.Is(remoteErr, gitpkg.ErrBranchNotFound) {
@@ -107,8 +122,7 @@ func Ensure(ctx context.Context, store taskstore.Store, req Request) (res Result
 	}
 	if remoteErr == nil && !strings.EqualFold(remoteHead, expectedHead) {
 		reason := fmt.Sprintf("remote branch moved after verification: expected %s, current %s", gitpkg.ShortSHA(expectedHead), gitpkg.ShortSHA(remoteHead))
-		_ = store.ClearVerification(req.Project, req.PlanFile, reason)
-		return persist(OutcomeBlocked, "verification stale: "+reason)
+		return blockStale(reason)
 	}
 	remoteBase, remoteBaseErr := gitpkg.RemoteDefaultBranchHeadSHA(req.RepoPath)
 	if remoteBaseErr != nil {
@@ -116,8 +130,7 @@ func Ensure(ctx context.Context, store taskstore.Store, req Request) (res Result
 	}
 	if !strings.EqualFold(remoteBase, entry.VerifiedBaseSHA) {
 		reason := fmt.Sprintf("remote default branch moved after verification: expected %s, current %s", gitpkg.ShortSHA(entry.VerifiedBaseSHA), gitpkg.ShortSHA(remoteBase))
-		_ = store.ClearVerification(req.Project, req.PlanFile, reason)
-		return persist(OutcomeBlocked, "verification stale: "+reason)
+		return blockStale(reason)
 	}
 	handle := gitpkg.NewSharedTaskWorktree(req.RepoPath, branch)
 	state, queryErr := handle.QueryPRState()
@@ -127,8 +140,7 @@ func Ensure(ctx context.Context, store taskstore.Store, req Request) (res Result
 	if state.URL != "" {
 		if state.HeadSHA == "" || !strings.EqualFold(state.HeadSHA, expectedHead) {
 			reason := fmt.Sprintf("pull request head moved after verification: expected %s, current %s", gitpkg.ShortSHA(expectedHead), gitpkg.ShortSHA(state.HeadSHA))
-			_ = store.ClearVerification(req.Project, req.PlanFile, reason)
-			return persist(OutcomeBlocked, "verification stale: "+reason)
+			return blockStale(reason)
 		}
 		if entry.PRURL != "" {
 			result, persistErr := persist(OutcomeSkipped, "pr already recorded")
@@ -175,8 +187,7 @@ func Ensure(ctx context.Context, store taskstore.Store, req Request) (res Result
 		if staleReason == "" {
 			staleReason = "head changed while preparing pull request"
 		}
-		_ = store.ClearVerification(req.Project, req.PlanFile, staleReason)
-		return persist(OutcomeBlocked, "verification stale: "+staleReason)
+		return blockStale(staleReason)
 	}
 	latestRemoteBase, remoteBaseErr := gitpkg.RemoteDefaultBranchHeadSHA(req.RepoPath)
 	if remoteBaseErr != nil {
@@ -184,8 +195,7 @@ func Ensure(ctx context.Context, store taskstore.Store, req Request) (res Result
 	}
 	if !strings.EqualFold(latestRemoteBase, latest.VerifiedBaseSHA) {
 		reason := fmt.Sprintf("remote default branch moved while preparing pull request: expected %s, current %s", gitpkg.ShortSHA(latest.VerifiedBaseSHA), gitpkg.ShortSHA(latestRemoteBase))
-		_ = store.ClearVerification(req.Project, req.PlanFile, reason)
-		return persist(OutcomeBlocked, "verification stale: "+reason)
+		return blockStale(reason)
 	}
 	createErr := wt.CreatePRAtSHA(title, body, expectedHead)
 	if createErr != nil && !errors.Is(createErr, gitpkg.ErrPRAlreadyExists) {

@@ -164,7 +164,7 @@ cancelled
   └─ reopen              → planning
 ```
 
-Approval is persisted as `verified_sha`, `verified_base_sha`, `verified_at`, and `verified_by`, with `stale_verification_reason` explaining a revoked approval. `verified_by` is one of `master`, `operator`, `force_promoted`, or `auto`. The daemon compares `verified_sha` with live branch HEAD after approval; drift kills the stale master and applies `verification_stale` so a fresh master reviews the new commit. Legacy pre-upgrade `done` tasks with an empty `verified_sha` are left alone by this background check, but cannot create a PR or merge until re-verified.
+Approval is persisted as `verified_sha`, `verified_base_sha`, `verified_at`, and `verified_by`, with `stale_verification_reason` explaining a revoked approval. `verified_by` is one of `master`, `operator`, `force_promoted`, or `auto`. The daemon compares `verified_sha` with live branch HEAD after approval; drift kills the stale master and applies `verification_stale` so a fresh master reviews the new commit. PR admission performs the same transition when it discovers stale proof, preventing a `done` task from remaining terminal after its verification record is cleared. Legacy pre-upgrade `done` tasks with an empty `verified_sha` are left alone by the background check, but cannot create a PR or merge until re-verified.
 
 ## phase timestamps
 

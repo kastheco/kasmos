@@ -48,6 +48,8 @@ After terminal approval, the processor may dispatch automatic PR creation as a s
 - **`elaborator_finished`** / **`architect_finished`**: payload must be **empty**.
 - **`verify_approved`**: gateway callers must provide non-empty `reviewed_sha` and `reviewed_base_sha` values from the master prompt. `kas task recover <plan> verify-approved` resolves the current branch and default-branch SHAs and emits the same bound payload. Gateway-supplied `origin` and `fsm_applied` fields never establish trusted provenance. Internal `force_promoted` and `auto` paths do not come from gateway payloads.
 
+If a PR or merge gate later detects that either bound SHA is stale, Kasmos clears the approval and applies `verification_stale`, reopening a `done` task in `verifying` for a fresh master pass.
+
 ## subcommands
 
 ### emit

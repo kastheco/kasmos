@@ -191,6 +191,8 @@ Legacy or imported tasks without a stored branch use the canonical `plan/<task>`
 
 Verification binds both the task commit and the default-branch commit. A change to either invalidates approval. Merge and PR creation pass the reviewed task object ID into the final git operation, so a branch ref that moves after the initial check is rejected instead of being merged or pushed.
 
+PR admission uses the same recovery behavior as daemon drift detection: when it discovers stale verification on a `done` task, it clears the binding and applies `verification_stale` so the task returns to `verifying` instead of remaining terminal without a valid proof.
+
 ```json
 {"reviewed_sha":"<full-head-sha>","reviewed_base_sha":"<default-branch-sha>"}
 ```

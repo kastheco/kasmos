@@ -181,6 +181,7 @@ func TestEnsureRejectsExistingPRAtUnverifiedHead(t *testing.T) {
 	entry, getErr := store.Get(req.Project, req.PlanFile)
 	require.NoError(t, getErr)
 	assert.Empty(t, entry.VerifiedSHA)
+	assert.Equal(t, taskstore.StatusVerifying, entry.Status)
 }
 
 func TestEnsureRejectsRemoteOnlyBranchAdvance(t *testing.T) {
@@ -203,6 +204,9 @@ func TestEnsureRejectsRemoteOnlyBranchAdvance(t *testing.T) {
 	assert.Equal(t, OutcomeBlocked, res.Outcome)
 	assert.Contains(t, res.Reason, "remote branch moved")
 	assert.Empty(t, fake.calls, "GitHub must not be queried after remote drift")
+	entry, getErr := store.Get(req.Project, req.PlanFile)
+	require.NoError(t, getErr)
+	assert.Equal(t, taskstore.StatusVerifying, entry.Status)
 }
 
 func TestEnsureClassifiesTransientDirtyAndEmptyURL(t *testing.T) {
