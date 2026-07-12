@@ -11,6 +11,9 @@ The display mode controls how much detail it renders:
 - `pip` is a compact, pinnable picture-in-picture rail with lifecycle progress, running-agent count, and blocker or readiness status.
 - `inline` shows the lifecycle, task selector, active task progress, and blocker summary in the conversation.
 - `fullscreen` adds agents, branches, readiness, the complete wave breakdown, and the event stream for deeper inspection.
+- `sidebar` fits the complete monitor into a persistent, narrow host pane.
+
+non-apps-sdk hosts should implement the versioned [monitor host contract](./monitor-host-contract.mdx).
 
 ## prerequisites
 
@@ -60,7 +63,7 @@ This keeps the `coordinate-kasmos` approval gate in authority. The coordinating 
 
 ## polling and transport
 
-The widget polls through `window.openai.callTool("refresh_monitor", …)`: every 2 seconds in `pip` and `fullscreen`, and every 3 seconds inline. `refresh_monitor` has no `openai/outputTemplate` or `ui.resourceUri`, so refreshes update the existing widget instead of asking the host to render a new one. Polls are single-flight and pause when the document is hidden. The server uses a one-second TTL cache to avoid repeating snapshot assembly for rapid calls.
+the apps sdk widget polls through `window.openai.callTool("refresh_monitor", …)`. the host-agnostic bundle calls the injected host's `refresh` method instead. expanded `pip`, `fullscreen`, and `sidebar` panes poll every 2 seconds; expanded inline widgets poll every 3 seconds. host-reported pane visibility slows collapsed panes to 15 seconds and pauses hidden panes, independently of the containing window's visibility. polls are single-flight, failures back off to 30 seconds, and the server uses a one-second ttl cache to avoid repeating snapshot assembly for rapid calls. see the [monitor host contract](./monitor-host-contract.mdx) for the cadence and host responsibilities.
 
 Task state and the event feed come from the same database selected by `kas serve --db`, including custom database paths, so the widget never mixes task and audit history from different stores.
 
