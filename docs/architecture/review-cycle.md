@@ -88,25 +88,20 @@ both flags are fields on `DaemonConfig` in `daemon/config.go` and loaded from `~
 | `auto_readiness_review` | `AutoReadinessReview` | `true` | `review_approved` skips the master agent; the processor self-chains `verify_approved` and the task moves straight to `done` |
 | `max_review_fix_cycles` | `MaxReviewFixCycles` | `0` (unlimited) | caps the reviewer→fixer loop; when `ReviewCycle+1 > MaxReviewFixCycles` the processor emits `ReviewCycleLimitAction` instead of spawning a fixer |
 | `readiness_self_fix_max_lines` | `ReadinessSelfFixMaxLines` | `80` | net-line ceiling for master-agent self-fixes |
-| `readiness_max_verify_cycles` | `ReadinessMaxVerifyCycles` | `2` | verify-loop cap — see below |
+| `readiness_max_verify_cycles` | `ReadinessMaxVerifyCycles` | `2` | deprecated compatibility setting; it never changes a failed verdict into approval |
 
 ---
 
-## verify-loop cap and force promotion
+## failed verification is fail-closed
 
-`Processor.shouldForcePromoteVerify` in `orchestration/loop/processor.go` prevents the master-agent loop from running forever.
+`verify_failed` always applies `verifying → implementing`. It cannot be rewritten
+as `verify_approved`, regardless of cycle count or signal origin. When
+`auto_review_fix` is enabled, the processor spawns a fixer; use
+`max_review_fix_cycles` to bound automatic fixer loops. Once that limit is
+reached, the task remains in `implementing` for operator recovery.
 
-when a `verify_failed` signal arrives the processor checks:
-
-```
-ReviewCycle + 1  >=  ReadinessMaxVerifyCycles   →   promote to verify_approved
-```
-
-the promotion happens **before** the FSM transition is applied. this sequencing is intentional: `verify_approved` is only a legal FSM event from the `verifying` state; once the transition `verifying → implementing` fires, the window closes permanently and the task would be stuck in fixer loops. by rewriting the event to `verify_approved` first, the FSM stays in `verifying` and the downstream `VerifyApprovedAction` (with `ForcePromoted: true`) can be applied cleanly.
-
-with the default `ReadinessMaxVerifyCycles = 2`, two consecutive `verify_failed` rounds trigger force-promotion and the task advances to `done` regardless of the master agent verdict.
-
-force-promotion is suppressed when the signal is marked `PreApplied` (the HTTP admin handler has already applied the FSM transition itself).
+`readiness_max_verify_cycles` remains loadable so existing configs do not break,
+but it no longer affects lifecycle admission.
 
 ---
 

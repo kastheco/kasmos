@@ -341,7 +341,7 @@ kas task recover my-feature --action verify-failed --feedback "spec section 3 is
 
 Unlike a raw master signal, `recover --action verify-approved` does not accept caller-supplied SHAs. It resolves the task HEAD and default-branch SHA locally, then submits the same two-SHA admission proof required from the master.
 
-Note: under normal operation with `readiness_max_verify_cycles` set, repeated `verify_failed` signals cause the daemon to automatically force-promote to `verify_approved` after the cap is reached — you do not need to intervene manually in that case.
+`verify_failed` is fail-closed: it always returns the task to `implementing`. Use `max_review_fix_cycles` to bound automatic fixer loops; reaching that limit requires operator recovery and never implies approval.
 
 ---
 

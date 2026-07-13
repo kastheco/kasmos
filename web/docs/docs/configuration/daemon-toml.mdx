@@ -25,7 +25,7 @@ The file is loaded by `daemon.LoadDaemonConfig()`. If the file is absent, all de
 | `auto_readiness_review` | bool | `true` | when `true`, reviewer approval transitions to `verifying` and the daemon spawns an independent master review that binds task HEAD and default-branch SHA. When `false`, approval flows directly to `done` with `verified_by = "auto"`. Movement of either bound ref makes approval stale and reopens verification. |
 | `auto_create_pr` | bool | `true` | create or adopt a GitHub pull request after terminal approval |
 | `readiness_self_fix_max_lines` | int | `80` | maximum number of net lines the master agent may change in a single self-fix attempt; findings that require more are escalated via `verify_failed` |
-| `readiness_max_verify_cycles` | int | `2` | maximum number of verify-round attempts before the daemon force-promotes `verify_failed` to `verify_approved`; project-local `config.toml` overrides this value when set |
+| `readiness_max_verify_cycles` | int | `2` | deprecated compatibility setting; `verify_failed` is never promoted to approval |
 | `socket_path` | string | see below | Unix domain socket path for the control API; overrides the runtime default when set |
 
 **Default socket path** — when `socket_path` is not set in `daemon.toml`, the daemon and all CLI clients resolve the path at runtime using the same two-tier logic (see `daemon/daemon.go` `defaultSocketPath` and `config/taskstore/unix_client.go` `ResolvedDaemonSocketPath`):
@@ -87,7 +87,7 @@ max_review_fix_cycles        = 5
 auto_readiness_review        = true   # pause in verifying status and spawn master agent after reviewer approval
 auto_create_pr               = true   # create or adopt a PR after terminal approval
 readiness_self_fix_max_lines = 80     # master agent self-fix ceiling (net lines changed)
-readiness_max_verify_cycles  = 2      # force-promote after this many failed verify rounds
+readiness_max_verify_cycles  = 2      # deprecated compatibility setting
 
 [pr_monitor]
 enabled = true
@@ -137,7 +137,7 @@ The `daemon.toml` fields `auto_advance`, `auto_advance_waves`, `auto_review_fix`
 
 - **Daemon-global only (from `daemon.toml`):** `auto_advance_waves`, `auto_review_fix`. These are resolved from `daemon.toml` only; project-local `config.toml` values are ignored by the daemon for these fields, even when set.
 
-This means you can set conservative global defaults in `daemon.toml` (for example, `max_review_fix_cycles = 5` and `readiness_max_verify_cycles = 3`) and tighten or loosen those settings per repository in `config.toml` (for example, `[ui].max_review_fix_cycles = 3`). An explicit project value of `0` disables the review-fix cap for that repository. For daemon-global-only fields, edit `daemon.toml` and restart the daemon.
+This means you can set conservative global defaults in `daemon.toml` (for example, `max_review_fix_cycles = 5`) and tighten or loosen those settings per repository in `config.toml` (for example, `[ui].max_review_fix_cycles = 3`). An explicit project value of `0` disables the review-fix cap for that repository. `readiness_max_verify_cycles` is accepted only for compatibility. For daemon-global-only fields, edit `daemon.toml` and restart the daemon.
 
 ## starting the daemon
 

@@ -352,9 +352,9 @@ type Config struct {
 	// may change in a self-fix attempt. Defaults to 80. Values <= 0 are invalid and
 	// fall back to the default.
 	ReadinessSelfFixMaxLines int `json:"readiness_self_fix_max_lines,omitempty"`
-	// ReadinessMaxVerifyCycles is the maximum number of verify-round attempts before
-	// the loop is force-promoted to approved. Defaults to 2. Values <= 0 are invalid
-	// and fall back to the default.
+	// ReadinessMaxVerifyCycles is retained for configuration compatibility.
+	// Verify failures are never promoted to approval; MaxReviewFixCycles bounds
+	// automatic fixer loops. Defaults to 2. Values <= 0 fall back to the default.
 	ReadinessMaxVerifyCycles int `json:"readiness_max_verify_cycles,omitempty"`
 	// TelemetryEnabled controls Sentry crash reporting; defaults to true when nil.
 	TelemetryEnabled *bool `json:"telemetry_enabled,omitempty"`

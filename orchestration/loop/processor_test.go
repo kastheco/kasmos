@@ -758,21 +758,19 @@ func TestProcessor_VerifyFailedEmitsVerifyFailedAction(t *testing.T) {
 	assert.True(t, foundIncrement, "expected IncrementReviewCycleAction")
 }
 
-// TestProcessor_VerifyFailed_ReadinessLoopCapForcePromotes verifies that when
-// the readiness verify-loop cap is reached, a VerifyFailed signal is promoted
-// to VerifyApproved before the FSM transition — so the task moves verifying→
-// done instead of verifying→implementing, and no fixer is spawned.
-func TestProcessor_VerifyFailed_ReadinessLoopCapForcePromotes(t *testing.T) {
+// TestProcessor_VerifyFailed_ReadinessLoopCapNeverApproves verifies that a
+// failed readiness verdict remains a failure even after the configured cycle
+// cap. Only an explicit VerifyApproved signal may move a task to done.
+func TestProcessor_VerifyFailed_ReadinessLoopCapNeverApproves(t *testing.T) {
 	cases := []struct {
 		name        string
 		cap         int
 		reviewCycle int
-		wantPromote bool
 	}{
-		{"first attempt below cap", 2, 0, false},
-		{"cap reached on first attempt", 1, 0, true},
-		{"cap reached on second attempt", 2, 1, true},
-		{"cap exceeded on third attempt", 2, 2, true},
+		{"first attempt below cap", 2, 0},
+		{"cap reached on first attempt", 1, 0},
+		{"cap reached on second attempt", 2, 1},
+		{"cap exceeded on third attempt", 2, 2},
 	}
 
 	for _, tc := range cases {
@@ -801,15 +799,11 @@ func TestProcessor_VerifyFailed_ReadinessLoopCapForcePromotes(t *testing.T) {
 				{Event: taskfsm.VerifyFailed, TaskFile: "my-plan.md", Body: "issues found"},
 			})
 
-			var (
-				foundApproved, foundFailed, foundFixer, foundIncrement bool
-				approved                                               VerifyApprovedAction
-			)
+			var foundApproved, foundFailed, foundFixer, foundIncrement bool
 			for _, a := range actions {
-				switch act := a.(type) {
+				switch a.(type) {
 				case VerifyApprovedAction:
 					foundApproved = true
-					approved = act
 				case VerifyFailedAction:
 					foundFailed = true
 				case SpawnFixerAction:
@@ -819,27 +813,14 @@ func TestProcessor_VerifyFailed_ReadinessLoopCapForcePromotes(t *testing.T) {
 				}
 			}
 
-			if tc.wantPromote {
-				assert.True(t, foundApproved, "expected VerifyApprovedAction on cap promotion")
-				assert.True(t, approved.ForcePromoted, "promoted action must set ForcePromoted=true")
-				assert.False(t, foundFailed, "must not emit VerifyFailedAction on promotion")
-				assert.False(t, foundFixer, "must not spawn fixer on promotion")
-				assert.False(t, foundIncrement, "must not increment review cycle on promotion")
+			assert.False(t, foundApproved, "verify_failed must never become approval")
+			assert.True(t, foundFailed, "expected VerifyFailedAction")
+			assert.True(t, foundFixer, "expected SpawnFixerAction")
+			assert.True(t, foundIncrement, "expected IncrementReviewCycleAction")
 
-				entry, err := store.Get("test", "my-plan.md")
-				require.NoError(t, err)
-				assert.Equal(t, taskstore.StatusDone, entry.Status, "task must transition to done")
-				assert.Equal(t, verificationHead, actions[0].(RecordVerificationAction).SHA)
-			} else {
-				assert.False(t, foundApproved, "must not promote below cap")
-				assert.True(t, foundFailed, "expected VerifyFailedAction below cap")
-				assert.True(t, foundFixer, "expected SpawnFixerAction below cap")
-				assert.True(t, foundIncrement, "expected IncrementReviewCycleAction below cap")
-
-				entry, err := store.Get("test", "my-plan.md")
-				require.NoError(t, err)
-				assert.Equal(t, taskstore.StatusImplementing, entry.Status, "task must transition to implementing")
-			}
+			entry, err := store.Get("test", "my-plan.md")
+			require.NoError(t, err)
+			assert.Equal(t, taskstore.StatusImplementing, entry.Status, "task must transition to implementing")
 		})
 	}
 }
@@ -912,7 +893,7 @@ func TestProcessor_VerifyFailed_LoopCapZeroDisabled(t *testing.T) {
 			foundFailed = true
 		}
 	}
-	assert.False(t, foundApproved, "cap=0 must disable force-promotion")
+	assert.False(t, foundApproved, "verify_failed must never become approval")
 	assert.True(t, foundFailed, "expected VerifyFailedAction when cap is 0")
 }
 

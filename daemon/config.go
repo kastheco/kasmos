@@ -70,8 +70,8 @@ type DaemonConfig struct {
 	// may change in a self-fix attempt. Defaults to 80.
 	ReadinessSelfFixMaxLines int `toml:"readiness_self_fix_max_lines"`
 
-	// ReadinessMaxVerifyCycles is the maximum number of verify-round attempts before
-	// the loop is force-promoted to approved. Defaults to 2.
+	// ReadinessMaxVerifyCycles is retained for configuration compatibility.
+	// Verify failures are never promoted to approval. Defaults to 2.
 	ReadinessMaxVerifyCycles int `toml:"readiness_max_verify_cycles"`
 
 	// SocketPath is the Unix domain socket path for the control API.

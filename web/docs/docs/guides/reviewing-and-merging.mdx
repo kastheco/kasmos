@@ -132,11 +132,9 @@ kas signal emit verify_failed <plan>
 
 > **Deprecated aliases:** `readiness_approved` and `readiness_changes_requested` (and their hyphenated variants) are still accepted and canonicalized to `verify_approved` / `verify_failed` at ingress. Use the canonical names in new automation.
 
-#### verify-loop cap and force-promotion
+#### fail-closed verification
 
-The verify loop is bounded by `readiness_max_verify_cycles` (default: `2`). When the master agent emits `verify_failed` and the attempt count equals or exceeds the cap, the daemon **force-promotes** the task to `verify_approved` rather than spawning another fixer. The promotion is reflected by the resulting `verify_approved` transition and a warning toast in the TUI; kasmos does not currently add a distinct `loop_cap_exceeded` marker to the recorded payload.
-
-The info pane labels the final attempt as **readiness review (terminal attempt)** so you can anticipate the promotion before it fires.
+When the master agent emits `verify_failed`, the daemon always returns the task to `implementing`; cycle count never turns a failed verdict into approval. Use `max_review_fix_cycles` to stop automatic fixer loops after a configured number of attempts. At that limit, the task waits for operator recovery.
 
 After verification (or when `auto_readiness_review = false` skips it), the processor checks whether the task is eligible for automatic PR creation: if the task has a branch and no PR URL is already recorded, it emits a `CreatePRAction`. The daemon picks this up and calls the GitHub PR creation flow — no config knob is needed; the behavior is automatic when the eligibility criteria are met.
 
@@ -185,7 +183,7 @@ Once the plan is `done` and its approval still matches branch HEAD, merge the im
 
 The merge preflight checks that the branch exists, is not currently checked out on main, and has no unresolved conflicts before proceeding.
 
-Both the TUI merge action and `kas task merge` enforce the HEAD-bound verification gate immediately before merging. `done` is therefore revocable: any later branch commit reopens verification. A pre-upgrade `done` task with no `verified_sha` is not reopened by the periodic drift check, but both PR and merge gates block it until re-verification. Gateway and manual approvals use the same SHA-bound admission; only in-process force-promotion and automatic paths receive special provenance.
+Both the TUI merge action and `kas task merge` enforce the HEAD-bound verification gate immediately before merging. `done` is therefore revocable: any later branch commit reopens verification. A pre-upgrade `done` task with no `verified_sha` is not reopened by the periodic drift check, but both PR and merge gates block it until re-verification. Gateway and manual approvals use the same SHA-bound admission; only the in-process automatic path receives special provenance.
 
 ## checking merge status manually
 

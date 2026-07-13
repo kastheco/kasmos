@@ -25,7 +25,7 @@ Signals describe lifecycle progress only. Permission and resource-control behavi
 | `review_approved` | optional JSON or text | reviewer approved the implementation; triggers `reviewing → verifying` when `auto_readiness_review = true`, otherwise `reviewing → done` |
 | `review_changes_requested` | optional JSON or text | reviewer requested changes |
 | `verify_approved` | `{"reviewed_sha":"<full-head-sha>","reviewed_base_sha":"<default-branch-sha>"}` | approve during verifying (→ `done`). Both SHAs must still match the reviewed branch and default-branch snapshots. Manual recovery resolves and submits the same proof. |
-| `verify_failed` | optional JSON or text | master agent requested changes during verifying (→ `implementing`). Only valid while task is in `verifying` status. When `readiness_max_verify_cycles` is reached, the processor consumes this signal row but applies the `verifying → done` transition directly instead of `verifying → implementing`; no new `verify_approved` signal row is created, and the `verify_failed` row is still marked processed. |
+| `verify_failed` | optional JSON or text | master agent requested changes during verifying (→ `implementing`). Only valid while task is in `verifying` status. A failed verdict is never promoted to approval. |
 | `implement_task_finished` | `{"wave_number": N, "task_number": N}` | a single coder task in a wave finished |
 | `implement_wave` | `{"wave_number": N}` | a full wave finished |
 | `retry_wave` | _(none)_ | recovery signal that replaces stale agents for the active wave and re-runs only unresolved tasks; completed tasks remain complete |
@@ -46,7 +46,7 @@ After terminal approval, the processor may dispatch automatic PR creation as a s
 - **`implement_wave`**: payload is **required** and must be JSON containing an integer `wave_number`.
 - **`retry_wave`**: payload is optional and ignored; the daemon reconstructs the wave number and completed-task set from persisted task state.
 - **`elaborator_finished`** / **`architect_finished`**: payload must be **empty**.
-- **`verify_approved`**: gateway callers must provide non-empty `reviewed_sha` and `reviewed_base_sha` values from the master prompt. `kas task recover <plan> verify-approved` resolves the current branch and default-branch SHAs and emits the same bound payload. Gateway-supplied `origin` and `fsm_applied` fields never establish trusted provenance. Internal `force_promoted` and `auto` paths do not come from gateway payloads.
+- **`verify_approved`**: gateway callers must provide non-empty `reviewed_sha` and `reviewed_base_sha` values from the master prompt. `kas task recover <plan> verify-approved` resolves the current branch and default-branch SHAs and emits the same bound payload. Gateway-supplied `origin` and `fsm_applied` fields never establish trusted provenance. The internal `auto` path does not come from gateway payloads.
 
 If a PR or merge gate later detects that either bound SHA is stale, Kasmos clears the approval and applies `verification_stale`, reopening a `done` task in `verifying` for a fresh master pass.
 

@@ -563,3 +563,53 @@ func TestDaemon_TickRepo_HTTPVerifyFailedSpawnsFixer(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, doneRows, 1, "the verify_failed gateway row must be marked done")
 }
+
+// TestDaemon_TickRepo_GatewayVerifyFailedAtReadinessCapStaysFailed covers the
+// master-agent path: an MCP-created gateway row is not pre-applied. Reaching a
+// configured readiness cycle cap must never rewrite that failure as approval.
+func TestDaemon_TickRepo_GatewayVerifyFailedAtReadinessCapStaysFailed(t *testing.T) {
+	t.Parallel()
+
+	f := newHTTPTransitionE2EFixture(t, taskstore.StatusVerifying)
+	require.NoError(t, f.store.IncrementReviewCycle(f.project, f.planFile))
+	require.NoError(t, f.gw.Create(f.project, taskstore.SignalEntry{
+		PlanFile:   f.planFile,
+		SignalType: "verify_failed",
+		Payload:    `{"body":"schema contract mismatch"}`,
+	}))
+
+	proc := loop.NewProcessor(loop.ProcessorConfig{
+		Store:                    f.store,
+		Project:                  f.project,
+		AutoReviewFix:            true,
+		AutoReadinessReview:      true,
+		ReadinessMaxVerifyCycles: 2,
+	})
+
+	spawnCount := 0
+	d := &Daemon{
+		cfg:         &DaemonConfig{},
+		spawner:     NewTmuxSpawner(),
+		logger:      slog.Default(),
+		broadcaster: api.NewEventBroadcaster(),
+		spawnFixer: func(_ context.Context, opts loop.SpawnOpts) error {
+			spawnCount++
+			assert.Equal(t, "schema contract mismatch", opts.Feedback)
+			return nil
+		},
+	}
+	t.Cleanup(func() { d.broadcaster.Close() })
+
+	d.tickRepo(context.Background(), f.repoEntry(t, proc))
+
+	entry, err := f.store.Get(f.project, f.planFile)
+	require.NoError(t, err)
+	assert.Equal(t, taskstore.StatusImplementing, entry.Status)
+	assert.Empty(t, entry.VerifiedSHA)
+	assert.Equal(t, 1, spawnCount)
+
+	doneRows, err := f.gw.List(f.project, taskstore.SignalDone)
+	require.NoError(t, err)
+	require.Len(t, doneRows, 1)
+	assert.Equal(t, "verify_failed", doneRows[0].SignalType)
+}

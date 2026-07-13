@@ -115,9 +115,8 @@ type ProcessorConfig struct {
 	// may change in a self-fix attempt. Processor construction does not apply an
 	// implicit default; callers must provide a positive value when they want a limit.
 	ReadinessSelfFixMaxLines int
-	// ReadinessMaxVerifyCycles is the maximum number of verify-round attempts before
-	// the loop is force-promoted to approved. Zero or negative disables forced
-	// promotion.
+	// ReadinessMaxVerifyCycles is retained for configuration compatibility.
+	// VerifyFailed signals are never promoted to approval.
 	ReadinessMaxVerifyCycles int
 	// Hooks is an optional registry of FSM transition hooks. When non-nil and
 	// non-empty it is attached to the FSM so hooks fire after every successful
@@ -289,29 +288,6 @@ func (p *Processor) ClearWaveOrchestrator(planFile string) {
 	delete(p.activeWaveOrchs, planFile)
 }
 
-// shouldForcePromoteVerify returns true when the next VerifyFailed signal for
-// planFile should be promoted to VerifyApproved instead, because the readiness
-// verify-loop has reached its configured cap. The decision must be made before
-// applying the FSM transition: once verifying→implementing has fired,
-// VerifyApproved is no longer a legal transition from the current state.
-//
-// The attempt-count semantics: ReviewCycle is the number of completed
-// fixer iterations. On the next verify_failed the attempt count is
-// ReviewCycle+1, and we promote when that reaches (>=) ReadinessMaxVerifyCycles.
-func (p *Processor) shouldForcePromoteVerify(planFile string) bool {
-	if !p.config.AutoReviewFix || !p.config.AutoReadinessReview {
-		return false
-	}
-	if p.config.ReadinessMaxVerifyCycles <= 0 || p.config.Store == nil {
-		return false
-	}
-	entry, err := p.config.Store.Get(p.config.Project, planFile)
-	if err != nil {
-		return false
-	}
-	return entry.ReviewCycle+1 >= p.config.ReadinessMaxVerifyCycles
-}
-
 // ProcessFSMSignals converts FSM sentinel signals into Action values.
 // It validates each signal against the plan state machine, suppresses
 // ImplementFinished when a wave orchestrator is active, and emits typed
@@ -339,17 +315,6 @@ func (p *Processor) ProcessFSMSignals(signals []taskfsm.Signal) []Action {
 			}
 		}
 
-		// Readiness verify-loop cap: when a VerifyFailed signal arrives on the
-		// terminal attempt, promote it to VerifyApproved *before* applying the
-		// FSM transition. Otherwise the task would transition verifying→
-		// implementing first and the downstream VerifyApproved transition
-		// (which is only valid from verifying) would be rejected, leaving the
-		// task permanently stuck in fixer loops.
-		//
-		// Skip force-promotion when the signal is PreApplied: the FSM transition
-		// has already been applied by the signal's originator (e.g. the HTTP
-		// admin handler) for the original event, so rewriting the event here
-		// would emit side effects inconsistent with the actual persisted state.
 		var pendingRecord *RecordVerificationAction
 		if sig.Event == taskfsm.VerifyApproved && p.config.AutoReadinessReview {
 			entry, entryOK := p.taskEntry(sig.TaskFile)
@@ -378,17 +343,6 @@ func (p *Processor) ProcessFSMSignals(signals []taskfsm.Signal) []Action {
 		}
 
 		eventToApply := sig.Event
-		forcePromotedVerify := false
-		if sig.Event == taskfsm.VerifyFailed && !sig.PreApplied && p.shouldForcePromoteVerify(sig.TaskFile) {
-			eventToApply = taskfsm.VerifyApproved
-			forcePromotedVerify = true
-			rec, stale, ok := p.bindVerification(sig.TaskFile, "force_promoted", "", "")
-			if !ok {
-				p.setGatewaySignalOutcome(sig.GatewayEntryID, taskstore.SignalFailed, stale.Reason)
-				continue
-			}
-			pendingRecord = &rec
-		}
 
 		alreadyApplied := false
 		if err := p.fsm.Transition(sig.TaskFile, eventToApply); err != nil {
@@ -465,15 +419,13 @@ func (p *Processor) ProcessFSMSignals(signals []taskfsm.Signal) []Action {
 			}
 
 		case taskfsm.VerifyApproved:
-			// VerifyApproved transitions verifying → done (emitted by master agent),
-			// or synthesized locally when the readiness verify-loop cap is reached.
+			// VerifyApproved transitions verifying → done (emitted by master agent).
 			if pendingRecord != nil {
 				actions = append(actions, *pendingRecord)
 			}
 			actions = append(actions, VerifyApprovedAction{
-				PlanFile:      sig.TaskFile,
-				ReviewBody:    sig.Body,
-				ForcePromoted: forcePromotedVerify,
+				PlanFile:   sig.TaskFile,
+				ReviewBody: sig.Body,
 			})
 			if p.config.Store != nil {
 				if entry, err := p.config.Store.Get(p.config.Project, sig.TaskFile); err == nil {

@@ -23,7 +23,7 @@ every task in kasmos moves through a finite state machine (fsm). the fsm validat
 | `planning` | a planner agent is writing the plan content |
 | `implementing` | coder agents are working on the task |
 | `reviewing` | a reviewer agent is checking the implementation |
-| `verifying` | a master agent is running the holistic readiness gate before `done` (only entered when `auto_readiness_review = true`); the verify loop is capped by `readiness_max_verify_cycles` — when the cap is reached, the processor consumes the next `verify_failed` signal but applies the `verifying → done` transition directly instead of looping back to `implementing` |
+| `verifying` | a master agent is running the holistic readiness gate before `done` (only entered when `auto_readiness_review = true`); `verify_failed` always returns the task to `implementing` |
 | `done` | the current branch HEAD is approved and ready to merge. `done` is revocable: a later commit reopens verification |
 | `cancelled` | explicitly stopped; can be reopened |
 
@@ -67,8 +67,8 @@ events trigger transitions. some events are **user-only** (can only be fired fro
 | `request_review` | **yes** | manually trigger a reviewer |
 | `review_approved` | no | reviewer approved the implementation; routes `reviewing → verifying` when `auto_readiness_review = true`, otherwise `reviewing → done` |
 | `review_changes_requested` | no | reviewer requested changes |
-| `verify_approved` | no | master agent approved during verifying (→ `done`). the daemon never writes a `verify_approved` signal row itself — see `verify_failed` for loop-cap handling |
-| `verify_failed` | no | master agent requested changes during verifying (→ `implementing`). when the verify-round count reaches `readiness_max_verify_cycles` the processor still consumes this `verify_failed` signal but applies the `verifying → done` transition directly instead; no new signal is emitted, and the processor tags the emitted `VerifyApprovedAction` as `ForcePromoted` so the tui can surface a warning |
+| `verify_approved` | no | master agent approved during verifying (→ `done`) |
+| `verify_failed` | no | master agent requested changes during verifying (→ `implementing`). the verdict is fail-closed and cannot be rewritten as approval |
 | `verification_stale` | no | internal drift event that reopens `done → verifying` when the verified commit no longer matches branch HEAD |
 | `start_over` | **yes** | reset to planning from done |
 | `reimplement` | **yes** | resume implementation from done without resetting branch |
@@ -164,7 +164,7 @@ cancelled
   └─ reopen              → planning
 ```
 
-Approval is persisted as `verified_sha`, `verified_base_sha`, `verified_at`, and `verified_by`, with `stale_verification_reason` explaining a revoked approval. `verified_by` is one of `master`, `operator`, `force_promoted`, or `auto`. The daemon compares `verified_sha` with live branch HEAD after approval; drift kills the stale master and applies `verification_stale` so a fresh master reviews the new commit. PR admission performs the same transition when it discovers stale proof, preventing a `done` task from remaining terminal after its verification record is cleared. Legacy pre-upgrade `done` tasks with an empty `verified_sha` are left alone by the background check, but cannot create a PR or merge until re-verified.
+Approval is persisted as `verified_sha`, `verified_base_sha`, `verified_at`, and `verified_by`, with `stale_verification_reason` explaining a revoked approval. New approvals use `master`, `operator`, or `auto`; older records may contain the legacy `force_promoted` value. The daemon compares `verified_sha` with live branch HEAD after approval; drift kills the stale master and applies `verification_stale` so a fresh master reviews the new commit. PR admission performs the same transition when it discovers stale proof, preventing a `done` task from remaining terminal after its verification record is cleared. Legacy pre-upgrade `done` tasks with an empty `verified_sha` are left alone by the background check, but cannot create a PR or merge until re-verified.
 
 ## phase timestamps
 

@@ -220,13 +220,6 @@ func statusColor(status string) color.Color {
 	}
 }
 
-// isTerminalVerifyAttempt returns true when the plan is in verifying status,
-// ReadinessMaxVerifyCycles is set, and VerifyRound has reached or exceeded the cap.
-func (p *InfoPane) isTerminalVerifyAttempt() bool {
-	return p.data.ReadinessMaxVerifyCycles > 0 &&
-		p.data.VerifyRound >= p.data.ReadinessMaxVerifyCycles
-}
-
 // renderRow renders a single label+value row.
 func (p *InfoPane) renderRow(label, value string) string {
 	valW := p.width - lipgloss.Width(infoLabelStyle.Render(label))
@@ -308,11 +301,7 @@ func infoInstanceAgentLabel(agent, plannerProfile string) string {
 }
 
 // infoPhaseLabel converts an ExecutionPhase string to a human-readable label.
-// The optional terminalAttempt parameter, when true and the phase is
-// "readiness_reviewing", appends "(terminal attempt)" to signal the last
-// allowed verify round before the loop-cap promotion fires.
-func infoPhaseLabel(phase string, activeWave, activeRound int, terminalAttempt ...bool) string {
-	isTerminal := len(terminalAttempt) > 0 && terminalAttempt[0]
+func infoPhaseLabel(phase string, activeWave, activeRound int) string {
 	switch strings.TrimSpace(phase) {
 	case "planned":
 		return "planned"
@@ -338,9 +327,6 @@ func infoPhaseLabel(phase string, activeWave, activeRound int, terminalAttempt .
 		}
 		return "reviewing"
 	case "readiness_reviewing":
-		if isTerminal {
-			return "readiness review (terminal attempt)"
-		}
 		return "readiness review"
 	default:
 		return ""
@@ -435,7 +421,7 @@ func (p *InfoPane) renderLifecycleSection() string {
 		infoSectionStyle.Render("lifecycle"),
 		p.renderDivider(),
 	}
-	if phase := infoPhaseLabel(p.data.ExecutionPhase, p.data.ActiveWave, p.data.ActiveRound, p.isTerminalVerifyAttempt()); phase != "" {
+	if phase := infoPhaseLabel(p.data.ExecutionPhase, p.data.ActiveWave, p.data.ActiveRound); phase != "" {
 		rows = append(rows, p.renderRow("current", phase))
 	}
 	if agent := infoAgentLabel(p.data.ActiveAgentType); agent != "" {
@@ -562,7 +548,7 @@ func (p *InfoPane) renderPlanSection() string {
 	if p.data.PlanStatus != "" {
 		rows = append(rows, p.renderStatusRow("status", p.data.PlanStatus))
 	}
-	if phase := infoPhaseLabel(p.data.ExecutionPhase, p.data.ActiveWave, p.data.ActiveRound, p.isTerminalVerifyAttempt()); phase != "" {
+	if phase := infoPhaseLabel(p.data.ExecutionPhase, p.data.ActiveWave, p.data.ActiveRound); phase != "" {
 		rows = append(rows, p.renderRow("phase", phase))
 	}
 	if agent := infoAgentLabel(p.data.ActiveAgentType); agent != "" {
@@ -624,7 +610,7 @@ func (p *InfoPane) renderInstanceSection() string {
 	if p.data.PlanGoal != "" {
 		rows = append(rows, p.renderRow("goal", p.data.PlanGoal))
 	}
-	if phase := infoPhaseLabel(p.data.ExecutionPhase, p.data.ActiveWave, p.data.ActiveRound, p.isTerminalVerifyAttempt()); phase != "" {
+	if phase := infoPhaseLabel(p.data.ExecutionPhase, p.data.ActiveWave, p.data.ActiveRound); phase != "" {
 		rows = append(rows, p.renderRow("phase", phase))
 	}
 	if agent := infoAgentLabel(p.data.ActiveAgentType); agent != "" {
@@ -781,12 +767,10 @@ func (p *InfoPane) RenderCompact(width int) string {
 		return ""
 	}
 
-	terminalAttempt := d.ReadinessMaxVerifyCycles > 0 && d.VerifyRound >= d.ReadinessMaxVerifyCycles
-
 	// --- Line 1: phase · agent [· round] ---
 	var line1Parts []string
 
-	phaseLabel := infoPhaseLabel(d.ExecutionPhase, d.ActiveWave, d.ActiveRound, terminalAttempt)
+	phaseLabel := infoPhaseLabel(d.ExecutionPhase, d.ActiveWave, d.ActiveRound)
 	if phaseLabel != "" {
 		line1Parts = append(line1Parts, lipgloss.NewStyle().Foreground(ColorGold).Render(phaseLabel))
 	}

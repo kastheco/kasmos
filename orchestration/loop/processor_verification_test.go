@@ -135,12 +135,4 @@ func TestProcessor_HEADBoundVerificationAlternateAdmissions(t *testing.T) {
 		assert.Equal(t, taskstore.StatusDone, entry.Status, "processor action executor reopens the pre-applied task")
 	})
 
-	t.Run("force promotion", func(t *testing.T) {
-		p, _ := verificationProcessor(t, head)
-		p.config.AutoReviewFix = true
-		p.config.ReadinessMaxVerifyCycles = 1
-		actions := p.ProcessFSMSignals([]taskfsm.Signal{{Event: taskfsm.VerifyFailed, TaskFile: "plan"}})
-		require.IsType(t, RecordVerificationAction{}, actions[0])
-		assert.Equal(t, "force_promoted", actions[0].(RecordVerificationAction).By)
-	})
 }

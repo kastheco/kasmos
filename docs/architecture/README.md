@@ -31,7 +31,7 @@ all diagrams in this section follow the same notation:
 | [task-fsm.md](task-fsm.md) | the seven-status task FSM: every valid `(status, event) → next-status` transition plus execution sub-phases |
 | [source-of-truth.md](source-of-truth.md) | authoritative ownership map for every piece of mutable state: which file or DB table holds it and who writes it |
 | [wave-execution.md](wave-execution.md) | architect pass → parallel coder waves → user confirmation → review/verify pipeline, with blueprint-skip short-circuit |
-| [review-cycle.md](review-cycle.md) | reviewer-agent and master-agent sequence, fix loops, force-promotion, and config toggles that control the cycle |
+| [review-cycle.md](review-cycle.md) | reviewer-agent and master-agent sequence, fail-closed fix loops, and config toggles that control the cycle |
 
 ---
 
