@@ -192,6 +192,52 @@ func TestParsePRViewJSON(t *testing.T) {
 			wantRD:  "REVIEW_REQUIRED",
 			wantNum: 3,
 		},
+		// gh actually emits statusCheckRollup as an array of individual runs
+		// with no aggregate state. The object form above is the exception, not
+		// the rule — these are the shapes seen in practice.
+		{
+			name:    "array rollup, all checks passed",
+			json:    `{"url":"u","reviewDecision":"APPROVED","statusCheckRollup":[{"__typename":"CheckRun","status":"COMPLETED","conclusion":"SUCCESS"},{"__typename":"CheckRun","status":"COMPLETED","conclusion":"SKIPPED"}],"isDraft":false,"number":4}`,
+			wantURL: "u",
+			wantRD:  "APPROVED",
+			wantCS:  "SUCCESS",
+			wantNum: 4,
+		},
+		{
+			name:    "array rollup, one check still running",
+			json:    `{"url":"u","statusCheckRollup":[{"__typename":"CheckRun","status":"COMPLETED","conclusion":"SUCCESS"},{"__typename":"CheckRun","status":"IN_PROGRESS","conclusion":""}],"isDraft":false,"number":5}`,
+			wantURL: "u",
+			wantCS:  "PENDING",
+			wantNum: 5,
+		},
+		{
+			// Regression: PR #209 in matchfi-replit. A failing check alongside
+			// one still in progress previously blew up the whole parse.
+			name:    "array rollup, failure wins over pending",
+			json:    `{"url":"u","statusCheckRollup":[{"__typename":"CheckRun","status":"COMPLETED","conclusion":"FAILURE","name":"secret-scan"},{"__typename":"CheckRun","status":"IN_PROGRESS","conclusion":"","name":"semgrep"}],"isDraft":false,"number":209}`,
+			wantURL: "u",
+			wantCS:  "FAILURE",
+			wantNum: 209,
+		},
+		{
+			name:    "array rollup, legacy StatusContext entries",
+			json:    `{"url":"u","statusCheckRollup":[{"__typename":"StatusContext","state":"SUCCESS"},{"__typename":"StatusContext","state":"PENDING"}],"isDraft":false,"number":6}`,
+			wantURL: "u",
+			wantCS:  "PENDING",
+			wantNum: 6,
+		},
+		{
+			name:    "array rollup, empty means no checks configured",
+			json:    `{"url":"u","statusCheckRollup":[],"isDraft":false,"number":7}`,
+			wantURL: "u",
+			wantNum: 7,
+		},
+		{
+			name:    "explicit null rollup",
+			json:    `{"url":"u","statusCheckRollup":null,"isDraft":false,"number":8}`,
+			wantURL: "u",
+			wantNum: 8,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

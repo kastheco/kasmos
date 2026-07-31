@@ -1,6 +1,7 @@
 package git
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -36,29 +37,97 @@ type PRState struct {
 // A missing statusCheckRollup is not an error — CheckStatus will be empty.
 func ParsePRViewJSON(data []byte) (PRState, error) {
 	var raw struct {
-		URL               string `json:"url"`
-		ReviewDecision    string `json:"reviewDecision"`
-		StatusCheckRollup *struct {
-			State string `json:"state"`
-		} `json:"statusCheckRollup"`
-		IsDraft bool   `json:"isDraft"`
-		Number  int    `json:"number"`
-		HeadSHA string `json:"headRefOid"`
+		URL               string          `json:"url"`
+		ReviewDecision    string          `json:"reviewDecision"`
+		StatusCheckRollup json.RawMessage `json:"statusCheckRollup"`
+		IsDraft           bool            `json:"isDraft"`
+		Number            int             `json:"number"`
+		HeadSHA           string          `json:"headRefOid"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return PRState{}, fmt.Errorf("parse pr view json: %w", err)
 	}
-	state := PRState{
+	checkStatus, err := parseStatusCheckRollup(raw.StatusCheckRollup)
+	if err != nil {
+		return PRState{}, err
+	}
+	return PRState{
 		URL:            raw.URL,
 		ReviewDecision: raw.ReviewDecision,
+		CheckStatus:    checkStatus,
 		IsDraft:        raw.IsDraft,
 		Number:         raw.Number,
 		HeadSHA:        raw.HeadSHA,
+	}, nil
+}
+
+// parseStatusCheckRollup reduces gh's statusCheckRollup to a single state
+// string in the vocabulary the rest of kasmos expects ("SUCCESS", "FAILURE",
+// "PENDING", or "" for a PR with no checks at all).
+//
+// gh returns this field as an *array of individual check runs*, not as an
+// object with a rolled-up `state` — there is no aggregate in the payload, so we
+// have to compute one. The object form is accepted too because older gh
+// releases and hand-written fixtures use it.
+//
+// A run appears either as a CheckRun (`status` + `conclusion`, from GitHub
+// Actions) or as a StatusContext (`state`, from the legacy commit-status API);
+// both shapes can be present in the same array.
+func parseStatusCheckRollup(raw json.RawMessage) (string, error) {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
+		return "", nil
 	}
-	if raw.StatusCheckRollup != nil {
-		state.CheckStatus = raw.StatusCheckRollup.State
+
+	// Object form: an explicit rollup state, use it as given.
+	if trimmed[0] == '{' {
+		var obj struct {
+			State string `json:"state"`
+		}
+		if err := json.Unmarshal(trimmed, &obj); err != nil {
+			return "", fmt.Errorf("parse pr view json: statusCheckRollup: %w", err)
+		}
+		return obj.State, nil
 	}
-	return state, nil
+
+	var runs []struct {
+		Status     string `json:"status"`
+		Conclusion string `json:"conclusion"`
+		State      string `json:"state"`
+	}
+	if err := json.Unmarshal(trimmed, &runs); err != nil {
+		return "", fmt.Errorf("parse pr view json: statusCheckRollup: %w", err)
+	}
+	if len(runs) == 0 {
+		return "", nil
+	}
+
+	pending := false
+	for _, run := range runs {
+		// StatusContext carries its verdict directly in `state`; CheckRun
+		// leaves `state` empty and reports via status/conclusion.
+		outcome := run.State
+		if outcome == "" {
+			if run.Status != "" && run.Status != "COMPLETED" {
+				pending = true
+				continue
+			}
+			outcome = run.Conclusion
+		}
+		switch outcome {
+		case "FAILURE", "ERROR", "TIMED_OUT", "CANCELLED", "ACTION_REQUIRED", "STARTUP_FAILURE":
+			// A failure is terminal for the PR, so report it even if other
+			// checks are still running — there is nothing worth waiting for.
+			return "FAILURE", nil
+		case "PENDING", "EXPECTED", "QUEUED", "IN_PROGRESS", "WAITING", "":
+			pending = true
+		}
+		// SUCCESS, NEUTRAL, SKIPPED and STALE are all non-blocking.
+	}
+	if pending {
+		return "PENDING", nil
+	}
+	return "SUCCESS", nil
 }
 
 // QueryPRState queries GitHub for the current state of the pull request
