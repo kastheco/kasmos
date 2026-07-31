@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"os/exec"
 	"strings"
 	"time"
@@ -215,11 +214,10 @@ func Ensure(ctx context.Context, store taskstore.Store, req Request) (res Result
 	if persistErr != nil {
 		return Result{}, persistErr
 	}
-	if state.Number > 0 {
-		if reviewErr := wt.PostGitHubReview(state.Number, body, true); reviewErr != nil {
-			log.Printf("post approving review: %v", reviewErr)
-		}
-	}
+	// No review is posted here. Approving your own pull request is rejected by
+	// GitHub, and the body passed to PostGitHubReview was the PR description
+	// verbatim, so the call could only ever fail or duplicate. Approval is a
+	// human step; kasmos opens the PR and stops.
 	created.URL = state.URL
 	created.Number = state.Number
 	return created, nil
