@@ -80,6 +80,43 @@ func TestCreatePRHeadless(t *testing.T) {
 	}
 }
 
+// TestCreatePRBaseBranch covers the pr_base_branch setting. The "unset" arm is
+// the regression guard: --base must be absent entirely, not passed empty, so gh
+// keeps falling back to the GitHub default branch for every repo that has not
+// opted in.
+func TestCreatePRBaseBranch(t *testing.T) {
+	t.Run("configured", func(t *testing.T) {
+		worktree := newPushableWorktree(t)
+		writeKasmosConfig(t, worktree.repoPath, "pr_base_branch = \"kas/main\"\n")
+		fake := &recordingGHExecutor{output: []byte("https://github.com/org/repo/pull/1\n")}
+		t.Cleanup(SetGHExec(fake))
+
+		require.NoError(t, worktree.CreatePR("title", "body"))
+		require.Len(t, fake.calls, 1)
+		assert.Equal(t, "pr create --title title --body body --head plan/test --base kas/main", strings.Join(fake.calls[0], " "))
+	})
+
+	t.Run("malformed config falls back rather than blocking the PR", func(t *testing.T) {
+		worktree := newPushableWorktree(t)
+		writeKasmosConfig(t, worktree.repoPath, "this is not valid toml = = =\n")
+		fake := &recordingGHExecutor{output: []byte("https://github.com/org/repo/pull/1\n")}
+		t.Cleanup(SetGHExec(fake))
+
+		require.NoError(t, worktree.CreatePR("title", "body"))
+		require.Len(t, fake.calls, 1)
+		assert.NotContains(t, fake.calls[0], "--base")
+	})
+}
+
+func writeKasmosConfig(t *testing.T, repoPath, body string) {
+	t.Helper()
+	dir := filepath.Join(repoPath, ".kasmos")
+	require.NoError(t, os.MkdirAll(dir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "config.toml"), []byte(body), 0o644))
+	// Untracked config would otherwise trip requireCleanForPR before gh runs.
+	require.NoError(t, os.WriteFile(filepath.Join(repoPath, ".git", "info", "exclude"), []byte(".kasmos/\n"), 0o644))
+}
+
 func TestCreatePRAlreadyExists(t *testing.T) {
 	worktree := newPushableWorktree(t)
 	fake := &recordingGHExecutor{err: errors.New("exit status 1"), stderr: "a pull request already exists for branch plan/test"}

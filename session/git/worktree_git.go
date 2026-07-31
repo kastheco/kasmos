@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
+	"github.com/kastheco/kasmos/config"
 	"github.com/kastheco/kasmos/log"
 )
 
@@ -206,7 +208,12 @@ func (g *GitWorktree) CreatePRAtSHA(title, body, expectedSHA string) error {
 		return fmt.Errorf("failed to push branch: %w", err)
 	}
 
-	_, err = ghOutput(g.worktreePath, "pr", "create", "--title", title, "--body", body, "--head", g.branchName)
+	args := []string{"pr", "create", "--title", title, "--body", body, "--head", g.branchName}
+	if base := prBaseBranch(g.repoPath); base != "" {
+		args = append(args, "--base", base)
+	}
+
+	_, err = ghOutput(g.worktreePath, args...)
 	if err != nil {
 		if strings.Contains(err.Error(), "already exists") {
 			return fmt.Errorf("%w: %s", ErrPRAlreadyExists, err)
@@ -214,6 +221,28 @@ func (g *GitWorktree) CreatePRAtSHA(title, body, expectedSHA string) error {
 		return fmt.Errorf("failed to create PR: %w", err)
 	}
 	return nil
+}
+
+// prBaseBranch returns the repo's configured `pr_base_branch`, or "" to leave
+// --base off the gh invocation entirely so gh falls back to the GitHub default
+// branch (the behavior before this setting existed).
+//
+// It reads repoPath's own .kasmos/config.toml rather than calling
+// config.LoadConfig(), which resolves its directory from os.Getwd(). The daemon
+// serves several repos from one process and its cwd is none of them, so a
+// cwd-relative load would silently apply the wrong repo's setting — or no
+// setting at all.
+func prBaseBranch(repoPath string) string {
+	if repoPath == "" {
+		return ""
+	}
+	result, err := config.LoadTOMLConfigFrom(filepath.Join(repoPath, ".kasmos", config.TOMLConfigFileName))
+	if err != nil || result == nil {
+		// Missing or malformed config is not a reason to block a PR; fall back
+		// to the historical default-branch behavior.
+		return ""
+	}
+	return strings.TrimSpace(result.PRBaseBranch)
 }
 
 // requireCleanForPR prevents PR finalization from absorbing unrelated or

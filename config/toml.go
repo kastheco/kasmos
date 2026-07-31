@@ -134,6 +134,7 @@ type TOMLConfig struct {
 	AutoYes              bool                    `toml:"auto_yes,omitempty"`
 	DaemonPollInterval   int                     `toml:"daemon_poll_interval,omitempty"`
 	BranchPrefix         string                  `toml:"branch_prefix,omitempty"`
+	PRBaseBranch         string                  `toml:"pr_base_branch,omitempty"`
 	NotificationsEnabled *bool                   `toml:"notifications_enabled,omitempty"`
 	ClaudeNoFlicker      *bool                   `toml:"claude_no_flicker,omitempty"`
 	Hooks                []TOMLHook              `toml:"hooks"`
@@ -167,6 +168,7 @@ type TOMLConfigResult struct {
 	AutoYes              bool
 	DaemonPollInterval   int
 	BranchPrefix         string
+	PRBaseBranch         string
 	NotificationsEnabled *bool
 	ClaudeNoFlicker      *bool
 	Hooks                []TOMLHook
@@ -252,6 +254,7 @@ func LoadTOMLConfigFrom(path string) (*TOMLConfigResult, error) {
 		AutoYes:                  tc.AutoYes,
 		DaemonPollInterval:       tc.DaemonPollInterval,
 		BranchPrefix:             tc.BranchPrefix,
+		PRBaseBranch:             tc.PRBaseBranch,
 		NotificationsEnabled:     tc.NotificationsEnabled,
 		ClaudeNoFlicker:          tc.ClaudeNoFlicker,
 		Hooks:                    tc.Hooks,

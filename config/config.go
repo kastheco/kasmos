@@ -318,6 +318,11 @@ type Config struct {
 	DaemonPollInterval int `json:"daemon_poll_interval"`
 	// BranchPrefix is prepended to git branch names created by the app.
 	BranchPrefix string `json:"branch_prefix"`
+	// PRBaseBranch is the branch `gh pr create` targets. Empty means "omit
+	// --base", which lets gh fall back to the GitHub repo's default branch —
+	// the historical behavior. Set it when the repo merges task branches into
+	// an integration branch rather than into the default branch.
+	PRBaseBranch string `json:"pr_base_branch,omitempty"`
 	// NotificationsEnabled controls desktop notifications; defaults to true when nil.
 	NotificationsEnabled *bool `json:"notifications_enabled,omitempty"`
 	// Profiles maps role names to agent program configurations.
@@ -585,6 +590,7 @@ func configFromTOML(result *TOMLConfigResult) *Config {
 		cfg.AutoYes = result.AutoYes
 		cfg.DaemonPollInterval = result.DaemonPollInterval
 		cfg.BranchPrefix = result.BranchPrefix
+		cfg.PRBaseBranch = result.PRBaseBranch
 		cfg.NotificationsEnabled = result.NotificationsEnabled
 		cfg.Profiles = result.Profiles
 		cfg.PhaseRoles = result.PhaseRoles
@@ -721,6 +727,7 @@ func configToTOML(cfg *Config) *TOMLConfig {
 		AutoYes:              cfg.AutoYes,
 		DaemonPollInterval:   cfg.DaemonPollInterval,
 		BranchPrefix:         cfg.BranchPrefix,
+		PRBaseBranch:         cfg.PRBaseBranch,
 		NotificationsEnabled: cfg.NotificationsEnabled,
 		Hooks:                cfg.Hooks,
 	}
