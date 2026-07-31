@@ -18,6 +18,7 @@ kasmos generates this file on first boot via `kas setup`. You can safely edit it
 | `auto_yes` | bool | `true` | when `true`, the daemon automatically accepts all agent prompts |
 | `daemon_poll_interval` | int (ms) | `1000` | how often the daemon checks session state (milliseconds) |
 | `branch_prefix` | string | `<username>/` | prefix prepended to git branch names created by kasmos |
+| `pr_base_branch` | string | — | branch that `gh pr create` targets. Empty omits `--base` entirely, so GitHub's default branch is used — set it when task branches merge into an integration branch instead. Read from the repo's own `.kasmos/config.toml`, so each repo the daemon serves gets its own value. |
 | `notifications_enabled` | bool? | `true` | desktop notifications; `null` defaults to enabled |
 | `claude_no_flicker` | bool? | `false` | set `CLAUDE_CODE_NO_FLICKER=1` on spawned claude agents; reduces TUI flicker but may affect prompt detection |
 | `database_url` | string | — | remote task store URL (e.g. `http://host:7433`); local SQLite used when empty |
