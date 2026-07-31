@@ -1,8 +1,10 @@
-// @ts-expect-error node types are intentionally not part of the browser bundle
+// This suite reads the widget sources off disk, so it needs node builtins even
+// though tsconfig.app.json is the browser project and declares no node types.
+// The imports carried `@ts-expect-error` for that reason; they no longer suppress
+// anything (tsc resolves `node:fs` to `any` here rather than erroring) and TS2578
+// failed the build. Nothing outside __tests__ may import these.
 import { readFileSync, readdirSync, statSync } from "node:fs";
-// @ts-expect-error node types are intentionally not part of the browser bundle
 import { dirname, join } from "node:path";
-// @ts-expect-error node types are intentionally not part of the browser bundle
 import { fileURLToPath } from "node:url";
 import { expect, it } from "vitest";
 
