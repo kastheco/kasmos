@@ -155,13 +155,19 @@ func TestDaemon_TickRepoGateway_ReviewFixLoop_LimitPath(t *testing.T) {
 	daemon.tickRepo(context.Background(), entry)
 
 	assert.Empty(t, *spawned, "cycle-limit path must not spawn another fixer")
-	assertEventKinds(t, drainDaemonEvents(events), "review_cycle_limit")
+	assertEventKinds(t, drainDaemonEvents(events), "review_cycle_limit", "task_blocked")
 
 	updated, err := store.Get(project, planFile)
 	require.NoError(t, err)
 	assert.Equal(t, taskstore.StatusImplementing, updated.Status)
 	assert.Equal(t, 2, updated.ReviewCycle, "cycle-limit path must not increment review cycle")
 	assert.Equal(t, feedback, updated.LatestReviewFeedback)
+	// Giving up must leave something behind: the SSE event above is gone once
+	// nobody is listening, so the stored reason is the only thing that keeps the
+	// task surfaced until a human answers.
+	assert.Contains(t, updated.BlockedReason, "review-fix cycle limit reached (3/2)")
+	assert.Contains(t, updated.BlockedReason, feedback, "block must carry the reviewer feedback that triggered it")
+	assert.Equal(t, "cycle_limit", updated.BlockedSource)
 
 	doneSignals, err := gw.List(project, taskstore.SignalDone)
 	require.NoError(t, err)

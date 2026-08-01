@@ -31,6 +31,21 @@ func (p *Processor) taskEntry(planFile string) (taskstore.TaskEntry, bool) {
 	return entry, true
 }
 
+// isBlocked reports whether a decision block is recorded for the task. A
+// blocked task is waiting on a human answer, so no orchestrator pass may spawn
+// an agent for it — that spawn-retry loop is exactly what a block exists to
+// stop. Blocks clear inside TaskStateMachine.Transition, so an operator or the
+// supervisor unblocks a task by transitioning it directly; agent-emitted
+// signals arriving for a blocked task are dropped, because the agent that sent
+// them is by definition working on the question the human still owns.
+func (p *Processor) isBlocked(planFile string) bool {
+	entry, ok := p.taskEntry(planFile)
+	if !ok {
+		return false
+	}
+	return strings.TrimSpace(entry.BlockedReason) != ""
+}
+
 func executionPhaseForEntry(entry taskstore.TaskEntry) taskfsm.ExecutionPhase {
 	return taskfsm.ExecutionPhase(strings.TrimSpace(entry.ExecutionState.Phase))
 }
@@ -326,6 +341,14 @@ func (p *Processor) ClearWaveOrchestrator(planFile string) {
 func (p *Processor) ProcessFSMSignals(signals []taskfsm.Signal) []Action {
 	var actions []Action
 	for _, sig := range signals {
+		// A task waiting on a human decision absorbs no agent signals: acting on
+		// one would both restart the spawn loop the block exists to stop and
+		// silently clear the block without the human ever answering.
+		if p.isBlocked(sig.TaskFile) {
+			p.setGatewaySignalOutcome(sig.GatewayEntryID, taskstore.SignalFailed, "task is blocked awaiting a human decision")
+			continue
+		}
+
 		// Guard: suppress ImplementFinished when a wave orchestrator is active.
 		// Wave task agents write this sentinel after each task, but the wave
 		// orchestrator owns the implementing→reviewing transition.
@@ -480,6 +503,10 @@ func (p *Processor) ProcessFSMSignals(signals []taskfsm.Signal) []Action {
 							PlanFile: sig.TaskFile,
 							Cycle:    entry.ReviewCycle + 1,
 							Limit:    maxReviewFixCycles,
+						}, BlockTaskAction{
+							PlanFile: sig.TaskFile,
+							Reason:   reviewCycleLimitReason(entry.ReviewCycle+1, maxReviewFixCycles, sig.Body),
+							Source:   "cycle_limit",
 						})
 						break
 					}
@@ -507,6 +534,10 @@ func (p *Processor) ProcessFSMSignals(signals []taskfsm.Signal) []Action {
 							PlanFile: sig.TaskFile,
 							Cycle:    entry.ReviewCycle + 1,
 							Limit:    maxReviewFixCycles,
+						}, BlockTaskAction{
+							PlanFile: sig.TaskFile,
+							Reason:   reviewCycleLimitReason(entry.ReviewCycle+1, maxReviewFixCycles, sig.Body),
+							Source:   "cycle_limit",
 						})
 						break // don't spawn fixer
 					}
@@ -561,6 +592,9 @@ func (p *Processor) ProcessFSMSignals(signals []taskfsm.Signal) []Action {
 func (p *Processor) ProcessTaskSignals(signals []taskfsm.TaskSignal) []Action {
 	var actions []Action
 	for _, ts := range signals {
+		if p.isBlocked(ts.TaskFile) {
+			continue
+		}
 		orch, exists := p.waveOrchestrators[ts.TaskFile]
 		if !exists {
 			orch = p.restoreOrchestratorForTaskSignal(ts.TaskFile, ts.WaveNumber)
@@ -661,6 +695,9 @@ func (p *Processor) ProcessWaveSignals(signals []taskfsm.WaveSignal) []Action {
 	var actions []Action
 	for _, ws := range signals {
 		if entry, ok := p.taskEntry(ws.TaskFile); ok {
+			if strings.TrimSpace(entry.BlockedReason) != "" {
+				continue
+			}
 			phase := executionPhaseForEntry(entry)
 			if phase == taskfsm.ExecutionPhaseWaveRunning && entry.ExecutionState.ActiveWave == ws.WaveNumber {
 				continue
@@ -721,6 +758,9 @@ func (p *Processor) ProcessRetryWaveSignals(signals []taskfsm.WaveSignal) []Acti
 		if !ok || entry.Status != taskstore.StatusImplementing || entry.ExecutionState.ActiveWave < 1 {
 			continue
 		}
+		if strings.TrimSpace(entry.BlockedReason) != "" {
+			continue
+		}
 		waveNumber := entry.ExecutionState.ActiveWave
 		content, err := p.config.Store.GetContent(p.config.Project, sig.TaskFile)
 		if err != nil {
@@ -765,7 +805,11 @@ func (p *Processor) ProcessElaborationSignals(signals []taskfsm.ElaborationSigna
 	var actions []Action
 	for _, es := range signals {
 		orch, exists := p.waveOrchestrators[es.TaskFile]
-		if entry, ok := p.taskEntry(es.TaskFile); !ok || executionPhaseForEntry(entry) != taskfsm.ExecutionPhaseArchitecting {
+		entry, ok := p.taskEntry(es.TaskFile)
+		if !ok || executionPhaseForEntry(entry) != taskfsm.ExecutionPhaseArchitecting {
+			continue
+		}
+		if strings.TrimSpace(entry.BlockedReason) != "" {
 			continue
 		}
 		if exists && orch.State() != orchestration.WaveStateElaborating {
@@ -835,6 +879,10 @@ func (p *Processor) ProcessPlannerDraftSignals(signals []taskfsm.PlannerDraftSig
 
 	var actions []Action
 	for _, sig := range signals {
+		if p.isBlocked(sig.TaskFile) {
+			p.setGatewaySignalOutcome(sig.GatewayEntryID, taskstore.SignalFailed, "task is blocked awaiting a human decision")
+			continue
+		}
 		agg := p.getOrInitDraftAgg(sig.TaskFile)
 		if agg.done {
 			// Already synthesized for this plan — ignore further signals.
@@ -879,6 +927,54 @@ func (p *Processor) ProcessPlannerDraftSignals(signals []taskfsm.PlannerDraftSig
 			continue
 		}
 		actions = append(actions, sigActions...)
+	}
+	return actions
+}
+
+// reviewCycleLimitReason builds the operator-facing text for a block raised by
+// the review-fix cycle cap. The last reviewer feedback is carried along because
+// without it the block says only "we gave up", which tells whoever reads it
+// nothing about what to decide.
+func reviewCycleLimitReason(cycle, limit int, feedback string) string {
+	reason := fmt.Sprintf("review-fix cycle limit reached (%d/%d) — automated fixing stopped and a human must decide how to proceed", cycle, limit)
+	if feedback = strings.TrimSpace(feedback); feedback != "" {
+		const maxFeedback = 600
+		if len(feedback) > maxFeedback {
+			feedback = feedback[:maxFeedback] + "…"
+		}
+		reason += "\n\nLast reviewer feedback:\n" + feedback
+	}
+	return reason
+}
+
+// ProcessDecisionSignals converts needs_decision signals into BlockTaskAction
+// values. Unlike every other pass here it applies no FSM transition and spawns
+// nothing: the task keeps its lifecycle status and simply stops, because the
+// next move belongs to a human. The block is what makes that stop durable —
+// without it a reviewer that concludes "someone must choose A or B" can only
+// say review_changes, and the processor answers by spawning another fixer to
+// guess, round after round.
+func (p *Processor) ProcessDecisionSignals(signals []taskfsm.DecisionSignal) []Action {
+	var actions []Action
+	for _, sig := range signals {
+		reason := strings.TrimSpace(sig.Reason)
+		if reason == "" {
+			p.setGatewaySignalOutcome(sig.GatewayEntryID, taskstore.SignalFailed, "needs_decision carried no reason")
+			continue
+		}
+		if _, ok := p.taskEntry(sig.TaskFile); !ok {
+			p.setGatewaySignalOutcome(sig.GatewayEntryID, taskstore.SignalFailed, "needs_decision names an unknown task")
+			continue
+		}
+		source := strings.TrimSpace(sig.Source)
+		if source == "" {
+			source = "agent"
+		}
+		actions = append(actions, BlockTaskAction{
+			PlanFile: sig.TaskFile,
+			Reason:   reason,
+			Source:   source,
+		})
 	}
 	return actions
 }

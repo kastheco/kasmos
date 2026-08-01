@@ -35,12 +35,19 @@ var validGatewaySignalTypes = map[string]struct{}{
 	"verify_failed":            {},
 	"advance_wave":             {},
 	"retry_wave":               {},
+	"needs_decision":           {},
 }
+
+// NeedsDecisionSignal is the wire name agents use to stop a task on a question
+// only a human can answer. It is deliberately not an FSM event: it does not move
+// the task's lifecycle status, it sets a durable block that suppresses every
+// agent spawn until an operator transitions the task.
+const NeedsDecisionSignal = "needs_decision"
 
 var reviewedSHARegexp = regexp.MustCompile(`^[0-9a-f]{40}$`)
 
 func gatewaySignalTypeError(raw string) error {
-	return fmt.Errorf("unknown signal type %q; valid types: plan_start, planner_finished, planner_draft_finished, implement_start, implement_finished, review_approved, review_changes_requested, verify_approved, verify_failed, advance_wave, retry_wave, implement_task_finished, implement_wave, architect_finished (wire alias: elaborator_finished)", raw)
+	return fmt.Errorf("unknown signal type %q; valid types: plan_start, planner_finished, planner_draft_finished, implement_start, implement_finished, review_approved, review_changes_requested, verify_approved, verify_failed, advance_wave, retry_wave, implement_task_finished, implement_wave, needs_decision, architect_finished (wire alias: elaborator_finished)", raw)
 }
 
 // CanonicalGatewaySignalType normalizes accepted signal-type aliases to the
@@ -52,8 +59,10 @@ func gatewaySignalTypeError(raw string) error {
 func CanonicalGatewaySignalType(raw string) (string, error) {
 	normalized := strings.ReplaceAll(strings.TrimSpace(raw), "-", "_")
 	switch normalized {
-	case string(PlanStart), string(PlannerFinished), "planner_draft_finished", string(ImplementStart), string(ImplementFinished), string(ReviewApproved), string(ReviewChangesRequested), "implement_task_finished", "implement_wave", "advance_wave", "retry_wave":
+	case string(PlanStart), string(PlannerFinished), "planner_draft_finished", string(ImplementStart), string(ImplementFinished), string(ReviewApproved), string(ReviewChangesRequested), "implement_task_finished", "implement_wave", "advance_wave", "retry_wave", NeedsDecisionSignal:
 		return normalized, nil
+	case "needs_input", "blocked", "needs_human":
+		return NeedsDecisionSignal, nil
 	case "review_changes":
 		return string(ReviewChangesRequested), nil
 	case string(ArchitectFinished), "elaborator_finished":
@@ -191,6 +200,39 @@ func NormalizeGatewaySignalPayload(signalType, payload string) (string, error) {
 			return "", fmt.Errorf("planner_draft_finished: planner_id must not be empty")
 		}
 		m["planner_id"] = pid
+		b, _ := json.Marshal(m)
+		return string(b), nil
+
+	case NeedsDecisionSignal:
+		// The whole point of this signal is the question it carries: an empty
+		// reason would surface as "blocked" with nothing for the operator to act
+		// on, which is the silent-loop failure this signal exists to replace.
+		if payload == "" {
+			return "", fmt.Errorf("needs_decision requires JSON with a non-empty reason")
+		}
+		var m map[string]any
+		if err := json.Unmarshal([]byte(payload), &m); err != nil {
+			// Bare text is accepted as the reason so agents that emit a plain
+			// sentence are not silently rejected.
+			if strings.TrimSpace(payload) == "" {
+				return "", fmt.Errorf("needs_decision requires a non-empty reason")
+			}
+			b, _ := json.Marshal(map[string]string{"reason": strings.TrimSpace(payload)})
+			return string(b), nil
+		}
+		reason, _ := m["reason"].(string)
+		reason = strings.TrimSpace(reason)
+		if reason == "" {
+			// Accept "body" as an alias so the common {"body": "..."} envelope works.
+			if body, ok := m["body"].(string); ok {
+				reason = strings.TrimSpace(body)
+			}
+		}
+		if reason == "" {
+			return "", fmt.Errorf("needs_decision: reason must be a non-empty string")
+		}
+		m["reason"] = reason
+		delete(m, "body")
 		b, _ := json.Marshal(m)
 		return string(b), nil
 

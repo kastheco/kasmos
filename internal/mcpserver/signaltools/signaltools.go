@@ -84,7 +84,7 @@ func RegisterToolsWithRouting(srv *server.MCPServer, rc routing.RegisterConfig, 
 
 	srv.AddTool(mcp.NewTool("signal_create",
 		mcp.WithDescription("create a pending lifecycle signal in the signal gateway"),
-		mcp.WithString("signal_type", mcp.Required(), mcp.Description("signal type (underscore or hyphen form)")),
+		mcp.WithString("signal_type", mcp.Required(), mcp.Description(`signal type (underscore or hyphen form). Use "needs_decision" with payload {"reason": "..."} to stop a task on a question only a human can answer: it applies no FSM transition, suppresses every agent spawn for the task, and surfaces the reason in live_status attention[] until someone transitions the task`)),
 		mcp.WithString("plan_file", mcp.Required(), mcp.Description("task filename associated with the signal")),
 		mcp.WithString("payload", mcp.Description("optional payload string or JSON")),
 		mcp.WithString("project", mcp.Description("target project name (required in multi-repo mode)")),

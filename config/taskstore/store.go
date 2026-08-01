@@ -154,6 +154,13 @@ type TaskEntry struct {
 	VerifiedAt              time.Time      `json:"verified_at,omitempty"`
 	VerifiedBy              string         `json:"verified_by,omitempty"`
 	StaleVerificationReason string         `json:"stale_verification_reason,omitempty"`
+	// BlockedReason is non-empty when the task is waiting on a human decision.
+	// It is orthogonal to Status: a blocked task keeps whatever lifecycle state
+	// it was in, but no orchestrator may spawn an agent for it. BlockedSource
+	// records what raised the block ("agent", "cycle_limit", "operator").
+	BlockedReason string    `json:"blocked_reason,omitempty"`
+	BlockedSource string    `json:"blocked_source,omitempty"`
+	BlockedAt     time.Time `json:"blocked_at,omitempty"`
 }
 
 type PRCreateOutcome struct {
@@ -311,6 +318,10 @@ type Store interface {
 	SetPRState(project, filename, reviewDecision, checkStatus string) error
 	SetVerification(project, filename string, v VerificationRecord) error
 	ClearVerification(project, filename, reason string) error
+
+	// Decision blocks
+	SetBlocked(project, filename, reason, source string) error
+	ClearBlocked(project, filename string) error
 
 	// PR reviews
 	RecordPRReview(project, filename string, reviewID int, state, body, reviewer string) error

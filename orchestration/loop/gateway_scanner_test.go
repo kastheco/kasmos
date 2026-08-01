@@ -134,6 +134,41 @@ func TestConvertSignalEntry_PlanStart(t *testing.T) {
 	assert.Equal(t, "feature-plan", sig.TaskFile)
 }
 
+func TestConvertSignalEntry_NeedsDecision(t *testing.T) {
+	t.Parallel()
+
+	var result ScanResult
+	require.NoError(t, ConvertSignalEntry(&taskstore.SignalEntry{
+		ID:         7,
+		PlanFile:   "ga-02.md",
+		SignalType: taskfsm.NeedsDecisionSignal,
+		Payload:    `{"reason":"route (a) contracts or (b) redaction?"}`,
+	}, &result))
+
+	require.Len(t, result.DecisionSignals, 1)
+	sig := result.DecisionSignals[0]
+	assert.Equal(t, "ga-02.md", sig.TaskFile)
+	assert.Equal(t, "route (a) contracts or (b) redaction?", sig.Reason)
+	assert.Equal(t, "agent", sig.Source, "source defaults to the agent that raised it")
+	assert.Equal(t, int64(7), sig.GatewayEntryID)
+
+	// needs_decision moves no lifecycle state, so it must never land among the
+	// FSM signals — that is exactly the confusion it was added to avoid.
+	assert.Empty(t, result.FSMSignals)
+}
+
+func TestConvertSignalEntry_NeedsDecisionRequiresReason(t *testing.T) {
+	t.Parallel()
+
+	var result ScanResult
+	require.Error(t, ConvertSignalEntry(&taskstore.SignalEntry{
+		PlanFile:   "ga-02.md",
+		SignalType: taskfsm.NeedsDecisionSignal,
+		Payload:    `{}`,
+	}, &result))
+	assert.Empty(t, result.DecisionSignals)
+}
+
 func TestScanGateway_VerifySignals(t *testing.T) {
 	gw := newTestGateway(t)
 	require.NoError(t, gw.Create("proj", taskstore.SignalEntry{

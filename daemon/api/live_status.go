@@ -53,6 +53,7 @@ func buildLiveStatusInput(project string, plans []taskstore.TaskEntry, instances
 			Status:         entry.Status,
 			Phase:          entry.ExecutionState.Phase,
 			ReviewFeedback: strings.TrimSpace(entry.LatestReviewFeedback) != "",
+			BlockedReason:  entry.BlockedReason,
 		})
 	}
 

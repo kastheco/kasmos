@@ -29,6 +29,16 @@ type Signal struct {
 	filePath       string // full path for deletion
 }
 
+// DecisionSignal represents an agent's declaration that a task cannot proceed
+// without a human answer. It carries no FSM event: the daemon records a durable
+// block and surfaces it, and the block clears when someone transitions the task.
+type DecisionSignal struct {
+	TaskFile       string
+	Reason         string
+	Source         string
+	GatewayEntryID int64
+}
+
 // Key returns a dedup key for this signal (event + plan file).
 func (s Signal) Key() string {
 	return string(s.Event) + ":" + s.TaskFile

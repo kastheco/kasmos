@@ -326,10 +326,17 @@ completion of a lifecycle phase.
 
 Valid signal types: planner_finished, planner_draft_finished, implement_finished,
 review_approved, review_changes_requested, verify_approved, verify_failed,
-implement_task_finished, implement_wave, architect_finished (wire alias: elaborator_finished)
+implement_task_finished, implement_wave, needs_decision,
+architect_finished (wire alias: elaborator_finished)
 
 planner_draft_finished requires a JSON payload with a non-empty planner_id:
   kas signal emit planner_draft_finished my-feature --payload '{"planner_id":"planner_x"}'
+
+needs_decision stops a task on a question only a human can answer. It applies no
+FSM transition: the task keeps its status, no agent is spawned for it, and it is
+surfaced in live_status attention[] until someone transitions it. It requires a
+JSON payload with a non-empty reason (aliases: needs_input, blocked, needs_human):
+  kas signal emit needs_decision my-feature --payload '{"reason":"pick (a) or (b) — cannot proceed without a ruling"}'
 
 Deprecated aliases: readiness_approved / master_approved (→ verify_approved),
 readiness_changes_requested / readiness_changes (→ verify_failed)`,

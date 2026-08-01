@@ -181,6 +181,9 @@ type TaskEntry struct {
 	VerifiedAt              time.Time                `json:"verified_at,omitempty"`
 	VerifiedBy              string                   `json:"verified_by,omitempty"`
 	StaleVerificationReason string                   `json:"stale_verification_reason,omitempty"`
+	BlockedReason           string                   `json:"blocked_reason,omitempty"`
+	BlockedSource           string                   `json:"blocked_source,omitempty"`
+	BlockedAt               time.Time                `json:"blocked_at,omitempty"`
 }
 
 type TopicEntry struct {
@@ -261,6 +264,7 @@ func taskEntryFromStoreEntry(entry taskstore.TaskEntry, goal string) TaskEntry {
 		ReviewCycle:          entry.ReviewCycle,
 		LatestReviewFeedback: entry.LatestReviewFeedback,
 		VerifiedSHA:          entry.VerifiedSHA, VerifiedBaseSHA: entry.VerifiedBaseSHA, VerifiedAt: entry.VerifiedAt, VerifiedBy: entry.VerifiedBy, StaleVerificationReason: entry.StaleVerificationReason,
+		BlockedReason: entry.BlockedReason, BlockedSource: entry.BlockedSource, BlockedAt: entry.BlockedAt,
 	}
 }
 
@@ -912,6 +916,7 @@ func (ps *TaskState) toTaskstoreEntry(filename string, e TaskEntry) taskstore.Ta
 		ReviewCycle:          e.ReviewCycle,
 		LatestReviewFeedback: e.LatestReviewFeedback,
 		VerifiedSHA:          e.VerifiedSHA, VerifiedBaseSHA: e.VerifiedBaseSHA, VerifiedAt: e.VerifiedAt, VerifiedBy: e.VerifiedBy, StaleVerificationReason: e.StaleVerificationReason,
+		BlockedReason: e.BlockedReason, BlockedSource: e.BlockedSource, BlockedAt: e.BlockedAt,
 	}
 }
 

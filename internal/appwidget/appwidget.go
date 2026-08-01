@@ -188,7 +188,7 @@ func buildSnapshot(project, focus string, projects []string, store taskstore.Sto
 	inputs := make([]livestatus.TaskInput, 0, len(entries))
 	var focused *livestatus.FocusInput
 	for _, entry := range entries {
-		task := livestatus.TaskInput{Filename: entry.Filename, Status: entry.Status, Phase: entry.ExecutionState.Phase, Topic: entry.Topic, Branch: entry.Branch, ActiveWave: entry.ExecutionState.ActiveWave, ReviewCycle: entry.ReviewCycle, PRURL: entry.PRURL, PRCheckStatus: entry.PRCheckStatus, PRReviewDecision: entry.PRReviewDecision, ReviewFeedback: strings.TrimSpace(entry.LatestReviewFeedback) != ""}
+		task := livestatus.TaskInput{Filename: entry.Filename, Status: entry.Status, Phase: entry.ExecutionState.Phase, Topic: entry.Topic, Branch: entry.Branch, ActiveWave: entry.ExecutionState.ActiveWave, ReviewCycle: entry.ReviewCycle, PRURL: entry.PRURL, PRCheckStatus: entry.PRCheckStatus, PRReviewDecision: entry.PRReviewDecision, ReviewFeedback: strings.TrimSpace(entry.LatestReviewFeedback) != "", BlockedReason: entry.BlockedReason}
 		if plan, parseErr := taskparser.Parse(entry.Content); parseErr == nil {
 			task.TotalWaves = len(plan.Waves)
 		}

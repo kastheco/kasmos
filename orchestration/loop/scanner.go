@@ -16,6 +16,7 @@ type ScanResult struct {
 	RetryWaveSignals    []taskfsm.WaveSignal
 	ElaborationSignals  []taskfsm.ElaborationSignal
 	PlannerDraftSignals []taskfsm.PlannerDraftSignal
+	DecisionSignals     []taskfsm.DecisionSignal
 }
 
 // ScanAllSignals reads signal files from the project's own signals directory
@@ -103,6 +104,7 @@ func ScanAllSignals(repoRoot string, worktreePaths []string) ScanResult {
 // resets stale draft aggregation before planner_draft_finished rows are recorded.
 func (p *Processor) Tick(scan ScanResult) []Action {
 	var actions []Action
+	actions = append(actions, p.ProcessDecisionSignals(scan.DecisionSignals)...)
 	actions = append(actions, p.ProcessFSMSignals(scan.FSMSignals)...)
 	actions = append(actions, p.ProcessPlannerDraftSignals(scan.PlannerDraftSignals)...)
 	actions = append(actions, p.ProcessTaskSignals(scan.TaskSignals)...)

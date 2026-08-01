@@ -43,6 +43,9 @@ CREATE TABLE IF NOT EXISTS tasks (
 	verified_at TEXT NOT NULL DEFAULT '',
 	verified_by TEXT NOT NULL DEFAULT '',
 	stale_verification_reason TEXT NOT NULL DEFAULT '',
+	blocked_reason TEXT NOT NULL DEFAULT '',
+	blocked_source TEXT NOT NULL DEFAULT '',
+	blocked_at TEXT NOT NULL DEFAULT '',
 	UNIQUE(project, filename)
 );
 
@@ -212,6 +215,12 @@ const verifiedAtMigration = `ALTER TABLE tasks ADD COLUMN verified_at TEXT NOT N
 const verifiedByMigration = `ALTER TABLE tasks ADD COLUMN verified_by TEXT NOT NULL DEFAULT ''`
 const staleVerificationReasonMigration = `ALTER TABLE tasks ADD COLUMN stale_verification_reason TEXT NOT NULL DEFAULT ''`
 
+// Blocked-state columns. A non-empty blocked_reason means the task is waiting on
+// a human decision and no agent may be spawned for it until the block clears.
+const blockedReasonMigration = `ALTER TABLE tasks ADD COLUMN blocked_reason TEXT NOT NULL DEFAULT ''`
+const blockedSourceMigration = `ALTER TABLE tasks ADD COLUMN blocked_source TEXT NOT NULL DEFAULT ''`
+const blockedAtMigration = `ALTER TABLE tasks ADD COLUMN blocked_at TEXT NOT NULL DEFAULT ''`
+
 // SQLiteStore is a Store implementation backed by a SQLite database.
 type SQLiteStore struct {
 	db     *sql.DB
@@ -343,6 +352,8 @@ func runStoreMigrations(db *sql.DB) error {
 		{"verified_sha", verifiedSHAMigration}, {"verified_base_sha", verifiedBaseSHAMigration},
 		{"verified_at", verifiedAtMigration}, {"verified_by", verifiedByMigration},
 		{"stale_verification_reason", staleVerificationReasonMigration},
+		{"blocked_reason", blockedReasonMigration}, {"blocked_source", blockedSourceMigration},
+		{"blocked_at", blockedAtMigration},
 	} {
 		if err := migrateAddColumn(db, migration.column, migration.query); err != nil {
 			return fmt.Errorf("migrate %s column: %w", migration.column, err)
@@ -528,8 +539,8 @@ func (s *SQLiteStore) Ping() error {
 // Returns an error if a task with the same filename already exists in the project.
 func (s *SQLiteStore) Create(project string, entry TaskEntry) error {
 	const q = `
-			INSERT INTO tasks (project, filename, status, description, branch, topic, created_at, implemented, planning_at, implementing_at, reviewing_at, verifying_at, done_at, execution_phase, active_agent_type, active_wave, goal, content, clickup_task_id, linear_issue_id, linear_identifier, linear_url, linear_team_key, linear_project_id, review_cycle, latest_review_feedback, pr_url, pr_review_decision, pr_check_status, pr_create_state, pr_create_error, pr_create_attempts, pr_create_attempted_at, verified_sha, verified_base_sha, verified_at, verified_by, stale_verification_reason)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			INSERT INTO tasks (project, filename, status, description, branch, topic, created_at, implemented, planning_at, implementing_at, reviewing_at, verifying_at, done_at, execution_phase, active_agent_type, active_wave, goal, content, clickup_task_id, linear_issue_id, linear_identifier, linear_url, linear_team_key, linear_project_id, review_cycle, latest_review_feedback, pr_url, pr_review_decision, pr_check_status, pr_create_state, pr_create_error, pr_create_attempts, pr_create_attempted_at, verified_sha, verified_base_sha, verified_at, verified_by, stale_verification_reason, blocked_reason, blocked_source, blocked_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 	_, err := s.db.Exec(q,
 		project,
@@ -563,6 +574,7 @@ func (s *SQLiteStore) Create(project string, entry TaskEntry) error {
 		entry.PRCheckStatus,
 		entry.PRCreateState, entry.PRCreateError, entry.PRCreateAttempts, formatTime(entry.PRCreateAttemptedAt),
 		entry.VerifiedSHA, entry.VerifiedBaseSHA, formatTime(entry.VerifiedAt), entry.VerifiedBy, entry.StaleVerificationReason,
+		entry.BlockedReason, entry.BlockedSource, formatTime(entry.BlockedAt),
 	)
 	if err != nil {
 		if isUniqueConstraintError(err) {
@@ -577,7 +589,7 @@ func (s *SQLiteStore) Create(project string, entry TaskEntry) error {
 // Returns an error if the task is not found.
 func (s *SQLiteStore) Get(project, filename string) (TaskEntry, error) {
 	const q = `
-			SELECT filename, status, description, branch, topic, created_at, implemented, planning_at, implementing_at, reviewing_at, verifying_at, done_at, execution_phase, active_agent_type, active_wave, goal, content, clickup_task_id, linear_issue_id, linear_identifier, linear_url, linear_team_key, linear_project_id, review_cycle, latest_review_feedback, pr_url, pr_review_decision, pr_check_status, pr_create_state, pr_create_error, pr_create_attempts, pr_create_attempted_at, verified_sha, verified_base_sha, verified_at, verified_by, stale_verification_reason
+			SELECT filename, status, description, branch, topic, created_at, implemented, planning_at, implementing_at, reviewing_at, verifying_at, done_at, execution_phase, active_agent_type, active_wave, goal, content, clickup_task_id, linear_issue_id, linear_identifier, linear_url, linear_team_key, linear_project_id, review_cycle, latest_review_feedback, pr_url, pr_review_decision, pr_check_status, pr_create_state, pr_create_error, pr_create_attempts, pr_create_attempted_at, verified_sha, verified_base_sha, verified_at, verified_by, stale_verification_reason, blocked_reason, blocked_source, blocked_at
 		FROM tasks
 		WHERE project = ? AND filename = ?
 	`
@@ -714,7 +726,7 @@ func (s *SQLiteStore) Delete(project, filename string) error {
 // List returns all task entries for the given project, sorted by filename.
 func (s *SQLiteStore) List(project string) ([]TaskEntry, error) {
 	const q = `
-			SELECT filename, status, description, branch, topic, created_at, implemented, planning_at, implementing_at, reviewing_at, verifying_at, done_at, execution_phase, active_agent_type, active_wave, goal, content, clickup_task_id, linear_issue_id, linear_identifier, linear_url, linear_team_key, linear_project_id, review_cycle, latest_review_feedback, pr_url, pr_review_decision, pr_check_status, pr_create_state, pr_create_error, pr_create_attempts, pr_create_attempted_at, verified_sha, verified_base_sha, verified_at, verified_by, stale_verification_reason
+			SELECT filename, status, description, branch, topic, created_at, implemented, planning_at, implementing_at, reviewing_at, verifying_at, done_at, execution_phase, active_agent_type, active_wave, goal, content, clickup_task_id, linear_issue_id, linear_identifier, linear_url, linear_team_key, linear_project_id, review_cycle, latest_review_feedback, pr_url, pr_review_decision, pr_check_status, pr_create_state, pr_create_error, pr_create_attempts, pr_create_attempted_at, verified_sha, verified_base_sha, verified_at, verified_by, stale_verification_reason, blocked_reason, blocked_source, blocked_at
 		FROM tasks
 		WHERE project = ?
 		ORDER BY filename ASC
@@ -743,7 +755,7 @@ func (s *SQLiteStore) ListByStatus(project string, statuses ...Status) ([]TaskEn
 	}
 
 	q := fmt.Sprintf(`
-			SELECT filename, status, description, branch, topic, created_at, implemented, planning_at, implementing_at, reviewing_at, verifying_at, done_at, execution_phase, active_agent_type, active_wave, goal, content, clickup_task_id, linear_issue_id, linear_identifier, linear_url, linear_team_key, linear_project_id, review_cycle, latest_review_feedback, pr_url, pr_review_decision, pr_check_status, pr_create_state, pr_create_error, pr_create_attempts, pr_create_attempted_at, verified_sha, verified_base_sha, verified_at, verified_by, stale_verification_reason
+			SELECT filename, status, description, branch, topic, created_at, implemented, planning_at, implementing_at, reviewing_at, verifying_at, done_at, execution_phase, active_agent_type, active_wave, goal, content, clickup_task_id, linear_issue_id, linear_identifier, linear_url, linear_team_key, linear_project_id, review_cycle, latest_review_feedback, pr_url, pr_review_decision, pr_check_status, pr_create_state, pr_create_error, pr_create_attempts, pr_create_attempted_at, verified_sha, verified_base_sha, verified_at, verified_by, stale_verification_reason, blocked_reason, blocked_source, blocked_at
 		FROM tasks
 		WHERE project = ? AND status IN (%s)
 		ORDER BY filename ASC
@@ -761,7 +773,7 @@ func (s *SQLiteStore) ListByStatus(project string, statuses ...Status) ([]TaskEn
 // sorted by filename.
 func (s *SQLiteStore) ListByTopic(project, topic string) ([]TaskEntry, error) {
 	const q = `
-			SELECT filename, status, description, branch, topic, created_at, implemented, planning_at, implementing_at, reviewing_at, verifying_at, done_at, execution_phase, active_agent_type, active_wave, goal, content, clickup_task_id, linear_issue_id, linear_identifier, linear_url, linear_team_key, linear_project_id, review_cycle, latest_review_feedback, pr_url, pr_review_decision, pr_check_status, pr_create_state, pr_create_error, pr_create_attempts, pr_create_attempted_at, verified_sha, verified_base_sha, verified_at, verified_by, stale_verification_reason
+			SELECT filename, status, description, branch, topic, created_at, implemented, planning_at, implementing_at, reviewing_at, verifying_at, done_at, execution_phase, active_agent_type, active_wave, goal, content, clickup_task_id, linear_issue_id, linear_identifier, linear_url, linear_team_key, linear_project_id, review_cycle, latest_review_feedback, pr_url, pr_review_decision, pr_check_status, pr_create_state, pr_create_error, pr_create_attempts, pr_create_attempted_at, verified_sha, verified_base_sha, verified_at, verified_by, stale_verification_reason, blocked_reason, blocked_source, blocked_at
 		FROM tasks
 		WHERE project = ? AND topic = ?
 		ORDER BY filename ASC
@@ -1294,6 +1306,47 @@ func (s *SQLiteStore) ClearVerification(project, filename, reason string) error 
 	return nil
 }
 
+// SetBlocked marks a task as waiting on a human decision. A blocked task keeps
+// its lifecycle status — blocking is orthogonal to the FSM — but no orchestrator
+// may spawn an agent for it until the block clears. reason must be non-empty;
+// use ClearBlocked to unblock.
+func (s *SQLiteStore) SetBlocked(project, filename, reason, source string) error {
+	if strings.TrimSpace(reason) == "" {
+		return fmt.Errorf("set blocked: reason must not be empty")
+	}
+	const q = `UPDATE tasks SET blocked_reason = ?, blocked_source = ?, blocked_at = ? WHERE project = ? AND filename = ?`
+	result, err := s.db.Exec(q, reason, source, formatTime(time.Now().UTC()), project, filename)
+	if err != nil {
+		return fmt.Errorf("set blocked: %w", err)
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("set blocked rows affected: %w", err)
+	}
+	if n == 0 {
+		return newNotFoundError("plan not found: %s/%s", project, filename)
+	}
+	return nil
+}
+
+// ClearBlocked removes a decision block. It is idempotent: clearing an
+// unblocked task is a no-op that still reports success.
+func (s *SQLiteStore) ClearBlocked(project, filename string) error {
+	const q = `UPDATE tasks SET blocked_reason = '', blocked_source = '', blocked_at = '' WHERE project = ? AND filename = ?`
+	result, err := s.db.Exec(q, project, filename)
+	if err != nil {
+		return fmt.Errorf("clear blocked: %w", err)
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("clear blocked rows affected: %w", err)
+	}
+	if n == 0 {
+		return newNotFoundError("plan not found: %s/%s", project, filename)
+	}
+	return nil
+}
+
 // RecordPRReview inserts a new PR review record. INSERT OR IGNORE ensures
 // repeated polls for the same review ID are idempotent — only the first record wins.
 func (s *SQLiteStore) RecordPRReview(project, filename string, reviewID int, state, body, reviewer string) error {
@@ -1773,6 +1826,7 @@ func scanTaskEntry(row *sql.Row) (TaskEntry, error) {
 	var prCreateState, prCreateError, prCreateAttemptedAt string
 	var prCreateAttempts int
 	var verifiedSHA, verifiedBaseSHA, verifiedAt, verifiedBy, staleVerificationReason string
+	var blockedReason, blockedSource, blockedAt string
 	if err := row.Scan(
 		&filename,
 		&status,
@@ -1804,6 +1858,7 @@ func scanTaskEntry(row *sql.Row) (TaskEntry, error) {
 		&prCheckStatus,
 		&prCreateState, &prCreateError, &prCreateAttempts, &prCreateAttemptedAt,
 		&verifiedSHA, &verifiedBaseSHA, &verifiedAt, &verifiedBy, &staleVerificationReason,
+			&blockedReason, &blockedSource, &blockedAt,
 	); err != nil {
 		if err == sql.ErrNoRows {
 			return TaskEntry{}, newNotFoundError("plan not found")
@@ -1843,6 +1898,7 @@ func scanTaskEntry(row *sql.Row) (TaskEntry, error) {
 		PRCheckStatus:        prCheckStatus,
 		PRCreateState:        prCreateState, PRCreateError: prCreateError, PRCreateAttempts: prCreateAttempts, PRCreateAttemptedAt: parseTime(prCreateAttemptedAt),
 		VerifiedSHA: verifiedSHA, VerifiedBaseSHA: verifiedBaseSHA, VerifiedAt: parseTime(verifiedAt), VerifiedBy: verifiedBy, StaleVerificationReason: staleVerificationReason,
+			BlockedReason: blockedReason, BlockedSource: blockedSource, BlockedAt: parseTime(blockedAt),
 	}, nil
 }
 
@@ -1857,6 +1913,7 @@ func scanTaskEntries(rows *sql.Rows) ([]TaskEntry, error) {
 		var prCreateState, prCreateError, prCreateAttemptedAt string
 		var prCreateAttempts int
 		var verifiedSHA, verifiedBaseSHA, verifiedAt, verifiedBy, staleVerificationReason string
+		var blockedReason, blockedSource, blockedAt string
 		if err := rows.Scan(
 			&filename,
 			&status,
@@ -1888,6 +1945,7 @@ func scanTaskEntries(rows *sql.Rows) ([]TaskEntry, error) {
 			&prCheckStatus,
 			&prCreateState, &prCreateError, &prCreateAttempts, &prCreateAttemptedAt,
 			&verifiedSHA, &verifiedBaseSHA, &verifiedAt, &verifiedBy, &staleVerificationReason,
+			&blockedReason, &blockedSource, &blockedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan plan: %w", err)
 		}
@@ -1924,6 +1982,7 @@ func scanTaskEntries(rows *sql.Rows) ([]TaskEntry, error) {
 			PRCheckStatus:        prCheckStatus,
 			PRCreateState:        prCreateState, PRCreateError: prCreateError, PRCreateAttempts: prCreateAttempts, PRCreateAttemptedAt: parseTime(prCreateAttemptedAt),
 			VerifiedSHA: verifiedSHA, VerifiedBaseSHA: verifiedBaseSHA, VerifiedAt: parseTime(verifiedAt), VerifiedBy: verifiedBy, StaleVerificationReason: staleVerificationReason,
+			BlockedReason: blockedReason, BlockedSource: blockedSource, BlockedAt: parseTime(blockedAt),
 		})
 	}
 	if err := rows.Err(); err != nil {

@@ -185,6 +185,21 @@ type ReviewCycleLimitAction struct {
 func (ReviewCycleLimitAction) Kind() string  { return "review_cycle_limit" }
 func (ReviewCycleLimitAction) sealedAction() {}
 
+// BlockTaskAction instructs the caller to record a durable decision block on a
+// task: it is waiting on a human answer, and no agent may be spawned for it
+// until someone transitions it. The block is orthogonal to the FSM — the task
+// keeps whatever lifecycle status it already had — so this action carries no
+// event. Source is "agent" (a needs_decision signal), "cycle_limit" (the
+// review-fix loop gave up), or "operator".
+type BlockTaskAction struct {
+	PlanFile string
+	Reason   string
+	Source   string
+}
+
+func (BlockTaskAction) Kind() string  { return "block_task" }
+func (BlockTaskAction) sealedAction() {}
+
 // SpawnFixerAction instructs the caller to launch a fixer agent to address
 // reviewer feedback, whether it came from an in-app review loop or a PR review.
 type SpawnFixerAction struct {

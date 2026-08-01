@@ -70,6 +70,7 @@ func makeLiveStatusHandler(rc routing.RegisterConfig, store taskstore.Store, soc
 				Status:         entry.Status,
 				Phase:          entry.ExecutionState.Phase,
 				ReviewFeedback: strings.TrimSpace(entry.LatestReviewFeedback) != "",
+				BlockedReason:  entry.BlockedReason,
 			})
 		}
 

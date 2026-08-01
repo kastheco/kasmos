@@ -1998,6 +1998,25 @@ func (d *Daemon) executeAction(ctx context.Context, e RepoEntry, action loop.Act
 			PlanFile: a.PlanFile,
 		})
 		return nil
+	case loop.BlockTaskAction:
+		// The block is the durable half of surfacing: the SSE event below is gone
+		// the moment nobody is listening, but the stored reason keeps the task in
+		// live_status attention[] until a human transitions it.
+		if e.Store == nil {
+			return fmt.Errorf("task store unavailable for %s", a.PlanFile)
+		}
+		if err := e.Store.SetBlocked(e.Project, a.PlanFile, a.Reason, a.Source); err != nil {
+			return fmt.Errorf("record decision block for %s: %w", a.PlanFile, err)
+		}
+		d.logger.Warn("task blocked awaiting human decision",
+			"plan", a.PlanFile, "source", a.Source, "reason", a.Reason, "repo", e.Path)
+		d.broadcaster.Emit(api.Event{
+			Kind:     "task_blocked",
+			Message:  fmt.Sprintf("%s needs a decision: %s", a.PlanFile, a.Reason),
+			Repo:     e.Path,
+			PlanFile: a.PlanFile,
+		})
+		return nil
 	case loop.IncrementReviewCycleAction:
 		if e.Store == nil {
 			return fmt.Errorf("task store unavailable for %s", a.PlanFile)

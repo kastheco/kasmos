@@ -154,6 +154,25 @@ Apply Phase 3.5 triage results, then issue exactly one outcome:
 - **Zero findings, or only `note` findings:** emit `verify_approved`.
 - **Only `quality` findings (no blockers):** attempt self-fix for each finding inside the ceiling. If all self-fixes pass the reviewer-parity gate, emit `verify_approved` with `## self-fixed` and `## deferred-quality` payload blocks (deferred block covers any quality findings not self-fixed). If any gate step fails, revert only that fix's specific paths (`git restore --staged --worktree -- <paths>`) and record the finding in `## deferred-quality` — do not emit `verify_failed` unless a deferred finding is actually a blocker in disguise.
 - **Any `blocker` finding exists:** if the blocker is on the allow-list and within the ceiling, attempt self-fix with the reviewer-parity gate. On gate success, emit `verify_approved`. On gate failure, revert and emit `verify_failed` with the original blocker finding. If the blocker is on the deny-list or would exceed the ceiling, emit `verify_failed` with numbered fixer tasks.
+- **A blocker no fixer can resolve — a human must decide:** emit `needs_decision` (below). This outranks the three outcomes above.
+
+### `needs_decision` — when the blocker is a question, not a defect
+
+A blocker that no fixer can act on is not a kickback. It is a stop.
+
+Use `needs_decision` when the finding turns on a choice that is not yours or the fixer's to make: two valid architectures with different cost, a scope the task did not authorize, a policy/legal/compliance call, a credential or production-data action, a task body that contradicts itself, or an acceptance criterion that cannot be met as written.
+
+Emit `signal_create` with `signal_type: "needs_decision"`, `plan_file: "<planfile>"`, `project: "$KASMOS_PROJECT"`, and payload `{"reason": "<the question, the options, and what each costs>"}`.
+
+```bash
+kas signal emit needs_decision <planfile> --payload '{"reason": "Commit trailer policy conflicts: repo hook stamps Model:, task says strip it. Pick (a) keep the hook and amend the task, or (b) drop the hook. Cannot verify either way without a ruling."}'
+```
+
+Do NOT dress these up as `verify_failed`. `verify_failed` means "a fixer can fix this", and kasmos answers it by spawning one to guess — round after round against a question it cannot answer, until the cycle cap or the token budget runs out. That loop is why this signal exists.
+
+The reason string is the whole deliverable: it is what reaches the operator, verbatim. State the question, the options, and the cost of each. The task keeps its current status and kasmos spawns nothing for it until a human transitions it.
+
+If the task body, the plan, or repo docs already answer the question, it is not a decision — act on it.
 
 ## Output contract
 
@@ -161,6 +180,7 @@ Your final response in managed mode must match one of:
 
 - `verify_approved` with a one to three sentence verdict and evidence references.
 - `verify_failed` with a numbered list of concrete fixer actions, each with exact file paths and acceptance gaps. Kickback is reserved for genuine blockers that exceed the allow-list or ceiling — not for quality findings that can be deferred.
+- `needs_decision` with the question, the options, and the cost of each — for blockers only a human can resolve.
 
 After a successful self-fix, the `verify_approved` payload may include `## self-fixed` and `## deferred-quality` blocks. Example:
 

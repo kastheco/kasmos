@@ -181,6 +181,11 @@ type TaskInput struct {
 	Topic, Branch                                                    string
 	ActiveWave, TotalWaves, SubtasksDone, SubtasksTotal, ReviewCycle int
 	PRURL, PRCheckStatus, PRReviewDecision                           string
+	// BlockedReason is non-empty when the task is stopped awaiting a human
+	// answer. It is the whole point of the block: it must reach attention[]
+	// verbatim, because a supervisor that only learns a task is blocked cannot
+	// tell anyone what to decide.
+	BlockedReason string
 }
 
 // AgentInput contains the agent fields needed by the assembler.
@@ -256,7 +261,9 @@ func Assemble(in Input) LiveStatus {
 
 	attention := make([]AttentionItem, 0)
 	for _, task := range in.Tasks {
-		if strings.TrimSpace(task.Phase) == string(taskfsm.ExecutionPhaseWaveWaiting) {
+		if reason := strings.TrimSpace(task.BlockedReason); reason != "" {
+			attention = append(attention, AttentionItem{Task: task.Filename, Kind: KindNeedsDecision, Detail: reason})
+		} else if strings.TrimSpace(task.Phase) == string(taskfsm.ExecutionPhaseWaveWaiting) {
 			attention = append(attention, AttentionItem{Task: task.Filename, Kind: KindNeedsDecision})
 		}
 		if task.ReviewFeedback && task.Status == taskstore.StatusImplementing {

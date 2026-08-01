@@ -61,6 +61,29 @@ func TestAssembleAttentionMappingInvariant(t *testing.T) {
 	assert.Equal(t, AttentionItem{Task: "stale", Kind: KindStaleInstance, Detail: "unhealthy"}, got.Attention[2])
 }
 
+// A decision block must reach attention[] with its reason intact and with
+// whatever lifecycle status the task already had: a supervisor told only that a
+// task is blocked has nothing to relay to the human who must answer.
+func TestAssembleSurfacesDecisionBlockWithReason(t *testing.T) {
+	got := Assemble(Input{
+		Include: Include{Tasks: true},
+		Tasks: []TaskInput{{
+			Filename:      "ga-02.md",
+			Status:        taskstore.StatusVerifying,
+			BlockedReason: "route (a) contracts or (b) redaction?",
+		}},
+	})
+	require.Len(t, got.Attention, 1)
+	assert.Equal(t, AttentionItem{
+		Task:   "ga-02.md",
+		Kind:   KindNeedsDecision,
+		Detail: "route (a) contracts or (b) redaction?",
+	}, got.Attention[0])
+	require.Len(t, got.Tasks, 1)
+	assert.True(t, got.Tasks[0].Blocked)
+	assert.Equal(t, string(taskstore.StatusVerifying), got.Tasks[0].Status, "a block leaves lifecycle status alone")
+}
+
 func TestAssembleReviewFeedbackOnlyDuringImplementation(t *testing.T) {
 	got := Assemble(Input{Tasks: []TaskInput{
 		{Filename: "fixing", Status: taskstore.StatusImplementing, ReviewFeedback: true},

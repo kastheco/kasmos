@@ -134,6 +134,12 @@ func (s *HTTPStore) taskVerificationURL(project, filename string) string {
 	return fmt.Sprintf("%s/v1/projects/%s/tasks/%s/verification", s.baseURL, url.PathEscape(project), url.PathEscape(filename))
 }
 
+// taskBlockedURL builds the URL for a task's decision-block endpoint.
+func (s *HTTPStore) taskBlockedURL(project, filename string) string {
+	project = s.resolveProject(project)
+	return fmt.Sprintf("%s/v1/projects/%s/tasks/%s/blocked", s.baseURL, url.PathEscape(project), url.PathEscape(filename))
+}
+
 // prReviewsURL builds the base URL for a task's pr-reviews endpoint.
 func (s *HTTPStore) prReviewsURL(project, filename string) string {
 	project = s.resolveProject(project)
@@ -1001,6 +1007,43 @@ func (s *HTTPStore) ClearVerification(project, filename, reason string) error {
 
 func (s *HTTPStore) doVerificationRequest(method, project, filename string, body []byte) error {
 	req, err := http.NewRequest(method, s.taskVerificationURL(project, filename), bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("task store: build request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := s.do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return newNotFoundError("task store: plan not found: %s", filename)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return decodeError(resp)
+	}
+	return nil
+}
+
+// SetBlocked marks a task as waiting on a human decision in the remote store.
+func (s *HTTPStore) SetBlocked(project, filename, reason, source string) error {
+	body, err := json.Marshal(struct {
+		Reason string `json:"reason"`
+		Source string `json:"source"`
+	}{reason, source})
+	if err != nil {
+		return fmt.Errorf("task store: marshal blocked payload: %w", err)
+	}
+	return s.doBlockedRequest(http.MethodPut, project, filename, body)
+}
+
+// ClearBlocked removes a decision block in the remote store.
+func (s *HTTPStore) ClearBlocked(project, filename string) error {
+	return s.doBlockedRequest(http.MethodDelete, project, filename, nil)
+}
+
+func (s *HTTPStore) doBlockedRequest(method, project, filename string, body []byte) error {
+	req, err := http.NewRequest(method, s.taskBlockedURL(project, filename), bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("task store: build request: %w", err)
 	}

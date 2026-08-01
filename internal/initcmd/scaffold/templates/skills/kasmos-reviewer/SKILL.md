@@ -311,6 +311,39 @@ If there are no findings in a tier, omit that tier header entirely.
 
 Keep findings to short bullet points with concrete remediation requests. Avoid generic review prose.
 
+### Needs Decision — when a human has to answer
+
+Some findings are not fixable by any coder, because the answer is a choice nobody
+on this side of the loop is entitled to make: which of two valid architectures to
+take, whether to change a scope the task did not authorize, a policy or legal
+call, a credential or production-data action, or a requirement in the task body
+that contradicts itself.
+
+Do **not** send `review-changes` for these. `review-changes` means "a coder can
+fix this", and kasmos answers it by spawning a fixer to guess — round after
+round, burning the whole token budget on a question it cannot answer.
+
+Emit instead:
+
+`signal_create` with `signal_type: "needs_decision"`, `plan_file: "<planfile>"`,
+`project: "$KASMOS_PROJECT"`, and a payload of
+`{"reason": "<the question, and the options>"}`.
+
+Fallback when MCP is unavailable:
+
+```bash
+kas signal emit needs_decision <planfile> --payload '{"reason": "Task says minimize LLM data two ways. Pick (a) provider contracts + BAAs, or (b) field-level redaction before egress. (a) is faster but leaves PII in transit; (b) is ~3 days more work. Cannot proceed without a ruling."}'
+```
+
+The reason is the entire value of this signal: it is what reaches the operator.
+State the question, the concrete options, and what each costs. "Blocked, needs
+input" tells them nothing and wastes the stop.
+
+The task then holds its current status and kasmos spawns nothing for it until a
+human transitions it — so use this only when the answer genuinely is not yours to
+make. If the task body, the plan, or the repo docs already answer the question,
+that is not a decision; act on it.
+
 ### Readiness Review Handoff
 
 When `auto_readiness_review` is enabled in the daemon config, kasmos transitions the task to the `verifying` FSM state after processing your `review-approved` signal and then spawns the master agent. You do not need to do anything extra — emit your normal approval signal and stop.

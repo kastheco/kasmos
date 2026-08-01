@@ -491,6 +491,12 @@ func (f *failingSubtaskStore) SetPRState(project, filename, reviewDecision, chec
 func (f *failingSubtaskStore) SetVerification(project, filename string, v taskstore.VerificationRecord) error {
 	return f.inner.SetVerification(project, filename, v)
 }
+func (f *failingSubtaskStore) SetBlocked(project, filename, reason, source string) error {
+	return f.inner.SetBlocked(project, filename, reason, source)
+}
+func (f *failingSubtaskStore) ClearBlocked(project, filename string) error {
+	return f.inner.ClearBlocked(project, filename)
+}
 func (f *failingSubtaskStore) ClearVerification(project, filename, reason string) error {
 	return f.inner.ClearVerification(project, filename, reason)
 }

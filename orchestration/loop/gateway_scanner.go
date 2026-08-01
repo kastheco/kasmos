@@ -37,6 +37,11 @@ type plannerDraftPayload struct {
 	PlannerID string `json:"planner_id"`
 }
 
+type decisionPayload struct {
+	Reason string `json:"reason"`
+	Source string `json:"source"`
+}
+
 // ScanGateway claims all pending signals for the given project from gw,
 // converts them into a ScanResult that Processor.Tick can consume, and returns
 // the claimed entries so the caller can mark them done after processing and
@@ -236,6 +241,25 @@ func ConvertSignalEntry(entry *taskstore.SignalEntry, result *ScanResult) error 
 			GatewayEntryID: entry.ID,
 		})
 
+	case taskfsm.NeedsDecisionSignal:
+		var p decisionPayload
+		if err := json.Unmarshal([]byte(entry.Payload), &p); err != nil {
+			return fmt.Errorf("decode needs_decision payload: %w", err)
+		}
+		if p.Reason == "" {
+			return fmt.Errorf("needs_decision: reason must not be empty")
+		}
+		source := p.Source
+		if source == "" {
+			source = "agent"
+		}
+		result.DecisionSignals = append(result.DecisionSignals, taskfsm.DecisionSignal{
+			TaskFile:       entry.PlanFile,
+			Reason:         p.Reason,
+			Source:         source,
+			GatewayEntryID: entry.ID,
+		})
+
 	case "planner_draft_finished":
 		var p plannerDraftPayload
 		if err := json.Unmarshal([]byte(entry.Payload), &p); err != nil {
@@ -320,6 +344,8 @@ func GatewayNoopOutcome(entry *taskstore.SignalEntry) (taskstore.SignalStatus, s
 		return taskstore.SignalFailed, "no active architect pass to resume"
 	case string(taskfsm.VerifyApproved), string(taskfsm.VerifyFailed):
 		return taskstore.SignalFailed, "signal rejected outside verifying state"
+	case taskfsm.NeedsDecisionSignal:
+		return taskstore.SignalFailed, "could not record the decision block (unknown task or store unavailable)"
 	default:
 		return taskstore.SignalFailed, "signal rejected by processor"
 	}

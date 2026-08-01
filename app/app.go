@@ -1365,6 +1365,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			var retryWaveSignals []taskfsm.WaveSignal
 			var plannerDraftSignals []taskfsm.PlannerDraftSignal
+			var decisionSignals []taskfsm.DecisionSignal
 			var gatewaySignalEntries []*taskstore.SignalEntry
 			if gateway != nil && project != "" && !daemonManagedRepo {
 				scan, entries, err := loop.ScanGateway(gateway, project, fmt.Sprintf("tui:%s:%d", project, os.Getpid()))
@@ -1378,6 +1379,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				retryWaveSignals = append(retryWaveSignals, scan.RetryWaveSignals...)
 				elaborationSignals = append(elaborationSignals, scan.ElaborationSignals...)
 				plannerDraftSignals = append(plannerDraftSignals, scan.PlannerDraftSignals...)
+				decisionSignals = append(decisionSignals, scan.DecisionSignals...)
 			}
 
 			// Also scan signals from active worktrees — agents write
@@ -1443,7 +1445,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 			time.Sleep(200 * time.Millisecond)
-			return metadataResultMsg{Results: results, PlanState: ps, PlanStateLoadedAt: planStateLoadedAt, DaemonTaskState: daemonTaskStateLoaded, Signals: signals, TaskSignals: taskSignals, WaveSignals: waveSignals, RetryWaveSignals: retryWaveSignals, ElaborationSignals: elaborationSignals, PlannerDraftSignals: plannerDraftSignals, GatewaySignalEntries: gatewaySignalEntries, DaemonManagedRepo: daemonManagedRepo, DaemonInstances: daemonInstances, DaemonTitles: daemonTitles, TmuxSessionCount: tmuxCount, PRStateUpdates: prStateUpdates}
+			return metadataResultMsg{Results: results, PlanState: ps, PlanStateLoadedAt: planStateLoadedAt, DaemonTaskState: daemonTaskStateLoaded, Signals: signals, TaskSignals: taskSignals, WaveSignals: waveSignals, RetryWaveSignals: retryWaveSignals, ElaborationSignals: elaborationSignals, PlannerDraftSignals: plannerDraftSignals, DecisionSignals: decisionSignals, GatewaySignalEntries: gatewaySignalEntries, DaemonManagedRepo: daemonManagedRepo, DaemonInstances: daemonInstances, DaemonTitles: daemonTitles, TmuxSessionCount: tmuxCount, PRStateUpdates: prStateUpdates}
 		}
 	case metadataResultMsg:
 		// Process agent sentinel signals — feed to FSM and consume sentinel files.
@@ -1510,6 +1512,17 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 
 				var actions []loop.Action
+				// Decision blocks are applied before the FSM pass so a task that
+				// asked for a human this tick is already blocked when its other
+				// signals are considered.
+				for _, sig := range msg.DecisionSignals {
+					entry := claimGatewayEntry(sig.GatewayEntryID, sig.TaskFile, taskfsm.NeedsDecisionSignal)
+					sigActions := proc.ProcessDecisionSignals([]taskfsm.DecisionSignal{sig})
+					if len(sigActions) > 0 {
+						markGatewayProcessedEntry(entry)
+					}
+					actions = append(actions, sigActions...)
+				}
 				for _, sig := range msg.Signals {
 					entry := claimGatewayEventEntry(sig.GatewayEntryID, sig.TaskFile, sig.Event)
 					sigActions := proc.ProcessFSMSignals([]taskfsm.Signal{sig})
@@ -1721,6 +1734,18 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							a.Cycle, a.Limit, planName))
 						m.audit(auditlog.EventPlanTransition,
 							fmt.Sprintf("review-fix cycle limit reached (%d/%d)", a.Cycle, a.Limit),
+							auditlog.WithPlan(a.PlanFile))
+					case loop.BlockTaskAction:
+						planName := taskstate.DisplayName(a.PlanFile)
+						if m.taskStore != nil {
+							if err := m.taskStore.SetBlocked(m.taskStoreProject, a.PlanFile, a.Reason, a.Source); err != nil {
+								m.toastManager.Error(fmt.Sprintf("could not block %s: %v", planName, err))
+								break
+							}
+						}
+						m.toastManager.Error(fmt.Sprintf("%s needs a decision: %s", planName, a.Reason))
+						m.audit(auditlog.EventPlanTransition,
+							fmt.Sprintf("blocked awaiting human decision (%s): %s", a.Source, a.Reason),
 							auditlog.WithPlan(a.PlanFile))
 					case loop.PlannerCompleteAction:
 						capturedPlanFile := a.PlanFile
@@ -2078,7 +2103,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 
-			processedSignals := len(msg.Signals) > 0 || len(msg.TaskSignals) > 0 || len(msg.WaveSignals) > 0 || len(msg.RetryWaveSignals) > 0 || len(msg.ElaborationSignals) > 0 || len(msg.PlannerDraftSignals) > 0
+			processedSignals := len(msg.Signals) > 0 || len(msg.TaskSignals) > 0 || len(msg.WaveSignals) > 0 || len(msg.RetryWaveSignals) > 0 || len(msg.ElaborationSignals) > 0 || len(msg.PlannerDraftSignals) > 0 || len(msg.DecisionSignals) > 0
 			if processedSignals {
 				m.loadTaskState() // refresh after signal processing
 			}
@@ -2340,7 +2365,7 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Apply plan state loaded in the goroutine (replaces synchronous loadTaskState call).
 		// Skip when any signal type was processed: loadTaskState() above already gave us
 		// fresh state, and msg.PlanState was loaded before signal scanning.
-		processedSignals := len(msg.Signals) > 0 || len(msg.TaskSignals) > 0 || len(msg.WaveSignals) > 0 || len(msg.RetryWaveSignals) > 0 || len(msg.ElaborationSignals) > 0 || len(msg.PlannerDraftSignals) > 0
+		processedSignals := len(msg.Signals) > 0 || len(msg.TaskSignals) > 0 || len(msg.WaveSignals) > 0 || len(msg.RetryWaveSignals) > 0 || len(msg.ElaborationSignals) > 0 || len(msg.PlannerDraftSignals) > 0 || len(msg.DecisionSignals) > 0
 		if msg.PlanState != nil && (msg.DaemonTaskState || !processedSignals) {
 			if msg.PlanStateLoadedAt.IsZero() || !msg.PlanStateLoadedAt.Before(m.taskStateLoadedAt) {
 				m.taskState = msg.PlanState
@@ -3651,6 +3676,7 @@ type metadataResultMsg struct {
 	RetryWaveSignals     []taskfsm.WaveSignal         // retry_wave gateway rows found this tick
 	ElaborationSignals   []taskfsm.ElaborationSignal  // architect completion signal files found this tick
 	PlannerDraftSignals  []taskfsm.PlannerDraftSignal // planner_draft_finished gateway rows found this tick
+	DecisionSignals      []taskfsm.DecisionSignal     // needs_decision gateway rows found this tick
 	GatewaySignalEntries []*taskstore.SignalEntry     // claimed DB-backed signal rows to classify+mark after processing
 	DaemonManagedRepo    bool                         // true when the active repo is managed by a running daemon
 	DaemonInstances      []*session.Instance          // daemon-tracked instances missing from the local nav model

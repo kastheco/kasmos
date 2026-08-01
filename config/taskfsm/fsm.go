@@ -198,6 +198,15 @@ func (m *TaskStateMachine) Transition(planFile string, event Event) error {
 			return fmt.Errorf("set phase timestamp: %w", err)
 		}
 	}
+	// A lifecycle transition means the decision the task was waiting on has been
+	// made — nothing else can move a blocked task, because blocking suppresses
+	// every agent spawn. Clearing here is the single unblock path, so operators
+	// and A0 unblock a task by transitioning it rather than by a separate verb.
+	if strings.TrimSpace(entry.BlockedReason) != "" {
+		if err := m.store.ClearBlocked(m.project, planFile); err != nil {
+			return fmt.Errorf("clear decision block: %w", err)
+		}
+	}
 	m.hooks.FireAll(TransitionEvent{
 		PlanFile:   planFile,
 		FromStatus: currentStatus,

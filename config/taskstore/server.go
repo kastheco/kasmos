@@ -598,6 +598,39 @@ func NewHandler(store Store) http.Handler {
 		w.WriteHeader(http.StatusOK)
 	})
 
+	mux.HandleFunc("PUT /v1/projects/{project}/tasks/{filename}/blocked", func(w http.ResponseWriter, r *http.Request) {
+		project, filename := r.PathValue("project"), normalizeFilename(r.PathValue("filename"))
+		var req struct {
+			Reason string `json:"reason"`
+			Source string `json:"source"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+			return
+		}
+		if err := store.SetBlocked(project, filename, req.Reason, req.Source); err != nil {
+			if isNotFound(err) {
+				writeError(w, http.StatusNotFound, "task not found: "+filename)
+				return
+			}
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+	mux.HandleFunc("DELETE /v1/projects/{project}/tasks/{filename}/blocked", func(w http.ResponseWriter, r *http.Request) {
+		project, filename := r.PathValue("project"), normalizeFilename(r.PathValue("filename"))
+		if err := store.ClearBlocked(project, filename); err != nil {
+			if isNotFound(err) {
+				writeError(w, http.StatusNotFound, "task not found: "+filename)
+				return
+			}
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+
 	// Rename task
 	mux.HandleFunc("POST /v1/projects/{project}/tasks/{filename}/rename", func(w http.ResponseWriter, r *http.Request) {
 		project := r.PathValue("project")
