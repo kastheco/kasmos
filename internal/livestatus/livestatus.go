@@ -266,7 +266,11 @@ func Assemble(in Input) LiveStatus {
 		} else if strings.TrimSpace(task.Phase) == string(taskfsm.ExecutionPhaseWaveWaiting) {
 			attention = append(attention, AttentionItem{Task: task.Filename, Kind: KindNeedsDecision})
 		}
-		if task.ReviewFeedback && task.Status == taskstore.StatusImplementing {
+		// A decision block supersedes review feedback for the same task: the
+		// feedback is what led to the block, and no fixer will act on it until
+		// the human answers. Emitting both makes a supervisor page twice for one
+		// task, and the second page carries no detail to act on.
+		if task.ReviewFeedback && task.Status == taskstore.StatusImplementing && strings.TrimSpace(task.BlockedReason) == "" {
 			attention = append(attention, AttentionItem{Task: task.Filename, Kind: KindReviewFeedback})
 		}
 	}

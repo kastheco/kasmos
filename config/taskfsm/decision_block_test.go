@@ -69,6 +69,14 @@ func TestNormalizeGatewaySignalPayload_NeedsDecision(t *testing.T) {
 		_, err := NormalizeGatewaySignalPayload(NeedsDecisionSignal, payload)
 		assert.Error(t, err, "payload %q must be rejected", payload)
 	}
+
+	// A truncated or otherwise broken envelope must not slide into the bare-text
+	// branch: that stores the whole malformed envelope as the reason, so the
+	// operator is shown nested JSON instead of the question. Observed for real
+	// when a single closing brace was lost in transit.
+	_, err := NormalizeGatewaySignalPayload(NeedsDecisionSignal, `{"reason":"pick (a) or (b)"`)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "looks like JSON but does not parse")
 }
 
 func TestCanonicalGatewaySignalType_NeedsDecisionAliases(t *testing.T) {

@@ -212,12 +212,21 @@ func NormalizeGatewaySignalPayload(signalType, payload string) (string, error) {
 		}
 		var m map[string]any
 		if err := json.Unmarshal([]byte(payload), &m); err != nil {
-			// Bare text is accepted as the reason so agents that emit a plain
-			// sentence are not silently rejected.
-			if strings.TrimSpace(payload) == "" {
+			trimmed := strings.TrimSpace(payload)
+			if trimmed == "" {
 				return "", fmt.Errorf("needs_decision requires a non-empty reason")
 			}
-			b, _ := json.Marshal(map[string]string{"reason": strings.TrimSpace(payload)})
+			// A payload that opens with "{" was meant to be JSON, so a parse
+			// failure is a malformed envelope, not prose. Falling through to the
+			// bare-text branch would bury the whole broken envelope inside the
+			// reason and surface it to an operator as unreadable nested JSON —
+			// the block would exist but say nothing. Fail loudly instead.
+			if strings.HasPrefix(trimmed, "{") {
+				return "", fmt.Errorf("needs_decision: payload looks like JSON but does not parse: %w", err)
+			}
+			// Bare text is accepted as the reason so agents that emit a plain
+			// sentence are not silently rejected.
+			b, _ := json.Marshal(map[string]string{"reason": trimmed})
 			return string(b), nil
 		}
 		reason, _ := m["reason"].(string)

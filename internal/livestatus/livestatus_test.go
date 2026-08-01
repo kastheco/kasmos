@@ -84,6 +84,20 @@ func TestAssembleSurfacesDecisionBlockWithReason(t *testing.T) {
 	assert.Equal(t, string(taskstore.StatusVerifying), got.Tasks[0].Status, "a block leaves lifecycle status alone")
 }
 
+// The review feedback is what produced the block, and no fixer will act on it
+// until the human answers. Emitting both items makes a supervisor page twice
+// for one task, and the extra page carries no detail to act on.
+func TestAssembleDecisionBlockSupersedesReviewFeedback(t *testing.T) {
+	got := Assemble(Input{Tasks: []TaskInput{{
+		Filename:       "ga-02.md",
+		Status:         taskstore.StatusImplementing,
+		ReviewFeedback: true,
+		BlockedReason:  "route (a) contracts or (b) redaction?",
+	}}})
+	require.Len(t, got.Attention, 1)
+	assert.Equal(t, KindNeedsDecision, got.Attention[0].Kind)
+}
+
 func TestAssembleReviewFeedbackOnlyDuringImplementation(t *testing.T) {
 	got := Assemble(Input{Tasks: []TaskInput{
 		{Filename: "fixing", Status: taskstore.StatusImplementing, ReviewFeedback: true},
