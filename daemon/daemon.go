@@ -69,6 +69,13 @@ type Daemon struct {
 	pendingStandaloneTitles map[string]struct{}
 	mu                      sync.RWMutex
 	startedAt               time.Time
+	// agentMissingSince records when each recovery candidate was first observed
+	// without a running agent, keyed by repo path and instance title. A candidate
+	// must stay missing across the grace window before it is respawned, so the gap
+	// between asking for a spawn and the session appearing cannot be mistaken for
+	// a dead agent. Entries are dropped as soon as the agent is seen again.
+	agentMissingSince map[string]time.Time
+	lastAgentSweep    time.Time
 }
 
 // daemonStateAdapter adapts the Daemon to the api.StateProvider interface.
@@ -1060,6 +1067,31 @@ func (d *Daemon) Run(ctx context.Context) error {
 func (d *Daemon) tick(ctx context.Context) {
 	for _, e := range d.repos.List() {
 		d.tickRepo(ctx, e)
+	}
+	d.sweepMissingAgents(ctx)
+}
+
+// sweepMissingAgents periodically respawns lifecycle agents that have gone away
+// underneath a task that still believes it has one.
+//
+// Recovery used to happen only in RecoverSessions at daemon startup, which meant
+// an agent that died while the daemon kept running was never replaced -- its task
+// simply stopped moving, with a live-looking agent recorded against it, until a
+// human noticed. Boot-time-only recovery also cannot help the case that causes
+// this most often, which is the daemon itself restarting: agents share its
+// process group and go down with it. Running the same reconcile on a timer is
+// what turns "wedged until someone looks" into "wedged for one sweep".
+func (d *Daemon) sweepMissingAgents(ctx context.Context) {
+	d.mu.Lock()
+	if time.Since(d.lastAgentSweep) < agentSweepInterval {
+		d.mu.Unlock()
+		return
+	}
+	d.lastAgentSweep = time.Now()
+	d.mu.Unlock()
+
+	if err := d.reconcileMissingManagedAgents(ctx, d.repos.List(), agentRecoveryGrace); err != nil {
+		d.logger.Warn("sweep missing agents failed", "err", err)
 	}
 }
 
@@ -2629,7 +2661,11 @@ func (d *Daemon) RecoverSessions() (int, error) {
 		}
 	}
 
-	if err := d.reconcileMissingManagedSDKAgents(context.Background(), entries); err != nil {
+	// Zero grace at startup: the grace window exists to keep the periodic sweep
+	// from racing a spawn that is already in flight, and nothing can be in flight
+	// in a daemon that has not begun polling yet. Making boot recovery wait two
+	// sweeps would leave the queue stalled for a minute and a half for no reason.
+	if err := d.reconcileMissingManagedAgents(context.Background(), entries, 0); err != nil {
 		return recovered, err
 	}
 

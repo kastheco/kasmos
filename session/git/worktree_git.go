@@ -2,12 +2,15 @@ package git
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/kastheco/kasmos/config"
 	"github.com/kastheco/kasmos/log"
@@ -176,6 +179,40 @@ func (g *GitWorktree) runGitCommand(path string, args ...string) (string, error)
 	cmdArgs := append([]string{"-C", path}, args...)
 	cmd := exec.Command("git", cmdArgs...)
 	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("git command failed: %s (%w)", out, err)
+	}
+	return string(out), nil
+}
+
+// remoteGitTimeout bounds a single network git invocation. The poll loop ticks
+// every second and asks origin about every finished task, so a git that never
+// returns is not a slow poll -- it is a stopped daemon. Generous enough that a
+// merely slow fetch still completes.
+const remoteGitTimeout = 45 * time.Second
+
+// runRemoteGitCommand is runGitCommand for invocations that talk to origin.
+//
+// Plain runGitCommand has no deadline, and an ls-remote or fetch that hangs --
+// a dropped connection, an unreachable host, a credential helper waiting on a
+// terminal nobody is attached to -- takes the whole poll loop down with it,
+// while systemd and the status endpoint both keep reporting a healthy daemon.
+// The three settings below close the ways a network git can block forever:
+// no terminal prompt, no interactive ssh, and a hard ceiling on the rest.
+func (g *GitWorktree) runRemoteGitCommand(path string, args ...string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), remoteGitTimeout)
+	defer cancel()
+
+	cmdArgs := append([]string{"-C", path}, args...)
+	cmd := exec.CommandContext(ctx, "git", cmdArgs...)
+	cmd.Env = append(os.Environ(),
+		"GIT_TERMINAL_PROMPT=0",
+		"GIT_SSH_COMMAND=ssh -o BatchMode=yes -o ConnectTimeout=10",
+	)
+	out, err := cmd.CombinedOutput()
+	if ctx.Err() != nil {
+		return "", fmt.Errorf("git %s timed out after %s: %w", strings.Join(args, " "), remoteGitTimeout, ctx.Err())
+	}
 	if err != nil {
 		return "", fmt.Errorf("git command failed: %s (%w)", out, err)
 	}

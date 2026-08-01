@@ -108,6 +108,28 @@ func Ensure(ctx context.Context, store taskstore.Store, req Request) (res Result
 		}
 		branch = derived
 	}
+	// Nothing below this point has anything to do once the branch has landed:
+	// every check between here and CreatePRAtSHA guards against opening a pull
+	// request for an unverified commit, and there is no pull request left to
+	// open. Asking them anyway is actively harmful -- a self-fix commit that the
+	// master pushed after verification makes them report staleness, which clears
+	// the verification and sends a merged task back for another full
+	// coder/reviewer/verifier round. That is what put mvp-07 at review cycle 8
+	// and ga-07 at 10 with their work already in the base branch.
+	//
+	// A transport failure here must not be mistaken for "not merged", so the
+	// error path falls through to the existing checks rather than assuming.
+	if merged, mergedErr := gitpkg.BranchAlreadyMerged(req.RepoPath, branch); mergedErr == nil && merged {
+		// An already-recorded pull request keeps its existing contract: callers
+		// rely on getting the URL back, so report it exactly as the normal
+		// already-recorded path would rather than shadowing it.
+		if entry.PRURL != "" {
+			result, persistErr := persist(OutcomeSkipped, "pr already recorded")
+			result.URL = entry.PRURL
+			return result, persistErr
+		}
+		return persist(OutcomeSkipped, "branch already merged into pr base")
+	}
 	expectedHead, _, staleReason, verifyErr := gitpkg.ValidateVerification(req.RepoPath, branch, entry.VerifiedSHA, entry.VerifiedBaseSHA)
 	if verifyErr != nil {
 		return persist(OutcomeBlocked, verifyErr.Error())
@@ -120,8 +142,18 @@ func Ensure(ctx context.Context, store taskstore.Store, req Request) (res Result
 		return persist(OutcomeBlocked, remoteErr.Error())
 	}
 	if remoteErr == nil && !strings.EqualFold(remoteHead, expectedHead) {
-		reason := fmt.Sprintf("remote branch moved after verification: expected %s, current %s", gitpkg.ShortSHA(expectedHead), gitpkg.ShortSHA(remoteHead))
-		return blockStale(reason)
+		// Origin behind the verified commit is a push in flight, not a branch
+		// that moved: the agent commits in its worktree and pushes a beat later,
+		// so this races on every ordinary task. Only a remote that is genuinely
+		// ahead of, or divergent from, what was verified is stale.
+		awaiting, awaitErr := gitpkg.RemoteAwaitingPush(req.RepoPath, remoteHead, expectedHead)
+		if awaitErr != nil {
+			return persist(OutcomeBlocked, awaitErr.Error())
+		}
+		if !awaiting {
+			reason := fmt.Sprintf("remote branch moved after verification: expected %s, current %s", gitpkg.ShortSHA(expectedHead), gitpkg.ShortSHA(remoteHead))
+			return blockStale(reason)
+		}
 	}
 	remoteBase, remoteBaseErr := gitpkg.RemoteDefaultBranchHeadSHA(req.RepoPath)
 	if remoteBaseErr != nil {

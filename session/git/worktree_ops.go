@@ -127,7 +127,7 @@ func (g *GitWorktree) resolveBaseCommitSHA() error {
 func (g *GitWorktree) syncBranchWithRemote() {
 	remote := "origin/" + g.branchName
 
-	_, _ = g.runGitCommand(g.repoPath, "fetch", "origin", g.branchName)
+	_, _ = g.runRemoteGitCommand(g.repoPath, "fetch", "origin", g.branchName)
 
 	// Bail early if the remote tracking branch does not exist.
 	if _, err := g.runGitCommand(g.repoPath, "rev-parse", "--verify", remote); err != nil {

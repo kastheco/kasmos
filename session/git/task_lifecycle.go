@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/kastheco/kasmos/config/taskstate"
@@ -36,11 +37,44 @@ func BranchHeadSHA(repoPath, branch string) (string, error) {
 	return sha, nil
 }
 
+// RemoteAwaitingPush reports whether remoteHead is an ancestor of verifiedSHA,
+// i.e. origin is merely behind and the verified commit has not been pushed yet.
+//
+// The drift and staleness checks used to ask `remoteHead != verifiedSHA` and
+// treat any inequality as "the head moved after verification". That question has
+// no direction in it, so it cannot tell "somebody pushed more commits after the
+// verifier looked" (real drift) apart from "the verifier looked at a commit that
+// is still only local" (a pending push, and the overwhelmingly common case --
+// agents commit in their worktree and push a beat later). The second one was
+// being punished as the first: verification cleared, task reopened, another full
+// coder/reviewer/verifier round against a branch nobody had changed.
+//
+// Equality counts as an ancestor here, which is what git reports and what the
+// callers want -- an up-to-date remote is trivially "not ahead".
+func RemoteAwaitingPush(repoPath, remoteHead, verifiedSHA string) (bool, error) {
+	if remoteHead == "" || verifiedSHA == "" {
+		return false, nil
+	}
+	gt := &GitWorktree{repoPath: repoPath, worktreePath: repoPath}
+	_, err := gt.runGitCommand(repoPath, "merge-base", "--is-ancestor", remoteHead, verifiedSHA)
+	if err == nil {
+		return true, nil
+	}
+	// Exit 1 is the defined "not an ancestor" answer; anything else (a missing
+	// object, a broken repo) is a real failure the caller must not read as a
+	// verdict either way.
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+		return false, nil
+	}
+	return false, fmt.Errorf("compare %s against %s: %w", ShortSHA(remoteHead), ShortSHA(verifiedSHA), err)
+}
+
 // RemoteBranchHeadSHA resolves the authoritative origin branch without relying
 // on a potentially stale remote-tracking ref.
 func RemoteBranchHeadSHA(repoPath, branch string) (string, error) {
 	gt := &GitWorktree{repoPath: repoPath, worktreePath: repoPath}
-	out, err := gt.runGitCommand(repoPath, "ls-remote", "--heads", "origin", "refs/heads/"+branch)
+	out, err := gt.runRemoteGitCommand(repoPath, "ls-remote", "--heads", "origin", "refs/heads/"+branch)
 	if err != nil {
 		return "", fmt.Errorf("resolve remote branch %s: %w", branch, err)
 	}
@@ -97,6 +131,48 @@ func DefaultBranchHeadSHA(repoPath string) (string, error) {
 		return "", fmt.Errorf("resolve default branch head %s: %w", base, err)
 	}
 	return strings.TrimSpace(out), nil
+}
+
+// BranchAlreadyMerged reports whether every commit on branch is reachable from
+// the branch that pull requests actually target. It asks origin directly rather
+// than trusting a remote-tracking ref, which the daemon does not keep fresh.
+//
+// This exists because the staleness checks in orchestration/pr all guard one
+// thing -- do not open a pull request for a commit nobody verified -- and none
+// of them notice when there is no longer a pull request to open. Once the branch
+// has landed, "the head moved after verification" is not a problem to solve; it
+// is the merge. Treating it as staleness clears the verification and sends a
+// finished task back for another coder/reviewer/verifier round against a branch
+// with nothing left to change.
+//
+// The base is prBaseBranch() and not defaultBranchRef(): a repo can merge into
+// kas/main while origin/HEAD still points at main, and asking the wrong branch
+// would answer "not merged" forever.
+func BranchAlreadyMerged(repoPath, branch string) (bool, error) {
+	gt := &GitWorktree{repoPath: repoPath, worktreePath: repoPath}
+	base := prBaseBranch(repoPath)
+	if base == "" {
+		ref, err := defaultBranchRef(gt, repoPath)
+		if err != nil {
+			return false, err
+		}
+		base = strings.TrimPrefix(ref, "origin/")
+	}
+	// Fetch both refs so the answer reflects origin's current state rather than
+	// whatever this checkout last happened to see.
+	if _, err := gt.runRemoteGitCommand(repoPath, "fetch", "--quiet", "origin", base, branch); err != nil {
+		return false, fmt.Errorf("fetch %s and %s: %w", base, branch, err)
+	}
+	out, err := gt.runGitCommand(repoPath, "rev-list", "--count",
+		"refs/remotes/origin/"+base+"..refs/remotes/origin/"+branch)
+	if err != nil {
+		return false, fmt.Errorf("count unmerged commits on %s: %w", branch, err)
+	}
+	count, convErr := strconv.Atoi(strings.TrimSpace(out))
+	if convErr != nil {
+		return false, fmt.Errorf("parse unmerged commit count for %s: %w", branch, convErr)
+	}
+	return count == 0, nil
 }
 
 func defaultBranchRef(gt *GitWorktree, repoPath string) (string, error) {

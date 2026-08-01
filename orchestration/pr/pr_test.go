@@ -184,6 +184,83 @@ func TestEnsureRejectsExistingPRAtUnverifiedHead(t *testing.T) {
 	assert.Equal(t, taskstore.StatusVerifying, entry.Status)
 }
 
+// createMergedTask builds a task whose branch genuinely diverged from main, was
+// verified at that point, then took one more commit the way a master self-fix
+// does, and finally landed in main on origin.
+func createMergedTask(t *testing.T, store taskstore.Store, branch string) Request {
+	t.Helper()
+	repo := t.TempDir()
+	origin := filepath.Join(t.TempDir(), "origin.git")
+	run := func(args ...string) {
+		t.Helper()
+		out, err := exec.Command("git", append([]string{"-C", repo}, args...)...).CombinedOutput()
+		require.NoErrorf(t, err, "git %v failed: %s", args, out)
+	}
+	require.NoError(t, exec.Command("git", "init", "--bare", origin).Run())
+	run("init", "-b", "main")
+	run("config", "user.email", "test@example.com")
+	run("config", "user.name", "test")
+	require.NoError(t, os.WriteFile(filepath.Join(repo, "README.md"), []byte("initial\n"), 0o644))
+	run("add", "README.md")
+	run("commit", "-m", "initial")
+	run("remote", "add", "origin", origin)
+	run("push", "-u", "origin", "main")
+
+	run("checkout", "-b", branch)
+	require.NoError(t, os.WriteFile(filepath.Join(repo, "feature.txt"), []byte("work\n"), 0o644))
+	run("add", "feature.txt")
+	run("commit", "-m", "feature work")
+	run("push", "-u", "origin", branch)
+
+	req := Request{RepoPath: repo, Project: "test", PlanFile: "plan", Enabled: true}
+	require.NoError(t, store.Create(req.Project, taskstore.TaskEntry{Filename: req.PlanFile, Status: taskstore.StatusDone, Branch: branch, Description: "merged pr"}))
+	head, err := gitpkg.BranchHeadSHA(repo, branch)
+	require.NoError(t, err)
+	base, err := gitpkg.BranchMergeBaseSHA(repo, branch)
+	require.NoError(t, err)
+	require.NoError(t, store.SetVerification(req.Project, req.PlanFile, taskstore.VerificationRecord{SHA: head, BaseSHA: base, By: "master"}))
+
+	// The post-verification self-fix that used to invalidate the record above.
+	require.NoError(t, os.WriteFile(filepath.Join(repo, "feature.txt"), []byte("work\nfixed\n"), 0o644))
+	run("add", "feature.txt")
+	run("commit", "-m", "fix: tidy up (master self-fix)")
+	run("push", "origin", branch)
+
+	// And the merge that makes all of that moot.
+	run("checkout", "main")
+	run("merge", "--no-ff", "-m", "merge branch", branch)
+	run("push", "origin", "main")
+	run("checkout", branch)
+	return req
+}
+
+// Once the work is in the base branch there is no pull request left to open, so
+// a moved head is the merge rather than staleness. Before Ensure checked for
+// this, the master's own post-verification self-fix commit read as "head moved",
+// cleared the verification, and sent a task whose code had already shipped back
+// for another full coder/reviewer/verifier round -- the mechanism that put
+// mvp-07 at review cycle 8 and ga-07 at 10.
+func TestEnsureSkipsMergedBranchWithoutClearingVerification(t *testing.T) {
+	store := taskstore.NewTestStore(t)
+	req := createMergedTask(t, store, "plan/already-merged")
+	verified := verifiedHead(t, store, req)
+	// The PR reports a head that is not the verified SHA, which on an unmerged
+	// branch is exactly the condition TestEnsureRejectsExistingPRAtUnverifiedHead
+	// requires to clear verification.
+	fake := &scriptedGHExecutor{queryOutput: prJSON("https://example.test/pr/9", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")}
+	t.Cleanup(gitpkg.SetGHExec(fake))
+
+	res, err := Ensure(context.Background(), store, req)
+	require.NoError(t, err)
+	assert.Equal(t, OutcomeSkipped, res.Outcome)
+	assert.Equal(t, "branch already merged into pr base", res.Reason)
+
+	entry, getErr := store.Get(req.Project, req.PlanFile)
+	require.NoError(t, getErr)
+	assert.Equal(t, verified, entry.VerifiedSHA, "verification must survive: the work is in the base branch")
+	assert.Equal(t, taskstore.StatusDone, entry.Status, "a merged task must not be reopened")
+}
+
 func TestEnsureRejectsRemoteOnlyBranchAdvance(t *testing.T) {
 	store := taskstore.NewTestStore(t)
 	req := createDoneTask(t, store, "plan/remote-stale")

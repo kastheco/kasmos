@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/kastheco/kasmos/config"
 	"github.com/kastheco/kasmos/config/taskparser"
@@ -20,7 +21,39 @@ import (
 
 var recoveryExecCommand = exec.Command
 
-func (d *Daemon) reconcileMissingManagedSDKAgents(ctx context.Context, repos []RepoEntry) error {
+// agentRecoveryGrace is how long a recovery candidate must look agentless before
+// it is respawned. Spawning is not instantaneous -- a request is issued, then the
+// tmux session appears a moment later -- and respawning inside that window would
+// put two agents on one worktree, both committing to the same branch. Three
+// sweeps' worth of absence is cheap insurance against that.
+const agentRecoveryGrace = 90 * time.Second
+
+// agentSweepInterval is how often reconcileMissingManagedAgents runs. The poll
+// loop ticks every second; re-listing every task and shelling out to tmux at that
+// rate would cost far more than it recovers.
+const agentSweepInterval = 30 * time.Second
+
+// reconcileMissingManagedAgents respawns lifecycle agents that the task store
+// still believes are running but that no longer exist.
+//
+// This used to be SDK-only, and skipped anything whose execution_mode was tmux.
+// Every agent in the matchfi repo is tmux, so nothing there was ever recovered:
+// any daemon restart, crash, or reboot left every in-flight task parked in
+// implementing/reviewing/verifying with an agent recorded in the store and no
+// process behind it, and nothing in the system ever noticed or retried. Tasks
+// only moved again when someone drove them by hand. Nothing about the respawn
+// path was ever SDK-specific -- it emits the same SpawnReviewer/SpawnFixer/
+// SpawnMaster actions the normal lifecycle uses, and those already honour each
+// agent's configured execution mode -- so the gate was removing the recovery,
+// not enabling it. Only the orphan *cleanup* is mode-specific, and it stays that
+// way below.
+//
+// grace is how long a candidate must have looked agentless before it is
+// respawned. The periodic sweep passes agentRecoveryGrace because it runs
+// alongside live spawning and must not race it. Startup passes zero: nothing can
+// be mid-spawn in a daemon that has not begun polling yet, and making boot
+// recovery wait two sweeps would leave the queue stalled for no reason.
+func (d *Daemon) reconcileMissingManagedAgents(ctx context.Context, repos []RepoEntry, grace time.Duration) error {
 	for _, e := range repos {
 		if e.Store == nil {
 			continue
@@ -28,9 +61,18 @@ func (d *Daemon) reconcileMissingManagedSDKAgents(ctx context.Context, repos []R
 
 		tasks, err := e.Store.List(e.Project)
 		if err != nil {
-			d.logger.Warn("recover sdk agents: list tasks failed", "repo", e.Path, "err", err)
+			d.logger.Warn("recover agents: list tasks failed", "repo", e.Path, "err", err)
 			continue
 		}
+
+		// Sessions that outlived whatever was tracking them still hold the
+		// worktree and the tmux name, so they count as running here. Discovered
+		// once per repo rather than per candidate: it shells out to tmux.
+		surviving := map[string]bool{}
+		for _, si := range d.spawner.DiscoverOrphanSessions() {
+			surviving[si.Title] = true
+		}
+		tracked := d.spawner.InstancesForRepo(e.Path)
 
 		for _, task := range tasks {
 			planContent := ""
@@ -39,35 +81,49 @@ func (d *Daemon) reconcileMissingManagedSDKAgents(ctx context.Context, repos []R
 			}
 
 			for _, candidate := range orchestration.BuildRecoveryCandidates(task, planContent) {
-				if !isRecoverableSDKAgentType(candidate.AgentType) {
+				if !isRecoverableAgentType(candidate.AgentType) {
 					continue
 				}
-				if executionModeForAgent(e.Path, candidate.AgentType) != config.ExecutionModeSDK {
+				if trackedRecoveryCandidateExists(tracked, candidate.Title) || surviving[candidate.Title] {
+					d.clearAgentMissing(e.Path, candidate.Title)
 					continue
 				}
-				if trackedRecoveryCandidateExists(d.spawner.InstancesForRepo(e.Path), candidate.Title) {
+				if !d.agentMissingLongEnough(e.Path, candidate.Title, grace) {
 					continue
 				}
 
-				program := programForAgent(e.Path, candidate.AgentType)
-				reap := d.reapSDKOrphan
-				if reap == nil {
-					reap = reapManagedSDKOrphan
-				}
-				if err := reap(e.Project, candidate.Title, program); err != nil {
-					d.logger.Warn("recover sdk agents: orphan cleanup failed",
-						"repo", e.Path, "project", e.Project, "title", candidate.Title, "program", program, "err", err)
+				if executionModeForAgent(e.Path, candidate.AgentType) == config.ExecutionModeSDK {
+					// SDK agents leave a detached app-server process behind that
+					// would fight the replacement for the same socket. Tmux agents
+					// have no such remnant: the session is either alive, in which
+					// case we skipped above, or gone.
+					program := programForAgent(e.Path, candidate.AgentType)
+					reap := d.reapSDKOrphan
+					if reap == nil {
+						reap = reapManagedSDKOrphan
+					}
+					if err := reap(e.Project, candidate.Title, program); err != nil {
+						d.logger.Warn("recover agents: orphan cleanup failed",
+							"repo", e.Path, "project", e.Project, "title", candidate.Title, "program", program, "err", err)
+					}
 				}
 
 				if err := d.respawnRecoveryCandidate(ctx, e, task, planContent, candidate); err != nil {
-					return fmt.Errorf("recover sdk agent %q for %s: %w", candidate.Title, task.Filename, err)
+					// One task failing to respawn must not abandon the sweep: the
+					// rest of the queue is still stuck, and the next sweep retries
+					// this one anyway.
+					d.logger.Warn("recover agents: respawn failed",
+						"repo", e.Path, "plan", task.Filename, "title", candidate.Title, "err", err)
+					continue
 				}
+				d.clearAgentMissing(e.Path, candidate.Title)
 
-				d.logger.Info("respawned missing sdk agent",
+				d.logger.Info("respawned missing agent",
 					"repo", e.Path,
 					"plan", task.Filename,
 					"title", candidate.Title,
-					"agent", candidate.AgentType)
+					"agent", candidate.AgentType,
+					"status", string(task.Status))
 			}
 		}
 	}
@@ -75,7 +131,35 @@ func (d *Daemon) reconcileMissingManagedSDKAgents(ctx context.Context, repos []R
 	return nil
 }
 
-func isRecoverableSDKAgentType(agentType string) bool {
+func agentMissingKey(repoPath, title string) string { return repoPath + "\x00" + title }
+
+// agentMissingLongEnough records the first sighting of an agentless candidate and
+// reports whether it has stayed that way for the full grace window.
+func (d *Daemon) agentMissingLongEnough(repoPath, title string, grace time.Duration) bool {
+	if grace <= 0 {
+		return true
+	}
+	key := agentMissingKey(repoPath, title)
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.agentMissingSince == nil {
+		d.agentMissingSince = map[string]time.Time{}
+	}
+	first, seen := d.agentMissingSince[key]
+	if !seen {
+		d.agentMissingSince[key] = time.Now()
+		return false
+	}
+	return time.Since(first) >= grace
+}
+
+func (d *Daemon) clearAgentMissing(repoPath, title string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	delete(d.agentMissingSince, agentMissingKey(repoPath, title))
+}
+
+func isRecoverableAgentType(agentType string) bool {
 	switch strings.TrimSpace(agentType) {
 	case session.AgentTypeCoder,
 		session.AgentTypeReviewer,
