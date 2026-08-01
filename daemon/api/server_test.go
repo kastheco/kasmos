@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -975,4 +976,42 @@ func TestHandler_SpawnSolo_BadBody(t *testing.T) {
 	h.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusBadRequest, w.Code, "body: %s", w.Body.String())
+}
+
+type reloadStub struct {
+	DaemonState
+	calls int
+	err   error
+}
+
+func (s *reloadStub) ReloadConfig() error {
+	s.calls++
+	return s.err
+}
+
+// POST /v1/reload used to return 200 {"status":"reloaded"} without touching any
+// config at all, so operators had no way to tell a working reload from a stub.
+// This pins that the handler actually delegates.
+func TestHandleReload_DelegatesToStateProvider(t *testing.T) {
+	state := &reloadStub{}
+	h := NewHandler(state)
+
+	req := httptest.NewRequest("POST", "/v1/reload", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, 1, state.calls)
+}
+
+func TestHandleReload_ReportsFailure(t *testing.T) {
+	state := &reloadStub{err: errors.New("bad config.toml")}
+	h := NewHandler(state)
+
+	req := httptest.NewRequest("POST", "/v1/reload", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+	assert.Contains(t, w.Body.String(), "bad config.toml")
 }

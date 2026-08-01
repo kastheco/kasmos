@@ -3,6 +3,7 @@ package loop
 import (
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/kastheco/kasmos/config/taskfsm"
 	"github.com/kastheco/kasmos/config/taskparser"
@@ -190,7 +191,17 @@ func (p *Processor) bindVerification(planFile, origin, reviewedSHA, reviewedBase
 // performing side effects. The caller is responsible for executing the returned
 // actions (spawning agents, creating PRs, etc.).
 type Processor struct {
-	config            ProcessorConfig
+	config ProcessorConfig
+	// cfgMu guards the runtime-tunable fields of config — AutoReviewFix,
+	// MaxReviewFixCycles and AutoReadinessReview. Everything else in config is
+	// write-once at NewProcessor time and read without the lock.
+	//
+	// These three became mutable-after-construction when the daemon grew a
+	// working POST /v1/reload: the reload applies new values from the poll
+	// goroutine while the PR monitor's goroutine can be inside
+	// ProcessFSMSignals via executeAction. Read them through the accessors
+	// below, never directly off p.config.
+	cfgMu             sync.RWMutex
 	fsm               *taskfsm.TaskStateMachine
 	waveOrchestrators map[string]*orchestration.WaveOrchestrator
 	// activeWaveOrchs tracks plans whose wave orchestrator is active.
@@ -221,13 +232,31 @@ func NewProcessor(cfg ProcessorConfig) *Processor {
 
 // SetReviewFixConfig updates the runtime review-fix loop settings.
 func (p *Processor) SetReviewFixConfig(enabled bool, maxCycles int) {
+	p.cfgMu.Lock()
+	defer p.cfgMu.Unlock()
 	p.config.AutoReviewFix = enabled
 	p.config.MaxReviewFixCycles = maxCycles
 }
 
 // SetReadinessReviewConfig updates the runtime readiness-review gate setting.
 func (p *Processor) SetReadinessReviewConfig(enabled bool) {
+	p.cfgMu.Lock()
+	defer p.cfgMu.Unlock()
 	p.config.AutoReadinessReview = enabled
+}
+
+// ReviewFixConfig returns the current review-fix loop settings.
+func (p *Processor) ReviewFixConfig() (enabled bool, maxCycles int) {
+	p.cfgMu.RLock()
+	defer p.cfgMu.RUnlock()
+	return p.config.AutoReviewFix, p.config.MaxReviewFixCycles
+}
+
+// AutoReadinessReviewEnabled reports whether the readiness-review gate is on.
+func (p *Processor) AutoReadinessReviewEnabled() bool {
+	p.cfgMu.RLock()
+	defer p.cfgMu.RUnlock()
+	return p.config.AutoReadinessReview
 }
 
 // SetWaveOrchestratorActive marks or unmarks a plan as having an active wave
@@ -316,7 +345,7 @@ func (p *Processor) ProcessFSMSignals(signals []taskfsm.Signal) []Action {
 		}
 
 		var pendingRecord *RecordVerificationAction
-		if sig.Event == taskfsm.VerifyApproved && p.config.AutoReadinessReview {
+		if sig.Event == taskfsm.VerifyApproved && p.AutoReadinessReviewEnabled() {
 			entry, entryOK := p.taskEntry(sig.TaskFile)
 			eligible := entryOK && entry.Status == taskstore.StatusVerifying
 			if sig.PreApplied {
@@ -388,7 +417,7 @@ func (p *Processor) ProcessFSMSignals(signals []taskfsm.Signal) []Action {
 				PlanFile:   sig.TaskFile,
 				ReviewBody: sig.Body,
 			})
-			if p.config.AutoReadinessReview {
+			if p.AutoReadinessReviewEnabled() {
 				// Readiness gate active: spawn master agent for holistic check.
 				// VerifyApprovedAction side-effects fire when VerifyApproved arrives.
 				actions = append(actions, SpawnMasterAction{PlanFile: sig.TaskFile})
@@ -440,16 +469,17 @@ func (p *Processor) ProcessFSMSignals(signals []taskfsm.Signal) []Action {
 				PlanFile: sig.TaskFile,
 				Feedback: sig.Body,
 			})
-			if !p.config.AutoReviewFix {
+			autoReviewFix, maxReviewFixCycles := p.ReviewFixConfig()
+			if !autoReviewFix {
 				break
 			}
-			if p.config.MaxReviewFixCycles > 0 && p.config.Store != nil {
+			if maxReviewFixCycles > 0 && p.config.Store != nil {
 				if entry, err := p.config.Store.Get(p.config.Project, sig.TaskFile); err == nil {
-					if entry.ReviewCycle+1 > p.config.MaxReviewFixCycles {
+					if entry.ReviewCycle+1 > maxReviewFixCycles {
 						actions = append(actions, ReviewCycleLimitAction{
 							PlanFile: sig.TaskFile,
 							Cycle:    entry.ReviewCycle + 1,
-							Limit:    p.config.MaxReviewFixCycles,
+							Limit:    maxReviewFixCycles,
 						})
 						break
 					}
@@ -466,16 +496,17 @@ func (p *Processor) ProcessFSMSignals(signals []taskfsm.Signal) []Action {
 				PlanFile: sig.TaskFile,
 				Feedback: sig.Body,
 			})
-			if !p.config.AutoReviewFix {
+			autoReviewFix, maxReviewFixCycles := p.ReviewFixConfig()
+			if !autoReviewFix {
 				break
 			}
-			if p.config.MaxReviewFixCycles > 0 && p.config.Store != nil {
+			if maxReviewFixCycles > 0 && p.config.Store != nil {
 				if entry, err := p.config.Store.Get(p.config.Project, sig.TaskFile); err == nil {
-					if entry.ReviewCycle+1 > p.config.MaxReviewFixCycles {
+					if entry.ReviewCycle+1 > maxReviewFixCycles {
 						actions = append(actions, ReviewCycleLimitAction{
 							PlanFile: sig.TaskFile,
 							Cycle:    entry.ReviewCycle + 1,
-							Limit:    p.config.MaxReviewFixCycles,
+							Limit:    maxReviewFixCycles,
 						})
 						break // don't spawn fixer
 					}

@@ -151,6 +151,10 @@ func (a *daemonStateAdapter) RemoveRepo(project string) error {
 	return a.d.repos.RemoveByProject(project)
 }
 
+func (a *daemonStateAdapter) ReloadConfig() error {
+	return a.d.ReloadConfig()
+}
+
 func (a *daemonStateAdapter) ListPlans(project string) ([]taskstore.TaskEntry, error) {
 	store, err := a.TaskStoreForProject(project)
 	if err != nil {
@@ -652,6 +656,18 @@ func (d *Daemon) AddRepo(root string) error {
 	return d.repos.Add(root)
 }
 
+// ReloadConfig re-reads every registered repo's .kasmos/config.toml.
+//
+// The re-read is queued, not performed inline — see RepoManager.ApplyPendingReload
+// for the reason and for exactly which settings are live-reloadable. New values
+// are in force from the next poll tick, so a caller that flips
+// max_review_fix_cycles sees it take effect within one poll interval rather than
+// requiring a daemon restart.
+func (d *Daemon) ReloadConfig() error {
+	d.repos.RequestReload()
+	return nil
+}
+
 // StartPlan asks the daemon to spawn a planner session for the given plan.
 func (d *Daemon) StartPlan(project, planFile, prompt, program string) error {
 	var entry RepoEntry
@@ -1065,6 +1081,16 @@ func (d *Daemon) Run(ctx context.Context) error {
 // per-signal processing: each signal is moved to processing/ before handling,
 // then either completed (deleted) or dead-lettered into failed/.
 func (d *Daemon) tick(ctx context.Context) {
+	// Apply a pending POST /v1/reload here rather than in the HTTP handler: the
+	// reload writes Processor fields that this goroutine (and, via
+	// executeAction, the PR monitor's) reads, and Processor has no lock of its
+	// own beyond the one guarding those fields.
+	for _, changed := range d.repos.ApplyPendingReload() {
+		d.logger.Info("daemon: reloaded project config",
+			"project", changed.Project,
+			"repo", changed.Path,
+			"changes", strings.Join(changed.Changes, ", "))
+	}
 	for _, e := range d.repos.List() {
 		d.tickRepo(ctx, e)
 	}

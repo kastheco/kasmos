@@ -125,6 +125,10 @@ type RepoManager struct {
 	maxReviewFixCycles       int
 	readinessSelfFixMaxLines int
 	readinessMaxVerifyCycles int
+	// reloadRequested is set by RequestReload and consumed by
+	// ApplyPendingReload on the poll goroutine. See ApplyPendingReload for why
+	// the apply is deferred rather than done inline.
+	reloadRequested bool
 	// globalDB is the single shared *sql.DB, lazy-opened on the first Add().
 	// Both globalStore and globalGateway are derived from it.
 	globalDB *sql.DB
@@ -487,6 +491,113 @@ func (m *RepoManager) Get(path string) (RepoEntry, error) {
 		}
 	}
 	return RepoEntry{}, fmt.Errorf("repo not registered: %s", path)
+}
+
+// RequestReload marks every registered repo as needing a config re-read.
+//
+// It deliberately does not do the work. The reload mutates Processor state that
+// the daemon's poll goroutine owns, so the apply is deferred to
+// ApplyPendingReload at the top of the next tick. Safe to call from any
+// goroutine — in practice the HTTP handler for POST /v1/reload.
+func (m *RepoManager) RequestReload() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.reloadRequested = true
+}
+
+// RepoConfigChange reports one repo whose effective config moved during a
+// reload. Only dials that actually changed are listed, so a reload with no TOML
+// edits produces no entries and logs nothing.
+type RepoConfigChange struct {
+	Project string
+	Path    string
+	Changes []string
+}
+
+// ApplyPendingReload re-reads each registered repo's .kasmos/config.toml and
+// applies the policy dials that are safe to change under a running daemon:
+// max_review_fix_cycles, readiness_self_fix_max_lines, readiness_max_verify_cycles,
+// auto_readiness_review and auto_create_pr.
+//
+// Deliberately NOT reloaded: hooks, the Linear receipt hook and trigger poller,
+// planner profiles, SDK config, resource controls and theme. Those are wired
+// into long-lived objects at Add() time and need a re-register (or a daemon
+// restart) to take effect; reporting them as reloaded would be worse than not
+// reloading them at all. auto_advance is likewise baked into the Processor at
+// construction.
+//
+// Must be called from the daemon's poll goroutine: it mutates Processor state
+// that the PR monitor's goroutine also reads. Returns nil when no reload was
+// pending.
+func (m *RepoManager) ApplyPendingReload() []RepoConfigChange {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if !m.reloadRequested {
+		return nil
+	}
+	m.reloadRequested = false
+
+	var out []RepoConfigChange
+	for i := range m.repos {
+		entry := &m.repos[i]
+		// resolveRepoConfig reads m.* defaults without locking, so it is only
+		// callable while m.mu is already held — as it is here.
+		_, autoReadinessReview, autoCreatePR, maxReviewFixCycles, selfFixMaxLines, maxVerifyCycles, _, _, _, _, err := m.resolveRepoConfig(entry.Path)
+		if err != nil {
+			slog.Warn("daemon: config reload failed, keeping previous values",
+				"repo", entry.Path, "error", err)
+			continue
+		}
+
+		var changes []string
+		if entry.MaxReviewFixCycles != maxReviewFixCycles {
+			changes = append(changes, fmt.Sprintf("max_review_fix_cycles %d -> %d",
+				entry.MaxReviewFixCycles, maxReviewFixCycles))
+			entry.MaxReviewFixCycles = maxReviewFixCycles
+		}
+		if entry.ReadinessSelfFixMaxLines != selfFixMaxLines {
+			changes = append(changes, fmt.Sprintf("readiness_self_fix_max_lines %d -> %d",
+				entry.ReadinessSelfFixMaxLines, selfFixMaxLines))
+			entry.ReadinessSelfFixMaxLines = selfFixMaxLines
+		}
+		if entry.ReadinessMaxVerifyCycles != maxVerifyCycles {
+			changes = append(changes, fmt.Sprintf("readiness_max_verify_cycles %d -> %d",
+				entry.ReadinessMaxVerifyCycles, maxVerifyCycles))
+			entry.ReadinessMaxVerifyCycles = maxVerifyCycles
+		}
+		if entry.AutoCreatePR != autoCreatePR {
+			changes = append(changes, fmt.Sprintf("auto_create_pr %t -> %t",
+				entry.AutoCreatePR, autoCreatePR))
+			entry.AutoCreatePR = autoCreatePR
+		}
+
+		// The Processor keeps its own copies of the two dials it enforces
+		// (processor.go's VerifyFailed / ReviewChangesRequested branches read
+		// the cap; the readiness gate reads AutoReadinessReview). The daemon
+		// and PR monitor read the RepoEntry copies above. Both have to move or
+		// the cap only takes effect on one of the two enforcement paths.
+		if entry.Processor != nil {
+			autoReviewFix, currentMax := entry.Processor.ReviewFixConfig()
+			if currentMax != maxReviewFixCycles {
+				entry.Processor.SetReviewFixConfig(autoReviewFix, maxReviewFixCycles)
+			}
+			if entry.Processor.AutoReadinessReviewEnabled() != autoReadinessReview {
+				changes = append(changes, fmt.Sprintf("auto_readiness_review %t -> %t",
+					entry.Processor.AutoReadinessReviewEnabled(), autoReadinessReview))
+				entry.Processor.SetReadinessReviewConfig(autoReadinessReview)
+			}
+		}
+
+		if len(changes) > 0 {
+			out = append(out, RepoConfigChange{
+				Project: entry.Project,
+				Path:    entry.Path,
+				Changes: changes,
+			})
+		}
+	}
+	return out
 }
 
 // resolveRepoConfig reads per-repo TOML overrides and returns the effective

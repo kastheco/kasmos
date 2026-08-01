@@ -88,6 +88,103 @@ func TestRepoManager_AddFallsBackToDaemonReviewFixCycleCap(t *testing.T) {
 	assert.Equal(t, 7, repos[0].MaxReviewFixCycles)
 }
 
+// writeRepoConfig writes repoDir/.kasmos/config.toml with the given body.
+func writeRepoConfig(t *testing.T, repoDir, body string) {
+	t.Helper()
+	kasmosDir := filepath.Join(repoDir, ".kasmos")
+	require.NoError(t, os.MkdirAll(kasmosDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(kasmosDir, "config.toml"), []byte(body), 0o644))
+}
+
+// The regression this pins: max_review_fix_cycles was only ever read at Add()
+// time, and POST /v1/reload was a stub that returned "reloaded" without reading
+// anything. Lowering the cap on a running daemon therefore did nothing, and two
+// plans ran to fix round 23 and round 11 against a configured cap of 5.
+func TestRepoManager_ApplyPendingReload_PicksUpLoweredReviewFixCap(t *testing.T) {
+	repoDir := t.TempDir()
+	writeRepoConfig(t, repoDir, "[ui]\nmax_review_fix_cycles = 20\n")
+
+	rm := newTestRepoManager(t)
+	require.NoError(t, rm.Add(repoDir))
+	require.Equal(t, 20, rm.List()[0].MaxReviewFixCycles)
+
+	writeRepoConfig(t, repoDir, "[ui]\nmax_review_fix_cycles = 5\n")
+
+	// Without a RequestReload the daemon must keep the old value — the reload is
+	// explicit, not a stat-the-file-every-tick behaviour.
+	assert.Nil(t, rm.ApplyPendingReload())
+	assert.Equal(t, 20, rm.List()[0].MaxReviewFixCycles)
+
+	rm.RequestReload()
+	changes := rm.ApplyPendingReload()
+
+	require.Len(t, changes, 1)
+	assert.Equal(t, []string{"max_review_fix_cycles 20 -> 5"}, changes[0].Changes)
+
+	// Both enforcement paths have to move: the PR monitor reads the RepoEntry
+	// copy, processor.go reads the Processor's.
+	assert.Equal(t, 5, rm.List()[0].MaxReviewFixCycles)
+	_, procMax := rm.List()[0].Processor.ReviewFixConfig()
+	assert.Equal(t, 5, procMax)
+}
+
+func TestRepoManager_ApplyPendingReload_IsOneShot(t *testing.T) {
+	repoDir := t.TempDir()
+	writeRepoConfig(t, repoDir, "[ui]\nmax_review_fix_cycles = 20\n")
+
+	rm := newTestRepoManager(t)
+	require.NoError(t, rm.Add(repoDir))
+
+	writeRepoConfig(t, repoDir, "[ui]\nmax_review_fix_cycles = 5\n")
+	rm.RequestReload()
+	require.Len(t, rm.ApplyPendingReload(), 1)
+
+	// The flag is consumed, so a second tick neither re-reads nor re-reports.
+	assert.Nil(t, rm.ApplyPendingReload())
+}
+
+func TestRepoManager_ApplyPendingReload_ReportsOnlyChangedDials(t *testing.T) {
+	repoDir := t.TempDir()
+	writeRepoConfig(t, repoDir, "[ui]\nmax_review_fix_cycles = 5\n")
+
+	rm := newTestRepoManager(t)
+	require.NoError(t, rm.Add(repoDir))
+
+	// Same file contents — a reload with no edits must be silent rather than
+	// logging every dial as if it moved.
+	rm.RequestReload()
+	assert.Empty(t, rm.ApplyPendingReload())
+
+	writeRepoConfig(t, repoDir, "[ui]\nmax_review_fix_cycles = 5\nauto_create_pr = true\n")
+	rm.RequestReload()
+	changes := rm.ApplyPendingReload()
+
+	require.Len(t, changes, 1)
+	require.Len(t, changes[0].Changes, 1)
+	assert.Contains(t, changes[0].Changes[0], "auto_create_pr")
+	assert.True(t, rm.List()[0].AutoCreatePR)
+}
+
+// An unreadable or malformed config must not silently reset the cap to the
+// daemon default — that would quietly re-open the uncapped fix loop.
+func TestRepoManager_ApplyPendingReload_KeepsPreviousValuesOnError(t *testing.T) {
+	repoDir := t.TempDir()
+	writeRepoConfig(t, repoDir, "[ui]\nmax_review_fix_cycles = 5\n")
+
+	rm := newTestRepoManager(t)
+	rm.maxReviewFixCycles = 20
+	require.NoError(t, rm.Add(repoDir))
+	require.Equal(t, 5, rm.List()[0].MaxReviewFixCycles)
+
+	writeRepoConfig(t, repoDir, "this is not valid toml {{{\n")
+	rm.RequestReload()
+	rm.ApplyPendingReload()
+
+	assert.Equal(t, 5, rm.List()[0].MaxReviewFixCycles)
+	_, procMax := rm.List()[0].Processor.ReviewFixConfig()
+	assert.Equal(t, 5, procMax)
+}
+
 func TestRepoManager_ThemeDefaultsToBuiltInPalette(t *testing.T) {
 	repoDir := t.TempDir()
 	rm := newTestRepoManager(t)

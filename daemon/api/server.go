@@ -237,6 +237,7 @@ type StateProvider interface {
 	ListRepos() []RepoStatus
 	AddRepo(path string) error
 	RemoveRepo(project string) error
+	ReloadConfig() error
 	ListPlans(project string) ([]taskstore.TaskEntry, error)
 	ListTasks(project string) ([]TaskStatus, error)
 	ListInstances(project string) []InstanceStatus
@@ -328,6 +329,13 @@ func (s *DaemonState) AddRepo(path string) error {
 		project = path[idx+1:]
 	}
 	s.Repos = append(s.Repos, RepoStatus{Path: path, Project: project})
+	return nil
+}
+
+// ReloadConfig implements StateProvider. The in-memory test state has no
+// config files behind it, so a reload is a successful no-op here; the real
+// implementation is Daemon.ReloadConfig.
+func (s *DaemonState) ReloadConfig() error {
 	return nil
 }
 
@@ -500,8 +508,22 @@ func (h *Handler) handleStatus(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
-// handleReload serves POST /v1/reload — re-read config.
+// handleReload serves POST /v1/reload — re-read every registered repo's
+// .kasmos/config.toml.
+//
+// This used to return {"status":"reloaded"} without reading anything, which is
+// how max_review_fix_cycles could be lowered in config.toml and still not bind:
+// the value was only ever read at repo-registration time, so a running daemon
+// kept enforcing whatever cap it booted with. Two plans reached fix round 23 and
+// round 11 against a configured cap of 5.
+//
+// The reload is queued and applied on the daemon's poll goroutine, so "reloaded"
+// here means "queued and in force from the next tick", not "already applied".
 func (h *Handler) handleReload(w http.ResponseWriter, _ *http.Request) {
+	if err := h.state.ReloadConfig(); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "reloaded"})
 }
 
