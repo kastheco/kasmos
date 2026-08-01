@@ -326,6 +326,39 @@ func TestDaemon_ReconcileMissingManagedAgents_HonoursGrace(t *testing.T) {
 	assert.Equal(t, 1, spawnCount, "absent for longer than the grace window must respawn")
 }
 
+// TestDaemon_SweepMissingAgents_RateLimits pins the interval gate that lets the
+// sweep hang off the poll loop at all.
+//
+// tick() fires every second. Re-listing every task in every repo and shelling out
+// to tmux at that rate would cost far more than it recovers, so the sweep is what
+// makes mid-run recovery affordable enough to run continuously -- without it the
+// only options are boot-time-only recovery (which is what this whole change is
+// fixing) or a poll loop that spends its time asking tmux questions.
+func TestDaemon_SweepMissingAgents_RateLimits(t *testing.T) {
+	t.Parallel()
+
+	d := &Daemon{
+		repos:   NewRepoManager(),
+		spawner: NewTmuxSpawner(),
+		logger:  slog.Default(),
+	}
+
+	ctx := context.Background()
+	d.sweepMissingAgents(ctx)
+	first := d.lastAgentSweep
+	require.False(t, first.IsZero(), "the first sweep must run")
+
+	d.sweepMissingAgents(ctx)
+	assert.Equal(t, first, d.lastAgentSweep, "a second sweep inside the interval must be skipped")
+
+	d.mu.Lock()
+	d.lastAgentSweep = time.Now().Add(-2 * agentSweepInterval)
+	d.mu.Unlock()
+
+	d.sweepMissingAgents(ctx)
+	assert.True(t, d.lastAgentSweep.After(first), "a sweep past the interval must run again")
+}
+
 func writeRecoveryConfig(t *testing.T, repoDir, body string) {
 	t.Helper()
 
