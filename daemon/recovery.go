@@ -75,6 +75,17 @@ func (d *Daemon) reconcileMissingManagedAgents(ctx context.Context, repos []Repo
 		tracked := d.spawner.InstancesForRepo(e.Path)
 
 		for _, task := range tasks {
+			// A task waiting on a human answer looks exactly like a stalled one:
+			// parked in implementing/reviewing/verifying with no agent behind it.
+			// That is the intended resting state of a block, not a failure to
+			// recover from. Respawning here would restart the guess-and-retry loop
+			// the block exists to stop -- and because this sweep is signal-driven
+			// by nothing, it would do so on every boot and every timer tick, which
+			// is exactly what it did before this guard existed.
+			if strings.TrimSpace(task.BlockedReason) != "" {
+				continue
+			}
+
 			planContent := ""
 			if content, getErr := e.Store.GetContent(e.Project, task.Filename); getErr == nil {
 				planContent = content

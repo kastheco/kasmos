@@ -254,6 +254,61 @@ func TestDaemon_RecoverSessions_RespawnsMissingTmuxReviewer(t *testing.T) {
 	assert.Zero(t, reapCalls, "tmux agents leave no app-server process to reap")
 }
 
+// A blocked task is indistinguishable from a stalled one by shape alone: both
+// sit in implementing/reviewing/verifying with no agent behind them. Recovery
+// must tell them apart from the block, because this sweep is driven by nothing
+// -- it runs on every boot and every timer tick regardless of signals, so
+// treating a block as a stall respawns the same agent forever on a question no
+// agent can answer. Observed for real: two blocked tasks were handed fresh
+// reviewers 97 seconds after a daemon restart, ~250k tokens after the block.
+func TestDaemon_RecoverSessions_SkipsBlockedTask(t *testing.T) {
+	t.Parallel()
+
+	repoDir := t.TempDir()
+	writeRecoveryConfig(t, repoDir, `
+[phases]
+  reviewing = "reviewer"
+
+[agents]
+  [agents.reviewer]
+    enabled = true
+    program = "claude"
+    execution_mode = "tmux"
+    permission_default = "prompt"
+`)
+
+	project := filepath.Base(repoDir)
+	store := taskstore.NewTestStore(t)
+	require.NoError(t, store.Create(project, taskstore.TaskEntry{
+		Filename: "feature",
+		Status:   taskstore.StatusImplementing,
+		Branch:   "plan/feature",
+		ExecutionState: taskstore.ExecutionState{
+			Phase:           string(taskfsm.ExecutionPhaseReviewing),
+			ActiveAgentType: session.AgentTypeReviewer,
+		},
+	}))
+	require.NoError(t, store.SetBlocked(project, "feature", "pick (a) or (b)", "agent"))
+
+	spawnCount := 0
+	d := &Daemon{
+		repos:       NewRepoManager(),
+		spawner:     NewTmuxSpawner(),
+		logger:      slog.Default(),
+		broadcaster: api.NewEventBroadcaster(),
+		spawnReviewer: func(context.Context, loop.SpawnOpts) error {
+			spawnCount++
+			return nil
+		},
+	}
+	d.repos.repos = []RepoEntry{{Path: repoDir, Project: project, Store: store}}
+
+	recovered, err := d.RecoverSessions()
+	require.NoError(t, err)
+	assert.Zero(t, recovered)
+	assert.Zero(t, spawnCount, "a blocked task must not be respawned by recovery")
+}
+
 // TestDaemon_ReconcileMissingManagedAgents_HonoursGrace pins the window that
 // keeps the periodic sweep from racing a spawn that is already in flight. The
 // sweep runs alongside normal lifecycle spawning, and a request to start an agent
