@@ -368,7 +368,18 @@ func (p *Processor) ProcessFSMSignals(signals []taskfsm.Signal) []Action {
 		}
 
 		var pendingRecord *RecordVerificationAction
-		if sig.Event == taskfsm.VerifyApproved && p.AutoReadinessReviewEnabled() {
+		// Binding is a property of the signal, not of the readiness-gate config:
+		// auto_readiness_review governs whether a master agent gets *spawned*, and
+		// says nothing about whether a master's approval must be recorded. Gating
+		// the bind on it meant a verify_approved arriving while the gate was off --
+		// from a master already in flight when the flag flipped, or one that agent
+		// recovery respawned for a task parked in verifying -- transitioned the task
+		// to done with verified_sha still empty. CreatePR then validated against an
+		// empty SHA, read stale, cleared the verification, and sent the task back to
+		// verifying -- where recovery respawned the master and the whole thing ran
+		// again. That is what deadlocked ga-04 for ten hours after its PR was
+		// already open.
+		if sig.Event == taskfsm.VerifyApproved {
 			entry, entryOK := p.taskEntry(sig.TaskFile)
 			eligible := entryOK && entry.Status == taskstore.StatusVerifying
 			if sig.PreApplied {

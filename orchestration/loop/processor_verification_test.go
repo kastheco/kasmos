@@ -125,6 +125,45 @@ func TestProcessor_HEADBoundVerificationAlternateAdmissions(t *testing.T) {
 		assert.Equal(t, "operator", actions[0].(RecordVerificationAction).By)
 	})
 
+	// auto_readiness_review decides whether a master gets spawned, not whether a
+	// master's approval counts. A master can reach verify_approved with the gate
+	// off either because it was already in flight when the flag flipped or because
+	// agent recovery respawned it for a task parked in verifying -- and when it
+	// does, the approval has to bind exactly as it would with the gate on.
+	t.Run("readiness off binds master approval", func(t *testing.T) {
+		store := taskstore.NewTestStore(t)
+		require.NoError(t, store.Create("test", taskstore.TaskEntry{Filename: "plan", Status: taskstore.StatusVerifying, Branch: "plan/branch"}))
+		p := NewProcessor(ProcessorConfig{Store: store, Project: "test", HeadSHA: head, MergeBaseSHA: testVerificationBase})
+		actions := p.ProcessFSMSignals([]taskfsm.Signal{{Event: taskfsm.VerifyApproved, TaskFile: "plan", Origin: "master", ReviewedSHA: verificationHead, ReviewedBaseSHA: verificationHead}})
+		require.IsType(t, RecordVerificationAction{}, actions[0])
+		assert.Equal(t, verificationHead, actions[0].(RecordVerificationAction).SHA)
+		entry, err := store.Get("test", "plan")
+		require.NoError(t, err)
+		assert.Equal(t, taskstore.StatusDone, entry.Status)
+	})
+
+	// The deadlock this guards: with the gate off an unbound approval used to fall
+	// straight through to done with verified_sha empty, so CreatePR validated
+	// against "", read stale, cleared the verification and reopened the task --
+	// then recovery respawned the master and it ran again, forever. Reaching done
+	// without a recorded verification is the defect, so that is what is asserted.
+	t.Run("readiness off unbound approval does not reach done", func(t *testing.T) {
+		store := taskstore.NewTestStore(t)
+		require.NoError(t, store.Create("test", taskstore.TaskEntry{Filename: "plan", Status: taskstore.StatusVerifying, Branch: "plan/branch"}))
+		p := NewProcessor(ProcessorConfig{Store: store, Project: "test", HeadSHA: head, MergeBaseSHA: testVerificationBase})
+		actions := p.ProcessFSMSignals([]taskfsm.Signal{{Event: taskfsm.VerifyApproved, TaskFile: "plan", Origin: "master", GatewayEntryID: 42}})
+		require.Len(t, actions, 3)
+		assert.Equal(t, "unbound_master_approval: master approved without reviewed_sha", actions[0].(StaleVerificationAction).Reason)
+		for _, action := range actions {
+			_, isCreatePR := action.(CreatePRAction)
+			assert.False(t, isCreatePR, "no pull request may be opened against an unrecorded verification")
+		}
+		entry, err := store.Get("test", "plan")
+		require.NoError(t, err)
+		assert.Equal(t, taskstore.StatusVerifying, entry.Status)
+		assert.Empty(t, entry.VerifiedSHA)
+	})
+
 	t.Run("gateway pre-applied approval cannot bypass sha", func(t *testing.T) {
 		p, store := verificationProcessor(t, head)
 		require.NoError(t, p.fsm.Transition("plan", taskfsm.VerifyApproved))

@@ -1040,12 +1040,20 @@ func TestProcessor_ProcessFSMSignals_PreAppliedHTTPSignals(t *testing.T) {
 			Branch:   "plan/my-plan",
 		}))
 
-		p := NewProcessor(ProcessorConfig{Store: store, Project: "test"})
+		// The approval must be bound to HEAD even with the readiness gate off:
+		// this subtest is about the alreadyApplied path still emitting downstream
+		// actions, and an unbound approval never gets that far -- it is stale, and
+		// opening a PR against it is what the sibling readiness-gate subtest
+		// ("gateway pre-applied approval cannot bypass sha") already forbids.
+		p := NewProcessor(ProcessorConfig{Store: store, Project: "test", HeadSHA: func(string) (string, error) { return verificationHead, nil }, MergeBaseSHA: testVerificationBase})
 		actions := p.ProcessFSMSignals([]taskfsm.Signal{{
-			Event:      taskfsm.VerifyApproved,
-			TaskFile:   "my-plan.md",
-			Body:       "ready",
-			PreApplied: true,
+			Event:           taskfsm.VerifyApproved,
+			TaskFile:        "my-plan.md",
+			Body:            "ready",
+			PreApplied:      true,
+			Origin:          "operator",
+			ReviewedSHA:     verificationHead,
+			ReviewedBaseSHA: verificationHead,
 		}})
 
 		var foundApproved, foundPR bool
