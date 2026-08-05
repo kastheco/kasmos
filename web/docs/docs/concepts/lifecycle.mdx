@@ -78,6 +78,8 @@ events trigger transitions. some events are **user-only** (can only be fired fro
 
 > **verifying signals:** `verify_approved` and `verify_failed` are the canonical signal names emitted by the master agent. deprecated aliases are accepted at ingress and canonicalized: `readiness_approved` → `verify_approved`; `readiness_changes_requested` / `readiness-changes` / `readiness-changes-requested` / `master_approved` → `verify_failed`.
 
+`needs_decision` is an agent signal rather than an FSM event. It carries a non-empty human-facing reason and creates a durable block while leaving the task in its current lifecycle status. A blocked task spawns no agents and ignores follow-up agent signals, while its reason is surfaced in live-status attention. An operator resolves it by applying the appropriate lifecycle transition; that transition clears the block. The aliases `needs_input`, `blocked`, and `needs_human` are accepted at signal ingress.
+
 ### terminal approval and pull requests
 
 terminal approval is `verify_approved`, or `review_approved` when `auto_readiness_review = false`. After applying that transition, kasmos marks the task `done` and, when `auto_create_pr = true`, runs the shared PR creation service. The service uses the branch stored in task metadata, adopts an existing PR before attempting creation, and persists both the URL and latest attempt outcome. Successful `created` and `adopted` outcomes remain visible with their attempt count instead of being cleared; a later idempotent call records `skipped` with the existing URL. PR creation failure does not roll back the lifecycle transition; recover with `kas task pr <plan-file>`. See [automatic PR creation](../daemon/pr-creation.mdx).
@@ -201,7 +203,7 @@ kas task transition my-feature reopen
 
 ### from agents (signals)
 
-agents should emit **agent signals** via mcp `signal_create`. the signal is written to the sqlite-backed signals table and picked up by the daemon, which drives fsm transitions. `kas signal emit` is the operator and cli fallback. a compatibility path also exists: signals written as files under `.kasmos/signals/` can be processed by `kas signal process`. on daemon startup, kasmos only recovers any files left in `.kasmos/signals/processing/` back to the root; file-based signals are then bridged/processed on subsequent daemon ticks. either way, the orchestration loop claims pending signals atomically before calling `Transition()` on the fsm.
+agents should emit **agent signals** via mcp `signal_create`. the signal is written to the sqlite-backed signals table and picked up by the daemon, which drives fsm transitions. `needs_decision` is the exception: it records a decision block instead of calling `Transition()`. `kas signal emit` is the operator and cli fallback. a compatibility path also exists: signals written as files under `.kasmos/signals/` can be processed by `kas signal process`. on daemon startup, kasmos only recovers any files left in `.kasmos/signals/processing/` back to the root; file-based signals are then bridged/processed on subsequent daemon ticks. either way, the orchestration loop claims pending signals atomically before acting on them.
 
 operator-initiated `implement_start` transitions use the same gateway path. because the task store is already `implementing` when the row is created, the transition handler marks the payload with `{"fsm_applied":true}`; the daemon recognizes that marker and launches the architect or initial wave instead of treating the row as stale.
 

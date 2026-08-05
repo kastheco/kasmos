@@ -22,6 +22,10 @@ automatic and manual PR creation persist their latest result on the task row:
 
 `pr_url` remains the canonical URL. A created or adopted PR writes `pr_url` and the corresponding outcome; a non-success records enough detail for the TUI, CLI, and retry sweep to explain the result.
 
+## human-decision block columns
+
+Tasks can be blocked without changing their lifecycle status when an agent needs a human ruling. The task row stores `blocked_reason`, `blocked_source`, and `blocked_at`. A non-empty reason suppresses orchestration spawns until an operator applies a lifecycle transition, which clears all three fields. Review-fix cycle limits create this same block instead of repeatedly spawning fixers.
+
 ## global sqlite
 
 **default path:** `~/.config/kasmos/taskstore.db`
@@ -102,6 +106,8 @@ the http store exposes the following endpoints (implemented in `config/taskstore
 | `GET` | `/v1/projects/{project}/tasks/{filename}/linear-link/lookup` | find a task by Linear issue id and optional repeated `status=` filters |
 | `POST` | `/v1/projects/{project}/tasks/{filename}/rename` | rename (reslug) a task |
 | `POST` | `/v1/projects/{project}/tasks/{filename}/increment-review-cycle` | increment the review cycle counter |
+| `PUT` | `/v1/projects/{project}/tasks/{filename}/blocked` | set a decision block from JSON `{ "reason": "...", "source": "..." }` |
+| `DELETE` | `/v1/projects/{project}/tasks/{filename}/blocked` | clear a decision block |
 
 ### architect decisions
 

@@ -65,7 +65,7 @@ This keeps the `coordinate-kasmos` approval gate in authority. The coordinating 
 
 the apps sdk widget polls through `window.openai.callTool("refresh_monitor", …)`. the host-agnostic bundle calls the injected host's `refresh` method instead. expanded `pip`, `fullscreen`, and `sidebar` panes poll every 2 seconds; expanded inline widgets poll every 3 seconds. host-reported pane visibility slows collapsed panes to 15 seconds and pauses hidden panes, independently of the containing window's visibility. polls are single-flight, failures back off to 30 seconds, and the server uses a one-second ttl cache to avoid repeating snapshot assembly for rapid calls. see the [monitor host contract](./monitor-host-contract.mdx) for the cadence and host responsibilities.
 
-Task state and the event feed come from the same database selected by `kas serve --db`, including custom database paths, so the widget never mixes task and audit history from different stores.
+Task state and the event feed come from the same database selected by `kas serve --db`, including custom database paths, so the widget never mixes task and audit history from different stores. A `needs_decision` block is read-only snapshot data: it appears as an attention item with its human-facing reason, and widget controls cannot clear it.
 
 The Codex-hosted widget makes no HTTP, WebSocket, or other network calls of its own. Codex rewrites `http://` and `ws://` CSP entries to their secure forms, which prevents a sandboxed widget iframe from fetching a localhost Kasmos server. Sending hosted widget data over the MCP bridge avoids that failure mode. The standalone browser preview is the exception: its host shim calls the narrowly scoped read-only preview endpoint described above.
 

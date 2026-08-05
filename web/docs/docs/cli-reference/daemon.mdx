@@ -95,7 +95,7 @@ linear triggers: disabled
 
 The daemon also serves instance metadata to the tui and live-preview bridge on `GET /v1/repos/{project}/instances`. Daemon-spawned rows include `execution_mode`, `sdk_speed_tier`, `skip_permissions`, and `resource_profile` so clients can resume or display sdk/tmux sessions using the same resolved profile defaults and resource-control profile the daemon used when spawning them. `resource_profile` is omitted for the normal/no-op resource profile. Older daemons omit `skip_permissions`; newer clients treat that omission as the legacy daemon default (`true`, bypass permissions).
 
-The canonical compact orchestration snapshot is available on `GET /v1/repos/{project}/live-status`. Its agent rows carry the daemon's branch, worktree basename, wave task number, last activity, and paused state. Its `active_agents` and `attention` arrays default to 20 items each. Pass a `cap` query parameter to override that per-list limit; non-positive values select the default, and values above the hard maximum of 100 are reduced to 100. The response reports omitted item counts in `truncated`. Review feedback appears as attention only while the task is back in `implementing` for a fixer, not during re-review, readiness verification, or terminal states. See the [live status contract](../guides/live-status-contract.mdx) for the complete schema and versioning policy.
+The canonical compact orchestration snapshot is available on `GET /v1/repos/{project}/live-status`. Its agent rows carry the daemon's branch, worktree basename, wave task number, last activity, and paused state. Its `active_agents` and `attention` arrays default to 20 items each. Pass a `cap` query parameter to override that per-list limit; non-positive values select the default, and values above the hard maximum of 100 are reduced to 100. The response reports omitted item counts in `truncated`. Review feedback appears as attention only while the task is back in `implementing` for a fixer, not during re-review, readiness verification, or terminal states. A task blocked by `needs_decision` always contributes an attention item with the human decision reason, even though its lifecycle status is unchanged. See the [live status contract](../guides/live-status-contract.mdx) for the complete schema and versioning policy.
 
 `kas monitor status --json [--project <name>]` prints the same live-status contract. When `--project` is omitted, the command selects the only registered repository; it requires `--project` when multiple repositories are registered. The default `kas monitor status` text output remains unchanged.
 
@@ -139,7 +139,7 @@ Derives the project name from the basename of the path and sends `DELETE /v1/rep
 
 ### reload
 
-Reload the daemon configuration by sending `SIGHUP` to the daemon process.
+Reload the daemon configuration by sending `SIGHUP` to the daemon process. The daemon re-reads every registered repository's `.kasmos/config.toml`; runtime review-fix and readiness-gate settings take effect on the next daemon poll tick.
 
 ```
 kas daemon reload

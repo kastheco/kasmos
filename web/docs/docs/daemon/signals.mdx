@@ -159,6 +159,7 @@ the `Claim` operation is a serializable transaction: it updates the row to `proc
 
 | signal type | emitted by | triggers |
 |-------------|------------|---------|
+| `needs_decision` | any agent | records a durable human-decision block without an FSM transition; suppresses future agent spawns and appears in live-status attention until an operator transitions the task |
 | `implement_finished` | coder / fixer | FSM transition → `reviewing`, spawn reviewer |
 | `implement_task_finished` | wave task agent | wave task complete, possible wave advance |
 | `retry_wave` | operator recovery | kill stale agents for the persisted active wave, then spawn only unresolved tasks; completed tasks remain complete |
@@ -178,6 +179,8 @@ the `Claim` operation is a serializable transaction: it updates the row to `proc
 > **manual implementation start:** a task transition to `implement_start` writes a gateway row with `{"fsm_applied":true}` after the task store already records `implementing`. the processor recognizes that pre-applied state and still dispatches the architect or first implementation wave, rather than dropping the signal as stale.
 
 > **deprecated aliases:** `readiness_approved` → `verify_approved`; `readiness_changes_requested` / `readiness-changes` / `readiness-changes-requested` / `master_approved` → `verify_failed`. these aliases are accepted at ingress and canonicalized — use `verify_approved` / `verify_failed` in new automation.
+
+`needs_input`, `blocked`, and `needs_human` are accepted aliases for `needs_decision`. Its payload must provide a non-empty reason, normally `{"reason":"choose option a or b"}`; bare text is also accepted as the reason. A decision block is orthogonal to lifecycle status. The only unblock path is an operator lifecycle transition, which clears the block before the task proceeds. Reaching `max_review_fix_cycles` creates the same durable block with the last reviewer feedback, rather than starting another fixer.
 
 Terminal approval can enqueue the daemon's automatic PR action. PR creation and bounded retries are tracked on the task record rather than as additional gateway signals, so replaying the approval signal is not required. The retry sweeper runs whenever `[pr_creator].enabled = true`; each repository's resolved `auto_create_pr` value decides whether that repository is scanned. Successful `created` and `adopted` outcomes remain persisted with their attempt counts.
 

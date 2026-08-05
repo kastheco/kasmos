@@ -72,7 +72,7 @@ interface MonitorBadge {
 }
 ```
 
-`idle` means the daemon is available with no active agent or attention item. `running` means at least one agent is active. `attention` means an attention item exists. `offline` means no snapshot is available or the daemon is unavailable.
+`idle` means the daemon is available with no active agent or attention item. `running` means at least one agent is active. `attention` means an attention item exists, including a task blocked by `needs_decision`; its reason is snapshot data for display, not a host action. `offline` means no snapshot is available or the daemon is unavailable.
 
 ## polling cadence
 
